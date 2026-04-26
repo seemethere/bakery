@@ -56,6 +56,8 @@ type BrowserPerfMetrics = {
   renderMs: number[];
   patchCount: number;
   patchMs: number[];
+  rowUpdateCount: number;
+  rowUpdateMs: number[];
 };
 
 declare global {
@@ -64,16 +66,22 @@ declare global {
   }
 }
 
-function recordPerfSample(kind: "render" | "patch", ms: number): void {
-  const perf = window.__piWebPerf ??= { renderCount: 0, renderMs: [], patchCount: 0, patchMs: [] };
+function recordPerfSample(kind: "render" | "patch" | "rowUpdate", ms: number): void {
+  const perf = window.__piWebPerf ??= { renderCount: 0, renderMs: [], patchCount: 0, patchMs: [], rowUpdateCount: 0, rowUpdateMs: [] };
+  perf.rowUpdateCount ??= 0;
+  perf.rowUpdateMs ??= [];
   if (kind === "render") {
     perf.renderCount++;
     perf.renderMs.push(ms);
     if (perf.renderMs.length > 500) perf.renderMs.shift();
-  } else {
+  } else if (kind === "patch") {
     perf.patchCount++;
     perf.patchMs.push(ms);
     if (perf.patchMs.length > 500) perf.patchMs.shift();
+  } else {
+    perf.rowUpdateCount++;
+    perf.rowUpdateMs.push(ms);
+    if (perf.rowUpdateMs.length > 500) perf.rowUpdateMs.shift();
   }
 }
 
@@ -230,6 +238,107 @@ function contentToText(content: unknown): string {
     .filter(Boolean)
     .join("\n\n");
 }
+
+function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, cache?: Map<string, string>): string {
+  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}`;
+  const cached = cache?.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
+  const usePlainStreamingText = item.status === "running" && (item.kind === "assistant" || item.kind === "user");
+  const rendered = segments
+    .map((segment) => {
+      if (segment.kind === "markdown") {
+        if (usePlainStreamingText) return `<div class="markdown-body streaming-plain"><pre>${escapeHtml(segment.text)}</pre></div>`;
+        return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
+      }
+      if (segment.kind === "thinking") {
+        const content = showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
+        return `<div class="markdown-body thinking-trace">${content}</div>`;
+      }
+      if (segment.kind === "toolCall") return `<div class="inline-tool-call">${escapeHtml(segment.label)}</div>`;
+      if (segment.kind === "image") {
+        return segment.src
+          ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
+          : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
+      }
+      return `<pre>${escapeHtml(segment.text)}</pre>`;
+    })
+    .join("");
+  if (cache) {
+    if (cache.size > 300) cache.clear();
+    cache.set(cacheKey, rendered);
+  }
+  return rendered;
+}
+
+class PiTranscriptRow extends HTMLElement {
+  private item: TranscriptItem | null = null;
+  private showThinking = false;
+  private selected = false;
+  private collapsed = false;
+  private lastRenderKey = "";
+  private lastStreamingText = "";
+
+  connectedCallback(): void {
+    this.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement | null)?.closest(".message-header") && this.isCollapsible()) {
+        this.collapsed = !this.collapsed;
+        this.classList.toggle("collapsed", this.collapsed);
+      }
+    });
+  }
+
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; cache?: Map<string, string> }): void {
+    const start = performance.now();
+    const previous = this.item;
+    this.item = item;
+    this.showThinking = options.showThinking;
+    this.selected = options.selected;
+    const isCollapsible = this.isCollapsible();
+    const defaultOpen = item.status === "running" || item.status === "error" || options.selected || Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
+    if (!previous || previous.id !== item.id) this.collapsed = isCollapsible && !defaultOpen;
+    if (options.selected) this.collapsed = false;
+
+    this.dataset.transcriptId = item.id;
+    this.className = this.classNames();
+
+    const streamingText = this.streamingText();
+    const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${streamingText !== null ? "streaming" : item.body}`;
+    if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
+      this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
+      this.lastStreamingText = streamingText ?? "";
+      recordPerfSample("rowUpdate", performance.now() - start);
+      return;
+    }
+
+    this.innerHTML = `
+      <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${item.status ? `<span>${escapeHtml(item.status)}</span>` : ""}</div>
+      <div class="message-body">${renderTranscriptSegments(item, this.showThinking, options.cache)}</div>`;
+    this.lastRenderKey = renderKey;
+    this.lastStreamingText = streamingText ?? "";
+    recordPerfSample("rowUpdate", performance.now() - start);
+  }
+
+  private isCollapsible(): boolean {
+    return this.item?.kind === "tool" || this.item?.kind === "system";
+  }
+
+  private classNames(): string {
+    if (!this.item) return "message";
+    return ["message", this.item.kind, this.item.status ?? "", this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+  }
+
+  private streamingText(): string | null {
+    if (!this.item || this.item.status !== "running" || (this.item.kind !== "assistant" && this.item.kind !== "user")) return null;
+    const segments = this.item.segments?.length ? this.item.segments : [{ kind: "markdown", text: this.item.body } satisfies TranscriptSegment];
+    const text = segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown").map((segment) => segment.text).join("\n\n");
+    return text;
+  }
+}
+
+customElements.define("pi-transcript-row", PiTranscriptRow);
 
 function messageKey(message: Record<string, unknown>, fallback: string): string {
   const role = String(message.role ?? "message");
@@ -1028,37 +1137,6 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
-  private renderSegments(item: TranscriptItem): string {
-    const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${this.showThinking}:${item.body}`;
-    const cached = this.renderedSegmentCache.get(cacheKey);
-    if (cached !== undefined) return cached;
-
-    const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
-    const usePlainStreamingText = item.status === "running" && (item.kind === "assistant" || item.kind === "user");
-    const rendered = segments
-      .map((segment) => {
-        if (segment.kind === "markdown") {
-          if (usePlainStreamingText) return `<div class="markdown-body streaming-plain"><pre>${escapeHtml(segment.text)}</pre></div>`;
-          return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
-        }
-        if (segment.kind === "thinking") {
-          const content = this.showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
-          return `<div class="markdown-body thinking-trace">${content}</div>`;
-        }
-        if (segment.kind === "toolCall") return `<div class="inline-tool-call">${escapeHtml(segment.label)}</div>`;
-        if (segment.kind === "image") {
-          return segment.src
-            ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
-            : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
-        }
-        return `<pre>${escapeHtml(segment.text)}</pre>`;
-      })
-      .join("");
-    if (this.renderedSegmentCache.size > 300) this.renderedSegmentCache.clear();
-    this.renderedSegmentCache.set(cacheKey, rendered);
-    return rendered;
-  }
-
   private renderCommandAutocomplete(): string {
     if (!this.commandAutocomplete.active) return "";
     const title = this.commandAutocomplete.loading
@@ -1227,28 +1305,12 @@ class PiWebAgentApp extends HTMLElement {
     return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
   }
 
-  private renderTranscriptItem(item: TranscriptItem): string {
-    const status = item.status ? `<span>${escapeHtml(item.status)}</span>` : "";
-    const isCollapsible = item.kind === "tool" || item.kind === "system";
-    const selected = item.id === this.selectedTranscriptId ? "selected" : "";
-    const isOpen = item.status === "running" || item.status === "error" || Boolean(selected) || Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
-    const dataAttr = `data-transcript-id="${escapeHtml(item.id)}"`;
-    if (isCollapsible) {
-      return `
-        <details ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}" ${isOpen ? "open" : ""}>
-          <summary class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</summary>
-          ${this.renderSegments(item)}
-        </details>`;
-    }
-    return `
-      <article ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}">
-        <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</div>
-        ${this.renderSegments(item)}
-      </article>`;
+  private renderTranscriptItemShell(item: TranscriptItem): string {
+    return `<pi-transcript-row data-transcript-id="${escapeHtml(item.id)}"></pi-transcript-row>`;
   }
 
   private renderTranscript(): string {
-    return this.transcript.map((item) => this.renderTranscriptItem(item)).join("");
+    return this.transcript.map((item) => this.renderTranscriptItemShell(item)).join("");
   }
 
   private scrollTranscriptToBottom(): void {
@@ -1288,14 +1350,25 @@ class PiWebAgentApp extends HTMLElement {
     else if (selectedBottom > visibleBottom) container.scrollTop = selectedBottom - container.clientHeight;
   }
 
-  private findTranscriptElement(id: string): HTMLElement | null {
+  private findTranscriptElement(id: string): PiTranscriptRow | null {
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript) return null;
-    return Array.from(transcript.children).find((element) => (element as HTMLElement).dataset.transcriptId === id) as HTMLElement | undefined ?? null;
+    return Array.from(transcript.children).find((element) => (element as HTMLElement).dataset.transcriptId === id) as PiTranscriptRow | undefined ?? null;
   }
 
   private bindTranscriptElement(element: HTMLElement): void {
     element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
+  }
+
+  private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
+    row.setState(item, { showThinking: this.showThinking, selected: item.id === this.selectedTranscriptId, cache: this.renderedSegmentCache });
+  }
+
+  private hydrateTranscriptRows(): void {
+    this.querySelectorAll<PiTranscriptRow>("pi-transcript-row[data-transcript-id]").forEach((row) => {
+      const item = this.transcript.find((candidate) => candidate.id === row.dataset.transcriptId);
+      if (item) this.updateTranscriptRow(row, item);
+    });
   }
 
   private patchHeaderStatus(): void {
@@ -1313,14 +1386,16 @@ class PiWebAgentApp extends HTMLElement {
     for (const id of this.dirtyTranscriptIds) {
       const item = this.transcript.find((candidate) => candidate.id === id);
       if (!item) continue;
-      const template = document.createElement("template");
-      template.innerHTML = this.renderTranscriptItem(item).trim();
-      const next = template.content.firstElementChild as HTMLElement | null;
-      if (!next) continue;
-      this.bindTranscriptElement(next);
       const existing = this.findTranscriptElement(id);
-      if (existing) existing.replaceWith(next);
-      else transcript.append(next);
+      if (existing) {
+        this.updateTranscriptRow(existing, item);
+      } else {
+        const next = document.createElement("pi-transcript-row") as PiTranscriptRow;
+        next.dataset.transcriptId = item.id;
+        this.bindTranscriptElement(next);
+        this.updateTranscriptRow(next, item);
+        transcript.append(next);
+      }
     }
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
@@ -1428,6 +1503,7 @@ class PiWebAgentApp extends HTMLElement {
     this.forceFullRender = false;
     this.dirtyTranscriptIds.clear();
     this.bindEvents();
+    this.hydrateTranscriptRows();
     if (restorePromptFocus) {
       const nextPrompt = this.querySelector<HTMLTextAreaElement>("#prompt");
       nextPrompt?.focus();

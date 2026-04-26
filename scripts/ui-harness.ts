@@ -7,7 +7,7 @@ import { chromium, type Browser, type Page } from "playwright";
 declare global {
   interface Window {
     __piWebLongTasks?: Array<{ name: string; startTime: number; duration: number }>;
-    __piWebPerf?: { renderCount: number; renderMs: number[]; patchCount: number; patchMs: number[] };
+    __piWebPerf?: { renderCount: number; renderMs: number[]; patchCount: number; patchMs: number[]; rowUpdateCount?: number; rowUpdateMs?: number[] };
   }
 }
 
@@ -103,8 +103,10 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
       piWebPerf: perf ? {
         renderCount: perf.renderCount,
         patchCount: perf.patchCount,
+        rowUpdateCount: perf.rowUpdateCount ?? 0,
         render: summarize(perf.renderMs),
         patch: summarize(perf.patchMs),
+        rowUpdate: summarize(perf.rowUpdateMs ?? []),
       } : null,
     };
   });
@@ -228,6 +230,35 @@ async function runManual(page: Page): Promise<Record<string, unknown>> {
   return collectMetrics(page);
 }
 
+function assertPerfThresholds(name: string, metrics: Record<string, unknown>): void {
+  if (name === "manual" || process.env.PI_WEB_PERF_THRESHOLDS === "off") return;
+  const perf = metrics.piWebPerf as { render?: { maxMs?: number }; patch?: { maxMs?: number }; rowUpdate?: { maxMs?: number } } | null | undefined;
+  const failures: string[] = [];
+  const longTaskCount = Number(metrics.longTaskCount ?? 0);
+  const longTaskTotalMs = Number(metrics.longTaskTotalMs ?? 0);
+  const longTaskMaxMs = Number(metrics.longTaskMaxMs ?? 0);
+  const renderMaxMs = Number(perf?.render?.maxMs ?? 0);
+  const patchMaxMs = Number(perf?.patch?.maxMs ?? 0);
+  const rowUpdateMaxMs = Number(perf?.rowUpdate?.maxMs ?? 0);
+
+  const thresholds = {
+    longTaskCount: Number(process.env.PI_WEB_PERF_MAX_LONG_TASKS ?? "80"),
+    longTaskTotalMs: Number(process.env.PI_WEB_PERF_MAX_LONG_TASK_TOTAL_MS ?? "8000"),
+    longTaskMaxMs: Number(process.env.PI_WEB_PERF_MAX_LONG_TASK_MS ?? "1500"),
+    renderMaxMs: Number(process.env.PI_WEB_PERF_MAX_RENDER_MS ?? "1000"),
+    patchMaxMs: Number(process.env.PI_WEB_PERF_MAX_PATCH_MS ?? "500"),
+    rowUpdateMaxMs: Number(process.env.PI_WEB_PERF_MAX_ROW_UPDATE_MS ?? "250"),
+  };
+
+  if (longTaskCount > thresholds.longTaskCount) failures.push(`longTaskCount ${longTaskCount} > ${thresholds.longTaskCount}`);
+  if (longTaskTotalMs > thresholds.longTaskTotalMs) failures.push(`longTaskTotalMs ${longTaskTotalMs} > ${thresholds.longTaskTotalMs}`);
+  if (longTaskMaxMs > thresholds.longTaskMaxMs) failures.push(`longTaskMaxMs ${longTaskMaxMs} > ${thresholds.longTaskMaxMs}`);
+  if (renderMaxMs > thresholds.renderMaxMs) failures.push(`render.maxMs ${renderMaxMs} > ${thresholds.renderMaxMs}`);
+  if (patchMaxMs > thresholds.patchMaxMs) failures.push(`patch.maxMs ${patchMaxMs} > ${thresholds.patchMaxMs}`);
+  if (rowUpdateMaxMs > thresholds.rowUpdateMaxMs) failures.push(`rowUpdate.maxMs ${rowUpdateMaxMs} > ${thresholds.rowUpdateMaxMs}`);
+  if (failures.length > 0) throw new Error(`Performance thresholds exceeded in ${name}: ${failures.join("; ")}`);
+}
+
 async function runScenario(name: string, page: Page, browser: Browser): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
@@ -298,6 +329,7 @@ async function main(): Promise<void> {
     const metrics: Record<string, unknown> = {};
     for (const name of scenarios) {
       metrics[name] = await runScenario(name, page, browser);
+      assertPerfThresholds(name, metrics[name] as Record<string, unknown>);
       await page.screenshot({ path: join(artifactDir, `${name}.png`), fullPage: true });
       await page.setViewportSize({ width: 1440, height: 1000 });
     }

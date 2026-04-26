@@ -446,6 +446,7 @@ textarea:disabled {
 
 .message {
   box-sizing: border-box;
+  display: block;
   max-width: 100%;
   border: 1px solid #2a2f3a;
   border-radius: 12px;
@@ -522,8 +523,12 @@ textarea:disabled {
   background: rgba(0, 0, 0, 0.08);
 }
 
-.message.tool.done:not([open]) {
+.message.tool.done.collapsed {
   opacity: 0.9;
+}
+
+.message.collapsible.collapsed .message-body {
+  display: none;
 }
 
 .message-header {
@@ -535,28 +540,23 @@ textarea:disabled {
   color: #c8ced8;
 }
 
-details.message:not([open]) .message-header {
+.message.collapsible.collapsed .message-header {
   border-bottom: 0;
 }
 
-details.message summary {
+.message.collapsible .message-header {
   cursor: pointer;
-  list-style: none;
 }
 
-details.message summary::-webkit-details-marker {
-  display: none;
-}
-
-details.message summary strong::before {
-  content: "▸";
+.message.collapsible .message-header strong::before {
+  content: "▾";
   display: inline-block;
   margin-right: 8px;
   color: #8b94a7;
 }
 
-details.message[open] summary strong::before {
-  content: "▾";
+.message.collapsible.collapsed .message-header strong::before {
+  content: "▸";
 }
 
 .message-header span {
