@@ -1553,12 +1553,12 @@ class PiWebAgentApp extends HTMLElement {
         selectedIndex: 0,
         loading: false,
       };
-      this.render();
+      this.patchFileAutocomplete();
     } catch (error) {
       if (requestId !== this.fileAutocompleteRequest) return;
       this.fileAutocomplete = { ...this.fileAutocomplete, loading: false, files: [] };
       this.notice = `File autocomplete failed: ${error instanceof Error ? error.message : String(error)}`;
-      this.render();
+      this.patchFileAutocomplete();
     }
   }
 
@@ -1601,12 +1601,12 @@ class PiWebAgentApp extends HTMLElement {
         selectedIndex: 0,
         loading: false,
       };
-      this.render();
+      this.patchCommandAutocomplete();
     } catch (error) {
       if (requestId !== this.commandAutocompleteRequest) return;
       this.commandAutocomplete = { ...this.commandAutocomplete, loading: false, commands: [] };
       this.notice = `Command autocomplete failed: ${error instanceof Error ? error.message : String(error)}`;
-      this.render();
+      this.patchCommandAutocomplete();
     }
   }
 
@@ -1846,7 +1846,7 @@ class PiWebAgentApp extends HTMLElement {
           const direction = event.key === "ArrowDown" ? 1 : -1;
           const count = Math.max(1, this.commandAutocomplete.commands.length);
           this.commandAutocomplete.selectedIndex = (this.commandAutocomplete.selectedIndex + direction + count) % count;
-          this.render();
+          this.patchAutocompleteSelection("command");
           return;
         }
         if ((event.key === "Tab" || event.key === "Enter") && this.commandAutocomplete.commands.length > 0) {
@@ -1867,7 +1867,7 @@ class PiWebAgentApp extends HTMLElement {
           const direction = event.key === "ArrowDown" ? 1 : -1;
           const count = Math.max(1, this.fileAutocomplete.files.length);
           this.fileAutocomplete.selectedIndex = (this.fileAutocomplete.selectedIndex + direction + count) % count;
-          this.render();
+          this.patchAutocompleteSelection("file");
           return;
         }
         if ((event.key === "Tab" || event.key === "Enter") && this.fileAutocomplete.files.length > 0) {
@@ -2039,6 +2039,60 @@ class PiWebAgentApp extends HTMLElement {
       </div>` : "";
     const errorBlock = this.metadataSuggestionError ? `<p class="metadata-suggestion error">${escapeHtml(this.metadataSuggestionError)}</p>` : "";
     return `<div class="session-summary">${summaryBlock}${suggestionBlock}${errorBlock}</div>`;
+  }
+
+  private patchAutocompleteSelection(kind: "command" | "file"): void {
+    const selector = kind === "command" ? ".command-autocomplete" : ".file-autocomplete";
+    const indexAttr = kind === "command" ? "commandIndex" : "fileIndex";
+    const selectedIndex = kind === "command" ? this.commandAutocomplete.selectedIndex : this.fileAutocomplete.selectedIndex;
+    const container = this.querySelector<HTMLElement>(selector);
+    if (!container) return;
+    container.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+      button.classList.toggle("selected", Number(button.dataset[indexAttr]) === selectedIndex);
+    });
+    this.syncAutocompleteScroll();
+  }
+
+  private patchCommandAutocomplete(): void {
+    const existing = this.querySelector<HTMLElement>(".command-autocomplete");
+    if (!existing) {
+      this.render();
+      return;
+    }
+    const template = document.createElement("template");
+    template.innerHTML = this.renderCommandAutocomplete();
+    const next = template.content.firstElementChild;
+    if (!next) {
+      existing.remove();
+      return;
+    }
+    existing.replaceWith(next);
+    next.querySelectorAll<HTMLButtonElement>("[data-command-index]").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => this.chooseCommandAutocomplete(Number(button.dataset.commandIndex ?? "0")));
+    });
+    this.syncAutocompleteScroll();
+  }
+
+  private patchFileAutocomplete(): void {
+    const existing = this.querySelector<HTMLElement>(".file-autocomplete");
+    if (!existing) {
+      this.render();
+      return;
+    }
+    const template = document.createElement("template");
+    template.innerHTML = this.renderFileAutocomplete();
+    const next = template.content.firstElementChild;
+    if (!next) {
+      existing.remove();
+      return;
+    }
+    existing.replaceWith(next);
+    next.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => this.chooseFileAutocomplete(Number(button.dataset.fileIndex ?? "0")));
+    });
+    this.syncAutocompleteScroll();
   }
 
   private renderCommandAutocomplete(): string {
