@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev:server": "bun run --cwd apps/server dev",
+    "dev:server:watch": "bun run --cwd apps/server dev:watch",
     "dev:web": "bun run --cwd apps/web dev",
     "start": "bun run --cwd apps/server start",
     "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check"

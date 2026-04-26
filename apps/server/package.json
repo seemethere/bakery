@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
+    "dev": "bun src/index.ts",
+    "dev:watch": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "check": "tsc --noEmit"
   },

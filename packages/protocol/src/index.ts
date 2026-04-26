@@ -80,6 +80,24 @@ export const updateSessionRequestSchema = z.object({
 });
 export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
 
+export const fileMatchSchema = z.object({
+  path: z.string(),
+  type: z.enum(["file", "directory"]),
+});
+export type FileMatch = z.infer<typeof fileMatchSchema>;
+
+export const fileSearchResponseSchema = z.object({
+  query: z.string(),
+  files: z.array(fileMatchSchema),
+});
+export type FileSearchResponse = z.infer<typeof fileSearchResponseSchema>;
+
+export const fileCompleteResponseSchema = z.object({
+  prefix: z.string(),
+  files: z.array(fileMatchSchema),
+});
+export type FileCompleteResponse = z.infer<typeof fileCompleteResponseSchema>;
+
 export const agentStatusSchema = z.enum(["idle", "running", "aborting", "error"]);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
