@@ -32,6 +32,7 @@ export type SessionHandle = {
   prompt(text: string, images?: ImageContent[]): Promise<void>;
   steer(text: string): Promise<void>;
   followUp(text: string): Promise<void>;
+  cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }>;
   abort(): Promise<void>;
   setModel(model: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
@@ -142,6 +143,21 @@ class InProcessSessionHandle implements SessionHandle {
 
   async followUp(text: string): Promise<void> {
     await this.session.followUp(text);
+  }
+
+  async cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }> {
+    const queued = {
+      steering: [...this.session.getSteeringMessages()],
+      followUp: [...this.session.getFollowUpMessages()],
+    };
+    const current = queued[queue];
+    if (index >= current.length) throw new Error("Queued message no longer exists.");
+    if (text !== undefined && current[index] !== text) throw new Error("Queued message changed before it could be canceled.");
+    current.splice(index, 1);
+    this.session.clearQueue();
+    for (const steering of queued.steering) await this.session.steer(steering);
+    for (const followUp of queued.followUp) await this.session.followUp(followUp);
+    return queued;
   }
 
   async abort(): Promise<void> {

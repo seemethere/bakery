@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
+  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -193,6 +193,22 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   }
 
   return { responsiveness, maxLatencyMs, ...(await collectMetrics(page)) };
+}
+
+async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please produce a long streaming response so queued follow-up cancellation can be tested.");
+  await page.locator("#send").click();
+  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("queued follow-up that should be canceled");
+  await page.locator("#followUp").click();
+  const pill = page.locator(".queue-pill.follow-up", { hasText: "queued follow-up that should be canceled" });
+  await pill.waitFor({ timeout: 5_000 });
+  await pill.locator(".queue-cancel").click();
+  await pill.waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await page.screenshot({ path: join(artifactDir, "queued-follow-up.png"), fullPage: true });
+  return collectMetrics(page);
 }
 
 async function runTranscriptScrollStability(page: Page): Promise<Record<string, unknown>> {
@@ -536,6 +552,7 @@ function assertPerfThresholds(name: string, metrics: Record<string, unknown>): v
 async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void> }): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
+  if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);

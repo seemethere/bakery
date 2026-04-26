@@ -89,6 +89,8 @@ class FakeSessionHandle implements SessionHandle {
   private aborted = false;
   private currentModel = "fake/fast";
   private currentThinking: string;
+  private steeringQueue: string[] = [];
+  private followUpQueue: string[] = [];
 
   constructor(
     readonly id: string,
@@ -147,15 +149,29 @@ class FakeSessionHandle implements SessionHandle {
     this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: { ...assistant } });
     this.session.isStreaming = false;
+    this.steeringQueue = [];
+    this.followUpQueue = [];
     this.emit({ type: "agent_end" });
+    this.emitQueueUpdate();
   }
 
   async steer(text: string): Promise<void> {
-    this.emit({ type: "queue_update", steering: [text], followUp: [] });
+    this.steeringQueue.push(text);
+    this.emitQueueUpdate();
   }
 
   async followUp(text: string): Promise<void> {
-    this.emit({ type: "queue_update", steering: [], followUp: [text] });
+    this.followUpQueue.push(text);
+    this.emitQueueUpdate();
+  }
+
+  async cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }> {
+    const target = queue === "steering" ? this.steeringQueue : this.followUpQueue;
+    if (index >= target.length) throw new Error("Queued message no longer exists.");
+    if (text !== undefined && target[index] !== text) throw new Error("Queued message changed before it could be canceled.");
+    target.splice(index, 1);
+    this.emitQueueUpdate();
+    return { steering: [...this.steeringQueue], followUp: [...this.followUpQueue] };
   }
 
   async abort(): Promise<void> {
@@ -224,6 +240,10 @@ class FakeSessionHandle implements SessionHandle {
   private emit(event: Record<string, unknown>): void {
     const normalized = normalize(event);
     for (const listener of this.listeners) listener(normalized, event as AgentSessionEvent);
+  }
+
+  private emitQueueUpdate(): void {
+    this.emit({ type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
   }
 
   private restoreMessagesFromSession(): void {

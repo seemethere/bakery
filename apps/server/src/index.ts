@@ -627,7 +627,17 @@ class SessionHub {
         await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text);
       else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text);
-      else if (parsed.data.type === "abort") await this.handle.abort();
+      else if (parsed.data.type === "cancel_queued_message") {
+        const queued = await this.handle.cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
+        this.broadcast({
+          type: "agent_event",
+          event: {
+            type: "queue_update",
+            time: new Date().toISOString(),
+            data: { type: "queue_update", ...queued },
+          },
+        });
+      } else if (parsed.data.type === "abort") await this.handle.abort();
       else if (parsed.data.type === "set_model") {
         await this.handle.setModel(parsed.data.model);
         await this.broadcastSettingsUpdate();

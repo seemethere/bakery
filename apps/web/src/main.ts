@@ -1238,6 +1238,26 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
+  private cancelQueuedMessage(queue: "steering" | "followUp", index: number, text: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.notice = "Not connected. Queued messages can be canceled after reconnect.";
+      this.render();
+      return;
+    }
+    const current = this.runningQueue[queue];
+    if (current[index] !== text) {
+      this.notice = "Queued message changed before it could be canceled.";
+      this.render();
+      return;
+    }
+    this.runningQueue = {
+      ...this.runningQueue,
+      [queue]: current.filter((_, candidateIndex) => candidateIndex !== index),
+    };
+    this.ws.send(JSON.stringify({ type: "cancel_queued_message", queue, index, text }));
+    this.render();
+  }
+
   private sendFromInput(followUp = false): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = input?.value.trim() ?? "";
@@ -1536,6 +1556,15 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
+    this.querySelectorAll<HTMLButtonElement>("[data-cancel-queue]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        const queue = button.dataset.cancelQueue === "followUp" ? "followUp" : "steering";
+        const index = Number(button.dataset.queueIndex ?? "-1");
+        const text = button.dataset.queueText ?? "";
+        if (index >= 0 && text) this.cancelQueuedMessage(queue, index, text);
+      });
+    });
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
     this.querySelector<HTMLButtonElement>("#approveControl")?.addEventListener("click", (event) => {
@@ -1824,15 +1853,16 @@ class PiWebAgentApp extends HTMLElement {
     const steering = this.runningQueue.steering;
     const followUp = this.runningQueue.followUp;
     if (steering.length === 0 && followUp.length === 0) return "";
-    const renderPill = (kind: string, text: string, index: number) => `
+    const renderPill = (kind: "Steer" | "Follow-up", queue: "steering" | "followUp", text: string, index: number) => `
       <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(text)}">
         <strong>${escapeHtml(kind)} ${index + 1}</strong>
         <span>${escapeHtml(text)}</span>
+        <button type="button" class="queue-cancel" data-cancel-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(text)}" aria-label="Cancel ${escapeHtml(kind)} ${index + 1}">×</button>
       </span>`;
     return `
       <div class="running-queue" aria-label="Queued running controls">
-        ${steering.map((text, index) => renderPill("Steer", text, index)).join("")}
-        ${followUp.map((text, index) => renderPill("Follow-up", text, index)).join("")}
+        ${steering.map((text, index) => renderPill("Steer", "steering", text, index)).join("")}
+        ${followUp.map((text, index) => renderPill("Follow-up", "followUp", text, index)).join("")}
       </div>`;
   }
 

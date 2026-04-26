@@ -747,6 +747,24 @@ textarea {
   white-space: nowrap;
 }
 
+.queue-cancel {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  padding: 0 2px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 14px;
+  border-radius: 999px;
+}
+
+.queue-cancel:hover,
+.queue-cancel:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
 button.danger {
   border-color: #ff6b6b;
   color: #ffd6d6;
