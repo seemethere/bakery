@@ -711,24 +711,31 @@ textarea {
 }
 
 .running-queue {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 10px;
+  z-index: 6;
   display: grid;
-  gap: 6px;
-  max-height: 112px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  max-height: 86px;
   overflow-y: auto;
-  border: 1px solid rgba(255, 209, 138, 0.28);
+  border: 1px solid rgba(255, 209, 138, 0.36);
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(255, 209, 138, 0.11), rgba(16, 21, 35, 0.84));
-  padding: 7px;
-  box-shadow: inset 3px 0 0 rgba(255, 190, 92, 0.75);
+  background: linear-gradient(135deg, rgba(42, 29, 10, 0.96), rgba(13, 18, 31, 0.96));
+  padding: 7px 8px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42), inset 3px 0 0 rgba(255, 190, 92, 0.85);
+  backdrop-filter: blur(10px);
 }
 
 .running-queue-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  display: grid;
+  gap: 1px;
+  min-width: 118px;
   color: #ffd18a;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -744,6 +751,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 .queue-pill {
@@ -866,6 +874,10 @@ textarea:disabled {
   overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
+}
+
+.transcript-shell.has-running-queue .transcript {
+  padding-bottom: 112px;
 }
 
 .jump-to-latest {

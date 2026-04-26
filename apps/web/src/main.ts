@@ -2319,8 +2319,9 @@ class PiWebAgentApp extends HTMLElement {
           ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
           ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
         </div>
-        <div class="transcript-shell">
+        <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""}">
           <section class="transcript">${this.renderTranscript()}</section>
+          ${this.renderRunningQueue()}
           ${this.renderJumpToLatest()}
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
@@ -2330,7 +2331,6 @@ class PiWebAgentApp extends HTMLElement {
               <span class="composer-hint">${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
               ${this.renderContextUsageNotice()}
             </div>
-            ${this.renderRunningQueue()}
             ${this.renderPromptImages()}
             <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
             <input id="imageInput" class="hidden-file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple />
