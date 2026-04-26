@@ -817,6 +817,19 @@ class PiWebAgentApp extends HTMLElement {
     this.scheduleTranscriptFollow();
   }
 
+  private syncAutocompleteScroll(): void {
+    const container = this.querySelector<HTMLElement>(this.commandAutocomplete.active ? ".command-autocomplete" : this.fileAutocomplete.active ? ".file-autocomplete" : "");
+    const selected = container?.querySelector<HTMLElement>("button.selected");
+    if (!container || !selected) return;
+
+    const selectedTop = selected.offsetTop;
+    const selectedBottom = selectedTop + selected.offsetHeight;
+    const visibleTop = container.scrollTop;
+    const visibleBottom = visibleTop + container.clientHeight;
+    if (selectedTop < visibleTop) container.scrollTop = selectedTop;
+    else if (selectedBottom > visibleBottom) container.scrollTop = selectedBottom - container.clientHeight;
+  }
+
   private render(): void {
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
     if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
@@ -893,6 +906,7 @@ class PiWebAgentApp extends HTMLElement {
       nextPrompt?.setSelectionRange(Math.min(promptSelectionStart, max), Math.min(promptSelectionEnd, max));
     }
     this.syncTranscriptScroll();
+    this.syncAutocompleteScroll();
   }
 }
 

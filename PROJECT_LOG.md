@@ -20,6 +20,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Added shared command metadata protocol, `GET /api/sessions/:id/commands`, and prompt-box slash-command autocomplete for built-ins, extension commands, prompt templates, and skills; terminal/UI-only built-ins are marked unsupported in metadata.
 - WebSocket prompt handling now intercepts built-in slash commands before they reach the LLM as normal prompts. Implemented web results for `/reload`, `/changelog`, `/session`, `/compact`, `/name`, and `/copy`; unsupported built-ins render a structured web error instead of being sent to the agent.
 - Fixed the server startup regression from the `/changelog` implementation by replacing Bun-incompatible `createRequire(...).resolve("@mariozechner/pi-coding-agent")` usage with `import.meta.resolve` for locating the pi package changelog.
+- Fixed command and file autocomplete keyboard navigation so the dropdown scrolls to keep the selected row visible after arrow-key selection changes.
 
 ## How to run
 
@@ -45,7 +46,7 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after fixing the server startup regression, and `PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server` reaches the Fastify listening state.
+Latest: `bun run check` passes after fixing autocomplete dropdown scroll-follow for arrow-key navigation.
 
 ## Next priorities
 
