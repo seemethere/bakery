@@ -335,6 +335,12 @@ function isToolCallOnlyAssistant(item: TranscriptItem): boolean {
   return item.kind === "assistant" && segments !== undefined && segments.length > 0 && segments.every((segment) => segment.kind === "toolCall" || segment.kind === "thinking");
 }
 
+function toolCallTitlesForItem(item: TranscriptItem): string[] {
+  return (item.segments ?? [])
+    .filter((segment): segment is Extract<TranscriptSegment, { kind: "toolCall" }> => segment.kind === "toolCall")
+    .map((segment) => toolCallLabelToTitle(segment.label));
+}
+
 function toolCallLabelToTitle(label: string): string {
   const clean = label.replace(/^↳\s*/, "").trim();
   const bash = clean.match(/^bash\s+(.+)$/s);
@@ -342,22 +348,28 @@ function toolCallLabelToTitle(label: string): string {
   return clean || label;
 }
 
+function shouldPreferPendingToolTitle(item: TranscriptItem): boolean {
+  return item.kind === "tool" && /^(?:tool result(?::|$)|tool$)/i.test(item.title.trim());
+}
+
 function compactSnapshotTranscript(items: TranscriptItem[]): TranscriptItem[] {
   const compacted: TranscriptItem[] = [];
   const pendingToolCallTitles: string[] = [];
   for (const item of items) {
     if (isToolCallOnlyAssistant(item)) {
-      pendingToolCallTitles.push(...(item.segments ?? [])
-        .filter((segment): segment is Extract<TranscriptSegment, { kind: "toolCall" }> => segment.kind === "toolCall")
-        .map((segment) => toolCallLabelToTitle(segment.label)));
+      pendingToolCallTitles.push(...toolCallTitlesForItem(item));
       continue;
     }
+    let nextItem = item;
     if (item.kind === "tool" && pendingToolCallTitles.length > 0) {
-      compacted.push({ ...item, title: pendingToolCallTitles.shift() ?? item.title });
-      continue;
+      const pendingTitle = pendingToolCallTitles.shift();
+      if (pendingTitle && shouldPreferPendingToolTitle(item)) nextItem = { ...item, title: pendingTitle };
+    } else if (item.kind !== "tool") {
+      pendingToolCallTitles.length = 0;
     }
-    pendingToolCallTitles.length = 0;
-    compacted.push(item);
+    const previous = compacted.at(-1);
+    if (previous && mergeDuplicateToolResult(previous, nextItem)) continue;
+    compacted.push(nextItem);
   }
   return compacted;
 }
@@ -380,6 +392,33 @@ function compactToolSummary(item: TranscriptItem): string {
   const normalized = usefulLine.replace(/^stdout:\s*/i, "").replace(/^stderr:\s*/i, "stderr: ").replace(/\s+/g, " ");
   const summary = `${prefix}${normalized}`;
   return summary.length > 140 ? `${summary.slice(0, 137)}…` : summary;
+}
+
+function normalizeToolTextForDedupe(value: string): string {
+  return value
+    .replace(/^exit code:\s*0\s*$/gim, "")
+    .replace(/^(?:stdout|stderr):\s*/gim, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function mergeDuplicateToolResult(previous: TranscriptItem, current: TranscriptItem): boolean {
+  if (previous.kind !== "tool" || current.kind !== "tool" || previous.status !== "done" || current.status !== "done") return false;
+  if (!/^(?:tool result(?::|$)|result(?::|$))/i.test(current.title.trim())) return false;
+  if (itemHasRenderedImage(previous) || itemHasRenderedImage(current)) return false;
+
+  const previousText = normalizeToolTextForDedupe(`${previous.body}\n${compactToolSummary(previous)}`);
+  const currentText = normalizeToolTextForDedupe(`${current.body}\n${compactToolSummary(current)}`);
+  if (!currentText) return false;
+  if (!previousText || !previousText.includes(currentText.slice(0, Math.min(80, currentText.length)))) {
+    if (previousText && currentText && previousText !== currentText && !currentText.includes(previousText.slice(0, Math.min(80, previousText.length)))) return false;
+  }
+
+  previous.body = previous.body || current.body;
+  if (!previous.segments?.length && current.segments) previous.segments = current.segments;
+  previous.raw = { previous: previous.raw, duplicateResult: current.raw };
+  return true;
 }
 
 function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, context: RenderContext = {}): string {
@@ -589,6 +628,7 @@ class PiWebAgentApp extends HTMLElement {
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
+  private pendingToolCallTitles: string[] = [];
   private transcriptScrollTop = 0;
   private preserveTranscriptScrollOnce = false;
   private unreadTranscriptIds = new Set<string>();
@@ -648,17 +688,41 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private upsertTranscript(item: TranscriptItem): void {
-    const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
-    if (index === -1) this.transcript.push(item);
-    else this.transcript[index] = { ...this.transcript[index], ...item };
+    if (isToolCallOnlyAssistant(item)) {
+      this.pendingToolCallTitles.push(...toolCallTitlesForItem(item));
+      const existingIndex = this.transcript.findIndex((candidate) => candidate.id === item.id);
+      if (existingIndex !== -1) {
+        this.transcript.splice(existingIndex, 1);
+        this.forceFullRender = true;
+      }
+      return;
+    }
+
+    let nextItem = item;
+    if (nextItem.kind === "tool" && this.pendingToolCallTitles.length > 0) {
+      const pendingTitle = this.pendingToolCallTitles.shift();
+      if (pendingTitle && shouldPreferPendingToolTitle(nextItem)) nextItem = { ...nextItem, title: pendingTitle };
+    } else if (nextItem.kind !== "tool") {
+      this.pendingToolCallTitles.length = 0;
+    }
+
+    const index = this.transcript.findIndex((candidate) => candidate.id === nextItem.id);
+    const previousForMerge = index === -1 ? this.transcript.at(-1) : this.transcript[index - 1];
+    if (previousForMerge && mergeDuplicateToolResult(previousForMerge, nextItem)) {
+      this.dirtyTranscriptIds.add(previousForMerge.id);
+      return;
+    }
+
+    if (index === -1) this.transcript.push(nextItem);
+    else this.transcript[index] = { ...this.transcript[index], ...nextItem };
     const nextIndex = index === -1 ? this.transcript.length - 1 : index;
-    this.dirtyTranscriptIds.add(item.id);
+    this.dirtyTranscriptIds.add(nextItem.id);
     const previous = this.transcript[nextIndex - 1];
     const next = this.transcript[nextIndex + 1];
     if (previous?.kind === "tool") this.dirtyTranscriptIds.add(previous.id);
     if (next?.kind === "tool") this.dirtyTranscriptIds.add(next.id);
-    if (!this.autoScroll) this.unreadTranscriptIds.add(item.id);
-    if (!this.selectedTranscriptId) this.selectTranscriptItem(item.id, false);
+    if (!this.autoScroll) this.unreadTranscriptIds.add(nextItem.id);
+    if (!this.selectedTranscriptId) this.selectTranscriptItem(nextItem.id, false);
   }
 
   private draftKey(sessionId = this.selectedSession?.id): string | null {
@@ -833,6 +897,7 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = snapshot.settings ?? this.settings;
     this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
     this.runningQueue = { steering: [], followUp: [] };
+    this.pendingToolCallTitles = [];
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     this.unreadTranscriptIds.clear();
     this.forceFullRender = true;

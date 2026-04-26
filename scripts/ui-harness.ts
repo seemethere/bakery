@@ -124,6 +124,9 @@ async function prepareSession(page: Page): Promise<void> {
     localStorage.setItem("piWebAuthToken", "");
   }, { apiBase });
   await page.goto(webBase, { waitUntil: "domcontentloaded" });
+  if (await page.locator("#apiBase").count() === 0 && await page.locator("#toggleSessionSidebar").count() > 0) {
+    await page.locator("#toggleSessionSidebar").click();
+  }
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
   await page.locator("#saveSettings").click();
