@@ -1497,8 +1497,9 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (this.commandAutocomplete.active) this.closeCommandAutocomplete();
+    const shouldRenderOpen = !this.fileAutocomplete.active;
     this.fileAutocomplete = { ...this.fileAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
-    this.render();
+    if (shouldRenderOpen) this.render();
     if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
     const requestId = ++this.fileAutocompleteRequest;
     this.fileAutocompleteTimer = setTimeout(() => void this.fetchFileAutocomplete(token, requestId), 120);
@@ -1547,8 +1548,9 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (this.fileAutocomplete.active) this.closeFileAutocomplete();
+    const shouldRenderOpen = !this.commandAutocomplete.active;
     this.commandAutocomplete = { ...this.commandAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
-    this.render();
+    if (shouldRenderOpen) this.render();
     if (this.commandAutocompleteTimer) clearTimeout(this.commandAutocompleteTimer);
     const requestId = ++this.commandAutocompleteRequest;
     this.commandAutocompleteTimer = setTimeout(() => void this.fetchCommandAutocomplete(token, requestId), 120);
