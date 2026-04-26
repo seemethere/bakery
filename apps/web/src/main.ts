@@ -51,6 +51,32 @@ type PromptImage = {
   size: number;
 };
 
+type BrowserPerfMetrics = {
+  renderCount: number;
+  renderMs: number[];
+  patchCount: number;
+  patchMs: number[];
+};
+
+declare global {
+  interface Window {
+    __piWebPerf?: BrowserPerfMetrics;
+  }
+}
+
+function recordPerfSample(kind: "render" | "patch", ms: number): void {
+  const perf = window.__piWebPerf ??= { renderCount: 0, renderMs: [], patchCount: 0, patchMs: [] };
+  if (kind === "render") {
+    perf.renderCount++;
+    perf.renderMs.push(ms);
+    if (perf.renderMs.length > 500) perf.renderMs.shift();
+  } else {
+    perf.patchCount++;
+    perf.patchMs.push(ms);
+    if (perf.patchMs.length > 500) perf.patchMs.shift();
+  }
+}
+
 const supportedPromptImageTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]);
 const maxPromptImages = 4;
 const maxPromptImageBytes = 8 * 1024 * 1024;
@@ -1280,6 +1306,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private patchLiveRender(): boolean {
+    const start = performance.now();
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript || this.forceFullRender) return false;
 
@@ -1299,6 +1326,7 @@ class PiWebAgentApp extends HTMLElement {
     this.patchHeaderStatus();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    recordPerfSample("patch", performance.now() - start);
     return true;
   }
 
@@ -1314,6 +1342,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private render(): void {
+    const renderStart = performance.now();
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
     if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
     const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
@@ -1407,6 +1436,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    recordPerfSample("render", performance.now() - renderStart);
   }
 }
 

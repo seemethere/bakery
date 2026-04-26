@@ -1,4 +1,5 @@
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import { dirname } from "node:path";
+import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { CommandInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 
@@ -51,6 +52,7 @@ function responseFor(text: string): string {
 
 class FakeSessionHandle implements SessionHandle {
   readonly session: any;
+  private readonly sessionManager: SessionManager;
   private readonly listeners = new Set<Listener>();
   private readonly messages: FakeMessage[] = [];
   private aborted = false;
@@ -64,11 +66,14 @@ class FakeSessionHandle implements SessionHandle {
     private readonly modelPolicy: ModelPolicy,
   ) {
     this.currentThinking = modelPolicy.defaultThinkingLevel;
+    this.sessionManager = SessionManager.open(sessionFile, dirname(sessionFile), cwd);
     this.session = {
       isStreaming: false,
       state: { messages: this.messages },
-      sessionManager: undefined,
+      sessionManager: this.sessionManager,
+      navigateTree: (entryId: string) => this.navigateTree(entryId),
     };
+    this.restoreMessagesFromSession();
   }
 
   async prompt(text: string, images?: ImageContent[]): Promise<void> {
@@ -76,6 +81,7 @@ class FakeSessionHandle implements SessionHandle {
     const userContent = images?.length ? [{ type: "text" as const, text }, ...images] : text;
     const user: FakeMessage = { id: crypto.randomUUID(), role: "user", timestamp: now, content: userContent };
     this.messages.push(user);
+    this.sessionManager.appendMessage({ role: "user", content: userContent } as never);
     this.emit({ type: "message_end", message: user });
 
     if (/tool/i.test(text)) await this.emitFakeToolRun();
@@ -97,6 +103,7 @@ class FakeSessionHandle implements SessionHandle {
     }
     if (this.aborted) assistant.content += "\n\n[aborted]";
     else assistant.content = full;
+    this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: { ...assistant } });
     this.session.isStreaming = false;
     this.emit({ type: "agent_end" });
@@ -168,6 +175,32 @@ class FakeSessionHandle implements SessionHandle {
   private emit(event: Record<string, unknown>): void {
     const normalized = normalize(event);
     for (const listener of this.listeners) listener(normalized, event as AgentSessionEvent);
+  }
+
+  private restoreMessagesFromSession(): void {
+    this.messages.splice(0, this.messages.length);
+    for (const entry of this.sessionManager.getBranch()) {
+      if (entry.type !== "message") continue;
+      const message = entry.message as unknown as Record<string, unknown>;
+      const role = message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : null;
+      if (!role) continue;
+      this.messages.push({
+        id: entry.id,
+        role,
+        timestamp: entry.timestamp,
+        content: message.content as FakeMessage["content"],
+      });
+    }
+  }
+
+  private async navigateTree(entryId: string): Promise<{ cancelled: false; editorText?: string }> {
+    const entry = this.sessionManager.getEntry(entryId);
+    if (!entry) throw new Error(`Entry not found: ${entryId}`);
+    this.sessionManager.branch(entryId);
+    this.restoreMessagesFromSession();
+    const message = entry.type === "message" ? entry.message as unknown as Record<string, unknown> : null;
+    const editorText = message?.role === "user" && typeof message.content === "string" ? String(message.content) : undefined;
+    return editorText === undefined ? { cancelled: false } : { cancelled: false, editorText };
   }
 
   private async emitFakeToolRun(): Promise<void> {

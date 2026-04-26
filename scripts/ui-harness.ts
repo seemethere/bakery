@@ -4,8 +4,18 @@ import { join, resolve } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { chromium, type Browser, type Page } from "playwright";
 
+declare global {
+  interface Window {
+    __piWebLongTasks?: Array<{ name: string; startTime: number; duration: number }>;
+    __piWebPerf?: { renderCount: number; renderMs: number[]; patchCount: number; patchMs: number[] };
+  }
+}
+
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
+const scenarios = scenario === "all"
+  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "narrow-tool-stream"]
+  : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
 const interactive = scenario === "manual" || process.argv.includes("--interactive");
@@ -68,6 +78,13 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
     const nav = performance.getEntriesByType("navigation")[0]?.toJSON?.() ?? null;
     const resources = performance.getEntriesByType("resource").length;
     const transcript = document.querySelector(".transcript");
+    const perf = window.__piWebPerf ?? null;
+    const longTasks = window.__piWebLongTasks ?? [];
+    const summarize = (samples: number[]) => ({
+      count: samples.length,
+      maxMs: samples.length ? Math.round(Math.max(...samples)) : 0,
+      avgMs: samples.length ? Math.round(samples.reduce((sum, value) => sum + value, 0) / samples.length) : 0,
+    });
     return {
       navigation: nav,
       resources,
@@ -77,6 +94,18 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
       promptValue: (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value ?? null,
       rightPanelCollapsed: document.querySelector("pi-web-agent")?.classList.contains("inspector-collapsed") ?? null,
       renderedImages: document.querySelectorAll(".message img").length,
+      selectedTitle: document.querySelector(".right-panel-heading strong")?.textContent ?? null,
+      treeRows: document.querySelectorAll(".tree-line").length,
+      sessionButtons: document.querySelectorAll("[data-session-id]").length,
+      longTaskCount: longTasks.length,
+      longTaskTotalMs: Math.round(longTasks.reduce((sum, task) => sum + task.duration, 0)),
+      longTaskMaxMs: longTasks.length ? Math.round(Math.max(...longTasks.map((task) => task.duration))) : 0,
+      piWebPerf: perf ? {
+        renderCount: perf.renderCount,
+        patchCount: perf.patchCount,
+        render: summarize(perf.renderMs),
+        patch: summarize(perf.patchMs),
+      } : null,
     };
   });
 }
@@ -86,8 +115,18 @@ async function prepareSession(page: Page): Promise<void> {
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
   await page.locator("#saveSettings").click();
+  const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
   await page.locator("#newSession").click();
+  await created;
   await page.locator("#prompt").waitFor({ state: "visible" });
+  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+}
+
+async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
+  await page.locator("#prompt").fill(text);
+  await page.locator("#send").click();
+  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
 }
 
 async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
@@ -115,10 +154,89 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   return { responsiveness, maxLatencyMs, ...(await collectMetrics(page)) };
 }
 
+async function runInspectorPreview(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector validation.");
+  await page.locator(".message.assistant").last().click();
+  await page.locator('[data-right-tab="preview"]').click();
+  await page.locator(".preview-markdown img").first().waitFor({ timeout: 5_000 });
+  await page.locator('[data-right-tab="details"]').click();
+  await page.locator(".raw-detail").waitFor({ state: "visible" });
+  await page.locator(".message.tool").first().click();
+  await page.locator(".right-panel-heading", { hasText: "echo fake tool" }).waitFor({ timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("/");
+  await page.locator(".command-autocomplete").waitFor({ timeout: 5_000 });
+  await page.locator(".command-autocomplete", { hasText: "/session" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("/session");
+  await page.locator("#send").click();
+  await page.locator(".message.system", { hasText: "Fake session" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("/tree");
+  await page.locator("#send").click();
+  await page.locator(".tree-drawer").waitFor({ timeout: 5_000 });
+  await page.locator("#closeTreeDrawer").click();
+  return collectMetrics(page);
+}
+
+async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Create a short conversation branch for tree navigation.");
+  await page.locator('[data-right-tab="tree"]').click();
+  await page.locator(".tree-line").first().waitFor({ timeout: 5_000 });
+  await page.locator(".tree-line").first().click();
+  await page.locator(".notice", { hasText: /Navigated|Tree navigation failed/ }).waitFor({ timeout: 5_000 }).catch(() => undefined);
+  const forkButton = page.locator("[data-fork-entry-id]").first();
+  await forkButton.waitFor({ timeout: 5_000 });
+  await forkButton.click();
+  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+async function runReconnectController(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const context = page.context();
+  const viewer = await context.newPage();
+  await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
+  await viewer.locator("#prompt").waitFor({ state: "visible" });
+  await viewer.locator(".controller.viewer").waitFor({ timeout: 5_000 });
+  await viewer.locator("#takeControl").click();
+  await viewer.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
+  await viewer.close();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("#prompt").waitFor({ state: "visible" });
+  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 760, height: 900 });
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Run a tool and produce a long narrow-width streaming response for layout validation.");
+  await page.locator(".message.tool").first().waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").waitFor({ state: "visible" });
+  return collectMetrics(page);
+}
+
 async function runManual(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, a prompt asking for an image/screenshot preview, /session, /reload, /tree, @README.md, inspector tabs, and narrow-window resizing.");
   return collectMetrics(page);
+}
+
+async function runScenario(name: string, page: Page, browser: Browser): Promise<Record<string, unknown>> {
+  if (name === "manual") return runManual(page);
+  if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
+  if (name === "inspector-preview") return runInspectorPreview(page);
+  if (name === "slash-commands") return runSlashCommands(page);
+  if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
+  if (name === "reconnect-controller") return runReconnectController(page);
+  if (name === "narrow-tool-stream") return runNarrowToolStream(page);
+  throw new Error(`Unknown scenario: ${name}`);
 }
 
 async function waitForInterrupt(): Promise<string> {
@@ -159,19 +277,33 @@ async function main(): Promise<void> {
     await waitForUrl(webBase, "web");
     browser = await chromium.launch({ headless: !headed });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    await context.addInitScript(() => {
+      window.__piWebLongTasks = [];
+      try {
+        const observer = new PerformanceObserver((list) => {
+          const target = window.__piWebLongTasks ??= [];
+          for (const entry of list.getEntries()) target.push({ name: entry.name, startTime: entry.startTime, duration: entry.duration });
+          if (target.length > 500) target.splice(0, target.length - 500);
+        });
+        observer.observe({ type: "longtask", buffered: true } as PerformanceObserverInit);
+      } catch {
+        // Long Task API is Chromium-only and may be unavailable in some environments.
+      }
+    });
     await context.tracing.start({ screenshots: true, snapshots: true });
     const page = await context.newPage();
     page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
     page.on("pageerror", (error) => consoleMessages.push(`pageerror: ${error.message}`));
 
-    const metrics = scenario === "manual"
-      ? await runManual(page)
-      : scenario === "streaming-responsiveness"
-        ? await runStreamingResponsiveness(page)
-        : await runStreamingResponsiveness(page);
+    const metrics: Record<string, unknown> = {};
+    for (const name of scenarios) {
+      metrics[name] = await runScenario(name, page, browser);
+      await page.screenshot({ path: join(artifactDir, `${name}.png`), fullPage: true });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+    }
 
     await page.screenshot({ path: join(artifactDir, "final.png"), fullPage: true });
-    await writeFile(join(artifactDir, "metrics.json"), JSON.stringify({ scenario, workspace, dataDir, metrics }, null, 2));
+    await writeFile(join(artifactDir, "metrics.json"), JSON.stringify({ scenario, scenarios, workspace, dataDir, metrics }, null, 2));
     await writeFile(join(artifactDir, "console.log"), consoleMessages.join("\n"));
 
     let stoppedByUser = false;

@@ -14,7 +14,7 @@
     "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check",
     "ui:harness": "bun scripts/ui-harness.ts",
     "ui:manual": "bun scripts/ui-harness.ts --scenario manual --headed --keep",
-    "test:web-perf": "bun scripts/ui-harness.ts --scenario streaming-responsiveness"
+    "test:web-perf": "bun scripts/ui-harness.ts --scenario all"
   },
   "devDependencies": {
     "@types/bun": "latest",

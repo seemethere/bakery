@@ -30,6 +30,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - The left workspace/session sidebar is now collapsible, with state persisted in local storage and compatible grid sizing when the right inspector is also collapsed.
 - Assistant Markdown, assistant/user image content parts, and tool-result image content now render safe inline images (`http(s)`, `file`, app-relative, and base64 `data:image/png|jpeg|gif|webp`); tool cards containing rendered images stay open by default, and the fake-agent runner can emit a sample inline PNG when prompts mention images/screenshots for visual validation.
 - Prompt composer now supports image attachments for new prompts via paste, drag/drop, or file picker, with thumbnails/removal before send; attached images are sent over the WebSocket prompt message into `AgentSession.prompt(..., { images })` and render back in the transcript. After send, attachment thumbnails clear immediately, and image-only sends use a default inspection prompt.
+- Expanded `bun run test:web-perf` into an all-scenarios fake-agent suite covering streaming responsiveness, inspector Details/Preview, slash commands, tree/fork/navigation, reconnect/controller handoff, and narrow tool-heavy streams. Harness metrics now include Chromium long-task samples plus app-exported render/patch timing via `window.__piWebPerf`; fake-agent sessions now persist enough JSONL tree data to exercise tree navigation and fork flows.
 
 ## How to run
 
@@ -57,16 +58,16 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after fixing prompt attachment clearing. Latest harness scenario: `streaming-responsiveness`; artifacts at `test-results/ui-harness/streaming-responsiveness-2026-04-26T18-16-52-617Z`. Targeted image checks also passed with screenshot artifacts at `test-results/ui-harness/image-rendering-manual-2026-04-26T17-58-30Z` and `test-results/ui-harness/prompt-image-attach-manual-2026-04-26T18-13-23Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after expanding the fake-agent browser suite. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `narrow-tool-stream`); artifacts at `test-results/ui-harness/all-2026-04-26T18-21-47-453Z`. A targeted `slash-commands` run also passed with artifacts at `test-results/ui-harness/slash-commands-2026-04-26T18-21-43-752Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
-1. Expand the Playwright UI harness scenarios for inspector Details/Preview, slash commands, tree/fork/navigation, reconnect, controller handoff, narrow widths, and tool-heavy fake streams.
-2. Add richer browser-side performance metrics to the harness, especially `PerformanceObserver` long-task counts/durations and render/patch timing exported through `window.__piWebPerf`.
-3. Continue performance work by moving transcript rows into dedicated custom elements or DOM nodes so live assistant text can update textContent without reparsing/replacing row HTML.
-4. Manually spot-check real-model streaming after harness changes; current browser page needs refresh to pick up frontend changes, backend needs restart for `PI_WEB_FAKE_AGENT`/server changes.
-5. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
-6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+1. Continue performance work by moving transcript rows into dedicated custom elements or DOM nodes so live assistant text can update textContent without reparsing/replacing row HTML; use the new `window.__piWebPerf` metrics to compare before/after.
+2. Add thresholds/regression reporting around long-task counts/durations and render/patch timings now collected by the harness.
+3. Manually spot-check real-model streaming after harness changes; current browser page needs refresh to pick up frontend changes, backend needs restart for `PI_WEB_FAKE_AGENT`/server changes.
+4. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
+5. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+6. Add more focused harness coverage for image attachment edge cases, file autocomplete, model/thinking selectors, copy buttons/clipboard fallbacks, and mobile breakpoints.
 7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
