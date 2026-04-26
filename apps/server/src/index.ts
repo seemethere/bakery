@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { relative, resolve, sep } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import {
@@ -9,6 +9,7 @@ import {
   commandQuerySchema,
   createSessionRequestSchema,
   fileCompleteQuerySchema,
+  fileRawQuerySchema,
   fileSearchQuerySchema,
   forkSessionRequestSchema,
   navigateTreeRequestSchema,
@@ -334,6 +335,48 @@ app.get<{ Params: { id: string }; Querystring: { prefix?: string; limit?: string
   if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
   const files = await completeFiles(session.cwd, parsed.data.prefix, parsed.data.limit);
   return { prefix: parsed.data.prefix, files };
+});
+
+const imageMimeTypes = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+  [".svg", "image/svg+xml"],
+]);
+
+function extensionOf(path: string): string {
+  const match = /\.([a-z0-9]+)$/i.exec(path);
+  return match ? `.${match[1]!.toLowerCase()}` : "";
+}
+
+async function resolveSessionFile(cwd: string, relativePath: string): Promise<string> {
+  if (relativePath.includes("\0")) throw new Error("invalid path");
+  const cwdReal = await realpath(cwd);
+  const candidate = await realpath(resolve(cwdReal, relativePath));
+  const rel = relative(cwdReal, candidate);
+  if (rel.startsWith("..") || rel === ".." || rel.includes(`..${sep}`) || resolve(rel) === rel) throw new Error("path is outside session workspace");
+  return candidate;
+}
+
+app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/api/sessions/:id/files/raw", async (request, reply) => {
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  const parsed = fileRawQuerySchema.safeParse(request.query);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  const mime = imageMimeTypes.get(extensionOf(parsed.data.path));
+  if (!mime) return reply.code(415).send({ error: "only image previews are supported" });
+  try {
+    const file = await resolveSessionFile(session.cwd, parsed.data.path);
+    const info = await stat(file);
+    if (!info.isFile()) return reply.code(404).send({ error: "file not found" });
+    if (info.size > 20 * 1024 * 1024) return reply.code(413).send({ error: "file too large to preview" });
+    reply.header("Cache-Control", "private, max-age=30");
+    return reply.type(mime).send(await readFile(file));
+  } catch (error) {
+    return reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {

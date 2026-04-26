@@ -1133,6 +1133,11 @@ pre {
 
 .rendered-image {
   margin: 0;
+  cursor: zoom-in;
+}
+
+.rendered-image.expanded {
+  cursor: zoom-out;
 }
 
 .rendered-image img {
@@ -1145,10 +1150,62 @@ pre {
   object-fit: contain;
 }
 
+.rendered-image.expanded img {
+  width: 100%;
+  max-height: min(72vh, 900px);
+}
+
 .rendered-image figcaption {
   margin-top: 6px;
   color: #8b94a7;
   font-size: 12px;
+}
+
+.artifact-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.artifact-image {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  border: 1px solid #343b49;
+  border-radius: 8px;
+  background: rgba(15, 17, 23, 0.55);
+  padding: 8px;
+  cursor: zoom-in;
+}
+
+.artifact-image.expanded {
+  grid-column: 1 / -1;
+  cursor: zoom-out;
+}
+
+.artifact-image img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+  background: #0f1117;
+  object-fit: contain;
+}
+
+.artifact-image.expanded img {
+  max-height: min(72vh, 900px);
+}
+
+.artifact-image figcaption {
+  overflow: hidden;
+  color: #9aa4b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .right-panel {

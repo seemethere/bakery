@@ -113,6 +113,11 @@ export const fileCompleteResponseSchema = z.object({
 });
 export type FileCompleteResponse = z.infer<typeof fileCompleteResponseSchema>;
 
+export const fileRawQuerySchema = z.object({
+  path: z.string().min(1).max(1000),
+});
+export type FileRawQuery = z.infer<typeof fileRawQuerySchema>;
+
 export const commandSourceSchema = z.enum(["builtin", "extension", "prompt", "skill"]);
 export type CommandSource = z.infer<typeof commandSourceSchema>;
 

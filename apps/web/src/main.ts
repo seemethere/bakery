@@ -22,6 +22,12 @@ type TranscriptItem = {
   raw?: unknown;
 };
 
+type RenderContext = {
+  cache?: Map<string, string> | undefined;
+  localImageUrl?: ((path: string) => string | null) | undefined;
+  suppressLocalImageArtifactPaths?: Set<string> | undefined;
+};
+
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork";
 
@@ -179,6 +185,34 @@ function renderMarkdown(value: string): string {
   return marked.parse(value, { async: false, gfm: true, breaks: false, renderer: markdownRenderer });
 }
 
+const localImagePathPattern = /(?:^|[\s([{"'`])((?:\.{1,2}\/)?(?:[\w@.+-]+\/)+[\w@.+-]+\.(?:png|jpe?g|gif|webp|svg))(?![\w.-])/gi;
+
+function localImageArtifacts(text: string, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths = new Set<string>()): Array<{ path: string; url: string }> {
+  if (!localImageUrl) return [];
+  const seen = new Set<string>();
+  const artifacts: Array<{ path: string; url: string }> = [];
+  for (const match of text.matchAll(localImagePathPattern)) {
+    const path = match[1]?.replace(/^\.\//, "");
+    if (!path || path.includes("...") || path.includes("…") || seen.has(path) || suppressedPaths.has(path)) continue;
+    const url = localImageUrl(path);
+    if (!url) continue;
+    seen.add(path);
+    artifacts.push({ path, url });
+    if (artifacts.length >= 12) break;
+  }
+  return artifacts;
+}
+
+function renderLocalImageArtifacts(text: string, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths?: Set<string>): string {
+  const artifacts = localImageArtifacts(text, localImageUrl, suppressedPaths);
+  if (artifacts.length === 0) return "";
+  return `<div class="artifact-image-grid">${artifacts.map((artifact) => `
+    <figure class="artifact-image">
+      <img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.path)}" loading="lazy" onerror="this.closest('figure')?.remove()" />
+      <figcaption title="${escapeHtml(artifact.path)}">${escapeHtml(artifact.path)}</figcaption>
+    </figure>`).join("")}</div>`;
+}
+
 function looksLikeHtml(value: string): boolean {
   return /^\s*(?:<!doctype\s+html|<html[\s>]|<body[\s>]|<article[\s>]|<section[\s>]|<div[\s>])/i.test(value);
 }
@@ -289,6 +323,22 @@ function itemHasRenderedImage(item: TranscriptItem): boolean {
   return Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
 }
 
+function localImageArtifactPaths(item: TranscriptItem, localImageUrl?: RenderContext["localImageUrl"]): Set<string> {
+  const paths = new Set<string>();
+  if (!localImageUrl) return paths;
+  for (const segment of item.segments?.length ? item.segments : [{ kind: "pre", text: item.body } satisfies TranscriptSegment]) {
+    if (!("text" in segment)) continue;
+    for (const artifact of localImageArtifacts(segment.text, localImageUrl)) paths.add(artifact.path);
+  }
+  return paths;
+}
+
+function itemHasLocalImageArtifacts(item: TranscriptItem, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths?: Set<string>): boolean {
+  if (!localImageUrl) return false;
+  return Boolean((item.segments?.length ? item.segments : [{ kind: "pre", text: item.body } satisfies TranscriptSegment])
+    .some((segment) => "text" in segment && localImageArtifacts(segment.text, localImageUrl, suppressedPaths).length > 0));
+}
+
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
@@ -301,9 +351,10 @@ function compactToolSummary(item: TranscriptItem): string {
   return normalized.length > 140 ? `${normalized.slice(0, 137)}…` : normalized;
 }
 
-function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, cache?: Map<string, string>): string {
-  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}`;
-  const cached = cache?.get(cacheKey);
+function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, context: RenderContext = {}): string {
+  const suppressedKey = context.suppressLocalImageArtifactPaths ? Array.from(context.suppressLocalImageArtifactPaths).join("|") : "";
+  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}:${context.localImageUrl ? "assets" : ""}:${suppressedKey}`;
+  const cached = context.cache?.get(cacheKey);
   if (cached !== undefined) return cached;
 
   const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
@@ -312,7 +363,7 @@ function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, c
     .map((segment) => {
       if (segment.kind === "markdown") {
         if (usePlainStreamingText) return `<div class="markdown-body streaming-plain"><pre>${escapeHtml(segment.text)}</pre></div>`;
-        return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
+        return `<div class="markdown-body">${renderMarkdown(segment.text)}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}</div>`;
       }
       if (segment.kind === "thinking") {
         const content = showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
@@ -324,12 +375,12 @@ function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, c
           ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
-      return `<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>`;
+      return `<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
     })
     .join("");
-  if (cache) {
-    if (cache.size > 300) cache.clear();
-    cache.set(cacheKey, rendered);
+  if (context.cache) {
+    if (context.cache.size > 300) context.cache.clear();
+    context.cache.set(cacheKey, rendered);
   }
   return rendered;
 }
@@ -346,8 +397,15 @@ class PiTranscriptRow extends HTMLElement {
 
   connectedCallback(): void {
     this.addEventListener("click", (event) => {
-      if ((event.target as HTMLElement | null)?.closest(".message-action-area")) return;
-      if ((event.target as HTMLElement | null)?.closest(".message-header") && this.isCollapsible()) {
+      const target = event.target as HTMLElement | null;
+      const expandableImage = target?.closest<HTMLElement>(".artifact-image, .rendered-image");
+      if (expandableImage) {
+        event.stopImmediatePropagation();
+        expandableImage.classList.toggle("expanded");
+        return;
+      }
+      if (target?.closest(".message-action-area")) return;
+      if (target?.closest(".message-header") && this.isCollapsible()) {
         event.stopImmediatePropagation();
         this.collapsed = !this.collapsed;
         if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork });
@@ -356,7 +414,7 @@ class PiTranscriptRow extends HTMLElement {
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; cache?: Map<string, string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
     const previous = this.item;
     const wasSelected = this.selected;
@@ -366,7 +424,7 @@ class PiTranscriptRow extends HTMLElement {
     this.actionMenuOpen = options.actionMenuOpen ?? false;
     this.canFork = options.canFork ?? false;
     const isCollapsible = this.isCollapsible();
-    const defaultOpen = item.status === "running" || item.status === "error" || options.selected || itemHasRenderedImage(item);
+    const defaultOpen = item.status === "running" || item.status === "error" || options.selected || itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
     if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
     if (options.selected && !wasSelected) this.collapsed = false;
@@ -396,7 +454,7 @@ class PiTranscriptRow extends HTMLElement {
           ${this.actionMenuOpen ? this.renderActionMenu(item) : ""}
         </span>
       </div>
-      <div class="message-body">${renderTranscriptSegments(item, this.showThinking, options.cache)}</div>`;
+      <div class="message-body">${renderTranscriptSegments(item, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths })}</div>`;
     this.pinRunningToolOutputToBottom(item);
     this.lastRenderKey = renderKey;
     this.lastStreamingText = streamingText ?? "";
@@ -536,6 +594,16 @@ class PiWebAgentApp extends HTMLElement {
 
   private headers(): HeadersInit {
     return this.token ? { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+  }
+
+  private localImageUrl(path: string): string | null {
+    if (!this.selectedSession) return null;
+    const normalized = path.replace(/^\.\//, "");
+    if (!/^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return null;
+    const url = new URL(`${this.apiBase}/api/sessions/${this.selectedSession.id}/files/raw`);
+    url.searchParams.set("path", normalized);
+    if (this.token) url.searchParams.set("token", this.token);
+    return url.toString();
   }
 
   private async api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1727,7 +1795,7 @@ class PiWebAgentApp extends HTMLElement {
       return `<iframe class="preview-frame" sandbox srcdoc="${escapeHtml(body)}"></iframe>`;
     }
     if (item.kind === "assistant" || item.kind === "user") {
-      return `<div class="preview-markdown markdown-body">${renderTranscriptSegments(item, this.showThinking, this.renderedSegmentCache)}</div>`;
+      return `<div class="preview-markdown markdown-body">${renderTranscriptSegments(item, this.showThinking, { cache: this.renderedSegmentCache, localImageUrl: (path) => this.localImageUrl(path) })}</div>`;
     }
     if (looksLikeMarkdown(body)) {
       return `<div class="preview-markdown markdown-body">${renderMarkdown(body)}</div>`;
@@ -1818,12 +1886,18 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
+    const suppressedArtifactPaths = new Set<string>();
+    for (const candidate of this.transcript.slice(0, this.transcript.findIndex((entry) => entry.id === item.id))) {
+      for (const path of localImageArtifactPaths(candidate, (candidatePath) => this.localImageUrl(candidatePath))) suppressedArtifactPaths.add(path);
+    }
     row.setState(item, {
       showThinking: this.showThinking,
       selected: item.id === this.selectedTranscriptId,
       actionMenuOpen: item.id === this.openActionMenuId,
       canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
       cache: this.renderedSegmentCache,
+      localImageUrl: (path) => this.localImageUrl(path),
+      suppressLocalImageArtifactPaths: suppressedArtifactPaths,
     });
   }
 

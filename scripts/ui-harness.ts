@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
+  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -389,6 +389,23 @@ async function runImageAttachments(page: Page): Promise<Record<string, unknown>>
   return collectMetrics(page);
 }
 
+async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please list a local image artifact path for screenshot path rendering validation.");
+  const image = page.locator(".artifact-image img").first();
+  await image.waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => {
+    const img = document.querySelector<HTMLImageElement>(".artifact-image img");
+    return Boolean(img?.complete && img.naturalWidth > 0);
+  });
+  await page.locator(".artifact-image figcaption", { hasText: "screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
+  await image.click();
+  await page.locator(".artifact-image.expanded img").waitFor({ timeout: 5_000 });
+  await image.click();
+  await page.waitForFunction(() => !document.querySelector(".artifact-image")?.classList.contains("expanded"));
+  return collectMetrics(page);
+}
+
 async function runModelThinking(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#model").selectOption("fake/slow");
@@ -450,6 +467,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
+  if (name === "image-artifact-paths") return runImageArtifactPaths(page);
   if (name === "model-thinking") return runModelThinking(page);
   throw new Error(`Unknown scenario: ${name}`);
 }
@@ -472,9 +490,11 @@ async function main(): Promise<void> {
   await writeFile(join(artifactDir, "fixture.png"), Buffer.from(fixturePngBase64, "base64"));
   await mkdir(join(workspace, "src", "components"), { recursive: true });
   await mkdir(join(workspace, "docs"), { recursive: true });
+  await mkdir(join(workspace, "screenshots"), { recursive: true });
   await writeFile(join(workspace, "README.md"), "# Temporary pi-web-agent UI harness workspace\n", "utf8");
   await writeFile(join(workspace, "src", "components", "Button.ts"), "export const Button = 'fake harness fixture';\n", "utf8");
   await writeFile(join(workspace, "docs", "guide.md"), "# Harness Guide\n", "utf8");
+  await writeFile(join(workspace, "screenshots", "fixture.png"), Buffer.from(fixturePngBase64, "base64"));
 
   const serverEnv = {
     PI_WEB_HOST: "127.0.0.1",
