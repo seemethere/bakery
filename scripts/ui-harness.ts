@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "model-thinking"]
+  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -406,6 +406,22 @@ async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown
   return collectMetrics(page);
 }
 
+async function runRepeatedImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const prompt = "Please list a local image artifact path for repeated screenshot path rendering validation.";
+  await sendPromptAndWaitIdle(page, prompt);
+  await page.locator(".artifact-image img").first().waitFor({ timeout: 5_000 });
+  await sendPromptAndWaitIdle(page, prompt);
+  await page.waitForFunction(() => document.querySelectorAll(".artifact-image img").length >= 2, null, { timeout: 5_000 });
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
+    return images.length >= 2 && images.every((img) => img.complete && img.naturalWidth > 0);
+  }, null, { timeout: 5_000 });
+  const captions = await page.locator(".artifact-image figcaption", { hasText: "screenshots/fixture.png" }).count();
+  if (captions < 2) throw new Error(`Expected repeated artifact path to render at least twice, saw ${captions} captions`);
+  return { artifactImages: await page.locator(".artifact-image img").count(), captions, ...(await collectMetrics(page)) };
+}
+
 async function runModelThinking(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#model").selectOption("fake/slow");
@@ -468,6 +484,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
   if (name === "image-artifact-paths") return runImageArtifactPaths(page);
+  if (name === "repeated-image-artifact-paths") return runRepeatedImageArtifactPaths(page);
   if (name === "model-thinking") return runModelThinking(page);
   throw new Error(`Unknown scenario: ${name}`);
 }
