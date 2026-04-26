@@ -1,11 +1,11 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { CommandInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
-import type { BuiltinCommandResult, CreateSessionOptions, PiSessionRunner, SessionHandle } from "./pi-runner.js";
+import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Listener = (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void;
-type FakeMessage = { id: string; role: "user" | "assistant"; timestamp: string; content: string };
+type FakeMessage = { id: string; role: "user" | "assistant"; timestamp: string; content: string | ({ type: "text"; text: string } | ImageContent)[] };
 
 function normalize(event: Record<string, unknown>): NormalizedAgentEvent {
   return { type: String(event.type ?? "event"), time: new Date().toISOString(), data: event };
@@ -71,9 +71,10 @@ class FakeSessionHandle implements SessionHandle {
     };
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, images?: ImageContent[]): Promise<void> {
     const now = new Date().toISOString();
-    const user: FakeMessage = { id: crypto.randomUUID(), role: "user", timestamp: now, content: text };
+    const userContent = images?.length ? [{ type: "text" as const, text }, ...images] : text;
+    const user: FakeMessage = { id: crypto.randomUUID(), role: "user", timestamp: now, content: userContent };
     this.messages.push(user);
     this.emit({ type: "message_end", message: user });
 

@@ -9,6 +9,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 
+export type ImageContent = { type: "image"; data: string; mimeType: string };
+
 export type CreateSessionOptions = {
   id: string;
   cwd: string;
@@ -27,7 +29,7 @@ export type SessionHandle = {
   cwd: string;
   sessionFile: string;
   session: AgentSession;
-  prompt(text: string): Promise<void>;
+  prompt(text: string, images?: ImageContent[]): Promise<void>;
   steer(text: string): Promise<void>;
   followUp(text: string): Promise<void>;
   abort(): Promise<void>;
@@ -130,8 +132,8 @@ class InProcessSessionHandle implements SessionHandle {
     private readonly modelPolicy: ModelPolicy,
   ) {}
 
-  async prompt(text: string): Promise<void> {
-    await this.session.prompt(text);
+  async prompt(text: string, images?: ImageContent[]): Promise<void> {
+    await this.session.prompt(text, images?.length ? { images } : undefined);
   }
 
   async steer(text: string): Promise<void> {

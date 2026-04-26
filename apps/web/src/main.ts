@@ -43,6 +43,18 @@ type CommandAutocompleteState = {
   loading: boolean;
 };
 
+type PromptImage = {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  size: number;
+};
+
+const supportedPromptImageTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]);
+const maxPromptImages = 4;
+const maxPromptImageBytes = 8 * 1024 * 1024;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -247,6 +259,7 @@ class PiWebAgentApp extends HTMLElement {
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private transcriptScrollTop = 0;
   private promptDraft = "";
+  private promptImages: PromptImage[] = [];
   private fileAutocomplete: FileAutocompleteState = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
   private fileAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private fileAutocompleteRequest = 0;
@@ -567,6 +580,11 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = input?.value.trim();
     if (!input || !text) return;
+    if (this.promptImages.length > 0 && type !== "prompt") {
+      this.notice = "Image attachments can be sent with a new prompt while the agent is idle.";
+      this.render();
+      return;
+    }
     if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
       this.promptDraft = "";
       this.closeFileAutocomplete();
@@ -576,8 +594,10 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({ type, text }));
+    const images = type === "prompt" && this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
+    this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
     this.promptDraft = "";
+    this.promptImages = [];
     this.closeFileAutocomplete();
     this.closeCommandAutocomplete();
     input.value = "";
@@ -586,6 +606,43 @@ class PiWebAgentApp extends HTMLElement {
   private sendFromInput(followUp = false): void {
     if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
     else this.sendClientMessage("prompt");
+  }
+
+  private async addPromptImageFiles(files: FileList | File[]): Promise<void> {
+    const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    if (incoming.length === 0) return;
+    const added: PromptImage[] = [];
+    for (const file of incoming) {
+      if (this.promptImages.length + added.length >= maxPromptImages) {
+        this.notice = `Only ${maxPromptImages} images can be attached to one prompt.`;
+        break;
+      }
+      if (!supportedPromptImageTypes.has(file.type)) {
+        this.notice = `Unsupported image type: ${file.type || file.name}`;
+        continue;
+      }
+      if (file.size > maxPromptImageBytes) {
+        this.notice = `${file.name} is larger than 8 MB.`;
+        continue;
+      }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+        reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image")));
+        reader.readAsDataURL(file);
+      });
+      added.push({ id: crypto.randomUUID(), name: file.name || "pasted-image", mimeType: file.type, dataUrl, size: file.size });
+    }
+    if (added.length > 0) {
+      this.promptImages = [...this.promptImages, ...added];
+      this.notice = "";
+    }
+    this.render();
+  }
+
+  private removePromptImage(id: string): void {
+    this.promptImages = this.promptImages.filter((image) => image.id !== id);
+    this.render();
   }
 
   private abort(): void {
@@ -819,7 +876,36 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
+    this.querySelector<HTMLInputElement>("#imageInput")?.addEventListener("change", (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      void this.addPromptImageFiles(input.files ?? []);
+      input.value = "";
+    });
+    this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.querySelector<HTMLInputElement>("#imageInput")?.click());
+    this.querySelectorAll<HTMLButtonElement>("[data-remove-image-id]").forEach((button) => {
+      button.addEventListener("click", () => this.removePromptImage(button.dataset.removeImageId ?? ""));
+    });
+    this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("dragover", (event) => {
+      if (Array.from(event.dataTransfer?.items ?? []).some((item) => item.type.startsWith("image/"))) {
+        event.preventDefault();
+        (event.currentTarget as HTMLElement).classList.add("dragging-image");
+      }
+    });
+    this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("dragleave", (event) => {
+      (event.currentTarget as HTMLElement).classList.remove("dragging-image");
+    });
+    this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("drop", (event) => {
+      const files = event.dataTransfer?.files;
+      if (!files || !Array.from(files).some((file) => file.type.startsWith("image/"))) return;
+      event.preventDefault();
+      (event.currentTarget as HTMLElement).classList.remove("dragging-image");
+      void this.addPromptImageFiles(files);
+    });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
+    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("paste", (event) => {
+      const files = event.clipboardData?.files;
+      if (files && Array.from(files).some((file) => file.type.startsWith("image/"))) void this.addPromptImageFiles(files);
+    });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
       window.setTimeout(() => {
         const focused = this.querySelector(":focus");
@@ -983,6 +1069,19 @@ class PiWebAgentApp extends HTMLElement {
             <span>${file.type === "directory" ? "📁" : "📄"}</span>
             <strong>${escapeHtml(file.path)}${file.type === "directory" ? "/" : ""}</strong>
           </button>`).join("")}
+      </div>`;
+  }
+
+  private renderPromptImages(): string {
+    if (this.promptImages.length === 0) return "";
+    return `
+      <div class="prompt-images" aria-label="Attached prompt images">
+        ${this.promptImages.map((image) => `
+          <figure class="prompt-image">
+            <img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name)}" />
+            <figcaption title="${escapeHtml(image.name)}">${escapeHtml(image.name)}</figcaption>
+            <button type="button" data-remove-image-id="${escapeHtml(image.id)}" aria-label="Remove ${escapeHtml(image.name)}">×</button>
+          </figure>`).join("")}
       </div>`;
   }
 
@@ -1279,11 +1378,14 @@ class PiWebAgentApp extends HTMLElement {
         <section class="transcript">${this.renderTranscript()}</section>
         <footer>
           <div class="prompt-shell">
-            <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up). Type / for commands or @ for files." : "Prompt pi... Type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            ${this.renderPromptImages()}
+            <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up). Type / for commands or @ for files." : "Prompt pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            <input id="imageInput" class="hidden-file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple />
             ${this.renderCommandAutocomplete()}
             ${this.renderFileAutocomplete()}
           </div>
           <div class="controls">
+            <button id="attachImages" title="Attach images" aria-label="Attach images" ${isController && !isRunning ? "" : "disabled"}>📎</button>
             <button id="send" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}</button>
             <button id="followUp" class="${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up</button>
             <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>

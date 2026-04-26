@@ -25,7 +25,7 @@ import { loadConfig } from "./config.js";
 import { MetadataStore } from "./metadata-store.js";
 import { completeFiles, searchFiles } from "./file-search.js";
 import { FakePiSessionRunner } from "./fake-runner.js";
-import { InProcessPiSessionRunner } from "./pi-runner.js";
+import { InProcessPiSessionRunner, type ImageContent } from "./pi-runner.js";
 import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
 
 const config = loadConfig();
@@ -40,6 +40,12 @@ await app.register(websocket);
 
 function isLocalhost(ip: string): boolean {
   return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
+function dataUrlToImageContent(value: string): ImageContent {
+  const match = /^data:(image\/(?:png|jpe?g|gif|webp));base64,([a-z0-9+/=\s]+)$/i.exec(value);
+  if (!match) throw new Error("Images must be png, jpeg, gif, or webp data URLs");
+  return { type: "image", mimeType: match[1]!.toLowerCase(), data: match[2]!.replace(/\s/g, "") };
 }
 
 app.addHook("onRequest", async (request, reply) => {
@@ -457,7 +463,7 @@ class SessionHub {
         }
         const webSession = store.getSession(this.handle.id);
         if (webSession && !webSession.title) store.updateSession(webSession.id, { title: parsed.data.text.slice(0, 60) });
-        await this.handle.prompt(parsed.data.text);
+        await this.handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
       } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text);
       else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text);
       else if (parsed.data.type === "abort") await this.handle.abort();
