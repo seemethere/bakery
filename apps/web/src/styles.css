@@ -864,6 +864,37 @@ textarea:disabled {
   margin-top: 5px;
 }
 
+.message.tool.done.collapsed.tool-group-start,
+.message.tool.done.collapsed.tool-group-middle,
+.message.tool.done.collapsed.tool-group-end {
+  border-left-color: rgba(128, 151, 120, 0.46);
+  box-shadow: inset 2px 0 0 rgba(128, 151, 120, 0.18);
+}
+
+.message.tool.done.collapsed.tool-group-start {
+  border-bottom-left-radius: 3px;
+  border-bottom-right-radius: 3px;
+}
+
+.message.tool.done.collapsed.tool-group-middle {
+  border-radius: 3px;
+}
+
+.message.tool.done.collapsed.tool-group-end {
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
+
+.message.tool.done.collapsed.tool-group-middle,
+.message.tool.done.collapsed.tool-group-end {
+  margin-top: 2px;
+}
+
+.message.tool.done.collapsed.tool-group-middle .message-status,
+.message.tool.done.collapsed.tool-group-end .message-status {
+  visibility: hidden;
+}
+
 .message.tool.done.collapsed .message-header {
   min-height: 27px;
   padding: 4px 8px;

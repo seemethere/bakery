@@ -30,6 +30,7 @@ type RenderContext = {
 
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork";
+type ToolGroupPosition = "single" | "start" | "middle" | "end";
 
 type FileAutocompleteState = {
   active: boolean;
@@ -329,6 +330,38 @@ function itemHasLocalImageArtifacts(item: TranscriptItem, localImageUrl?: Render
     .some((segment) => "text" in segment && localImageArtifacts(segment.text, localImageUrl, suppressedPaths).length > 0));
 }
 
+function isToolCallOnlyAssistant(item: TranscriptItem): boolean {
+  const segments = item.segments;
+  return item.kind === "assistant" && segments !== undefined && segments.length > 0 && segments.every((segment) => segment.kind === "toolCall" || segment.kind === "thinking");
+}
+
+function toolCallLabelToTitle(label: string): string {
+  const clean = label.replace(/^↳\s*/, "").trim();
+  const bash = clean.match(/^bash\s+(.+)$/s);
+  if (bash) return `$ ${bash[1]?.trim() ?? "bash"}`;
+  return clean || label;
+}
+
+function compactSnapshotTranscript(items: TranscriptItem[]): TranscriptItem[] {
+  const compacted: TranscriptItem[] = [];
+  const pendingToolCallTitles: string[] = [];
+  for (const item of items) {
+    if (isToolCallOnlyAssistant(item)) {
+      pendingToolCallTitles.push(...(item.segments ?? [])
+        .filter((segment): segment is Extract<TranscriptSegment, { kind: "toolCall" }> => segment.kind === "toolCall")
+        .map((segment) => toolCallLabelToTitle(segment.label)));
+      continue;
+    }
+    if (item.kind === "tool" && pendingToolCallTitles.length > 0) {
+      compacted.push({ ...item, title: pendingToolCallTitles.shift() ?? item.title });
+      continue;
+    }
+    pendingToolCallTitles.length = 0;
+    compacted.push(item);
+  }
+  return compacted;
+}
+
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
@@ -390,6 +423,7 @@ class PiTranscriptRow extends HTMLElement {
   private collapsed = false;
   private actionMenuOpen = false;
   private canFork = false;
+  private toolGroupPosition: ToolGroupPosition = "single";
   private lastRenderKey = "";
   private lastStreamingText = "";
 
@@ -412,7 +446,7 @@ class PiTranscriptRow extends HTMLElement {
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
     const previous = this.item;
     const wasSelected = this.selected;
@@ -421,6 +455,7 @@ class PiTranscriptRow extends HTMLElement {
     this.selected = options.selected;
     this.actionMenuOpen = options.actionMenuOpen ?? false;
     this.canFork = options.canFork ?? false;
+    this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
     const defaultOpen = item.status === "running" || item.status === "error" || options.selected || itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
@@ -433,7 +468,7 @@ class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${streamingText !== null ? "streaming" : item.body}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -483,7 +518,8 @@ class PiTranscriptRow extends HTMLElement {
 
   private classNames(): string {
     if (!this.item) return "message";
-    return ["message", this.item.kind, this.item.status ?? "", this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    const groupClass = this.item.kind === "tool" && this.item.status === "done" ? `tool-group-${this.toolGroupPosition}` : "";
+    return ["message", this.item.kind, this.item.status ?? "", groupClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {
@@ -615,7 +651,12 @@ class PiWebAgentApp extends HTMLElement {
     const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
     if (index === -1) this.transcript.push(item);
     else this.transcript[index] = { ...this.transcript[index], ...item };
+    const nextIndex = index === -1 ? this.transcript.length - 1 : index;
     this.dirtyTranscriptIds.add(item.id);
+    const previous = this.transcript[nextIndex - 1];
+    const next = this.transcript[nextIndex + 1];
+    if (previous?.kind === "tool") this.dirtyTranscriptIds.add(previous.id);
+    if (next?.kind === "tool") this.dirtyTranscriptIds.add(next.id);
     if (!this.autoScroll) this.unreadTranscriptIds.add(item.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(item.id, false);
   }
@@ -790,7 +831,7 @@ class PiWebAgentApp extends HTMLElement {
     this.sessions = this.sessions.map((session) => session.id === snapshot.session.id ? snapshot.session : session);
     this.controller = snapshot.controller ?? this.controller;
     this.settings = snapshot.settings ?? this.settings;
-    this.transcript = snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
+    this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
     this.runningQueue = { steering: [], followUp: [] };
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     this.unreadTranscriptIds.clear();
@@ -1883,12 +1924,31 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
+  private isGroupableToolItem(item: TranscriptItem): boolean {
+    return item.kind === "tool"
+      && item.status === "done"
+      && !itemHasRenderedImage(item)
+      && !itemHasLocalImageArtifacts(item, (path) => this.localImageUrl(path));
+  }
+
+  private toolGroupPositionFor(item: TranscriptItem): ToolGroupPosition {
+    const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
+    if (index === -1 || !this.isGroupableToolItem(item)) return "single";
+    const previousGrouped = index > 0 && this.isGroupableToolItem(this.transcript[index - 1]!);
+    const nextGrouped = index < this.transcript.length - 1 && this.isGroupableToolItem(this.transcript[index + 1]!);
+    if (previousGrouped && nextGrouped) return "middle";
+    if (nextGrouped) return "start";
+    if (previousGrouped) return "end";
+    return "single";
+  }
+
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
     row.setState(item, {
       showThinking: this.showThinking,
       selected: item.id === this.selectedTranscriptId,
       actionMenuOpen: item.id === this.openActionMenuId,
       canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
+      toolGroupPosition: this.toolGroupPositionFor(item),
       cache: this.renderedSegmentCache,
       localImageUrl: (path) => this.localImageUrl(path),
     });
