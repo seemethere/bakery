@@ -354,6 +354,16 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await tool.locator(".message-header").click();
   await page.waitForFunction(() => document.querySelector(".message.tool")?.classList.contains("collapsed"));
   await page.locator("#prompt").waitFor({ state: "visible" });
+
+  // Leave this scenario in a screenshot-friendly state: the narrow-width assertions
+  // above are the test, but the full-page artifact is otherwise dominated by
+  // sidebars and does not show the tool activity being validated.
+  await page.setViewportSize({ width: 1180, height: 900 });
+  const leftToggle = page.locator("#toggleSessionSidebar");
+  if (await leftToggle.isVisible().catch(() => false)) await leftToggle.click();
+  const rightToggle = page.locator("#toggleRightPanel");
+  if (await rightToggle.isVisible().catch(() => false)) await rightToggle.click();
+  await page.locator(".message.tool").first().scrollIntoViewIfNeeded();
   return collectMetrics(page);
 }
 
