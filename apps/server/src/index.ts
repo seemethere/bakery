@@ -272,7 +272,6 @@ async function generateModelBackedMetadata(session: WebSession): Promise<Session
   const completionOptions: SimpleStreamOptions = {
     maxTokens: 450,
     signal: abort,
-    temperature: 0.2,
     ...(apiKey ? { apiKey } : {}),
     ...(headers ? { headers } : {}),
     ...(model.reasoning && config.modelPolicy.defaultThinkingLevel !== "off" ? { reasoning: config.modelPolicy.defaultThinkingLevel as ThinkingLevel } : {}),
@@ -438,13 +437,18 @@ app.post<{ Params: { id: string } }>("/api/sessions/:id/metadata/generate", asyn
   if (!session) return reply.code(404).send({ error: "session not found" });
   const handle = runner.getSession(session.id);
   if (handle && (await handle.snapshot(session)).status !== "idle") return reply.code(409).send({ error: "metadata generation is available when the session is idle" });
-  const suggestion = config.fakeAgent ? generateHeuristicMetadata(session) : await generateModelBackedMetadata(session);
-  if (!suggestion.deferred) {
-    const updated = store.updateSession(session.id, { incrementGenerationCount: true });
-    const hub = sessionHubs.get(session.id);
-    if (updated && hub) hub.broadcastMetadataUpdate(updated);
+  try {
+    const suggestion = config.fakeAgent ? generateHeuristicMetadata(session) : await generateModelBackedMetadata(session);
+    if (!suggestion.deferred) {
+      const updated = store.updateSession(session.id, { incrementGenerationCount: true });
+      const hub = sessionHubs.get(session.id);
+      if (updated && hub) hub.broadcastMetadataUpdate(updated);
+    }
+    return suggestion;
+  } catch (error) {
+    request.log.warn({ error }, "metadata generation failed");
+    return reply.code(502).send({ error: error instanceof Error ? error.message : String(error) });
   }
-  return suggestion;
 });
 
 app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
