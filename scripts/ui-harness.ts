@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "reconnect-draft", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
+  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -50,6 +50,10 @@ function stopProcessTree(child: ChildProcessWithoutNullStreams): void {
   } catch {
     child.kill("SIGTERM");
   }
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function waitForUrl(url: string, label: string, timeoutMs = 20_000): Promise<void> {
@@ -235,6 +239,19 @@ async function runReconnectDraft(page: Page): Promise<Record<string, unknown>> {
   return collectMetrics(page);
 }
 
+async function runBackendRestart(page: Page, runtime: { restartServer: () => Promise<void> }): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const draft = `draft survives backend restart ${Date.now()}`;
+  await page.locator("#prompt").fill(draft);
+  await runtime.restartServer();
+  await page.locator(".connection-banner").filter({ hasText: /reconnecting|disconnected|retry/i }).waitFor({ timeout: 8_000 }).catch(() => undefined);
+  await page.locator(".connection-banner.connected", { hasText: "Draft saved locally" }).waitFor({ timeout: 20_000 });
+  await page.waitForFunction((expected) => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === expected, draft);
+  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
+  await sendPromptAndWaitIdle(page, "Confirm the session is usable after backend restart while preserving my draft context.");
+  return collectMetrics(page);
+}
+
 async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 760, height: 900 });
   await prepareSession(page);
@@ -323,7 +340,7 @@ function assertPerfThresholds(name: string, metrics: Record<string, unknown>): v
   if (failures.length > 0) throw new Error(`Performance thresholds exceeded in ${name}: ${failures.join("; ")}`);
 }
 
-async function runScenario(name: string, page: Page, browser: Browser): Promise<Record<string, unknown>> {
+async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void> }): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
@@ -331,6 +348,7 @@ async function runScenario(name: string, page: Page, browser: Browser): Promise<
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
   if (name === "reconnect-controller") return runReconnectController(page);
   if (name === "reconnect-draft") return runReconnectDraft(page);
+  if (name === "backend-restart") return runBackendRestart(page, runtime);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
@@ -360,19 +378,26 @@ async function main(): Promise<void> {
   await writeFile(join(workspace, "src", "components", "Button.ts"), "export const Button = 'fake harness fixture';\n", "utf8");
   await writeFile(join(workspace, "docs", "guide.md"), "# Harness Guide\n", "utf8");
 
-  const server = spawnLogged("server", "bun", ["run", "dev:server"], {
-    cwd: root,
-    env: {
-      PI_WEB_HOST: "127.0.0.1",
-      PI_WEB_PORT: String(serverPort),
-      PI_WEB_WORKSPACE_ROOT: workspace,
-      PI_WEB_DATA_DIR: dataDir,
-      PI_WEB_FAKE_AGENT: "1",
-      PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
-      PI_WEB_LOAD_PROJECT_RESOURCES: "false",
-    },
-  });
+  const serverEnv = {
+    PI_WEB_HOST: "127.0.0.1",
+    PI_WEB_PORT: String(serverPort),
+    PI_WEB_WORKSPACE_ROOT: workspace,
+    PI_WEB_DATA_DIR: dataDir,
+    PI_WEB_FAKE_AGENT: "1",
+    PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
+    PI_WEB_LOAD_PROJECT_RESOURCES: "false",
+  };
+  const startServer = () => spawnLogged("server", "bun", ["run", "dev:server"], { cwd: root, env: serverEnv });
+  let server = startServer();
   const web = spawnLogged("web", "bun", ["x", "vite", "--host", "127.0.0.1", "--port", String(webPort)], { cwd: resolve(root, "apps/web") });
+  const runtime = {
+    restartServer: async () => {
+      stopProcessTree(server);
+      await delay(900);
+      server = startServer();
+      await waitForUrl(`${apiBase}/healthz`, "restarted server", 20_000);
+    },
+  };
 
   let browser: Browser | undefined;
   const consoleMessages: string[] = [];
@@ -401,7 +426,7 @@ async function main(): Promise<void> {
 
     const metrics: Record<string, unknown> = {};
     for (const name of scenarios) {
-      metrics[name] = await runScenario(name, page, browser);
+      metrics[name] = await runScenario(name, page, browser, runtime);
       assertPerfThresholds(name, metrics[name] as Record<string, unknown>);
       await page.screenshot({ path: join(artifactDir, `${name}.png`), fullPage: true });
       await page.setViewportSize({ width: 1440, height: 1000 });
