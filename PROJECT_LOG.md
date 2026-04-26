@@ -37,7 +37,7 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after fixing transcript layout so messages no longer flex-shrink/collapse and auto-scroll follows the latest message.
+Latest: `bun run check` passes after fixing transcript layout/auto-scroll and collapsing completed tool/system messages to keep long chats readable.
 
 ## Next priorities
 

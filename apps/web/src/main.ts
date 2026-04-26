@@ -337,13 +337,23 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderTranscript(): string {
     return this.transcript
-      .map(
-        (item) => `
+      .map((item) => {
+        const status = item.status ? `<span>${escapeHtml(item.status)}</span>` : "";
+        const isCollapsible = item.kind === "tool" || item.kind === "system";
+        const isOpen = item.status === "running" || item.status === "error";
+        if (isCollapsible) {
+          return `
+            <details class="message ${item.kind} ${item.status ?? ""}" ${isOpen ? "open" : ""}>
+              <summary class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</summary>
+              <pre>${escapeHtml(item.body)}</pre>
+            </details>`;
+        }
+        return `
           <article class="message ${item.kind} ${item.status ?? ""}">
-            <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${item.status ? `<span>${escapeHtml(item.status)}</span>` : ""}</div>
+            <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</div>
             <pre>${escapeHtml(item.body)}</pre>
-          </article>`,
-      )
+          </article>`;
+      })
       .join("");
   }
 
