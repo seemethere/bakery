@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
+  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -257,7 +257,9 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
 
   const before = await page.evaluate(() => {
     const transcript = document.querySelector(".transcript") as HTMLElement;
-    transcript.scrollTop = Math.max(0, Math.floor(transcript.scrollHeight * 0.25));
+    const maxScrollTop = Math.max(0, transcript.scrollHeight - transcript.clientHeight);
+    transcript.scrollTop = Math.max(0, Math.floor(maxScrollTop * 0.25));
+    transcript.dispatchEvent(new Event("scroll", { bubbles: true }));
     return { top: transcript.scrollTop, height: transcript.scrollHeight, clientHeight: transcript.clientHeight };
   });
   await page.locator("#jumpToLatest").waitFor({ timeout: 5_000 });
@@ -276,6 +278,63 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
   }, null, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
   return { before, after, drift, ...(await collectMetrics(page)) };
+}
+
+async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+
+  await sendPromptAndWaitIdle(page, "what's next?");
+  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.placeholder === "New session", null, { timeout: 5_000 });
+
+  await page.locator("#sessionTitle").fill("Manual metadata smoke");
+  await page.locator("#sessionTitle").press("Enter");
+  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Manual metadata smoke", null, { timeout: 5_000 });
+  await page.locator(".session-card.active", { hasText: "Manual metadata smoke" }).waitFor({ timeout: 5_000 });
+
+  await page.locator("#prompt").click();
+  await page.locator("#prompt").fill("/name Canonical slash title");
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "/name Canonical slash title");
+  await page.locator("#send:not([disabled])").click();
+  await page.locator(".message.system", { hasText: "Session title set to: Canonical slash title" }).waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Canonical slash title", null, { timeout: 5_000 });
+
+  await page.locator("#prompt").click();
+  await page.locator("#prompt").fill("/name --clear");
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "/name --clear");
+  await page.locator("#send:not([disabled])").click();
+  await page.locator(".message.system", { hasText: "Session title cleared" }).waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "", null, { timeout: 5_000 });
+  const clearedPlaceholder = await page.locator("#sessionTitle").getAttribute("placeholder");
+  if (clearedPlaceholder !== "New session") throw new Error(`Expected generic cleared session placeholder to be New session, saw ${clearedPlaceholder}`);
+
+  await sendPromptAndWaitIdle(page, "Improve session summaries and title generation with dedicated harness coverage.");
+  await page.locator("#generateMetadata").click();
+  await page.locator(".metadata-suggestion", { hasText: "Suggested metadata" }).waitFor({ timeout: 5_000 });
+  await page.locator(".metadata-suggestion", { hasText: "Title:" }).waitFor({ timeout: 5_000 });
+  if (await page.locator(".metadata-suggestion", { hasText: "Summary:" }).count()) throw new Error("Heuristic metadata should not present fake summaries.");
+  await page.locator('[data-accept-metadata="title"]').click();
+  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value.includes("summaries"), null, { timeout: 5_000 });
+
+  const sessionId = await page.locator(".session-card.active").getAttribute("data-session-id");
+  if (!sessionId) throw new Error("Could not find active session id for summary patch.");
+  const summary = "Manual summary preview from metadata harness. It should appear collapsed in the header and as the session-card snippet.";
+  await page.evaluate(async ({ apiBase, sessionId, summary }) => {
+    const response = await fetch(`${apiBase}/api/sessions/${sessionId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ summary }),
+    });
+    if (!response.ok) throw new Error(`summary patch failed: ${response.status}`);
+    await (document.querySelector("pi-web-agent") as unknown as { refresh(): Promise<void> } | null)?.refresh();
+  }, { apiBase, sessionId, summary });
+  await page.locator("#toggleSessionSummary", { hasText: "Summary — Manual summary preview" }).waitFor({ timeout: 5_000 });
+  await page.locator(".session-card.active .session-snippet", { hasText: "Manual summary preview" }).waitFor({ timeout: 5_000 });
+  await page.locator("#toggleSessionSummary").click();
+  await page.locator(".session-summary-body", { hasText: summary }).waitFor({ timeout: 5_000 });
+  await page.locator("#toggleSessionSummary").click();
+  await page.locator(".session-summary-body").waitFor({ state: "detached", timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "session-metadata.png"), fullPage: true });
+  return collectMetrics(page);
 }
 
 async function runInspectorPreview(page: Page): Promise<Record<string, unknown>> {
@@ -588,6 +647,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
+  if (name === "session-metadata") return runSessionMetadata(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);

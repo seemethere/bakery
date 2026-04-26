@@ -240,7 +240,7 @@ footer {
 
 header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
@@ -248,10 +248,13 @@ header {
 }
 
 .session-identity {
+  position: relative;
+  z-index: 1;
   display: grid;
+  flex: 1 1 auto;
   gap: 3px;
   min-width: 180px;
-  max-width: min(560px, 42vw);
+  max-width: 100%;
 }
 
 .session-identity strong,
@@ -591,6 +594,7 @@ textarea {
 
 .header-status {
   display: flex;
+  flex: 0 1 auto;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -1755,7 +1759,7 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: min(720px, 60vw);
+  max-width: 100%;
   font-size: 12px;
   color: #aeb8ca;
 }

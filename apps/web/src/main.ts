@@ -691,7 +691,14 @@ class PiWebAgentApp extends HTMLElement {
   private dirtyTranscriptIds = new Set<string>();
   private focusPromptOnNextReadyRender = false;
   private renderedSegmentCache = new Map<string, string>();
-  private readonly beforeUnloadHandler = () => this.persistAttachmentWarningIfNeeded();
+  private readonly beforeUnloadHandler = () => {
+    if (this.promptDraftSaveTimer) {
+      clearTimeout(this.promptDraftSaveTimer);
+      this.promptDraftSaveTimer = undefined;
+    }
+    this.savePromptDraft();
+    this.persistAttachmentWarningIfNeeded();
+  };
 
   connectedCallback(): void {
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
@@ -992,8 +999,17 @@ class PiWebAgentApp extends HTMLElement {
     } else if (payload.type === "settings_update") {
       this.settings = payload.settings;
     } else if (payload.type === "session_metadata_update") {
-      this.selectedSession = payload.session;
-      this.sessions = this.sessions.map((session) => session.id === payload.session.id ? payload.session : session);
+      const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
+      if (document.activeElement !== titleInput) this.editingTitleDraft = null;
+      const mergeSessionMetadata = (existing: WebSession | undefined): WebSession => ({
+        ...existing,
+        ...payload.session,
+        lastUserPrompt: payload.session.lastUserPrompt ?? existing?.lastUserPrompt,
+        lastActivityAt: payload.session.lastActivityAt ?? existing?.lastActivityAt,
+        status: payload.session.status ?? existing?.status,
+      });
+      this.selectedSession = mergeSessionMetadata(this.selectedSession?.id === payload.session.id ? this.selectedSession : undefined);
+      this.sessions = this.sessions.map((session) => session.id === payload.session.id ? mergeSessionMetadata(session) : session);
     } else if (payload.type === "error") {
       this.upsertTranscript({ id: `error:${Date.now()}`, kind: "error", title: payload.code, body: payload.message });
     }
