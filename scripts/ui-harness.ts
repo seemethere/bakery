@@ -226,6 +226,12 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#followUp").click();
   await page.locator(".queue-pill.follow-up", { hasText: "queued follow-up requeued after edit" }).waitFor({ timeout: 5_000 });
 
+  await page.locator("#prompt").fill("extra queued steer for overflow");
+  await page.locator("#send").click();
+  await page.locator(".queue-more", { hasText: "+1 more" }).waitFor({ timeout: 5_000 });
+  await page.locator(".queue-more").click();
+  await page.locator(".queue-more", { hasText: "Show less" }).waitFor({ timeout: 5_000 });
+
   await page.locator("#prompt").fill("queued follow-up that should be canceled");
   await page.locator("#followUp").click();
   const pill = page.locator(".queue-pill.follow-up", { hasText: "queued follow-up that should be canceled" });

@@ -652,6 +652,7 @@ class PiWebAgentApp extends HTMLElement {
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private runningQueue: RunningQueueState = { steering: [], followUp: [] };
+  private runningQueueExpanded = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private socketGeneration = 0;
@@ -1584,6 +1585,10 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
+    this.querySelector<HTMLButtonElement>("#toggleRunningQueue")?.addEventListener("click", () => {
+      this.runningQueueExpanded = !this.runningQueueExpanded;
+      this.render();
+    });
     this.querySelectorAll<HTMLButtonElement>("[data-edit-queue]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
@@ -1889,7 +1894,16 @@ class PiWebAgentApp extends HTMLElement {
   private renderRunningQueue(): string {
     const steering = this.runningQueue.steering;
     const followUp = this.runningQueue.followUp;
-    if (steering.length === 0 && followUp.length === 0) return "";
+    const allItems = [
+      ...steering.map((item, index) => ({ kind: "Steer" as const, queue: "steering" as const, item, index })),
+      ...followUp.map((item, index) => ({ kind: "Follow-up" as const, queue: "followUp" as const, item, index })),
+    ];
+    if (allItems.length === 0) {
+      this.runningQueueExpanded = false;
+      return "";
+    }
+    const visibleItems = this.runningQueueExpanded ? allItems : allItems.slice(0, 3);
+    const hiddenCount = Math.max(0, allItems.length - visibleItems.length);
     const renderPill = (kind: "Steer" | "Follow-up", queue: "steering" | "followUp", item: RunningQueueItem, index: number) => `
       <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(item.text)}">
         <strong>${escapeHtml(kind)} ${index + 1}</strong>
@@ -1898,16 +1912,16 @@ class PiWebAgentApp extends HTMLElement {
         <button type="button" class="queue-edit" data-edit-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(item.text)}" aria-label="Edit ${escapeHtml(kind)} ${index + 1}">✎</button>
         <button type="button" class="queue-cancel" data-cancel-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(item.text)}" aria-label="Cancel ${escapeHtml(kind)} ${index + 1}">×</button>
       </span>`;
-    const total = steering.length + followUp.length;
+    const total = allItems.length;
     return `
-      <div class="running-queue" aria-label="Queued running controls">
+      <div class="running-queue ${this.runningQueueExpanded ? "expanded" : "compact"}" aria-label="Queued running controls">
         <div class="running-queue-heading">
           <strong>Queued for this run</strong>
           <span>${total} pending</span>
+          ${hiddenCount > 0 ? `<button id="toggleRunningQueue" class="queue-more" type="button">+${hiddenCount} more</button>` : this.runningQueueExpanded && total > 3 ? `<button id="toggleRunningQueue" class="queue-more" type="button">Show less</button>` : ""}
         </div>
         <div class="running-queue-items">
-          ${steering.map((item, index) => renderPill("Steer", "steering", item, index)).join("")}
-          ${followUp.map((item, index) => renderPill("Follow-up", "followUp", item, index)).join("")}
+          ${visibleItems.map(({ kind, queue, item, index }) => renderPill(kind, queue, item, index)).join("")}
         </div>
       </div>`;
   }

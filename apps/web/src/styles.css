@@ -720,7 +720,7 @@ textarea {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  max-height: 86px;
+  max-height: 78px;
   overflow-y: auto;
   border: 1px solid rgba(255, 209, 138, 0.36);
   border-radius: 10px;
@@ -733,11 +733,15 @@ textarea {
 .running-queue-heading {
   display: grid;
   gap: 1px;
-  min-width: 118px;
+  min-width: 132px;
   color: #ffd18a;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.running-queue.expanded {
+  max-height: 132px;
 }
 
 .running-queue-heading span {
@@ -752,6 +756,24 @@ textarea {
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
+}
+
+.queue-more {
+  justify-self: start;
+  width: fit-content;
+  border-color: rgba(255, 209, 138, 0.42);
+  background: rgba(255, 209, 138, 0.1);
+  color: #ffd18a;
+  padding: 2px 7px;
+  min-height: 22px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.queue-more:hover,
+.queue-more:focus-visible {
+  background: rgba(255, 209, 138, 0.2);
 }
 
 .queue-pill {
