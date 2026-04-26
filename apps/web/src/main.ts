@@ -2225,10 +2225,10 @@ class PiWebAgentApp extends HTMLElement {
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
           <div class="prompt-shell">
-            ${this.renderContextUsageNotice()}
             <div class="composer-mode ${isRunning ? "running" : "idle"}">
               <strong>${isRunning ? "Running input" : "Prompt"}</strong>
-              <span>${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
+              <span class="composer-hint">${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
+              ${this.renderContextUsageNotice()}
             </div>
             ${this.renderRunningQueue()}
             ${this.renderPromptImages()}

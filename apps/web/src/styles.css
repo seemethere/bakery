@@ -313,6 +313,7 @@ footer.running-footer {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  margin-left: auto;
   color: #8b94a7;
   font-size: 11px;
 }
@@ -368,7 +369,7 @@ footer.running-footer {
   color: #cfe0ff;
 }
 
-.composer-mode span {
+.composer-hint {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
