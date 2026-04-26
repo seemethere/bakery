@@ -265,6 +265,22 @@ function contentToText(content: unknown): string {
     .join("\n\n");
 }
 
+function itemHasRenderedImage(item: TranscriptItem): boolean {
+  return Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
+}
+
+function compactToolSummary(item: TranscriptItem): string {
+  if (item.kind !== "tool" || item.status !== "done") return "";
+  const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
+  const line = source
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .find((part) => part && !/^exit code:\s*0$/i.test(part));
+  if (!line) return "completed";
+  const normalized = line.replace(/\s+/g, " ");
+  return normalized.length > 140 ? `${normalized.slice(0, 137)}…` : normalized;
+}
+
 function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, cache?: Map<string, string>): string {
   const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}`;
   const cached = cache?.get(cacheKey);
@@ -309,8 +325,10 @@ class PiTranscriptRow extends HTMLElement {
   connectedCallback(): void {
     this.addEventListener("click", (event) => {
       if ((event.target as HTMLElement | null)?.closest(".message-header") && this.isCollapsible()) {
+        event.stopImmediatePropagation();
         this.collapsed = !this.collapsed;
-        this.classList.toggle("collapsed", this.collapsed);
+        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected });
+        else this.classList.toggle("collapsed", this.collapsed);
       }
     });
   }
@@ -318,20 +336,23 @@ class PiTranscriptRow extends HTMLElement {
   setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; cache?: Map<string, string> }): void {
     const start = performance.now();
     const previous = this.item;
+    const wasSelected = this.selected;
     this.item = item;
     this.showThinking = options.showThinking;
     this.selected = options.selected;
     const isCollapsible = this.isCollapsible();
-    const defaultOpen = item.status === "running" || item.status === "error" || options.selected || Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
-    if (!previous || previous.id !== item.id) this.collapsed = isCollapsible && !defaultOpen;
-    if (options.selected) this.collapsed = false;
+    const defaultOpen = item.status === "running" || item.status === "error" || options.selected || itemHasRenderedImage(item);
+    const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
+    if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
+    if (options.selected && !wasSelected) this.collapsed = false;
 
     this.dataset.transcriptId = item.id;
     this.className = this.classNames();
 
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${streamingText !== null ? "streaming" : item.body}`;
+    const compactSummary = this.collapsed ? compactToolSummary(item) : "";
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -340,7 +361,11 @@ class PiTranscriptRow extends HTMLElement {
     }
 
     this.innerHTML = `
-      <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${item.status ? `<span>${escapeHtml(item.status)}</span>` : ""}</div>
+      <div class="message-header">
+        <strong>${escapeHtml(item.title)}</strong>
+        ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
+        ${item.status ? `<span class="message-status">${escapeHtml(item.status)}</span>` : ""}
+      </div>
       <div class="message-body">${renderTranscriptSegments(item, this.showThinking, options.cache)}</div>`;
     this.lastRenderKey = renderKey;
     this.lastStreamingText = streamingText ?? "";
@@ -1338,9 +1363,7 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => this.chooseCommandAutocomplete(Number(button.dataset.commandIndex ?? "0")));
     });
-    this.querySelectorAll<HTMLElement>("[data-transcript-id]").forEach((element) => {
-      element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
-    });
+
     this.querySelectorAll<HTMLButtonElement>("[data-tree-refresh]").forEach((button) => {
       button.addEventListener("click", () => void this.refreshTree());
     });
@@ -1559,7 +1582,10 @@ class PiWebAgentApp extends HTMLElement {
     if (looksLikeHtml(body) || looksLikeSvg(body)) {
       return `<iframe class="preview-frame" sandbox srcdoc="${escapeHtml(body)}"></iframe>`;
     }
-    if (item.kind === "assistant" || item.kind === "user" || looksLikeMarkdown(body)) {
+    if (item.kind === "assistant" || item.kind === "user") {
+      return `<div class="preview-markdown markdown-body">${renderTranscriptSegments(item, this.showThinking, this.renderedSegmentCache)}</div>`;
+    }
+    if (looksLikeMarkdown(body)) {
       return `<div class="preview-markdown markdown-body">${renderMarkdown(body)}</div>`;
     }
     return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
@@ -1637,7 +1663,12 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private bindTranscriptElement(element: HTMLElement): void {
-    element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
+    if (element.dataset.transcriptBound === "true") return;
+    element.dataset.transcriptBound = "true";
+    element.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement | null)?.closest(".message-header") && element.classList.contains("collapsible")) return;
+      this.selectTranscriptItem(element.dataset.transcriptId ?? "");
+    });
   }
 
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
@@ -1646,6 +1677,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private hydrateTranscriptRows(): void {
     this.querySelectorAll<PiTranscriptRow>("pi-transcript-row[data-transcript-id]").forEach((row) => {
+      this.bindTranscriptElement(row);
       const item = this.transcript.find((candidate) => candidate.id === row.dataset.transcriptId);
       if (item) this.updateTranscriptRow(row, item);
     });

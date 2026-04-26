@@ -119,10 +119,15 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
 }
 
 async function prepareSession(page: Page): Promise<void> {
+  await page.addInitScript(({ apiBase }) => {
+    localStorage.setItem("piWebApiBase", apiBase);
+    localStorage.setItem("piWebAuthToken", "");
+  }, { apiBase });
   await page.goto(webBase, { waitUntil: "domcontentloaded" });
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
   await page.locator("#saveSettings").click();
+  await page.waitForFunction(() => document.querySelectorAll("#workspace option").length > 0, undefined, { timeout: 5_000 });
   const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
   await page.locator("#newSession").click();
   await created;
@@ -198,12 +203,15 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
 async function runInspectorPreview(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector validation.");
-  await page.locator(".message.assistant").last().click();
+  await page.locator(".message.assistant:has(img)").last().click();
+  await page.waitForFunction(() => document.querySelector(".message.assistant.selected img"));
   await page.locator('[data-right-tab="preview"]').click();
   await page.locator(".preview-markdown img").first().waitFor({ timeout: 5_000 });
   await page.locator('[data-right-tab="details"]').click();
   await page.locator(".raw-detail").waitFor({ state: "visible" });
-  await page.locator(".message.tool").first().click();
+  const tool = page.locator(".message.tool").first();
+  await tool.locator(".message-header").click();
+  await tool.locator(".message-body").click();
   await page.locator(".right-panel-heading", { hasText: "echo fake tool" }).waitFor({ timeout: 5_000 });
   return collectMetrics(page);
 }
@@ -332,7 +340,12 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await page.setViewportSize({ width: 760, height: 900 });
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Run a tool and produce a long narrow-width streaming response for layout validation.");
-  await page.locator(".message.tool").first().waitFor({ timeout: 5_000 });
+  const tool = page.locator(".message.tool").first();
+  await tool.waitFor({ timeout: 5_000 });
+  await tool.locator(".message-header").click();
+  await page.waitForFunction(() => !document.querySelector(".message.tool")?.classList.contains("collapsed"));
+  await tool.locator(".message-header").click();
+  await page.waitForFunction(() => document.querySelector(".message.tool")?.classList.contains("collapsed"));
   await page.locator("#prompt").waitFor({ state: "visible" });
   return collectMetrics(page);
 }
