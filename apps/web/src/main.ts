@@ -223,6 +223,7 @@ class PiWebAgentApp extends HTMLElement {
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
+  private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private transcriptScrollTop = 0;
   private promptDraft = "";
@@ -679,11 +680,18 @@ class PiWebAgentApp extends HTMLElement {
       localStorage.setItem("piWebShowThinking", String(this.showThinking));
       this.render();
     });
+    this.querySelector<HTMLButtonElement>("#toggleRightPanel")?.addEventListener("click", () => {
+      this.rightPanelCollapsed = !this.rightPanelCollapsed;
+      localStorage.setItem("piWebRightPanelCollapsed", String(this.rightPanelCollapsed));
+      this.render();
+    });
     this.querySelectorAll<HTMLButtonElement>("[data-right-tab]").forEach((button) => {
       button.addEventListener("click", () => {
         const tab = button.dataset.rightTab === "preview" ? "preview" : "details";
         this.rightPanelTab = tab;
+        this.rightPanelCollapsed = false;
         localStorage.setItem("piWebRightPanelTab", tab);
+        localStorage.setItem("piWebRightPanelCollapsed", "false");
         this.render();
       });
     });
@@ -836,9 +844,17 @@ class PiWebAgentApp extends HTMLElement {
   private renderRightPanel(): string {
     const item = this.selectedTranscriptItem();
     const detailsActive = this.rightPanelTab === "details";
+    if (this.rightPanelCollapsed) {
+      return `
+        <aside class="right-panel collapsed" aria-label="Collapsed inspector">
+          <button id="toggleRightPanel" title="Show inspector" aria-label="Show inspector">◀</button>
+          <span>Inspector</span>
+        </aside>`;
+    }
     return `
       <aside class="right-panel">
         <div class="right-tabs">
+          <button id="toggleRightPanel" class="collapse-panel" title="Hide inspector" aria-label="Hide inspector">▶</button>
           <button data-right-tab="details" class="${detailsActive ? "active" : ""}">Details</button>
           <button data-right-tab="preview" class="${!detailsActive ? "active" : ""}">Preview</button>
         </div>
@@ -969,6 +985,7 @@ class PiWebAgentApp extends HTMLElement {
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
     const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
     const isRunning = this.status === "running";
+    this.classList.toggle("inspector-collapsed", this.rightPanelCollapsed);
     const isController = this.controller?.isController ?? true;
     const controllerLabel = this.controller
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`

@@ -18,6 +18,10 @@ pi-web-agent {
   overflow: hidden;
 }
 
+pi-web-agent.inspector-collapsed {
+  grid-template-columns: 340px minmax(0, 1fr) 44px;
+}
+
 aside {
   border-right: 1px solid #2a2f3a;
   padding: 16px;
@@ -568,7 +572,7 @@ pre {
 
 .right-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: auto 1fr 1fr;
   gap: 6px;
   padding: 10px;
   border-bottom: 1px solid #2a2f3a;
@@ -578,6 +582,31 @@ pre {
 .right-tabs button {
   padding: 7px 8px;
   font-size: 12px;
+}
+
+.collapse-panel {
+  width: 32px;
+}
+
+.right-panel.collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px;
+}
+
+.right-panel.collapsed button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.right-panel.collapsed span {
+  color: #8b94a7;
+  font-size: 12px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
 }
 
 .right-panel-heading {
