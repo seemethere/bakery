@@ -33,6 +33,32 @@ On a fresh machine, install the Playwright browser once if needed:
 bun x playwright install chromium
 ```
 
+## Commit hygiene
+
+When committing changes, prefer Conventional Commits with a concise imperative summary:
+
+- `feat:` for user-visible features.
+- `fix:` for bug fixes.
+- `refactor:` for behavior-preserving code changes.
+- `test:` for tests and harness changes.
+- `docs:` for documentation-only changes.
+- `chore:` for maintenance, tooling, dependency, or repository housekeeping.
+- `perf:` for performance improvements.
+- `style:` for formatting-only changes.
+- `ci:` for CI/build pipeline changes.
+
+Examples:
+
+```bash
+git commit -m "feat: add fake-agent transcript scenario"
+git commit -m "fix: preserve session reconnect state"
+git commit -m "test: cover slash command rendering"
+git commit -m "docs: update project handoff notes"
+git commit -m "chore: refresh lockfile"
+```
+
+If multiple change types are present, choose the type that best represents the primary purpose of the commit. Prefer one commit per coherent vertical slice, avoid bundling unrelated cleanup with feature work, and avoid vague messages like `update files`, `misc fixes`, or `work in progress`.
+
 ## End-of-session handoff
 
 Before ending a work session, unless the user asks otherwise:
@@ -40,7 +66,7 @@ Before ending a work session, unless the user asks otherwise:
 1. Run `bun run check`.
 2. Update `PROJECT_LOG.md` with changed status and next priorities.
 3. Tell the human operator how to test the changes manually, including whether the currently running browser page can pick them up automatically, requires a page refresh, or requires a backend/dev-server restart.
-4. Commit with a concise message, unless the user explicitly asks not to commit.
+4. Commit with a concise Conventional Commit message, unless the user explicitly asks not to commit.
 
 ## Useful commands
 
