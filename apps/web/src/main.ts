@@ -83,6 +83,8 @@ class PiWebAgentApp extends HTMLElement {
   private notice = "";
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
+  private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
+  private transcriptScrollTop = 0;
 
   connectedCallback(): void {
     this.render();
@@ -150,6 +152,7 @@ class PiWebAgentApp extends HTMLElement {
     this.notice = "";
     this.controller = null;
     this.settings = null;
+    this.transcriptScrollTop = 0;
     this.ws?.close();
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
@@ -308,6 +311,11 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
+    this.querySelector<HTMLInputElement>("#autoScroll")?.addEventListener("change", (event) => {
+      this.autoScroll = (event.currentTarget as HTMLInputElement).checked;
+      localStorage.setItem("piWebAutoScroll", String(this.autoScroll));
+      if (this.autoScroll) this.scrollTranscriptToBottom();
+    });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
@@ -315,6 +323,9 @@ class PiWebAgentApp extends HTMLElement {
         event.preventDefault();
         this.sendFromInput(event.altKey);
       }
+    });
+    this.querySelector<HTMLElement>(".transcript")?.addEventListener("scroll", (event) => {
+      this.transcriptScrollTop = (event.currentTarget as HTMLElement).scrollTop;
     });
     this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -336,7 +347,25 @@ class PiWebAgentApp extends HTMLElement {
       .join("");
   }
 
+  private scrollTranscriptToBottom(): void {
+    const transcript = this.querySelector<HTMLElement>(".transcript");
+    if (!transcript) return;
+    transcript.scrollTop = transcript.scrollHeight;
+    this.transcriptScrollTop = transcript.scrollTop;
+  }
+
+  private syncTranscriptScroll(): void {
+    const transcript = this.querySelector<HTMLElement>(".transcript");
+    if (!transcript) return;
+    requestAnimationFrame(() => {
+      if (this.autoScroll) this.scrollTranscriptToBottom();
+      else transcript.scrollTop = this.transcriptScrollTop;
+    });
+  }
+
   private render(): void {
+    const existingTranscript = this.querySelector<HTMLElement>(".transcript");
+    if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
     const isRunning = this.status === "running";
     const isController = this.controller?.isController ?? true;
     const controllerLabel = this.controller
@@ -368,6 +397,7 @@ class PiWebAgentApp extends HTMLElement {
           <div class="header-status">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl">Take control</button>` : ""}
+            <label class="inline-control autoscroll"><input id="autoScroll" type="checkbox" ${this.autoScroll ? "checked" : ""} /> Auto-scroll</label>
             ${this.settings ? `<label class="inline-control">Model
               <select id="model" ${isController ? "" : "disabled"}>
                 ${this.settings.availableModels.map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === currentModelId ? "selected" : ""}>${escapeHtml(model.name ?? model.id)} [${escapeHtml(model.provider)}]</option>`).join("")}
@@ -393,6 +423,7 @@ class PiWebAgentApp extends HTMLElement {
       </main>
     `;
     this.bindEvents();
+    this.syncTranscriptScroll();
   }
 }
 

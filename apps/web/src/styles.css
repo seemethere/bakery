@@ -144,6 +144,14 @@ textarea {
   max-width: 260px;
 }
 
+.inline-control input[type="checkbox"] {
+  margin: 0;
+}
+
+.autoscroll {
+  color: #c8ced8;
+}
+
 .status,
 .controller {
   border: 1px solid #343b49;
