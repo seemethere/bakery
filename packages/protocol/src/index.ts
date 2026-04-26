@@ -86,11 +86,23 @@ export const fileMatchSchema = z.object({
 });
 export type FileMatch = z.infer<typeof fileMatchSchema>;
 
+export const fileSearchQuerySchema = z.object({
+  q: z.string().max(200).optional().default(""),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+});
+export type FileSearchQuery = z.infer<typeof fileSearchQuerySchema>;
+
 export const fileSearchResponseSchema = z.object({
   query: z.string(),
   files: z.array(fileMatchSchema),
 });
 export type FileSearchResponse = z.infer<typeof fileSearchResponseSchema>;
+
+export const fileCompleteQuerySchema = z.object({
+  prefix: z.string().max(500).optional().default(""),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+});
+export type FileCompleteQuery = z.infer<typeof fileCompleteQuerySchema>;
 
 export const fileCompleteResponseSchema = z.object({
   prefix: z.string(),

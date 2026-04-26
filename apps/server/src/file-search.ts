@@ -150,33 +150,39 @@ async function collectPaths(root: string, options: { includeDirectories?: boolea
 
   async function walk(dirRel: string): Promise<void> {
     if (visited >= maxVisited || results.length >= limit) return;
+    const ruleDepth = rules.length;
     rules.push(...await readIgnoreRules(root, dirRel));
 
     let entries: string[];
     try {
       entries = await readdir(join(root, dirRel));
     } catch {
+      rules.length = ruleDepth;
       return;
     }
 
-    for (const entryName of entries) {
-      if (visited++ >= maxVisited || results.length >= limit) return;
-      const relPath = normalizeRelative(dirRel ? `${dirRel}/${entryName}` : entryName);
-      let stat;
-      try {
-        stat = await lstat(join(root, relPath));
-      } catch {
-        continue;
+    try {
+      for (const entryName of entries) {
+        if (visited++ >= maxVisited || results.length >= limit) return;
+        const relPath = normalizeRelative(dirRel ? `${dirRel}/${entryName}` : entryName);
+        let stat;
+        try {
+          stat = await lstat(join(root, relPath));
+        } catch {
+          continue;
+        }
+        const isDirectory = stat.isDirectory();
+        if (stat.isSymbolicLink()) continue;
+        if (isDefaultIgnored(relPath, isDirectory) || isIgnoredByRules(rules, relPath, isDirectory)) continue;
+        if (isDirectory) {
+          if (includeDirectories) results.push({ path: `${relPath}/`, type: "directory" });
+          await walk(relPath);
+        } else if (stat.isFile()) {
+          results.push({ path: relPath, type: "file" });
+        }
       }
-      const isDirectory = stat.isDirectory();
-      if (stat.isSymbolicLink()) continue;
-      if (isDefaultIgnored(relPath, isDirectory) || isIgnoredByRules(rules, relPath, isDirectory)) continue;
-      if (isDirectory) {
-        if (includeDirectories) results.push({ path: `${relPath}/`, type: "directory" });
-        await walk(relPath);
-      } else if (stat.isFile()) {
-        results.push({ path: relPath, type: "file" });
-      }
+    } finally {
+      rules.length = ruleDepth;
     }
   }
 

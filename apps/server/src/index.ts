@@ -6,6 +6,8 @@ import {
   PROTOCOL_VERSION,
   clientMessageSchema,
   createSessionRequestSchema,
+  fileCompleteQuerySchema,
+  fileSearchQuerySchema,
   updateSessionRequestSchema,
   type ControllerInfo,
   type HelloMessage,
@@ -15,6 +17,7 @@ import {
 import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { MetadataStore } from "./metadata-store.js";
+import { completeFiles, searchFiles } from "./file-search.js";
 import { InProcessPiSessionRunner } from "./pi-runner.js";
 import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
 
@@ -137,17 +140,22 @@ app.get<{ Params: { id: string } }>("/api/sessions/:id/commands", async (request
   return { commands: [] };
 });
 
-app.get<{ Params: { id: string }; Querystring: { q?: string } }>("/api/sessions/:id/files/search", async (request, reply) => {
+app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string | number } }>("/api/sessions/:id/files/search", async (request, reply) => {
   const session = store.getSession(request.params.id);
   if (!session) return reply.code(404).send({ error: "session not found" });
-  // Deliberately tiny placeholder until ignore-aware search is added.
-  return { query: request.query.q ?? "", files: [] };
+  const parsed = fileSearchQuerySchema.safeParse(request.query);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  const files = await searchFiles(session.cwd, parsed.data.q, parsed.data.limit);
+  return { query: parsed.data.q, files };
 });
 
-app.get<{ Params: { id: string }; Querystring: { prefix?: string } }>("/api/sessions/:id/files/complete", async (request, reply) => {
+app.get<{ Params: { id: string }; Querystring: { prefix?: string; limit?: string | number } }>("/api/sessions/:id/files/complete", async (request, reply) => {
   const session = store.getSession(request.params.id);
   if (!session) return reply.code(404).send({ error: "session not found" });
-  return { prefix: request.query.prefix ?? "", files: [] };
+  const parsed = fileCompleteQuerySchema.safeParse(request.query);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  const files = await completeFiles(session.cwd, parsed.data.prefix, parsed.data.limit);
+  return { prefix: parsed.data.prefix, files };
 });
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
