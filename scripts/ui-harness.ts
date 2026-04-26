@@ -204,10 +204,12 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#followUp").click();
   const pill = page.locator(".queue-pill.follow-up", { hasText: "queued follow-up that should be canceled" });
   await pill.waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "queued-follow-up-before-cancel.png"), fullPage: true });
   await pill.locator(".queue-cancel").click();
   await pill.waitFor({ state: "detached", timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "queued-follow-up-after-cancel.png"), fullPage: true });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
-  await page.screenshot({ path: join(artifactDir, "queued-follow-up.png"), fullPage: true });
+  await page.screenshot({ path: join(artifactDir, "queued-follow-up-final.png"), fullPage: true });
   return collectMetrics(page);
 }
 
