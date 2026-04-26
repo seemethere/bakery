@@ -24,7 +24,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed the follow-up regression from that change: initial render no longer calls `querySelector("")`, so the app refreshes workspaces/sessions instead of staying empty.
 - Added a right-side Details/Preview inspector panel: transcript messages/tool cards are selectable, selection and collapse state persist locally, Details shows compact metadata/content plus collapsible raw event data with copy controls, and Preview renders Markdown/code plus sandboxed HTML/SVG snippets.
 - Improved streaming UI responsiveness by throttling WebSocket-driven renders, reducing transcript follow-scroll layout work, and caching rendered transcript segment HTML.
-- Added basic session tree/fork support: shared tree/fork protocol schemas, `GET /api/sessions/:id/tree`, `POST /api/sessions/:id/fork`, and a right-inspector Tree tab that displays a TUI-inspired pi session tree and can fork a new web session from user-message entries.
+- Added basic session tree/fork support: shared tree/fork protocol schemas, `GET /api/sessions/:id/tree`, `POST /api/sessions/:id/fork`, a right-inspector Tree tab, and a TUI-inspired wide tree drawer opened with `/tree`; user-message entries can fork a new web session.
 
 ## How to run
 
@@ -50,7 +50,7 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after making the Tree inspector more TUI-like.
+Latest: `bun run check` passes after wiring `/tree` to open a wide TUI-like tree drawer.
 
 ## Next priorities
 

@@ -220,6 +220,7 @@ class PiWebAgentApp extends HTMLElement {
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
   private sessionTree: SessionTreeResponse | null = null;
+  private treeDrawerOpen = false;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
@@ -316,6 +317,7 @@ class PiWebAgentApp extends HTMLElement {
     this.controller = null;
     this.settings = null;
     this.sessionTree = null;
+    this.treeDrawerOpen = false;
     this.transcriptScrollTop = 0;
     this.selectedTranscriptId = "opened";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
@@ -489,6 +491,20 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
+  private openTreeDrawer(): void {
+    if (!this.selectedSession) return;
+    this.treeDrawerOpen = true;
+    this.rightPanelTab = "tree";
+    localStorage.setItem("piWebRightPanelTab", "tree");
+    void this.refreshTree();
+    this.render();
+  }
+
+  private closeTreeDrawer(): void {
+    this.treeDrawerOpen = false;
+    this.render();
+  }
+
   private async copyText(value: string, label = "Copied"): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
@@ -502,7 +518,16 @@ class PiWebAgentApp extends HTMLElement {
   private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = input?.value.trim();
-    if (!input || !text || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!input || !text) return;
+    if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
+      this.promptDraft = "";
+      this.closeFileAutocomplete();
+      this.closeCommandAutocomplete();
+      input.value = "";
+      this.openTreeDrawer();
+      return;
+    }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ type, text }));
     this.promptDraft = "";
     this.closeFileAutocomplete();
@@ -819,7 +844,13 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelectorAll<HTMLElement>("[data-transcript-id]").forEach((element) => {
       element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
     });
-    this.querySelector<HTMLButtonElement>("#refreshTree")?.addEventListener("click", () => void this.refreshTree());
+    this.querySelectorAll<HTMLButtonElement>("[data-tree-refresh]").forEach((button) => {
+      button.addEventListener("click", () => void this.refreshTree());
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-open-tree-drawer]").forEach((button) => {
+      button.addEventListener("click", () => this.openTreeDrawer());
+    });
+    this.querySelector<HTMLButtonElement>("#closeTreeDrawer")?.addEventListener("click", () => this.closeTreeDrawer());
     this.querySelectorAll<HTMLButtonElement>("[data-fork-entry-id]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -945,20 +976,28 @@ class PiWebAgentApp extends HTMLElement {
     }).join("");
   }
 
-  private renderTreePanel(): string {
+  private renderTreePanel(options: { drawer?: boolean } = {}): string {
     if (!this.selectedSession) return `<p class="empty-panel">Open a session to inspect its tree.</p>`;
     return `
-      <div class="tree-panel tui-tree">
+      <div class="tree-panel tui-tree ${options.drawer ? "drawer-tree" : ""}">
         <div class="tree-toolbar">
           <strong>Session Tree</strong>
-          <span>Click <b>fork</b> on a user message to branch.</span>
-          <button id="refreshTree">Refresh</button>
+          <span>Type <b>/tree</b> to open this wide view. Click <b>fork</b> on a user message to branch.</span>
+          <div class="tree-toolbar-actions">
+            ${options.drawer ? `<button id="closeTreeDrawer">Close</button>` : `<button data-open-tree-drawer>Wide</button>`}
+            <button data-tree-refresh>Refresh</button>
+          </div>
         </div>
         <div class="tree-hints">TUI-style view · current path highlighted · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
         ${this.sessionTree?.tree.length
           ? `<div class="session-tree">${this.renderTreeNodes(this.sessionTree.tree)}</div>`
           : `<p class="empty-panel">No tree entries yet. Send a prompt first.</p>`}
       </div>`;
+  }
+
+  private renderTreeDrawer(): string {
+    if (!this.treeDrawerOpen) return "";
+    return `<div class="tree-drawer" role="dialog" aria-label="Session tree">${this.renderTreePanel({ drawer: true })}</div>`;
   }
 
   private renderDetailsPanel(item: TranscriptItem): string {
@@ -1138,6 +1177,7 @@ class PiWebAgentApp extends HTMLElement {
         </footer>
       </main>
       ${this.renderRightPanel()}
+      ${this.renderTreeDrawer()}
     `;
     this.bindEvents();
     if (restorePromptFocus) {

@@ -700,9 +700,37 @@ pre {
   white-space: nowrap;
 }
 
+.tree-toolbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .tree-toolbar button {
   padding: 4px 8px;
   font-size: 11px;
+}
+
+.tree-drawer {
+  position: fixed;
+  left: 56px;
+  right: 56px;
+  bottom: 28px;
+  z-index: 30;
+  height: min(48vh, 560px);
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid #668cff;
+  border-radius: 8px;
+  background: #252726;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.65);
+}
+
+.tree-drawer .tree-panel {
+  height: 100%;
+}
+
+.drawer-tree .session-tree {
+  padding-bottom: 40px;
 }
 
 .tree-hints {
@@ -756,6 +784,10 @@ pre {
   max-width: 52vw;
   text-overflow: ellipsis;
   color: #e8dfbd;
+}
+
+.tree-drawer .tree-title {
+  max-width: 76vw;
 }
 
 .tree-current {
