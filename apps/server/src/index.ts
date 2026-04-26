@@ -24,6 +24,7 @@ import {
   type SessionTreeNode,
   type WebSession,
 } from "@pi-web-agent/protocol";
+import { completeSimple, type Message, type Model, type SimpleStreamOptions, type ThinkingLevel } from "@mariozechner/pi-ai";
 import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import Fastify from "fastify";
 import { loadConfig } from "./config.js";
@@ -201,6 +202,105 @@ function generateHeuristicMetadata(session: WebSession): SessionMetadataSuggesti
   return { title, confidence: "medium", reason: "Summary generation needs the model-backed generator." };
 }
 
+function metadataPromptMessages(session: WebSession): Message[] {
+  const messages = sessionEntries(session)
+    .filter((entry) => entry.type === "message")
+    .map((entry) => {
+      const message = entry.message as { role?: string; content?: unknown; timestamp?: unknown };
+      const role = message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : null;
+      if (!role) return null;
+      const text = cleanMetadataText(messageText(message.content), role === "user" ? 800 : 1200);
+      if (!text) return null;
+      return { role, text, timestamp: Date.parse(entry.timestamp) || Date.now() };
+    })
+    .filter((message): message is { role: "user" | "assistant"; text: string; timestamp: number } => Boolean(message));
+
+  return messages.slice(-24).map((message) => {
+    if (message.role === "user") return { role: "user", content: message.text, timestamp: message.timestamp } satisfies Message;
+    return {
+      role: "assistant",
+      content: [{ type: "text", text: message.text }],
+      api: "metadata" as const,
+      provider: "metadata" as const,
+      model: "metadata",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop" as const,
+      timestamp: message.timestamp,
+    } satisfies Message;
+  });
+}
+
+function parseMetadataJson(text: string): { title?: string; summary?: string } {
+  const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const firstBrace = stripped.indexOf("{");
+  const lastBrace = stripped.lastIndexOf("}");
+  const jsonText = firstBrace >= 0 && lastBrace > firstBrace ? stripped.slice(firstBrace, lastBrace + 1) : stripped;
+  const parsed = JSON.parse(jsonText) as { title?: unknown; summary?: unknown };
+  const title = typeof parsed.title === "string" ? cleanMetadataText(parsed.title, 60).replace(/[.!?]+$/, "") : undefined;
+  const summary = typeof parsed.summary === "string" ? cleanMetadataText(parsed.summary, 600) : undefined;
+  return {
+    ...(title ? { title } : {}),
+    ...(summary ? { summary } : {}),
+  };
+}
+
+async function resolveMetadataModel(handle: Awaited<ReturnType<typeof runner.createSession>>): Promise<{ model: Model<any>; apiKey?: string; headers?: Record<string, string> }> {
+  const settings = store.getSettings();
+  const available = (await handle.session.modelRegistry.getAvailable()).filter((model) => !config.modelPolicy.allowedModels || config.modelPolicy.allowedModels.includes(`${model.provider}/${model.id}`));
+  const selectedModelId = settings.sessionMetadataModel?.model ?? config.modelPolicy.defaultModel ?? (handle.session.model ? `${handle.session.model.provider}/${handle.session.model.id}` : undefined);
+  const selected = selectedModelId ? available.find((model) => `${model.provider}/${model.id}` === selectedModelId) : undefined;
+  const model = selected ?? (handle.session.model && available.find((candidate) => candidate.provider === handle.session.model?.provider && candidate.id === handle.session.model?.id)) ?? available[0];
+  if (!model) throw new Error("No authenticated metadata model is available. Configure a model, then try ✨ again.");
+  const auth = await handle.session.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok) throw new Error(auth.error);
+  return {
+    model,
+    ...(auth.apiKey ? { apiKey: auth.apiKey } : {}),
+    ...(auth.headers ? { headers: auth.headers } : {}),
+  };
+}
+
+async function generateModelBackedMetadata(session: WebSession): Promise<SessionMetadataSuggestion> {
+  const heuristic = generateHeuristicMetadata(session);
+  const messages = metadataPromptMessages(session);
+  const meaningfulUsers = messages.filter((message) => message.role === "user" && !isGenericPrompt(messageText(message.content))).length;
+  if (messages.length < 2 || meaningfulUsers === 0) return heuristic.deferred ? heuristic : { ...heuristic, deferred: true, reason: "Not enough session context for a useful summary yet." };
+
+  const handle = await runner.createSession({ id: session.id, cwd: session.cwd, piSessionFile: session.piSessionFile });
+  const { model, apiKey, headers } = await resolveMetadataModel(handle);
+  const abort = AbortSignal.timeout(60_000);
+  const completionOptions: SimpleStreamOptions = {
+    maxTokens: 450,
+    signal: abort,
+    temperature: 0.2,
+    ...(apiKey ? { apiKey } : {}),
+    ...(headers ? { headers } : {}),
+    ...(model.reasoning && config.modelPolicy.defaultThinkingLevel !== "off" ? { reasoning: config.modelPolicy.defaultThinkingLevel as ThinkingLevel } : {}),
+  };
+  const response = await completeSimple(model, {
+    systemPrompt: "You generate concise metadata for a coding-agent web session. Return only valid JSON. Do not mention that you are an AI. Do not add markdown.",
+    messages: [
+      ...messages,
+      {
+        role: "user",
+        content: "Create session metadata for the preceding transcript. Return JSON exactly in this shape: {\"title\":\"3-7 words, <=60 chars\",\"summary\":\"1-3 plain-text sentences, <=600 chars, specific accomplishments and current state\"}. If the transcript is generic, still summarize only concrete context present.",
+        timestamp: Date.now(),
+      },
+    ],
+  }, completionOptions);
+  if (response.stopReason === "error") throw new Error(response.errorMessage || "Metadata generation failed");
+  const text = response.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+  const parsed = parseMetadataJson(text);
+  const title = parsed.title || heuristic.title;
+  if (!title && !parsed.summary) return { confidence: "low", deferred: true, reason: "The metadata model did not return a usable suggestion." };
+  return {
+    ...(title ? { title } : {}),
+    ...(parsed.summary ? { summary: parsed.summary } : {}),
+    confidence: parsed.summary ? "high" : heuristic.confidence,
+    reason: `Generated with ${model.provider}/${model.id}. Review before applying.`,
+  };
+}
+
 async function enrichSession(session: WebSession): Promise<WebSession> {
   const handle = runner.getSession(session.id);
   let status: WebSession["status"] | undefined;
@@ -338,7 +438,12 @@ app.post<{ Params: { id: string } }>("/api/sessions/:id/metadata/generate", asyn
   if (!session) return reply.code(404).send({ error: "session not found" });
   const handle = runner.getSession(session.id);
   if (handle && (await handle.snapshot(session)).status !== "idle") return reply.code(409).send({ error: "metadata generation is available when the session is idle" });
-  const suggestion = generateHeuristicMetadata(session);
+  const suggestion = config.fakeAgent ? generateHeuristicMetadata(session) : await generateModelBackedMetadata(session);
+  if (!suggestion.deferred) {
+    const updated = store.updateSession(session.id, { incrementGenerationCount: true });
+    const hub = sessionHubs.get(session.id);
+    if (updated && hub) hub.broadcastMetadataUpdate(updated);
+  }
   return suggestion;
 });
 
