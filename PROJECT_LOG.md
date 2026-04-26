@@ -75,3 +75,10 @@ At the end of each work session:
 3. Tell the human operator how to test the changes manually, including whether the current browser page can pick them up automatically, requires a page refresh, or requires a backend/dev-server restart.
 4. Commit with a concise message.
 5. In the next AI session, start by reading `DESIGN.md` and `PROJECT_LOG.md`.
+
+## UI validation convention
+
+- UI-affecting changes should run `bun run test:web-perf` after `bun run check`.
+- Use `bun run ui:manual` for headed fake-agent exploratory validation in a temp workspace.
+- Include harness scenario names and artifact paths in handoffs.
+- If a new UI feature is not covered by the harness, extend `scripts/ui-harness.ts` with a scenario before relying on human-only manual testing where practical.
