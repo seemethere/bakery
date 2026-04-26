@@ -237,6 +237,8 @@ class PiWebAgentApp extends HTMLElement {
   private commandAutocompleteRequest = 0;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private renderScheduled = false;
+  private forceFullRender = false;
+  private dirtyTranscriptIds = new Set<string>();
   private renderedSegmentCache = new Map<string, string>();
 
   connectedCallback(): void {
@@ -264,6 +266,7 @@ class PiWebAgentApp extends HTMLElement {
     const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
     if (index === -1) this.transcript.push(item);
     else this.transcript[index] = { ...this.transcript[index], ...item };
+    this.dirtyTranscriptIds.add(item.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(item.id, false);
   }
 
@@ -353,6 +356,8 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = snapshot.settings ?? this.settings;
     this.transcript = snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
+    this.forceFullRender = true;
+    this.dirtyTranscriptIds.clear();
     if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
     void this.refreshTree();
   }
@@ -889,9 +894,13 @@ class PiWebAgentApp extends HTMLElement {
     if (cached !== undefined) return cached;
 
     const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
+    const usePlainStreamingText = item.status === "running" && (item.kind === "assistant" || item.kind === "user");
     const rendered = segments
       .map((segment) => {
-        if (segment.kind === "markdown") return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
+        if (segment.kind === "markdown") {
+          if (usePlainStreamingText) return `<div class="markdown-body streaming-plain"><pre>${escapeHtml(segment.text)}</pre></div>`;
+          return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
+        }
         if (segment.kind === "thinking") {
           const content = this.showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
           return `<div class="markdown-body thinking-trace">${content}</div>`;
@@ -1061,28 +1070,28 @@ class PiWebAgentApp extends HTMLElement {
     return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
   }
 
+  private renderTranscriptItem(item: TranscriptItem): string {
+    const status = item.status ? `<span>${escapeHtml(item.status)}</span>` : "";
+    const isCollapsible = item.kind === "tool" || item.kind === "system";
+    const selected = item.id === this.selectedTranscriptId ? "selected" : "";
+    const isOpen = item.status === "running" || item.status === "error" || Boolean(selected);
+    const dataAttr = `data-transcript-id="${escapeHtml(item.id)}"`;
+    if (isCollapsible) {
+      return `
+        <details ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}" ${isOpen ? "open" : ""}>
+          <summary class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</summary>
+          ${this.renderSegments(item)}
+        </details>`;
+    }
+    return `
+      <article ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}">
+        <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</div>
+        ${this.renderSegments(item)}
+      </article>`;
+  }
+
   private renderTranscript(): string {
-    return this.transcript
-      .map((item) => {
-        const status = item.status ? `<span>${escapeHtml(item.status)}</span>` : "";
-        const isCollapsible = item.kind === "tool" || item.kind === "system";
-        const selected = item.id === this.selectedTranscriptId ? "selected" : "";
-        const isOpen = item.status === "running" || item.status === "error" || Boolean(selected);
-        const dataAttr = `data-transcript-id="${escapeHtml(item.id)}"`;
-        if (isCollapsible) {
-          return `
-            <details ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}" ${isOpen ? "open" : ""}>
-              <summary class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</summary>
-              ${this.renderSegments(item)}
-            </details>`;
-        }
-        return `
-          <article ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}">
-            <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</div>
-            ${this.renderSegments(item)}
-          </article>`;
-      })
-      .join("");
+    return this.transcript.map((item) => this.renderTranscriptItem(item)).join("");
   }
 
   private scrollTranscriptToBottom(): void {
@@ -1122,12 +1131,53 @@ class PiWebAgentApp extends HTMLElement {
     else if (selectedBottom > visibleBottom) container.scrollTop = selectedBottom - container.clientHeight;
   }
 
-  private requestRender(delayMs = this.status === "running" ? 75 : 0): void {
+  private findTranscriptElement(id: string): HTMLElement | null {
+    const transcript = this.querySelector<HTMLElement>(".transcript");
+    if (!transcript) return null;
+    return Array.from(transcript.children).find((element) => (element as HTMLElement).dataset.transcriptId === id) as HTMLElement | undefined ?? null;
+  }
+
+  private bindTranscriptElement(element: HTMLElement): void {
+    element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
+  }
+
+  private patchHeaderStatus(): void {
+    const status = this.querySelector<HTMLElement>(".status");
+    if (!status) return;
+    status.className = `status ${this.status}`;
+    status.textContent = this.status;
+  }
+
+  private patchLiveRender(): boolean {
+    const transcript = this.querySelector<HTMLElement>(".transcript");
+    if (!transcript || this.forceFullRender) return false;
+
+    for (const id of this.dirtyTranscriptIds) {
+      const item = this.transcript.find((candidate) => candidate.id === id);
+      if (!item) continue;
+      const template = document.createElement("template");
+      template.innerHTML = this.renderTranscriptItem(item).trim();
+      const next = template.content.firstElementChild as HTMLElement | null;
+      if (!next) continue;
+      this.bindTranscriptElement(next);
+      const existing = this.findTranscriptElement(id);
+      if (existing) existing.replaceWith(next);
+      else transcript.append(next);
+    }
+    this.dirtyTranscriptIds.clear();
+    this.patchHeaderStatus();
+    this.syncTranscriptScroll();
+    this.syncAutocompleteScroll();
+    return true;
+  }
+
+  private requestRender(delayMs = this.status === "running" ? 150 : 0): void {
     if (this.renderScheduled) return;
     this.renderScheduled = true;
     this.renderTimer = setTimeout(() => {
       this.renderScheduled = false;
       this.renderTimer = undefined;
+      if (delayMs > 0 && this.patchLiveRender()) return;
       this.render();
     }, delayMs);
   }
@@ -1203,6 +1253,8 @@ class PiWebAgentApp extends HTMLElement {
       ${this.renderRightPanel()}
       ${this.renderTreeDrawer()}
     `;
+    this.forceFullRender = false;
+    this.dirtyTranscriptIds.clear();
     this.bindEvents();
     if (restorePromptFocus) {
       const nextPrompt = this.querySelector<HTMLTextAreaElement>("#prompt");

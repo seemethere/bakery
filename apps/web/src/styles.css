@@ -554,6 +554,17 @@ pre {
   border-radius: 8px;
 }
 
+.markdown-body.streaming-plain pre {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  overflow-x: visible;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .thinking-trace {
   color: #8b94a7;
   font-style: italic;
