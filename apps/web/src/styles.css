@@ -711,34 +711,84 @@ textarea {
 }
 
 .running-queue {
+  display: grid;
+  gap: 6px;
+  max-height: 112px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 209, 138, 0.28);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 209, 138, 0.11), rgba(16, 21, 35, 0.84));
+  padding: 7px;
+  box-shadow: inset 3px 0 0 rgba(255, 190, 92, 0.75);
+}
+
+.running-queue-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #ffd18a;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.running-queue-heading span {
+  color: #9aa6bd;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.running-queue-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  max-height: 48px;
-  overflow-y: auto;
+  gap: 6px;
 }
 
 .queue-pill {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: auto minmax(80px, 1fr) auto auto;
   align-items: center;
-  gap: 5px;
-  max-width: min(360px, 48%);
+  gap: 6px;
+  max-width: min(520px, 100%);
   border: 1px solid #343b49;
-  border-radius: 999px;
-  background: rgba(15, 17, 23, 0.82);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.88);
   color: #aab2c0;
-  padding: 3px 8px;
+  padding: 5px 6px 5px 8px;
   font-size: 11px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.18);
+}
+
+.queue-pill strong {
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .queue-pill.follow-up {
-  border-color: #6d4b1f;
+  border-color: rgba(255, 190, 92, 0.62);
   color: #ffd18a;
+  background: rgba(52, 34, 12, 0.72);
+}
+
+.queue-pill.follow-up strong {
+  background: rgba(255, 190, 92, 0.18);
+  color: #ffe1aa;
 }
 
 .queue-pill.steer {
-  border-color: #315e9d;
+  border-color: rgba(91, 141, 239, 0.62);
   color: #b7d4ff;
+  background: rgba(14, 28, 52, 0.72);
+}
+
+.queue-pill.steer strong {
+  background: rgba(91, 141, 239, 0.2);
+  color: #d4e4ff;
 }
 
 .queue-pill span {
@@ -747,22 +797,43 @@ textarea {
   white-space: nowrap;
 }
 
+.queue-edit,
 .queue-cancel {
-  border: 0;
-  background: transparent;
+  border: 1px solid transparent;
   color: inherit;
-  opacity: 0.72;
+  opacity: 0.82;
   padding: 0 2px;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   line-height: 14px;
   border-radius: 999px;
+  font-size: 11px;
+}
+
+.queue-edit {
+  background: rgba(91, 141, 239, 0.18);
+  border-color: rgba(129, 166, 255, 0.35);
+  color: #cfe0ff;
+}
+
+.queue-cancel {
+  background: rgba(255, 107, 107, 0.14);
+  border-color: rgba(255, 132, 132, 0.32);
+  color: #ffd6d6;
+}
+
+.queue-edit:hover,
+.queue-edit:focus-visible {
+  opacity: 1;
+  background: rgba(91, 141, 239, 0.34);
+  border-color: rgba(160, 190, 255, 0.65);
 }
 
 .queue-cancel:hover,
 .queue-cancel:focus-visible {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 107, 107, 0.3);
+  border-color: rgba(255, 160, 160, 0.65);
 }
 
 button.danger {

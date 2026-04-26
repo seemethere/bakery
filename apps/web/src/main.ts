@@ -1238,24 +1238,42 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private cancelQueuedMessage(queue: "steering" | "followUp", index: number, text: string): void {
+  private removeQueuedMessage(queue: "steering" | "followUp", index: number, text: string): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.notice = "Not connected. Queued messages can be canceled after reconnect.";
+      this.notice = "Not connected. Queued messages can be changed after reconnect.";
       this.render();
-      return;
+      return false;
     }
     const current = this.runningQueue[queue];
     if (current[index] !== text) {
-      this.notice = "Queued message changed before it could be canceled.";
+      this.notice = "Queued message changed before it could be updated.";
       this.render();
-      return;
+      return false;
     }
     this.runningQueue = {
       ...this.runningQueue,
       [queue]: current.filter((_, candidateIndex) => candidateIndex !== index),
     };
     this.ws.send(JSON.stringify({ type: "cancel_queued_message", queue, index, text }));
+    return true;
+  }
+
+  private cancelQueuedMessage(queue: "steering" | "followUp", index: number, text: string): void {
+    if (this.removeQueuedMessage(queue, index, text)) this.render();
+  }
+
+  private editQueuedMessage(queue: "steering" | "followUp", index: number, text: string): void {
+    if (!this.removeQueuedMessage(queue, index, text)) return;
+    this.promptDraft = text;
+    this.savePromptDraft();
+    this.notice = `Queued ${queue === "followUp" ? "follow-up" : "steer"} moved back to the composer.`;
     this.render();
+    window.requestAnimationFrame(() => {
+      const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
   }
 
   private sendFromInput(followUp = false): void {
@@ -1556,6 +1574,15 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
+    this.querySelectorAll<HTMLButtonElement>("[data-edit-queue]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        const queue = button.dataset.editQueue === "followUp" ? "followUp" : "steering";
+        const index = Number(button.dataset.queueIndex ?? "-1");
+        const text = button.dataset.queueText ?? "";
+        if (index >= 0 && text) this.editQueuedMessage(queue, index, text);
+      });
+    });
     this.querySelectorAll<HTMLButtonElement>("[data-cancel-queue]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
@@ -1857,12 +1884,20 @@ class PiWebAgentApp extends HTMLElement {
       <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(text)}">
         <strong>${escapeHtml(kind)} ${index + 1}</strong>
         <span>${escapeHtml(text)}</span>
+        <button type="button" class="queue-edit" data-edit-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(text)}" aria-label="Edit ${escapeHtml(kind)} ${index + 1}">✎</button>
         <button type="button" class="queue-cancel" data-cancel-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(text)}" aria-label="Cancel ${escapeHtml(kind)} ${index + 1}">×</button>
       </span>`;
+    const total = steering.length + followUp.length;
     return `
       <div class="running-queue" aria-label="Queued running controls">
-        ${steering.map((text, index) => renderPill("Steer", "steering", text, index)).join("")}
-        ${followUp.map((text, index) => renderPill("Follow-up", "followUp", text, index)).join("")}
+        <div class="running-queue-heading">
+          <strong>Queued for this run</strong>
+          <span>${total} pending</span>
+        </div>
+        <div class="running-queue-items">
+          ${steering.map((text, index) => renderPill("Steer", "steering", text, index)).join("")}
+          ${followUp.map((text, index) => renderPill("Follow-up", "followUp", text, index)).join("")}
+        </div>
       </div>`;
   }
 
