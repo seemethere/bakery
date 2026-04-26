@@ -110,7 +110,10 @@ function cleanTitleInput(value: string): string {
 
 function isGenericSessionPrompt(value: string): boolean {
   const normalized = value.toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
-  return /^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|what'?s next|what next|next|next up|next thing|okay next thing|alright what'?s next|nice what'?s next)(?: please)?$/.test(normalized);
+  if (/^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|next|next up|next thing)(?: please)?$/.test(normalized)) return true;
+  if (/^(?:give me (?:a )?sense of )?(?:what'?s|what is|what) next\??$/.test(normalized)) return true;
+  if (/^(?:nice|okay|alright|ok) (?:what'?s|what is|what) next\??$/.test(normalized)) return true;
+  return false;
 }
 
 function provisionalTitleFromPrompt(value: string): string | null {
@@ -1262,7 +1265,10 @@ class PiWebAgentApp extends HTMLElement {
         body: JSON.stringify({ mode: "suggest" }),
       });
       if (suggestion.deferred) this.metadataSuggestionError = suggestion.reason ?? "Not enough session context yet.";
-      else this.metadataSuggestion = suggestion;
+      else {
+        this.metadataSuggestion = suggestion;
+        this.metadataSuggestionError = suggestion.reason && !suggestion.summary ? suggestion.reason : "";
+      }
     } catch (error) {
       this.metadataSuggestionError = `Metadata generation failed: ${error instanceof Error ? error.message : String(error)}`;
     }

@@ -130,13 +130,34 @@ function cleanMetadataText(value: string, max: number): string {
 
 function isGenericPrompt(text: string): boolean {
   const normalized = text.toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
-  return /^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|what'?s next|what next|next|next up|next thing|okay next thing|alright what'?s next|nice what'?s next)(?: please)?$/.test(normalized);
+  if (/^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|next|next up|next thing)(?: please)?$/.test(normalized)) return true;
+  if (/^(?:give me (?:a )?sense of )?(?:what'?s|what is|what) next\??$/.test(normalized)) return true;
+  if (/^(?:nice|okay|alright|ok) (?:what'?s|what is|what) next\??$/.test(normalized)) return true;
+  return false;
+}
+
+function titleFromPrompt(text: string): string | null {
+  let cleaned = cleanMetadataText(text, 120)
+    .replace(/^(?:i think|i want to|can we|could we|let'?s|please)\s+/i, "")
+    .replace(/\b(?:kind of|maybe|even|still|a bit)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || isGenericPrompt(cleaned) || cleaned.length < 8) return null;
+
+  const lower = cleaned.toLowerCase();
+  if (/session/.test(lower) && /summar/.test(lower) && /title|naming|name/.test(lower)) return "Improve session titles and summaries";
+  if (/session/.test(lower) && /title|naming|name/.test(lower)) return "Fix session title naming";
+  if (/summary|summar/.test(lower)) return "Improve session summaries";
+  if (/queued|follow.?up|steer/.test(lower)) return "Refine queued follow-up controls";
+  if (/tool/.test(lower) && /output|terminal|viewport/.test(lower)) return "Tune tool output ergonomics";
+  if (/context/.test(lower) && /usage|availability|window/.test(lower)) return "Add context usage indicator";
+
+  cleaned = cleaned.replace(/[.!?]+$/, "");
+  return cleaned.slice(0, 60);
 }
 
 function firstPromptTitle(text: string): string | null {
-  const cleaned = cleanMetadataText(text, 60);
-  if (!cleaned || isGenericPrompt(cleaned) || cleaned.length < 8) return null;
-  return cleaned;
+  return titleFromPrompt(text);
 }
 
 function sessionEntries(session: WebSession): SessionEntry[] {
@@ -171,16 +192,13 @@ function generateHeuristicMetadata(session: WebSession): SessionMetadataSuggesti
     return { confidence: "low", deferred: true, reason: error instanceof Error ? error.message : String(error) };
   }
   const meaningfulUsers = signals.users.filter((text) => !isGenericPrompt(text));
-  const hasAssistant = signals.assistants.length > 0 || signals.compactions.length > 0;
-  if (meaningfulUsers.length === 0 && !hasAssistant) return { confidence: "low", deferred: true, reason: "Not enough session context yet." };
-  const basis = meaningfulUsers[0] ?? signals.assistants[0] ?? signals.compactions[0] ?? "";
-  const title = firstPromptTitle(basis)?.replace(/[.!?]+$/, "") || undefined;
-  const topicParts = [...meaningfulUsers.slice(0, 3), ...signals.assistants.slice(0, 1), ...signals.compactions.slice(0, 1)].filter(Boolean);
-  const summary = hasAssistant
-    ? cleanMetadataText(`Discusses ${topicParts.join(". ")}`, 300).replace(/\.$/, "")
-    : undefined;
-  if (!title && !summary) return { confidence: "low", deferred: true, reason: "Not enough specific session context yet." };
-  return { title, summary, confidence: meaningfulUsers.length > 0 && hasAssistant ? "medium" : "low" };
+  const basis = meaningfulUsers[0] ?? "";
+  const title = basis ? titleFromPrompt(basis)?.replace(/[.!?]+$/, "") || undefined : undefined;
+
+  // The local heuristic is intentionally title-only. Prompt concatenation made poor summaries
+  // that looked authoritative; useful summaries should come from the model-backed generator.
+  if (!title) return { confidence: "low", deferred: true, reason: "Not enough specific session context for a useful title yet." };
+  return { title, confidence: "medium", reason: "Summary generation needs the model-backed generator." };
 }
 
 async function enrichSession(session: WebSession): Promise<WebSession> {
