@@ -855,14 +855,18 @@ textarea:disabled {
 }
 
 .message.tool.done.collapsed {
-  border-color: rgba(86, 121, 88, 0.45);
-  background: rgba(30, 51, 36, 0.55);
-  opacity: 0.82;
+  border-color: rgba(86, 121, 88, 0.32);
+  background: rgba(30, 51, 36, 0.38);
+  opacity: 0.74;
+}
+
+.message.tool.done.collapsed + .message.tool.done.collapsed {
+  margin-top: 5px;
 }
 
 .message.tool.done.collapsed .message-header {
-  min-height: 30px;
-  padding: 5px 8px;
+  min-height: 27px;
+  padding: 4px 8px;
   gap: 8px;
 }
 
@@ -872,7 +876,12 @@ textarea:disabled {
 }
 
 .message.tool.done.collapsed .message-status {
+  color: #789174;
   font-size: 11px;
+}
+
+.message.tool.done.collapsed .message-status::before {
+  content: "✓ ";
 }
 
 .message-header .tool-summary {

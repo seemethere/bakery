@@ -342,13 +342,21 @@ function itemHasLocalImageArtifacts(item: TranscriptItem, localImageUrl?: Render
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
-  const line = source
+  const lines = source
     .split(/\r?\n/)
     .map((part) => part.trim())
-    .find((part) => part && !/^exit code:\s*0$/i.test(part));
-  if (!line) return "completed";
-  const normalized = line.replace(/\s+/g, " ");
-  return normalized.length > 140 ? `${normalized.slice(0, 137)}…` : normalized;
+    .filter(Boolean);
+  const usefulLine = lines.find((part) => {
+    if (/^exit code:\s*0$/i.test(part)) return false;
+    if (/^(?:running|starting|completed?)\b.*\btool\b/i.test(part)) return false;
+    if (/^(?:stdout|stderr):\s*$/i.test(part)) return false;
+    return true;
+  });
+  const prefix = lines.length > 8 ? `${lines.length} lines: ` : "";
+  if (!usefulLine) return lines.length > 0 ? `${lines.length} line${lines.length === 1 ? "" : "s"} output` : "completed";
+  const normalized = usefulLine.replace(/^stdout:\s*/i, "").replace(/^stderr:\s*/i, "stderr: ").replace(/\s+/g, " ");
+  const summary = `${prefix}${normalized}`;
+  return summary.length > 140 ? `${summary.slice(0, 137)}…` : summary;
 }
 
 function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, context: RenderContext = {}): string {
