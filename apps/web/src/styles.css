@@ -753,8 +753,10 @@ pre {
   padding: 1px 4px;
   border-radius: 3px;
   white-space: pre;
+  cursor: pointer;
 }
 
+.tree-line:hover,
 .tree-line.current {
   background: #3a3d4d;
   color: #fff4c8;

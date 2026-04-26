@@ -172,6 +172,12 @@ export const forkSessionRequestSchema = z.object({
 });
 export type ForkSessionRequest = z.infer<typeof forkSessionRequestSchema>;
 
+export const navigateTreeRequestSchema = z.object({
+  entryId: z.string().min(1),
+  summarize: z.boolean().optional().default(false),
+});
+export type NavigateTreeRequest = z.infer<typeof navigateTreeRequestSchema>;
+
 export const agentStatusSchema = z.enum(["idle", "running", "aborting", "error"]);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
@@ -207,6 +213,12 @@ export const sessionSnapshotSchema = z.object({
   settings: sessionRuntimeSettingsSchema.optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
+
+export const navigateTreeResponseSchema = z.object({
+  snapshot: sessionSnapshotSchema,
+  editorText: z.string().optional(),
+});
+export type NavigateTreeResponse = z.infer<typeof navigateTreeResponseSchema>;
 
 export const normalizedAgentEventSchema = z.object({
   type: z.string(),

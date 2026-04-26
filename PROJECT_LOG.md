@@ -24,7 +24,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed the follow-up regression from that change: initial render no longer calls `querySelector("")`, so the app refreshes workspaces/sessions instead of staying empty.
 - Added a right-side Details/Preview inspector panel: transcript messages/tool cards are selectable, selection and collapse state persist locally, Details shows compact metadata/content plus collapsible raw event data with copy controls, and Preview renders Markdown/code plus sandboxed HTML/SVG snippets.
 - Improved streaming UI responsiveness by throttling WebSocket-driven renders, reducing transcript follow-scroll layout work, and caching rendered transcript segment HTML.
-- Added basic session tree/fork support: shared tree/fork protocol schemas, `GET /api/sessions/:id/tree`, `POST /api/sessions/:id/fork`, a right-inspector Tree tab, and a TUI-inspired wide tree drawer opened with `/tree`; user-message entries can fork a new web session.
+- Added basic session tree/fork/navigation support: shared tree/fork/navigate protocol schemas, `GET /api/sessions/:id/tree`, `POST /api/sessions/:id/fork`, `POST /api/sessions/:id/tree/navigate`, a right-inspector Tree tab, and a TUI-inspired wide tree drawer opened with `/tree`; rows navigate within the current pi session and user-message entries can fork a new web session.
 
 ## How to run
 
@@ -50,7 +50,7 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after wiring `/tree` to open a wide TUI-like tree drawer.
+Latest: `bun run check` passes after adding TUI-like click-to-navigate behavior to `/tree`.
 
 ## Next priorities
 
@@ -58,7 +58,7 @@ Latest: `bun run check` passes after wiring `/tree` to open a wide TUI-like tree
 2. Manually test the revised collapsible Details/Preview inspector against real tool runs, Markdown/code responses, HTML/SVG snippets, and narrow window widths to confirm main content no longer draws under the inspector.
 3. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
 4. Continue performance work by splitting shell/transcript/inspector rendering so streaming does not rewrite the whole app.
-5. Expand branch/tree support beyond basic fork-from-user-message: navigate existing branches, label/bookmark entries, and improve how fork position is chosen.
+5. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
 6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
 7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 

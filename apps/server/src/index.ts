@@ -11,6 +11,7 @@ import {
   fileCompleteQuerySchema,
   fileSearchQuerySchema,
   forkSessionRequestSchema,
+  navigateTreeRequestSchema,
   updateSessionRequestSchema,
   type ControllerInfo,
   type HelloMessage,
@@ -201,6 +202,27 @@ app.get<{ Params: { id: string } }>("/api/sessions/:id/tree", async (request, re
     return { sessionId: webSession.id, leafId, tree: manager.getTree().map((node) => mapTreeNode(node, leafId)) };
   } catch (error) {
     return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post<{ Params: { id: string } }>("/api/sessions/:id/tree/navigate", async (request, reply) => {
+  const parsed = navigateTreeRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  const webSession = store.getSession(request.params.id);
+  if (!webSession) return reply.code(404).send({ error: "session not found" });
+  try {
+    const handle = await runner.createSession({
+      id: webSession.id,
+      cwd: webSession.cwd,
+      piSessionFile: webSession.piSessionFile,
+    });
+    if (handle.session.isStreaming) return reply.code(409).send({ error: "cannot navigate while agent is running" });
+    const result = await handle.session.navigateTree(parsed.data.entryId, { summarize: parsed.data.summarize });
+    if (result.cancelled) return reply.code(409).send({ error: "navigation cancelled" });
+    const snapshot = await handle.snapshot(webSession);
+    return { snapshot, editorText: result.editorText };
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 

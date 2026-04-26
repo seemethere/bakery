@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -347,6 +347,16 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
+  private applySnapshot(snapshot: SessionSnapshot): void {
+    this.status = snapshot.status;
+    this.controller = snapshot.controller ?? this.controller;
+    this.settings = snapshot.settings ?? this.settings;
+    this.transcript = snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
+    if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
+    if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
+    void this.refreshTree();
+  }
+
   private handleSocketMessage(raw: string): void {
     const data = JSON.parse(raw) as ServerEnvelope | HelloMessage;
     if (!("payload" in data)) {
@@ -361,13 +371,7 @@ class PiWebAgentApp extends HTMLElement {
 
     const { payload } = data;
     if (payload.type === "session_snapshot") {
-      this.status = payload.snapshot.status;
-      this.controller = payload.snapshot.controller ?? this.controller;
-      this.settings = payload.snapshot.settings ?? this.settings;
-      this.transcript = payload.snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
-      if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
-      if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
-      void this.refreshTree();
+      this.applySnapshot(payload.snapshot);
     } else if (payload.type === "agent_event") {
       this.applyAgentEvent(payload.event.data ?? payload.event);
     } else if (payload.type === "controller_update") {
@@ -487,6 +491,23 @@ class PiWebAgentApp extends HTMLElement {
       this.openSession(session);
     } catch (error) {
       this.notice = `Fork failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private async navigateToTreeEntry(entryId: string): Promise<void> {
+    if (!this.selectedSession) return;
+    try {
+      const result = await this.api<NavigateTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree/navigate`, {
+        method: "POST",
+        body: JSON.stringify({ entryId, summarize: false }),
+      });
+      this.applySnapshot(result.snapshot);
+      if (result.editorText) this.promptDraft = result.editorText;
+      this.notice = result.editorText ? "Navigated to user message draft" : "Navigated to selected point";
+      this.render();
+    } catch (error) {
+      this.notice = `Tree navigation failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
     }
   }
@@ -851,6 +872,9 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("click", () => this.openTreeDrawer());
     });
     this.querySelector<HTMLButtonElement>("#closeTreeDrawer")?.addEventListener("click", () => this.closeTreeDrawer());
+    this.querySelectorAll<HTMLElement>("[data-tree-entry-id]").forEach((element) => {
+      element.addEventListener("click", () => void this.navigateToTreeEntry(element.dataset.treeEntryId ?? ""));
+    });
     this.querySelectorAll<HTMLButtonElement>("[data-fork-entry-id]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -965,11 +989,11 @@ class PiWebAgentApp extends HTMLElement {
       const canFork = node.type === "message" && node.role === "user";
       const kind = node.role ?? node.type;
       return `
-        <div class="tree-line ${node.current ? "current" : ""}">
+        <div class="tree-line ${node.current ? "current" : ""}" data-tree-entry-id="${escapeHtml(node.id)}" title="Navigate to this point">
           <span class="tree-prefix">${escapeHtml(prefix)}${connector}</span>
           <span class="tree-kind ${escapeHtml(kind)}">${escapeHtml(kind)}:</span>
           <span class="tree-title">${escapeHtml(node.title.replace(/^\w+:\s*/, ""))}</span>
-          ${node.current ? `<span class="tree-current">current</span>` : ""}
+          ${node.current ? `<span class="tree-current">current</span>` : `<span class="tree-current">go</span>`}
           ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message">fork</button>` : ""}
         </div>
         ${node.children.length ? this.renderTreeNodes(node.children, childPrefix) : ""}`;
@@ -982,7 +1006,7 @@ class PiWebAgentApp extends HTMLElement {
       <div class="tree-panel tui-tree ${options.drawer ? "drawer-tree" : ""}">
         <div class="tree-toolbar">
           <strong>Session Tree</strong>
-          <span>Type <b>/tree</b> to open this wide view. Click <b>fork</b> on a user message to branch.</span>
+          <span>Type <b>/tree</b> to open this wide view. Click a row to navigate; <b>fork</b> creates a new session branch.</span>
           <div class="tree-toolbar-actions">
             ${options.drawer ? `<button id="closeTreeDrawer">Close</button>` : `<button data-open-tree-drawer>Wide</button>`}
             <button data-tree-refresh>Refresh</button>
