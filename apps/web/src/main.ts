@@ -684,6 +684,7 @@ class PiWebAgentApp extends HTMLElement {
   private commandAutocomplete: CommandAutocompleteState = { active: false, token: "", start: 0, end: 0, commands: [], selectedIndex: 0, loading: false };
   private commandAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private commandAutocompleteRequest = 0;
+  private promptDraftSaveTimer: ReturnType<typeof setTimeout> | undefined;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private renderScheduled = false;
   private forceFullRender = false;
@@ -702,6 +703,7 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     this.persistAttachmentWarningIfNeeded();
     if (this.renderTimer) clearTimeout(this.renderTimer);
+    if (this.promptDraftSaveTimer) clearTimeout(this.promptDraftSaveTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.socketGeneration++;
     this.ws?.close();
@@ -779,6 +781,14 @@ class PiWebAgentApp extends HTMLElement {
     if (!key) return;
     if (this.promptDraft) localStorage.setItem(key, this.promptDraft);
     else localStorage.removeItem(key);
+  }
+
+  private schedulePromptDraftSave(): void {
+    if (this.promptDraftSaveTimer) clearTimeout(this.promptDraftSaveTimer);
+    this.promptDraftSaveTimer = setTimeout(() => {
+      this.promptDraftSaveTimer = undefined;
+      this.savePromptDraft();
+    }, 250);
   }
 
   private loadPromptDraft(sessionId: string): string {
@@ -1482,13 +1492,33 @@ class PiWebAgentApp extends HTMLElement {
 
   private updatePromptDraft(input: HTMLTextAreaElement): void {
     this.promptDraft = input.value;
-    this.savePromptDraft();
-    this.updateCommandAutocomplete(input);
-    this.updateFileAutocomplete(input);
+    this.schedulePromptDraftSave();
+    const commandToken = this.getCommandToken(input);
+    if (commandToken) {
+      this.updateCommandAutocomplete(input, commandToken);
+      if (this.fileAutocomplete.active) {
+        this.closeFileAutocomplete();
+        this.render();
+      }
+      return;
+    }
+    const fileToken = this.getFileToken(input);
+    if (fileToken) {
+      this.updateFileAutocomplete(input, fileToken);
+      if (this.commandAutocomplete.active) {
+        this.closeCommandAutocomplete();
+        this.render();
+      }
+      return;
+    }
+    const hadAutocomplete = this.commandAutocomplete.active || this.fileAutocomplete.active;
+    this.closeCommandAutocomplete();
+    this.closeFileAutocomplete();
+    if (hadAutocomplete) this.render();
   }
 
-  private updateFileAutocomplete(input: HTMLTextAreaElement): void {
-    const token = this.getFileToken(input);
+  private updateFileAutocomplete(input: HTMLTextAreaElement, knownToken?: { token: string; start: number; end: number }): void {
+    const token = knownToken ?? this.getFileToken(input);
     if (!token || !this.selectedSession) {
       const wasActive = this.fileAutocomplete.active;
       this.closeFileAutocomplete();
@@ -1538,8 +1568,8 @@ class PiWebAgentApp extends HTMLElement {
     this.fileAutocomplete = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
   }
 
-  private updateCommandAutocomplete(input: HTMLTextAreaElement): void {
-    const token = this.getCommandToken(input);
+  private updateCommandAutocomplete(input: HTMLTextAreaElement, knownToken?: { token: string; start: number; end: number }): void {
+    const token = knownToken ?? this.getCommandToken(input);
     if (!token || !this.selectedSession) {
       const wasActive = this.commandAutocomplete.active;
       this.closeCommandAutocomplete();
