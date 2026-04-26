@@ -859,16 +859,28 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderDetailsPanel(item: TranscriptItem): string {
-    const details = {
-      id: item.id,
-      kind: item.kind,
-      title: item.title,
-      status: item.status ?? null,
-      body: item.body,
-      segments: item.segments ?? null,
-      raw: item.raw ?? null,
-    };
-    return `<div class="details-panel"><pre>${escapeHtml(stringify(details))}</pre></div>`;
+    const raw = item.raw ?? item;
+    const rawText = stringify(raw);
+    const bodyPreview = item.body.trim();
+    return `
+      <div class="details-panel">
+        <dl class="detail-grid">
+          <dt>ID</dt><dd><code>${escapeHtml(item.id)}</code></dd>
+          <dt>Kind</dt><dd>${escapeHtml(item.kind)}</dd>
+          <dt>Status</dt><dd>${escapeHtml(item.status ?? "—")}</dd>
+          <dt>Content</dt><dd>${escapeHtml(String(item.body.length))} chars</dd>
+          <dt>Raw</dt><dd>${escapeHtml(String(rawText.length))} chars</dd>
+        </dl>
+        ${bodyPreview ? `
+          <section class="detail-section">
+            <h3>Content</h3>
+            <pre>${escapeHtml(bodyPreview)}</pre>
+          </section>` : ""}
+        <details class="detail-section raw-detail">
+          <summary>Raw event/message JSON</summary>
+          <pre>${escapeHtml(rawText)}</pre>
+        </details>
+      </div>`;
   }
 
   private renderPreviewPanel(item: TranscriptItem): string {

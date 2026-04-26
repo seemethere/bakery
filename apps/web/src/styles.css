@@ -12,7 +12,7 @@ body {
 
 pi-web-agent {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr) 380px;
+  grid-template-columns: 340px minmax(0, 1fr) minmax(360px, 28vw);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -619,10 +619,73 @@ pre {
   overflow: auto;
 }
 
+.details-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.detail-grid dt {
+  color: #8b94a7;
+}
+
+.detail-grid dd {
+  min-width: 0;
+  margin: 0;
+  color: #d8dee9;
+  overflow-wrap: anywhere;
+}
+
+.detail-grid code {
+  border: 1px solid #343b49;
+  border-radius: 5px;
+  background: #0f1117;
+  padding: 1px 5px;
+}
+
+.detail-section {
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  background: #171a21;
+  overflow: hidden;
+}
+
+.detail-section h3,
+.detail-section summary {
+  margin: 0;
+  padding: 9px 10px;
+  border-bottom: 1px solid #2a2f3a;
+  color: #c8ced8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-section summary {
+  cursor: pointer;
+}
+
 .details-panel pre,
 .preview-code pre {
+  max-height: 42vh;
+  overflow: auto;
   padding: 12px;
   font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.raw-detail pre {
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
 .preview-markdown {

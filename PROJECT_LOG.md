@@ -22,7 +22,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed the server startup regression from the `/changelog` implementation by replacing Bun-incompatible `createRequire(...).resolve("@mariozechner/pi-coding-agent")` usage with `import.meta.resolve` for locating the pi package changelog.
 - Fixed command and file autocomplete keyboard navigation so the dropdown scrolls to keep the selected row visible after arrow-key selection changes.
 - Fixed the follow-up regression from that change: initial render no longer calls `querySelector("")`, so the app refreshes workspaces/sessions instead of staying empty.
-- Added a right-side Details/Preview inspector panel: transcript messages/tool cards are selectable, selection persists locally, Details shows structured JSON/raw event data with copy controls, and Preview renders Markdown/code plus sandboxed HTML/SVG snippets.
+- Added a right-side Details/Preview inspector panel: transcript messages/tool cards are selectable, selection persists locally, Details shows compact metadata/content plus collapsible raw event data with copy controls, and Preview renders Markdown/code plus sandboxed HTML/SVG snippets.
 
 ## How to run
 
@@ -48,11 +48,11 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after adding the right-side Details/Preview inspector panel.
+Latest: `bun run check` passes after tightening the right-side Details inspector layout/readability.
 
 ## Next priorities
 
-1. Manually test the new Details/Preview inspector in the browser against real tool runs, Markdown/code responses, and HTML/SVG snippets.
+1. Refresh the browser page and manually test the revised Details/Preview inspector against real tool runs, Markdown/code responses, and HTML/SVG snippets.
 2. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
 3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
 4. Add basic branch/fork controls and tree summary using pi session manager APIs.
