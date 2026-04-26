@@ -16,6 +16,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Tool execution cards now use more TUI-like compact titles, green/blue/red status backgrounds, and cleaner result extraction from text/image/diff/stdout/stderr result payloads.
 - Web dev server now disables Vite browser HMR/reload by default so in-browser agent edits do not refresh/kill the UI session; set `PI_WEB_VITE_HMR=true` to opt back in. Server `dev` now runs without Bun watch by default so edits to backend/shared packages do not restart and kill in-process pi sessions; use `bun run dev:server:watch` to opt into backend watch mode. The web UI also remembers and reopens the last selected session after a page reload.
 - File search/complete endpoints now call the ignore-aware workspace scanner, validate query params with shared Zod schemas, cap result limits, skip default heavy/binary paths, and keep nested `.gitignore` rules scoped to their subtree.
+- Prompt input now has `@file` autocomplete backed by the file search/complete endpoints, with keyboard navigation, click selection, directory continuation, and prompt draft preservation across live transcript rerenders.
 
 ## How to run
 
@@ -41,18 +42,17 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after wiring file search/complete endpoints. Manual endpoint smoke tests on port 3142 verified `DESIGN.md` search, `apps/server/src/file-search.ts` completion, and ignored `apps/web/node_modules` exclusion.
+Latest: `bun run check` passes after adding prompt-box `@file` autocomplete UI.
 
 ## Next priorities
 
-1. Test in-browser agent runs that edit the served app/shared packages and confirm the UI stays connected without Vite HMR reloads or backend watch restarts.
+1. Manually test prompt-box `@file` autocomplete in the browser, especially directory continuation, keyboard selection, and behavior during live agent output.
 2. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
-3. Add prompt-box `@file` autocomplete UI backed by the file search/complete endpoints.
-4. Add command metadata endpoint and slash-command autocomplete.
-5. Add right-side details/preview panel for selected message/tool data.
-6. Add basic branch/fork controls and tree summary using pi session manager APIs.
-7. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-8. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+3. Add command metadata endpoint and slash-command autocomplete.
+4. Add right-side details/preview panel for selected message/tool data.
+5. Add basic branch/fork controls and tree summary using pi session manager APIs.
+6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 

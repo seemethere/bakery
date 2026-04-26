@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { PROTOCOL_VERSION, type ControllerInfo, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -18,6 +18,16 @@ type TranscriptItem = {
   body: string;
   segments?: TranscriptSegment[];
   status?: "running" | "done" | "error";
+};
+
+type FileAutocompleteState = {
+  active: boolean;
+  token: string;
+  start: number;
+  end: number;
+  files: FileMatch[];
+  selectedIndex: number;
+  loading: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -187,6 +197,10 @@ class PiWebAgentApp extends HTMLElement {
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private transcriptScrollTop = 0;
+  private promptDraft = "";
+  private fileAutocomplete: FileAutocompleteState = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
+  private fileAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
+  private fileAutocompleteRequest = 0;
 
   connectedCallback(): void {
     this.render();
@@ -384,6 +398,8 @@ class PiWebAgentApp extends HTMLElement {
     const text = input?.value.trim();
     if (!input || !text || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ type, text }));
+    this.promptDraft = "";
+    this.closeFileAutocomplete();
     input.value = "";
   }
 
@@ -398,6 +414,89 @@ class PiWebAgentApp extends HTMLElement {
 
   private takeControl(): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "take_control" }));
+  }
+
+  private getFileToken(input: HTMLTextAreaElement): { token: string; start: number; end: number } | null {
+    const end = input.selectionStart ?? input.value.length;
+    const beforeCursor = input.value.slice(0, end);
+    const match = /(^|\s)@([^\s]*)$/.exec(beforeCursor);
+    if (!match) return null;
+    return { token: match[2] ?? "", start: end - (match[2]?.length ?? 0) - 1, end };
+  }
+
+  private updatePromptDraft(input: HTMLTextAreaElement): void {
+    this.promptDraft = input.value;
+    this.updateFileAutocomplete(input);
+  }
+
+  private updateFileAutocomplete(input: HTMLTextAreaElement): void {
+    const token = this.getFileToken(input);
+    if (!token || !this.selectedSession) {
+      const wasActive = this.fileAutocomplete.active;
+      this.closeFileAutocomplete();
+      if (wasActive) this.render();
+      return;
+    }
+
+    this.fileAutocomplete = { ...this.fileAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
+    this.render();
+    if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
+    const requestId = ++this.fileAutocompleteRequest;
+    this.fileAutocompleteTimer = setTimeout(() => void this.fetchFileAutocomplete(token, requestId), 120);
+  }
+
+  private async fetchFileAutocomplete(token: { token: string; start: number; end: number }, requestId: number): Promise<void> {
+    if (!this.selectedSession) return;
+    try {
+      const encoded = encodeURIComponent(token.token);
+      const pathLike = token.token.includes("/") || token.token.startsWith(".");
+      const response = pathLike
+        ? await this.api<FileCompleteResponse>(`/api/sessions/${this.selectedSession.id}/files/complete?prefix=${encoded}&limit=20`)
+        : await this.api<FileSearchResponse>(`/api/sessions/${this.selectedSession.id}/files/search?q=${encoded}&limit=20`);
+      if (requestId !== this.fileAutocompleteRequest) return;
+      this.fileAutocomplete = {
+        active: true,
+        token: token.token,
+        start: token.start,
+        end: token.end,
+        files: response.files,
+        selectedIndex: 0,
+        loading: false,
+      };
+      this.render();
+    } catch (error) {
+      if (requestId !== this.fileAutocompleteRequest) return;
+      this.fileAutocomplete = { ...this.fileAutocomplete, loading: false, files: [] };
+      this.notice = `File autocomplete failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private closeFileAutocomplete(): void {
+    if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
+    this.fileAutocompleteRequest++;
+    this.fileAutocomplete = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
+  }
+
+  private chooseFileAutocomplete(index = this.fileAutocomplete.selectedIndex): void {
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const choice = this.fileAutocomplete.files[index];
+    if (!input || !choice) return;
+    const suffix = choice.type === "directory" ? "/" : "";
+    const inserted = `@${choice.path}${suffix}`;
+    const spacer = choice.type === "directory" ? "" : " ";
+    const before = this.promptDraft.slice(0, this.fileAutocomplete.start);
+    const after = this.promptDraft.slice(this.fileAutocomplete.end);
+    this.promptDraft = `${before}${inserted}${spacer}${after}`;
+    input.value = this.promptDraft;
+    const cursor = before.length + inserted.length + spacer.length;
+    input.focus();
+    input.setSelectionRange(cursor, cursor);
+    if (choice.type === "directory") this.updateFileAutocomplete(input);
+    else {
+      this.closeFileAutocomplete();
+      this.render();
+    }
   }
 
   private setModel(model: string): void {
@@ -437,7 +536,37 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
+    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
+    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
+      window.setTimeout(() => {
+        if (!this.querySelector(":focus")?.closest(".file-autocomplete")) {
+          this.closeFileAutocomplete();
+          this.render();
+        }
+      }, 120);
+    });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
+      if (this.fileAutocomplete.active) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          const count = Math.max(1, this.fileAutocomplete.files.length);
+          this.fileAutocomplete.selectedIndex = (this.fileAutocomplete.selectedIndex + direction + count) % count;
+          this.render();
+          return;
+        }
+        if ((event.key === "Tab" || event.key === "Enter") && this.fileAutocomplete.files.length > 0) {
+          event.preventDefault();
+          this.chooseFileAutocomplete();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this.closeFileAutocomplete();
+          this.render();
+          return;
+        }
+      }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         this.sendFromInput(event.altKey);
@@ -451,6 +580,10 @@ class PiWebAgentApp extends HTMLElement {
         const session = this.sessions.find((candidate) => candidate.id === button.dataset.sessionId);
         if (session) this.openSession(session);
       });
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => this.chooseFileAutocomplete(Number(button.dataset.fileIndex ?? "0")));
     });
   }
 
@@ -468,6 +601,24 @@ class PiWebAgentApp extends HTMLElement {
         return `<pre>${escapeHtml(segment.text)}</pre>`;
       })
       .join("");
+  }
+
+  private renderFileAutocomplete(): string {
+    if (!this.fileAutocomplete.active) return "";
+    const title = this.fileAutocomplete.loading
+      ? "Searching files..."
+      : this.fileAutocomplete.files.length === 0
+        ? "No file matches"
+        : "File matches";
+    return `
+      <div class="file-autocomplete" role="listbox" aria-label="File autocomplete">
+        <div class="file-autocomplete-title">${escapeHtml(title)} <kbd>Tab</kbd>/<kbd>Enter</kbd> to insert</div>
+        ${this.fileAutocomplete.files.map((file, index) => `
+          <button type="button" role="option" data-file-index="${index}" class="${index === this.fileAutocomplete.selectedIndex ? "selected" : ""}">
+            <span>${file.type === "directory" ? "📁" : "📄"}</span>
+            <strong>${escapeHtml(file.path)}${file.type === "directory" ? "/" : ""}</strong>
+          </button>`).join("")}
+      </div>`;
   }
 
   private renderTranscript(): string {
@@ -522,6 +673,10 @@ class PiWebAgentApp extends HTMLElement {
   private render(): void {
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
     if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
+    const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const restorePromptFocus = document.activeElement === prompt;
+    const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
+    const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
     const isRunning = this.status === "running";
     const isController = this.controller?.isController ?? true;
     const controllerLabel = this.controller
@@ -570,7 +725,10 @@ class PiWebAgentApp extends HTMLElement {
         </header>
         <section class="transcript">${this.renderTranscript()}</section>
         <footer>
-          <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up)" : "Prompt pi...") : "Viewer mode — take control to send"}"></textarea>
+          <div class="prompt-shell">
+            <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up). Type @ to attach a file path." : "Prompt pi... Type @ to attach a file path.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            ${this.renderFileAutocomplete()}
+          </div>
           <div class="controls">
             <button id="send" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}</button>
             <button id="followUp" class="${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up</button>
@@ -580,6 +738,12 @@ class PiWebAgentApp extends HTMLElement {
       </main>
     `;
     this.bindEvents();
+    if (restorePromptFocus) {
+      const nextPrompt = this.querySelector<HTMLTextAreaElement>("#prompt");
+      nextPrompt?.focus();
+      const max = nextPrompt?.value.length ?? 0;
+      nextPrompt?.setSelectionRange(Math.min(promptSelectionStart, max), Math.min(promptSelectionEnd, max));
+    }
     this.syncTranscriptScroll();
   }
 }
