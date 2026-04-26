@@ -788,10 +788,10 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private async createSession(): Promise<void> {
+  private async createSession(cwdOverride?: string): Promise<WebSession | null> {
     const select = this.querySelector<HTMLSelectElement>("#workspace");
-    const cwd = select?.value || this.workspaces[0]?.path;
-    if (!cwd) return;
+    const cwd = cwdOverride || select?.value || this.workspaces[0]?.path;
+    if (!cwd) return null;
     try {
       const session = await this.api<WebSession>("/api/sessions", {
         method: "POST",
@@ -799,9 +799,11 @@ class PiWebAgentApp extends HTMLElement {
       });
       this.sessions = [session, ...this.sessions];
       this.openSession(session, false);
+      return session;
     } catch (error) {
       this.notice = `Create session failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
+      return null;
     }
   }
 
@@ -1236,8 +1238,36 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private sendFromInput(followUp = false): void {
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const text = input?.value.trim() ?? "";
+    if (input && /^\/new(?:\s|$)/i.test(text)) {
+      void this.handleNewSlashCommand(input, text);
+      return;
+    }
     if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
     else this.sendClientMessage("prompt");
+  }
+
+  private async handleNewSlashCommand(input: HTMLTextAreaElement, text: string): Promise<void> {
+    if (text !== "/new") {
+      this.notice = "Usage: /new";
+      this.render();
+      return;
+    }
+    if (this.promptImages.length > 0) {
+      this.notice = "Remove image attachments before using /new.";
+      this.render();
+      return;
+    }
+
+    const cwd = this.selectedSession?.cwd;
+    const session = await this.createSession(cwd);
+    if (!session) return;
+    this.promptDraft = "";
+    this.savePromptDraft();
+    this.closeFileAutocomplete();
+    this.closeCommandAutocomplete();
+    input.value = "";
   }
 
   private async addPromptImageFiles(files: FileList | File[]): Promise<void> {

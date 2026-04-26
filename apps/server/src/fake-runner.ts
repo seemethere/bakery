@@ -189,6 +189,7 @@ class FakeSessionHandle implements SessionHandle {
   getCommands(): CommandInfo[] {
     return [
       { name: "tree", description: "Open the web session tree", source: "builtin" },
+      { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
       { name: "session", description: "Show session info", source: "builtin" },
       { name: "reload", description: "Reload fake resources", source: "builtin" },
     ];

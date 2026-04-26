@@ -81,7 +81,7 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "tree", description: "Open the web session tree", source: "builtin" },
   { name: "login", description: "Configure provider authentication", source: "builtin", unsupported: true },
   { name: "logout", description: "Remove provider authentication", source: "builtin", unsupported: true },
-  { name: "new", description: "Start a new session", source: "builtin", unsupported: true },
+  { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
   { name: "compact", description: "Manually compact the session context", source: "builtin" },
   { name: "resume", description: "Resume a different session", source: "builtin", unsupported: true },
   { name: "reload", description: "Reload extensions, skills, prompts, and other resources", source: "builtin" },
