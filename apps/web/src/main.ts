@@ -926,34 +926,37 @@ class PiWebAgentApp extends HTMLElement {
       </aside>`;
   }
 
-  private renderTreeNodes(nodes: SessionTreeNode[], depth = 0): string {
-    return nodes.map((node) => {
+  private renderTreeNodes(nodes: SessionTreeNode[], prefix = ""): string {
+    return nodes.map((node, index) => {
+      const isLast = index === nodes.length - 1;
+      const connector = prefix ? (isLast ? "└─" : "├─") : "•";
+      const childPrefix = `${prefix}${prefix ? (isLast ? "  " : "│ ") : ""}`;
       const canFork = node.type === "message" && node.role === "user";
+      const kind = node.role ?? node.type;
       return `
-        <li class="tree-node ${node.current ? "current" : ""}" style="--depth: ${depth}">
-          <div class="tree-row">
-            <span class="tree-title">${node.current ? "● " : ""}${escapeHtml(node.title)}</span>
-            ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message">Fork</button>` : ""}
-          </div>
-          <small>${escapeHtml(node.type)} · ${escapeHtml(node.id)}</small>
-          ${node.children.length ? `<ul>${this.renderTreeNodes(node.children, depth + 1)}</ul>` : ""}
-        </li>`;
+        <div class="tree-line ${node.current ? "current" : ""}">
+          <span class="tree-prefix">${escapeHtml(prefix)}${connector}</span>
+          <span class="tree-kind ${escapeHtml(kind)}">${escapeHtml(kind)}:</span>
+          <span class="tree-title">${escapeHtml(node.title.replace(/^\w+:\s*/, ""))}</span>
+          ${node.current ? `<span class="tree-current">current</span>` : ""}
+          ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message">fork</button>` : ""}
+        </div>
+        ${node.children.length ? this.renderTreeNodes(node.children, childPrefix) : ""}`;
     }).join("");
   }
 
   private renderTreePanel(): string {
     if (!this.selectedSession) return `<p class="empty-panel">Open a session to inspect its tree.</p>`;
     return `
-      <div class="tree-panel">
-        <div class="right-panel-heading compact">
-          <div>
-            <strong>Session tree</strong>
-            <small>${this.sessionTree?.leafId ? `current ${escapeHtml(this.sessionTree.leafId)}` : "No entries yet"}</small>
-          </div>
-          <div class="right-actions"><button id="refreshTree">Refresh</button></div>
+      <div class="tree-panel tui-tree">
+        <div class="tree-toolbar">
+          <strong>Session Tree</strong>
+          <span>Click <b>fork</b> on a user message to branch.</span>
+          <button id="refreshTree">Refresh</button>
         </div>
+        <div class="tree-hints">TUI-style view · current path highlighted · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
         ${this.sessionTree?.tree.length
-          ? `<ul class="session-tree">${this.renderTreeNodes(this.sessionTree.tree)}</ul>`
+          ? `<div class="session-tree">${this.renderTreeNodes(this.sessionTree.tree)}</div>`
           : `<p class="empty-panel">No tree entries yet. Send a prompt first.</p>`}
       </div>`;
   }

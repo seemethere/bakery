@@ -670,46 +670,104 @@ pre {
   overflow: auto;
 }
 
-.session-tree,
-.session-tree ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.tui-tree {
+  background: #252726;
+  color: #e8dfbd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
 }
 
-.tree-node {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 8px 8px 8px calc(10px + var(--depth, 0) * 16px);
-}
-
-.tree-node.current {
-  background: rgba(102, 140, 255, 0.12);
-}
-
-.tree-row {
+.tree-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid #668cff;
+  border-bottom: 1px solid #668cff;
+  background: #333642;
+}
+
+.tree-toolbar strong {
+  color: #fff1bd;
+}
+
+.tree-toolbar span,
+.tree-hints {
+  overflow: hidden;
+  color: #9ca0a0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-toolbar button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.tree-hints {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(102, 140, 255, 0.45);
+  background: #30323b;
+}
+
+.session-tree {
+  min-width: max-content;
+  padding: 12px 10px 18px;
+}
+
+.tree-line {
+  display: grid;
+  grid-template-columns: auto auto minmax(280px, 1fr) auto auto;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 18px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: pre;
+}
+
+.tree-line.current {
+  background: #3a3d4d;
+  color: #fff4c8;
+}
+
+.tree-prefix {
+  color: #7f8585;
+}
+
+.tree-kind {
+  color: #86d7d0;
+  font-weight: 700;
+}
+
+.tree-kind.assistant {
+  color: #98d57d;
+}
+
+.tree-kind.tool,
+.tree-kind.toolResult,
+.tree-kind.message {
+  color: #8b94a7;
 }
 
 .tree-title {
   overflow: hidden;
+  max-width: 52vw;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
+  color: #e8dfbd;
 }
 
-.tree-node small {
-  display: block;
-  margin-top: 3px;
-  color: #8b94a7;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+.tree-current {
+  color: #c6d4ff;
   font-size: 11px;
 }
 
-.tree-row button {
-  padding: 4px 7px;
+.tree-line button {
+  border-color: #4a5268;
+  background: #30323b;
+  padding: 1px 6px;
+  color: #dbe4ff;
   font-size: 11px;
 }
 
