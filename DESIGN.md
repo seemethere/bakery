@@ -367,8 +367,21 @@ Attempt to use `ChatPanel` via a compatible adapter. If blocked by concrete `Age
 Layout:
 
 - central chat
-- collapsible left sidebar for workspaces/sessions
-- tabbed right sidebar: Details / Preview / Tree
+- collapsible/compact left sidebar for workspaces/sessions
+- tabbed right sidebar: Details / Preview / Tree, treated as lower-frequency/debug UI and collapsible by default when it competes with the main chat
+
+Dogfooding usability direction:
+
+- Prioritize workflow friction over broad visual polish.
+- Make the current session identity prominent in the header: editable session title first, workspace/repo/path as secondary metadata.
+- Treat the session sidebar as a recent-work/attention list rather than a raw database. Sort by recent activity/open time, show only sessions accessed within the last week by default, and provide an explicit "show older" affordance.
+- Session cards should eventually show useful recognition and attention metadata: title, last user prompt/activity snippet, relative time, and running/waiting/finished/error indicator. Hide raw UUIDs by default.
+- Collapse the left sidebar by default once an active session is selected, unless the user has explicitly pinned/opened it.
+- Preserve user reading position in the transcript. If the user scrolls up, live updates must not yank the view to the bottom; show a floating "Jump to latest" affordance instead.
+- Keep lifecycle/connection noise out of the transcript. Use banners/toasts/header status for reconnects and WebSocket state; reserve transcript entries for user-visible conversation, intentional command results, meaningful agent work, and actionable errors.
+- Make successful tool calls background activity by default: compact/collapsed after completion, failed/running tools prominent, and current activity visible as a clear status strip.
+- Shrink the composer footprint and make running-state controls more TUI-like: obvious steer vs follow-up modes, queued follow-ups visible in a sticky/floating control area, and smaller buttons/textarea by default.
+- Prefer per-message overflow menus for actions such as copy, fork, retry, preview, and details instead of always-visible controls.
 
 ## UI features
 
@@ -376,12 +389,15 @@ v1 should include:
 
 - session list and workspace selection
 - new/open/resume session
-- central transcript and input
+- prominent current session identity with editable title
+- recent/active session list with useful snippets/status rather than raw IDs
+- central transcript and compact input
+- stable transcript reading position plus "Jump to latest"
 - model and thinking selectors based on backend policy
 - command autocomplete
 - basic `@file` autocomplete
-- collapsible tool cards
-- abort/steer/follow-up controls
+- collapsed successful tool cards and prominent failed/running tool cards
+- abort/steer/follow-up controls with clear running-state mode
 - image paste/upload attachments only
 - basic branch controls
 - right sidebar tabs
@@ -441,10 +457,12 @@ Show:
 
 Defaults:
 
-- successful tools collapse after completion
-- failed tools remain expanded
+- successful tools collapse after completion and should feel like compact background activity
+- failed tools remain expanded/prominent
+- currently running tool/activity remains visible and easy to scan
+- adjacent tool call/result rows may be grouped where practical to reduce transcript noise
 
-Right sidebar Details tab can show full selected tool data.
+Right sidebar Details tab can show full selected tool data, but the main transcript should remain useful without requiring the inspector.
 
 ## Artifacts and preview
 
