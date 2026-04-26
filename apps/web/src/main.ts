@@ -393,6 +393,7 @@ class PiWebAgentApp extends HTMLElement {
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private transcriptScrollTop = 0;
+  private preserveTranscriptScrollOnce = false;
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private fileAutocomplete: FileAutocompleteState = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
@@ -635,9 +636,14 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private selectTranscriptItem(id: string, shouldRender = true): void {
+    const transcript = this.querySelector<HTMLElement>(".transcript");
+    if (transcript) this.transcriptScrollTop = transcript.scrollTop;
     this.selectedTranscriptId = id;
     localStorage.setItem("piWebSelectedTranscriptId", id);
-    if (shouldRender) this.render();
+    if (shouldRender) {
+      this.preserveTranscriptScrollOnce = true;
+      this.render();
+    }
   }
 
   private selectedTranscriptItem(): TranscriptItem | null {
@@ -1327,8 +1333,9 @@ class PiWebAgentApp extends HTMLElement {
   private syncTranscriptScroll(): void {
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript) return;
-    if (!this.autoScroll) {
+    if (!this.autoScroll || this.preserveTranscriptScrollOnce) {
       transcript.scrollTop = this.transcriptScrollTop;
+      this.preserveTranscriptScrollOnce = false;
       return;
     }
 

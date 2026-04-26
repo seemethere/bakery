@@ -33,6 +33,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Expanded `bun run test:web-perf` into an all-scenarios fake-agent suite covering streaming responsiveness, inspector Details/Preview, slash commands, tree/fork/navigation, reconnect/controller handoff, and narrow tool-heavy streams. Harness metrics now include Chromium long-task samples plus app-exported render/patch timing via `window.__piWebPerf`; fake-agent sessions now persist enough JSONL tree data to exercise tree navigation and fork flows.
 - Refactored transcript rows into dedicated `<pi-transcript-row>` custom elements. Live patches now update existing row instances, and actively streaming assistant/user text updates the existing `<pre>` `textContent` without replacing the row HTML. `window.__piWebPerf` now also records row-update timings.
 - Added web-perf threshold checks to the Playwright harness for long tasks plus render/patch/row-update max timings. Thresholds are intentionally loose and configurable with `PI_WEB_PERF_MAX_*`; set `PI_WEB_PERF_THRESHOLDS=off` to disable locally.
+- Fixed transcript selection scroll jumps: clicking an earlier message/image/tool while auto-scroll is enabled now preserves the current transcript scroll position instead of jumping to the bottom.
 
 ## How to run
 
@@ -60,7 +61,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after the transcript-row performance refactor and harness threshold additions. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `narrow-tool-stream`); artifacts at `test-results/ui-harness/all-2026-04-26T18-28-10-743Z`. Streaming responsiveness max latency was 38ms in that run; `window.__piWebPerf` reported max render 7ms, patch 2ms, rowUpdate 6ms, and zero Chromium long tasks for the streaming scenario. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after fixing transcript selection/image-click scroll preservation. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `narrow-tool-stream`); artifacts at `test-results/ui-harness/all-2026-04-26T18-32-28-072Z`. Earlier transcript-row perf run artifacts are at `test-results/ui-harness/all-2026-04-26T18-28-10-743Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
