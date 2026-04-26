@@ -12,7 +12,7 @@ body {
 
 pi-web-agent {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 340px minmax(0, 1fr) 380px;
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -319,6 +319,12 @@ textarea:disabled {
   border-radius: 12px;
   background: #171a21;
   overflow: hidden;
+  cursor: pointer;
+}
+
+.message.selected {
+  outline: 2px solid #668cff;
+  outline-offset: 2px;
 }
 
 .message + .message {
@@ -546,4 +552,94 @@ pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   background: rgba(30, 64, 45, 0.35);
+}
+
+.right-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-right: 0;
+  border-left: 1px solid #2a2f3a;
+  padding: 0;
+  background: #12151c;
+  overflow: hidden;
+}
+
+.right-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid #2a2f3a;
+  background: #171a21;
+}
+
+.right-tabs button {
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+.right-panel-heading {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+.right-panel-heading strong,
+.right-panel-heading small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-panel-heading small {
+  margin-top: 4px;
+  color: #8b94a7;
+  font-size: 12px;
+}
+
+.right-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.right-actions button {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.details-panel,
+.preview-code,
+.preview-markdown {
+  min-height: 0;
+  overflow: auto;
+}
+
+.details-panel pre,
+.preview-code pre {
+  padding: 12px;
+  font-size: 12px;
+}
+
+.preview-markdown {
+  padding: 0;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: white;
+}
+
+.empty-panel {
+  margin: 0;
+  padding: 14px;
+  color: #8b94a7;
+  font-size: 13px;
 }

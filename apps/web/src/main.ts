@@ -18,7 +18,10 @@ type TranscriptItem = {
   body: string;
   segments?: TranscriptSegment[];
   status?: "running" | "done" | "error";
+  raw?: unknown;
 };
+
+type RightPanelTab = "details" | "preview";
 
 type FileAutocompleteState = {
   active: boolean;
@@ -85,6 +88,18 @@ function sanitizeUrl(value: string): string | null {
 
 function renderMarkdown(value: string): string {
   return marked.parse(value, { async: false, gfm: true, breaks: false, renderer: markdownRenderer });
+}
+
+function looksLikeHtml(value: string): boolean {
+  return /^\s*(?:<!doctype\s+html|<html[\s>]|<body[\s>]|<article[\s>]|<section[\s>]|<div[\s>])/i.test(value);
+}
+
+function looksLikeSvg(value: string): boolean {
+  return /^\s*<svg[\s>]/i.test(value);
+}
+
+function looksLikeMarkdown(value: string): boolean {
+  return /(^|\n)\s{0,3}#{1,6}\s+|(^|\n)\s*[-*+]\s+|(^|\n)\s*```|\[[^\]]+\]\([^)]+\)/.test(value);
 }
 
 function formatToolCall(part: Record<string, unknown>): string {
@@ -170,14 +185,14 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
 
 function messageToTranscriptItem(message: unknown, fallbackId: string): TranscriptItem {
   if (!isRecord(message)) {
-    return { id: fallbackId, kind: "system", title: "Event", body: stringify(message) };
+    return { id: fallbackId, kind: "system", title: "Event", body: stringify(message), raw: message };
   }
 
   const role = String(message.role ?? "message");
   const segments = contentToSegments(message.content);
   const body = contentToText(message.content);
-  if (role === "user") return { id: messageKey(message, fallbackId), kind: "user", title: "You", body, segments };
-  if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments };
+  if (role === "user") return { id: messageKey(message, fallbackId), kind: "user", title: "You", body, segments, raw: message };
+  if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, raw: message };
   if (role === "toolResult") {
     const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";
     return {
@@ -186,9 +201,10 @@ function messageToTranscriptItem(message: unknown, fallbackId: string): Transcri
       title: `Tool result${message.toolName ? `: ${String(message.toolName)}` : ""}`,
       body: `${body}${details}`,
       status: message.isError ? "error" : "done",
+      raw: message,
     };
   }
-  return { id: messageKey(message, fallbackId), kind: "system", title: role, body: body || stringify(message) };
+  return { id: messageKey(message, fallbackId), kind: "system", title: role, body: body || stringify(message), raw: message };
 }
 
 class PiWebAgentApp extends HTMLElement {
@@ -206,6 +222,8 @@ class PiWebAgentApp extends HTMLElement {
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
+  private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
+  private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private transcriptScrollTop = 0;
   private promptDraft = "";
   private fileAutocomplete: FileAutocompleteState = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
@@ -239,6 +257,7 @@ class PiWebAgentApp extends HTMLElement {
     const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
     if (index === -1) this.transcript.push(item);
     else this.transcript[index] = { ...this.transcript[index], ...item };
+    if (!this.selectedTranscriptId) this.selectTranscriptItem(item.id, false);
   }
 
   private async refresh(): Promise<void> {
@@ -291,6 +310,8 @@ class PiWebAgentApp extends HTMLElement {
     this.controller = null;
     this.settings = null;
     this.transcriptScrollTop = 0;
+    this.selectedTranscriptId = "opened";
+    localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
     this.ws?.close();
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
@@ -336,6 +357,7 @@ class PiWebAgentApp extends HTMLElement {
       this.settings = payload.snapshot.settings ?? this.settings;
       this.transcript = payload.snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
       if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
+      if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
     } else if (payload.type === "agent_event") {
       this.applyAgentEvent(payload.event.data ?? payload.event);
     } else if (payload.type === "controller_update") {
@@ -361,6 +383,7 @@ class PiWebAgentApp extends HTMLElement {
         kind: event.isError ? "error" : "system",
         title: String(event.title ?? "Slash command"),
         body: String(event.body ?? ""),
+        raw: event,
       });
       return;
     }
@@ -380,6 +403,7 @@ class PiWebAgentApp extends HTMLElement {
         title: formatToolTitle(event.toolName, event.args),
         body: toolArgsToText(event.args ?? {}),
         status: "running",
+        raw: event,
       });
       return;
     }
@@ -392,6 +416,7 @@ class PiWebAgentApp extends HTMLElement {
         title: formatToolTitle(event.toolName, event.args),
         body: partialText || toolArgsToText(event.args ?? {}),
         status: "running",
+        raw: event,
       });
       return;
     }
@@ -405,6 +430,7 @@ class PiWebAgentApp extends HTMLElement {
         title: existing?.title ?? formatToolTitle(event.toolName, {}),
         body: toolResultToText(event.result ?? {}),
         status: event.isError ? "error" : "done",
+        raw: event,
       });
       return;
     }
@@ -412,8 +438,28 @@ class PiWebAgentApp extends HTMLElement {
     if (type === "queue_update") {
       const steering = Array.isArray(event.steering) ? event.steering.length : 0;
       const followUp = Array.isArray(event.followUp) ? event.followUp.length : 0;
-      this.upsertTranscript({ id: "queue", kind: "system", title: "Queue", body: `${steering} steer / ${followUp} follow-up queued` });
+      this.upsertTranscript({ id: "queue", kind: "system", title: "Queue", body: `${steering} steer / ${followUp} follow-up queued`, raw: event });
     }
+  }
+
+  private selectTranscriptItem(id: string, shouldRender = true): void {
+    this.selectedTranscriptId = id;
+    localStorage.setItem("piWebSelectedTranscriptId", id);
+    if (shouldRender) this.render();
+  }
+
+  private selectedTranscriptItem(): TranscriptItem | null {
+    return this.transcript.find((item) => item.id === this.selectedTranscriptId) ?? this.transcript[this.transcript.length - 1] ?? null;
+  }
+
+  private async copyText(value: string, label = "Copied"): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      this.notice = label;
+    } catch (error) {
+      this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    this.render();
   }
 
   private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
@@ -633,6 +679,22 @@ class PiWebAgentApp extends HTMLElement {
       localStorage.setItem("piWebShowThinking", String(this.showThinking));
       this.render();
     });
+    this.querySelectorAll<HTMLButtonElement>("[data-right-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.rightTab === "preview" ? "preview" : "details";
+        this.rightPanelTab = tab;
+        localStorage.setItem("piWebRightPanelTab", tab);
+        this.render();
+      });
+    });
+    this.querySelector<HTMLButtonElement>("#copySelectedBody")?.addEventListener("click", () => {
+      const item = this.selectedTranscriptItem();
+      if (item) void this.copyText(item.body, "Copied selected content");
+    });
+    this.querySelector<HTMLButtonElement>("#copySelectedJson")?.addEventListener("click", () => {
+      const item = this.selectedTranscriptItem();
+      if (item) void this.copyText(stringify(item.raw ?? item), "Copied selected JSON");
+    });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
@@ -710,6 +772,9 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => this.chooseCommandAutocomplete(Number(button.dataset.commandIndex ?? "0")));
     });
+    this.querySelectorAll<HTMLElement>("[data-transcript-id]").forEach((element) => {
+      element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
+    });
   }
 
   private renderSegments(item: TranscriptItem): string {
@@ -768,21 +833,73 @@ class PiWebAgentApp extends HTMLElement {
       </div>`;
   }
 
+  private renderRightPanel(): string {
+    const item = this.selectedTranscriptItem();
+    const detailsActive = this.rightPanelTab === "details";
+    return `
+      <aside class="right-panel">
+        <div class="right-tabs">
+          <button data-right-tab="details" class="${detailsActive ? "active" : ""}">Details</button>
+          <button data-right-tab="preview" class="${!detailsActive ? "active" : ""}">Preview</button>
+        </div>
+        ${item ? `
+          <div class="right-panel-heading">
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <small>${escapeHtml(item.kind)}${item.status ? ` · ${escapeHtml(item.status)}` : ""}</small>
+            </div>
+            <div class="right-actions">
+              <button id="copySelectedBody">Copy text</button>
+              <button id="copySelectedJson">Copy JSON</button>
+            </div>
+          </div>
+          ${detailsActive ? this.renderDetailsPanel(item) : this.renderPreviewPanel(item)}
+        ` : `<p class="empty-panel">Select a message or tool to inspect it.</p>`}
+      </aside>`;
+  }
+
+  private renderDetailsPanel(item: TranscriptItem): string {
+    const details = {
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      status: item.status ?? null,
+      body: item.body,
+      segments: item.segments ?? null,
+      raw: item.raw ?? null,
+    };
+    return `<div class="details-panel"><pre>${escapeHtml(stringify(details))}</pre></div>`;
+  }
+
+  private renderPreviewPanel(item: TranscriptItem): string {
+    const body = item.body.trim();
+    if (!body) return `<p class="empty-panel">No previewable content.</p>`;
+    if (looksLikeHtml(body) || looksLikeSvg(body)) {
+      return `<iframe class="preview-frame" sandbox srcdoc="${escapeHtml(body)}"></iframe>`;
+    }
+    if (item.kind === "assistant" || item.kind === "user" || looksLikeMarkdown(body)) {
+      return `<div class="preview-markdown markdown-body">${renderMarkdown(body)}</div>`;
+    }
+    return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
+  }
+
   private renderTranscript(): string {
     return this.transcript
       .map((item) => {
         const status = item.status ? `<span>${escapeHtml(item.status)}</span>` : "";
         const isCollapsible = item.kind === "tool" || item.kind === "system";
-        const isOpen = item.status === "running" || item.status === "error";
+        const selected = item.id === this.selectedTranscriptId ? "selected" : "";
+        const isOpen = item.status === "running" || item.status === "error" || Boolean(selected);
+        const dataAttr = `data-transcript-id="${escapeHtml(item.id)}"`;
         if (isCollapsible) {
           return `
-            <details class="message ${item.kind} ${item.status ?? ""}" ${isOpen ? "open" : ""}>
+            <details ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}" ${isOpen ? "open" : ""}>
               <summary class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</summary>
               ${this.renderSegments(item)}
             </details>`;
         }
         return `
-          <article class="message ${item.kind} ${item.status ?? ""}">
+          <article ${dataAttr} class="message ${item.kind} ${item.status ?? ""} ${selected}">
             <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</div>
             ${this.renderSegments(item)}
           </article>`;
@@ -899,6 +1016,7 @@ class PiWebAgentApp extends HTMLElement {
           </div>
         </footer>
       </main>
+      ${this.renderRightPanel()}
     `;
     this.bindEvents();
     if (restorePromptFocus) {

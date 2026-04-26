@@ -4,7 +4,7 @@ Use this file to preserve context between coding sessions. Keep entries short an
 
 ## Current status
 
-Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support, improved transcript readability, file autocomplete, and slash-command autocomplete:
+Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support, improved transcript readability, file/slash-command autocomplete, and the first right-side inspector panel:
 
 - Bun workspaces monorepo with `apps/server`, `apps/web`, and `packages/protocol`.
 - Shared Zod/TypeScript protocol definitions, including controller state, session lifecycle config, and runtime model/thinking settings.
@@ -22,6 +22,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed the server startup regression from the `/changelog` implementation by replacing Bun-incompatible `createRequire(...).resolve("@mariozechner/pi-coding-agent")` usage with `import.meta.resolve` for locating the pi package changelog.
 - Fixed command and file autocomplete keyboard navigation so the dropdown scrolls to keep the selected row visible after arrow-key selection changes.
 - Fixed the follow-up regression from that change: initial render no longer calls `querySelector("")`, so the app refreshes workspaces/sessions instead of staying empty.
+- Added a right-side Details/Preview inspector panel: transcript messages/tool cards are selectable, selection persists locally, Details shows structured JSON/raw event data with copy controls, and Preview renders Markdown/code plus sandboxed HTML/SVG snippets.
 
 ## How to run
 
@@ -47,18 +48,16 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after fixing the empty initial web UI caused by `querySelector("")` in autocomplete scroll sync.
+Latest: `bun run check` passes after adding the right-side Details/Preview inspector panel.
 
 ## Next priorities
 
-1. Manually verify the browser loads workspaces/sessions after the autocomplete scroll-sync regression fix.
-2. Manually test prompt-box autocomplete in the browser, especially slash commands, directory continuation, keyboard selection, and behavior during live agent output.
-3. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
-4. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
-5. Add right-side details/preview panel for selected message/tool data.
-6. Add basic branch/fork controls and tree summary using pi session manager APIs.
-7. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-8. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Manually test the new Details/Preview inspector in the browser against real tool runs, Markdown/code responses, and HTML/SVG snippets.
+2. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
+3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
+4. Add basic branch/fork controls and tree summary using pi session manager APIs.
+5. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+6. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 
