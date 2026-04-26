@@ -1,3 +1,4 @@
+import { createWriteStream } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,6 +27,7 @@ const webBase = `http://127.0.0.1:${webPort}`;
 const runId = new Date().toISOString().replace(/[:.]/g, "-");
 const artifactDir = resolve(root, "test-results", "ui-harness", `${scenario}-${runId}`);
 const fixturePngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2Y9WQAAAABJRU5ErkJggg==";
+const verboseChildLogs = process.env.PI_WEB_HARNESS_CHILD_LOGS === "1" || process.argv.includes("--verbose");
 
 function spawnLogged(name: string, command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): ChildProcessWithoutNullStreams {
   const child = spawn(command, args, {
@@ -34,11 +36,22 @@ function spawnLogged(name: string, command: string, args: string[], options: { c
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
-  child.stdout.on("data", (chunk) => process.stdout.write(`[${name}] ${chunk}`));
-  child.stderr.on("data", (chunk) => process.stderr.write(`[${name}] ${chunk}`));
+  const logPath = join(artifactDir, `${name}.log`);
+  const log = createWriteStream(logPath, { flags: "a" });
+  child.stdout.on("data", (chunk) => {
+    log.write(`[stdout] ${chunk}`);
+    if (verboseChildLogs) process.stdout.write(`[${name}] ${chunk}`);
+  });
+  child.stderr.on("data", (chunk) => {
+    log.write(`[stderr] ${chunk}`);
+    if (verboseChildLogs) process.stderr.write(`[${name}] ${chunk}`);
+  });
   child.on("exit", (code, signal) => {
-    if (code !== null && code !== 0) console.error(`[${name}] exited with code ${code}`);
-    else if (signal) console.error(`[${name}] exited with signal ${signal}`);
+    const summary = code !== null ? `exited with code ${code}` : signal ? `exited with signal ${signal}` : "exited";
+    log.end(`[exit] ${summary}\n`);
+    const expectedTermination = signal === "SIGTERM" || code === 143;
+    if (code !== null && code !== 0 && !expectedTermination) console.error(`[${name}] ${summary}; see ${logPath}`);
+    else if (signal && !expectedTermination) console.error(`[${name}] ${summary}; see ${logPath}`);
   });
   return child;
 }
@@ -651,6 +664,7 @@ async function main(): Promise<void> {
     }
     console.log(`UI harness passed: ${scenario}`);
     console.log(`Artifacts: ${artifactDir}`);
+    console.log(`Child process logs: ${join(artifactDir, "server.log")}, ${join(artifactDir, "web.log")}`);
   } catch (error) {
     await writeFile(join(artifactDir, "console.log"), consoleMessages.join("\n"));
     await writeFile(join(artifactDir, "failure.txt"), error instanceof Error ? `${error.stack ?? error.message}\n` : String(error));
