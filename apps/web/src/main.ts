@@ -397,6 +397,7 @@ class PiWebAgentApp extends HTMLElement {
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private transcriptScrollTop = 0;
   private preserveTranscriptScrollOnce = false;
+  private unreadTranscriptIds = new Set<string>();
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private reconnectAttempt = 0;
@@ -446,6 +447,7 @@ class PiWebAgentApp extends HTMLElement {
     if (index === -1) this.transcript.push(item);
     else this.transcript[index] = { ...this.transcript[index], ...item };
     this.dirtyTranscriptIds.add(item.id);
+    if (!this.autoScroll) this.unreadTranscriptIds.add(item.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(item.id, false);
   }
 
@@ -531,6 +533,7 @@ class PiWebAgentApp extends HTMLElement {
     this.sessionTree = null;
     this.treeDrawerOpen = false;
     this.transcriptScrollTop = 0;
+    this.unreadTranscriptIds.clear();
     this.selectedTranscriptId = "opened";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
     this.socketGeneration++;
@@ -584,7 +587,6 @@ class PiWebAgentApp extends HTMLElement {
     this.status = "disconnected";
     this.connectionState = "disconnected";
     this.connectionMessage = "Connection lost. Retrying shortly...";
-    this.upsertTranscript({ id: `closed:${Date.now()}`, kind: "system", title: "Connection", body: "WebSocket closed; reconnecting." });
     this.scheduleReconnect(session);
     this.requestRender(0);
   }
@@ -613,6 +615,7 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = snapshot.settings ?? this.settings;
     this.transcript = snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
+    this.unreadTranscriptIds.clear();
     this.forceFullRender = true;
     this.dirtyTranscriptIds.clear();
     if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
@@ -1106,8 +1109,10 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLInputElement>("#autoScroll")?.addEventListener("change", (event) => {
       this.autoScroll = (event.currentTarget as HTMLInputElement).checked;
       localStorage.setItem("piWebAutoScroll", String(this.autoScroll));
-      if (this.autoScroll) this.scrollTranscriptToBottom();
+      if (this.autoScroll) this.jumpToLatest();
+      else this.render();
     });
+    this.querySelector<HTMLButtonElement>("#jumpToLatest")?.addEventListener("click", () => this.jumpToLatest());
     this.querySelector<HTMLInputElement>("#showThinking")?.addEventListener("change", (event) => {
       this.showThinking = (event.currentTarget as HTMLInputElement).checked;
       localStorage.setItem("piWebShowThinking", String(this.showThinking));
@@ -1226,7 +1231,18 @@ class PiWebAgentApp extends HTMLElement {
       }
     });
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("scroll", (event) => {
-      this.transcriptScrollTop = (event.currentTarget as HTMLElement).scrollTop;
+      const transcript = event.currentTarget as HTMLElement;
+      this.transcriptScrollTop = transcript.scrollTop;
+      if (this.isTranscriptNearBottom(transcript)) {
+        if (!this.autoScroll || this.unreadTranscriptIds.size > 0) {
+          this.autoScroll = true;
+          this.unreadTranscriptIds.clear();
+          this.requestRender(80);
+        }
+      } else if (this.autoScroll) {
+        this.autoScroll = false;
+        this.requestRender(80);
+      }
     });
     this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1439,11 +1455,30 @@ class PiWebAgentApp extends HTMLElement {
     return this.transcript.map((item) => this.renderTranscriptItemShell(item)).join("");
   }
 
+  private renderJumpToLatest(): string {
+    if (this.autoScroll || this.unreadTranscriptIds.size === 0) return "";
+    const count = this.unreadTranscriptIds.size;
+    return `<button id="jumpToLatest" class="jump-to-latest" type="button">Jump to latest${count > 0 ? ` · ${count} update${count === 1 ? "" : "s"}` : ""}</button>`;
+  }
+
+  private isTranscriptNearBottom(transcript = this.querySelector<HTMLElement>(".transcript")): boolean {
+    if (!transcript) return true;
+    return transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 48;
+  }
+
   private scrollTranscriptToBottom(): void {
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript) return;
     transcript.scrollTop = Math.max(0, transcript.scrollHeight - transcript.clientHeight);
     this.transcriptScrollTop = transcript.scrollTop;
+  }
+
+  private jumpToLatest(): void {
+    this.autoScroll = true;
+    localStorage.setItem("piWebAutoScroll", "true");
+    this.unreadTranscriptIds.clear();
+    this.scrollTranscriptToBottom();
+    this.render();
   }
 
   private scheduleTranscriptFollow(): void {
@@ -1454,7 +1489,7 @@ class PiWebAgentApp extends HTMLElement {
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript) return;
     if (!this.autoScroll || this.preserveTranscriptScrollOnce) {
-      transcript.scrollTop = this.transcriptScrollTop;
+      transcript.scrollTop = Math.min(this.transcriptScrollTop, Math.max(0, transcript.scrollHeight - transcript.clientHeight));
       this.preserveTranscriptScrollOnce = false;
       return;
     }
@@ -1516,6 +1551,29 @@ class PiWebAgentApp extends HTMLElement {
       ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
   }
 
+  private patchJumpToLatest(): void {
+    const shell = this.querySelector<HTMLElement>(".transcript-shell");
+    if (!shell) return;
+    const existing = shell.querySelector<HTMLButtonElement>("#jumpToLatest");
+    if (this.autoScroll || this.unreadTranscriptIds.size === 0) {
+      existing?.remove();
+      return;
+    }
+    const count = this.unreadTranscriptIds.size;
+    const label = `Jump to latest · ${count} update${count === 1 ? "" : "s"}`;
+    if (existing) {
+      existing.textContent = label;
+      return;
+    }
+    const button = document.createElement("button");
+    button.id = "jumpToLatest";
+    button.className = "jump-to-latest";
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => this.jumpToLatest());
+    shell.append(button);
+  }
+
   private patchLiveRender(): boolean {
     const start = performance.now();
     const transcript = this.querySelector<HTMLElement>(".transcript");
@@ -1538,6 +1596,7 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
+    this.patchJumpToLatest();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
     recordPerfSample("patch", performance.now() - start);
@@ -1631,7 +1690,10 @@ class PiWebAgentApp extends HTMLElement {
           ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
           ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
         </div>
-        <section class="transcript">${this.renderTranscript()}</section>
+        <div class="transcript-shell">
+          <section class="transcript">${this.renderTranscript()}</section>
+          ${this.renderJumpToLatest()}
+        </div>
         <footer>
           <div class="prompt-shell">
             ${this.renderPromptImages()}

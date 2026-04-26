@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
+  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -160,6 +160,39 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   }
 
   return { responsiveness, maxLatencyMs, ...(await collectMetrics(page)) };
+}
+
+async function runTranscriptScrollStability(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please produce a very long streaming performance response with many paragraphs, markdown, code, and enough text to overflow the transcript while still streaming.");
+  await page.locator("#send").click();
+  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector(".transcript");
+    return Boolean(transcript && transcript.scrollHeight > transcript.clientHeight + 180 && document.querySelector(".message.assistant"));
+  }, null, { timeout: 10_000 });
+
+  const before = await page.evaluate(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement;
+    transcript.scrollTop = Math.max(0, Math.floor(transcript.scrollHeight * 0.25));
+    return { top: transcript.scrollTop, height: transcript.scrollHeight, clientHeight: transcript.clientHeight };
+  });
+  await page.locator("#jumpToLatest").waitFor({ timeout: 5_000 });
+  await page.waitForTimeout(900);
+  const after = await page.evaluate(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement;
+    return { top: transcript.scrollTop, height: transcript.scrollHeight, clientHeight: transcript.clientHeight };
+  });
+  const drift = Math.abs(after.top - before.top);
+  if (drift > 80) throw new Error(`Transcript scroll drifted while reading: before ${before.top}, after ${after.top}, drift ${drift}`);
+
+  await page.locator("#jumpToLatest").click();
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement | null;
+    return Boolean(transcript && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 60 && !document.querySelector("#jumpToLatest"));
+  }, null, { timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  return { before, after, drift, ...(await collectMetrics(page)) };
 }
 
 async function runInspectorPreview(page: Page): Promise<Record<string, unknown>> {
@@ -386,6 +419,7 @@ function assertPerfThresholds(name: string, metrics: Record<string, unknown>): v
 async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void> }): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
+  if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);

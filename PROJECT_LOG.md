@@ -4,7 +4,7 @@ Use this file to preserve context between coding sessions. Keep entries short an
 
 ## Current status
 
-Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support, improved transcript readability, file/slash-command autocomplete, and the first right-side inspector panel. Current direction after dogfooding feedback is to prioritize workflow usability over broad polish, starting with transcript scroll stability / "Jump to latest" before session identity/sidebar improvements:
+Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support, improved transcript readability, file/slash-command autocomplete, the first right-side inspector panel, and transcript scroll protection with a floating "Jump to latest" affordance. Current direction after dogfooding feedback is to prioritize workflow usability over broad polish, next focusing on session identity/sidebar improvements:
 
 - Bun workspaces monorepo with `apps/server`, `apps/web`, and `packages/protocol`.
 - Shared Zod/TypeScript protocol definitions, including controller state, session lifecycle config, and runtime model/thinking settings.
@@ -38,7 +38,8 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Added focused Playwright harness coverage for `@file` autocomplete/search+directory continuation, prompt image attachment add/remove/send/render flows, and model/thinking selector updates. This caught and fixed duplicate trailing slashes for directory autocomplete insertion/rendering.
 - Added reconnect/restart UX basics: a visible connection-state banner (`connected`/`connecting`/`reconnecting`/`disconnected`/`retry failed`), automatic WebSocket reconnect with backoff, clearer disconnected/send-failed copy, per-session prompt draft persistence in `localStorage`, and warnings that image attachments are prompt-only and not restored after refresh. Added fake-agent harness coverage for reload/reconnect draft preservation and an actual backend process restart (`backend-restart`) that verifies reconnect, draft preservation, and post-restart send usability.
 - Improved multi-tab controller handoff: viewer take-control now creates a pending request instead of stealing control from a connected controller, the controller gets inline Approve/Deny controls, requests expire after 30 seconds, and disconnected controllers hand off to a pending requester when possible. Expanded the reconnect/controller harness scenario to cover request approval and post-handoff sending, and added edge coverage for denial, timeout, and disconnected-controller handoff.
-- Dogfooding usability findings: session identity is visually weak; prompt-derived session titles are repetitive; sidebar should be recent/attention-focused and show only last-week sessions by default with "show older"; running activity/tool output is too visually repetitive; successful tools should collapse into background activity; connection lifecycle events should not appear in transcript; scrolled-up reading must be protected with a floating "Jump to latest" button; composer/buttons are too large; running steer/follow-up controls should be more TUI-like and sticky/floating; inspector is low-frequency/debug UI; left sidebar should be compact/collapsed by default during active sessions; message actions should live in overflow menus.
+- Transcript scrolling now protects scrolled-up reading during streaming: leaving the bottom pauses follow-latest without yanking the transcript, tracks unread transcript item updates, and shows a floating "Jump to latest" button that resumes follow-latest. WebSocket connection close/retry notices stay in the banner instead of adding transcript rows.
+- Dogfooding usability findings: session identity is visually weak; prompt-derived session titles are repetitive; sidebar should be recent/attention-focused and show only last-week sessions by default with "show older"; running activity/tool output is too visually repetitive; successful tools should collapse into background activity; connection lifecycle events should not appear in transcript; composer/buttons are too large; running steer/follow-up controls should be more TUI-like and sticky/floating; inspector is low-frequency/debug UI; left sidebar should be compact/collapsed by default during active sessions; message actions should live in overflow menus.
 
 ## How to run
 
@@ -66,20 +67,19 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after adding controller handoff edge coverage. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `controller-handoff-edges`, `reconnect-draft`, `backend-restart`, `narrow-tool-stream`, `file-autocomplete`, `image-attachments`, `model-thinking`); artifacts at `test-results/ui-harness/all-2026-04-26T18-58-17-563Z`. Focused controller edge artifacts are at `test-results/ui-harness/controller-handoff-edges-2026-04-26T18-58-10-146Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after adding transcript scroll stability coverage. Latest harness scenario set: `all` (`streaming-responsiveness`, `transcript-scroll-stability`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `controller-handoff-edges`, `reconnect-draft`, `backend-restart`, `narrow-tool-stream`, `file-autocomplete`, `image-attachments`, `model-thinking`); artifacts at `test-results/ui-harness/all-2026-04-26T19-19-16-933Z`. Focused scroll stability artifacts are at `test-results/ui-harness/transcript-scroll-stability-2026-04-26T19-18-59-471Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
-1. Implement transcript scroll stability and floating "Jump to latest": if the user scrolls up during streaming, preserve scroll position, avoid auto-yanking to bottom, show new-update affordance/count, and resume follow-latest when clicked. Add fake-agent harness coverage for this behavior.
-2. Improve session identity/sidebar usability: editable title in header, repo/path metadata secondary, recent sessions sorted by last opened/activity, hide older than one week by default behind "show older", show last user prompt/snippet and running/waiting/finished/error indicators, hide UUIDs by default, collapse sidebar by default during active sessions.
-3. Reduce transcript noise: keep connection lifecycle events out of transcript, collapse successful tool calls/results into compact activity, keep failed/running tools prominent, and consider grouping tool call/result pairs.
-4. Shrink and clarify composer/running controls: smaller textarea/buttons, clearer prompt vs steer vs follow-up labels, sticky/floating running controls, visible queued follow-ups.
-5. Add per-message overflow actions for copy/fork/retry/preview/details without cluttering transcript.
-6. Keep dogfooding controller handoff and reconnect/restart UX with real model sessions; fix duplicate snapshots, stale controller state, or confusing retry/copy if they appear.
-7. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
-8. Add sanitized real-event playback to complement the deterministic fake runner if dogfooding exposes SDK/provider event patterns the fake runner does not cover.
-9. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
-10. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Improve session identity/sidebar usability: editable title in header, repo/path metadata secondary, recent sessions sorted by last opened/activity, hide older than one week by default behind "show older", show last user prompt/snippet and running/waiting/finished/error indicators, hide UUIDs by default, collapse sidebar by default during active sessions.
+2. Reduce transcript noise: collapse successful tool calls/results into compact activity, keep failed/running tools prominent, and consider grouping tool call/result pairs.
+3. Shrink and clarify composer/running controls: smaller textarea/buttons, clearer prompt vs steer vs follow-up labels, sticky/floating running controls, visible queued follow-ups.
+4. Add per-message overflow actions for copy/fork/retry/preview/details without cluttering transcript.
+5. Keep dogfooding controller handoff, reconnect/restart UX, and scroll protection with real model sessions; fix duplicate snapshots, stale controller state, scroll edge cases, or confusing retry/copy if they appear.
+6. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
+7. Add sanitized real-event playback to complement the deterministic fake runner if dogfooding exposes SDK/provider event patterns the fake runner does not cover.
+8. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
+9. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 

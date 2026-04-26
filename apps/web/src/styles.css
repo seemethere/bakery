@@ -497,13 +497,35 @@ textarea:disabled {
   display: none;
 }
 
+.transcript-shell {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .transcript {
+  box-sizing: border-box;
+  height: 100%;
   min-height: 0;
   padding: 16px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
+}
+
+.jump-to-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 5;
+  transform: translateX(-50%);
+  border-color: #668cff;
+  background: #23315f;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  color: #dbe4ff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .message {
