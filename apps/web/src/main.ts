@@ -183,6 +183,7 @@ class PiWebAgentApp extends HTMLElement {
   private notice = "";
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
+  private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private transcriptScrollTop = 0;
@@ -222,6 +223,13 @@ class PiWebAgentApp extends HTMLElement {
       this.workspaces = workspaces;
       this.sessions = sessions;
       this.notice = "";
+      if (!this.selectedSession && this.lastSelectedSessionId) {
+        const session = sessions.find((candidate) => candidate.id === this.lastSelectedSessionId);
+        if (session) {
+          this.openSession(session);
+          return;
+        }
+      }
       this.render();
     } catch (error) {
       this.notice = `Refresh failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -248,6 +256,8 @@ class PiWebAgentApp extends HTMLElement {
 
   private openSession(session: WebSession): void {
     this.selectedSession = session;
+    this.lastSelectedSessionId = session.id;
+    localStorage.setItem("piWebLastSessionId", session.id);
     this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
     this.status = "connecting";
     this.notice = "";
