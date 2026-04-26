@@ -233,6 +233,9 @@ class PiWebAgentApp extends HTMLElement {
   private commandAutocomplete: CommandAutocompleteState = { active: false, token: "", start: 0, end: 0, commands: [], selectedIndex: 0, loading: false };
   private commandAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private commandAutocompleteRequest = 0;
+  private renderTimer: ReturnType<typeof setTimeout> | undefined;
+  private renderScheduled = false;
+  private renderedSegmentCache = new Map<string, string>();
 
   connectedCallback(): void {
     this.render();
@@ -240,6 +243,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   disconnectedCallback(): void {
+    if (this.renderTimer) clearTimeout(this.renderTimer);
     this.ws?.close();
   }
 
@@ -330,7 +334,7 @@ class PiWebAgentApp extends HTMLElement {
     this.ws.addEventListener("close", () => {
       this.status = "disconnected";
       this.upsertTranscript({ id: `closed:${Date.now()}`, kind: "system", title: "Connection", body: "WebSocket closed" });
-      this.render();
+      this.requestRender();
     });
     this.ws.addEventListener("error", () => {
       this.notice = "WebSocket error";
@@ -368,7 +372,7 @@ class PiWebAgentApp extends HTMLElement {
     } else if (payload.type === "error") {
       this.upsertTranscript({ id: `error:${Date.now()}`, kind: "error", title: payload.code, body: payload.message });
     }
-    this.render();
+    this.requestRender();
   }
 
   private applyAgentEvent(event: unknown): void {
@@ -786,8 +790,12 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderSegments(item: TranscriptItem): string {
+    const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${this.showThinking}:${item.body}`;
+    const cached = this.renderedSegmentCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
     const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
-    return segments
+    const rendered = segments
       .map((segment) => {
         if (segment.kind === "markdown") return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
         if (segment.kind === "thinking") {
@@ -799,6 +807,9 @@ class PiWebAgentApp extends HTMLElement {
         return `<pre>${escapeHtml(segment.text)}</pre>`;
       })
       .join("");
+    if (this.renderedSegmentCache.size > 300) this.renderedSegmentCache.clear();
+    this.renderedSegmentCache.set(cacheKey, rendered);
+    return rendered;
   }
 
   private renderCommandAutocomplete(): string {
@@ -943,12 +954,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private scheduleTranscriptFollow(): void {
-    this.scrollTranscriptToBottom();
-    requestAnimationFrame(() => {
-      this.scrollTranscriptToBottom();
-      requestAnimationFrame(() => this.scrollTranscriptToBottom());
-    });
-    window.setTimeout(() => this.scrollTranscriptToBottom(), 50);
+    requestAnimationFrame(() => this.scrollTranscriptToBottom());
   }
 
   private syncTranscriptScroll(): void {
@@ -975,6 +981,16 @@ class PiWebAgentApp extends HTMLElement {
     const visibleBottom = visibleTop + container.clientHeight;
     if (selectedTop < visibleTop) container.scrollTop = selectedTop;
     else if (selectedBottom > visibleBottom) container.scrollTop = selectedBottom - container.clientHeight;
+  }
+
+  private requestRender(delayMs = this.status === "running" ? 75 : 0): void {
+    if (this.renderScheduled) return;
+    this.renderScheduled = true;
+    this.renderTimer = setTimeout(() => {
+      this.renderScheduled = false;
+      this.renderTimer = undefined;
+      this.render();
+    }, delayMs);
   }
 
   private render(): void {

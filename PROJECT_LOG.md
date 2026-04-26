@@ -23,6 +23,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed command and file autocomplete keyboard navigation so the dropdown scrolls to keep the selected row visible after arrow-key selection changes.
 - Fixed the follow-up regression from that change: initial render no longer calls `querySelector("")`, so the app refreshes workspaces/sessions instead of staying empty.
 - Added a right-side Details/Preview inspector panel: transcript messages/tool cards are selectable, selection and collapse state persist locally, Details shows compact metadata/content plus collapsible raw event data with copy controls, and Preview renders Markdown/code plus sandboxed HTML/SVG snippets.
+- Improved streaming UI responsiveness by throttling WebSocket-driven renders, reducing transcript follow-scroll layout work, and caching rendered transcript segment HTML.
 
 ## How to run
 
@@ -48,16 +49,17 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after clipping main-column overflow so transcript/header content does not draw under the right-side inspector.
+Latest: `bun run check` passes after throttling streaming renders and caching rendered transcript segments.
 
 ## Next priorities
 
-1. Refresh the browser page and manually test the revised collapsible Details/Preview inspector against real tool runs, Markdown/code responses, HTML/SVG snippets, and narrow window widths to confirm main content no longer draws under the inspector.
-2. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
-3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
-4. Add basic branch/fork controls and tree summary using pi session manager APIs.
-5. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-6. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Refresh the browser page and manually test responsiveness while the agent streams a long answer; verify the prompt, inspector collapse button, header controls, and transcript scrolling remain clickable.
+2. Manually test the revised collapsible Details/Preview inspector against real tool runs, Markdown/code responses, HTML/SVG snippets, and narrow window widths to confirm main content no longer draws under the inspector.
+3. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
+4. Continue performance work by splitting shell/transcript/inspector rendering so streaming does not rewrite the whole app.
+5. Add basic branch/fork controls and tree summary using pi session manager APIs.
+6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 
