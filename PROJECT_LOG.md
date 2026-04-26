@@ -103,4 +103,5 @@ At the end of each work session:
 - UI-affecting changes should run `bun run test:web-perf` after `bun run check`.
 - Use `bun run ui:manual` for headed fake-agent exploratory validation in a temp workspace.
 - Include harness scenario names and artifact paths in handoffs.
+- When harness screenshots are generated, include the most relevant PNG file paths as workspace-relative paths in the handoff, not just artifact directories, so the web transcript renders thumbnail previews directly in the dev loop.
 - If a new UI feature is not covered by the harness, extend `scripts/ui-harness.ts` with a scenario before relying on human-only manual testing where practical.
