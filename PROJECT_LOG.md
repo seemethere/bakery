@@ -67,13 +67,14 @@ Latest: `bun run check` and `bun run test:web-perf` pass after adding focused fi
 
 ## Next priorities
 
-1. Manually spot-check real-model streaming with a small model after the transcript-row refactor; current browser page needs refresh to pick up frontend changes, backend needs restart for `PI_WEB_FAKE_AGENT`/server changes.
-2. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
-3. Add sanitized real-event playback to complement the deterministic fake runner.
-4. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
-5. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-6. Add more focused harness coverage for copy buttons/clipboard fallbacks, mobile breakpoints, paste/drag-drop image attachments, attachment validation errors, and deeper autocomplete edge cases.
-7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Dogfooding-driven reconnect/restart UX: add a clear connection-state banner (`connected` / `reconnecting` / `disconnected` / retry failed), improve reconnect/error copy, and preserve unsent prompt drafts per session in `localStorage` across backend restarts/page refreshes. Add/extend a harness scenario for reload/reconnect with draft preservation. Image attachment persistence can be deferred, but warn/handle clearly if attachments are lost on refresh.
+2. Continue treating real development in the UI as ongoing real-model validation; log and fix concrete dogfooding friction instead of doing a separate synthetic real-model spot check unless a specific event-shape mismatch appears.
+3. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
+4. Add sanitized real-event playback to complement the deterministic fake runner if dogfooding exposes SDK/provider event patterns the fake runner does not cover.
+5. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
+6. Improve controller handoff policy/confirmation after the reconnect/restart UX pass.
+7. Add more focused harness coverage for copy buttons/clipboard fallbacks, mobile breakpoints, paste/drag-drop image attachments, attachment validation errors, and deeper autocomplete edge cases.
+8. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 
