@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type ServerEnvelope, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type ControllerInfo, type HelloMessage, type ServerEnvelope, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -81,6 +81,7 @@ class PiWebAgentApp extends HTMLElement {
   private transcript: TranscriptItem[] = [];
   private status: AgentStatus = "disconnected";
   private notice = "";
+  private controller: ControllerInfo | null = null;
 
   connectedCallback(): void {
     this.render();
@@ -146,11 +147,14 @@ class PiWebAgentApp extends HTMLElement {
     this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
     this.status = "connecting";
     this.notice = "";
+    this.controller = null;
     this.ws?.close();
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     if (this.token) url.searchParams.set("token", this.token);
+    const rememberedClientId = localStorage.getItem(`piWebClientId:${session.id}`);
+    if (rememberedClientId) url.searchParams.set("clientId", rememberedClientId);
 
     this.ws = new WebSocket(url);
     this.ws.addEventListener("open", () => {
@@ -171,19 +175,27 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private handleSocketMessage(raw: string): void {
-    const data = JSON.parse(raw) as ServerEnvelope | { type: string };
+    const data = JSON.parse(raw) as ServerEnvelope | HelloMessage;
     if (!("payload" in data)) {
-      if (data.type === "hello") this.ws?.send(JSON.stringify({ type: "hello_ack", protocolVersion: PROTOCOL_VERSION }));
+      if (data.type === "hello") {
+        localStorage.setItem(`piWebClientId:${data.sessionId}`, data.clientId);
+        this.controller = { clientId: null, connectedClients: 1, currentClientId: data.clientId, isController: false };
+        this.ws?.send(JSON.stringify({ type: "hello_ack", protocolVersion: PROTOCOL_VERSION, clientId: data.clientId }));
+        this.render();
+      }
       return;
     }
 
     const { payload } = data;
     if (payload.type === "session_snapshot") {
       this.status = payload.snapshot.status;
+      this.controller = payload.snapshot.controller ?? this.controller;
       this.transcript = payload.snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
       if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     } else if (payload.type === "agent_event") {
       this.applyAgentEvent(payload.event.data ?? payload.event);
+    } else if (payload.type === "controller_update") {
+      this.controller = payload.controller;
     } else if (payload.type === "error") {
       this.upsertTranscript({ id: `error:${Date.now()}`, kind: "error", title: payload.code, body: payload.message });
     }
@@ -262,6 +274,10 @@ class PiWebAgentApp extends HTMLElement {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "abort" }));
   }
 
+  private takeControl(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "take_control" }));
+  }
+
   private bindEvents(): void {
     this.querySelector<HTMLButtonElement>("#saveSettings")?.addEventListener("click", () => {
       const apiBase = this.querySelector<HTMLInputElement>("#apiBase")?.value.trim();
@@ -278,6 +294,7 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
+    this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -306,6 +323,10 @@ class PiWebAgentApp extends HTMLElement {
 
   private render(): void {
     const isRunning = this.status === "running";
+    const isController = this.controller?.isController ?? true;
+    const controllerLabel = this.controller
+      ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
+      : "";
     this.innerHTML = `
       <aside>
         <h1>Pi Web Agent</h1>
@@ -328,15 +349,19 @@ class PiWebAgentApp extends HTMLElement {
       <main>
         <header>
           <strong>${this.selectedSession ? escapeHtml(this.selectedSession.cwd) : "Create or open a session"}</strong>
-          <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
+          <div class="header-status">
+            ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
+            ${!isController ? `<button id="takeControl">Take control</button>` : ""}
+            <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
+          </div>
         </header>
         <section class="transcript">${this.renderTranscript()}</section>
         <footer>
-          <textarea id="prompt" placeholder="${isRunning ? "Steer pi... (Alt+Enter for follow-up)" : "Prompt pi..."}"></textarea>
+          <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up)" : "Prompt pi...") : "Viewer mode — take control to send"}"></textarea>
           <div class="controls">
-            <button id="send">${isRunning ? "Steer" : "Send"}</button>
-            <button id="followUp" class="${isRunning ? "" : "hidden"}">Follow-up</button>
-            <button id="abort" class="${isRunning ? "danger" : "hidden"}">Abort</button>
+            <button id="send" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}</button>
+            <button id="followUp" class="${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up</button>
+            <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>
           </div>
         </footer>
       </main>

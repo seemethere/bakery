@@ -33,6 +33,12 @@ export const resourcePolicySchema = z.object({
 });
 export type ResourcePolicy = z.infer<typeof resourcePolicySchema>;
 
+export const sessionLifecycleConfigSchema = z.object({
+  disconnectedIdleTimeoutMs: z.number().int().nonnegative(),
+  disconnectedRunningPolicy: z.enum(["let-finish", "abort-after-timeout"]),
+});
+export type SessionLifecycleConfig = z.infer<typeof sessionLifecycleConfigSchema>;
+
 export const appConfigSchema = z.object({
   host: z.string(),
   port: z.number().int().positive(),
@@ -41,6 +47,7 @@ export const appConfigSchema = z.object({
   toolPermissionPolicy: toolPermissionPolicySchema,
   modelPolicy: modelPolicySchema,
   resourcePolicy: resourcePolicySchema,
+  sessionLifecycle: sessionLifecycleConfigSchema,
 });
 export type AppConfig = z.infer<typeof appConfigSchema>;
 
@@ -73,10 +80,22 @@ export const updateSessionRequestSchema = z.object({
 });
 export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
 
+export const agentStatusSchema = z.enum(["idle", "running", "aborting", "error"]);
+export type AgentStatus = z.infer<typeof agentStatusSchema>;
+
+export const controllerInfoSchema = z.object({
+  clientId: z.string().nullable(),
+  connectedClients: z.number().int().nonnegative(),
+  currentClientId: z.string().optional(),
+  isController: z.boolean().optional(),
+});
+export type ControllerInfo = z.infer<typeof controllerInfoSchema>;
+
 export const sessionSnapshotSchema = z.object({
   session: webSessionSchema,
-  status: z.enum(["idle", "running", "aborting", "error"]),
+  status: agentStatusSchema,
   messages: z.array(z.unknown()),
+  controller: controllerInfoSchema.optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 
@@ -90,7 +109,7 @@ export type NormalizedAgentEvent = z.infer<typeof normalizedAgentEventSchema>;
 export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session_snapshot"), snapshot: sessionSnapshotSchema }),
   z.object({ type: z.literal("agent_event"), event: normalizedAgentEventSchema, raw: z.unknown().optional() }),
-  z.object({ type: z.literal("controller_update"), controller: z.unknown().optional() }),
+  z.object({ type: z.literal("controller_update"), controller: controllerInfoSchema }),
   z.object({ type: z.literal("error"), code: z.string(), message: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
@@ -108,6 +127,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("steer"), text: z.string().min(1) }),
   z.object({ type: z.literal("follow_up"), text: z.string().min(1) }),
   z.object({ type: z.literal("abort") }),
+  z.object({ type: z.literal("take_control") }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
@@ -116,4 +136,5 @@ export type HelloMessage = {
   protocolVersion: typeof PROTOCOL_VERSION;
   sessionId: string;
   serverVersion: string;
+  clientId: string;
 };

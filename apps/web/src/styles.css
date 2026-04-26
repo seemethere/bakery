@@ -121,12 +121,34 @@ textarea {
   font-size: 12px;
 }
 
-.status {
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-status button {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.status,
+.controller {
   border: 1px solid #343b49;
   border-radius: 999px;
   color: #aab2c0;
   font-size: 12px;
   padding: 4px 9px;
+}
+
+.controller {
+  border-color: #3c6f4f;
+  color: #aef0c3;
+}
+
+.controller.viewer {
+  border-color: #6d4b1f;
+  color: #ffd18a;
 }
 
 .status.running {
@@ -143,6 +165,12 @@ textarea {
 button.danger {
   border-color: #ff6b6b;
   color: #ffd6d6;
+}
+
+button:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .hidden {

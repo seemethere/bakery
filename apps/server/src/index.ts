@@ -7,6 +7,7 @@ import {
   clientMessageSchema,
   createSessionRequestSchema,
   updateSessionRequestSchema,
+  type ControllerInfo,
   type HelloMessage,
   type ServerEnvelope,
   type ServerMessage,
@@ -59,6 +60,7 @@ app.get("/api/config", async () => ({
   toolPermissionPolicy: config.toolPermissionPolicy,
   modelPolicy: config.modelPolicy,
   resourcePolicy: config.resourcePolicy,
+  sessionLifecycle: config.sessionLifecycle,
 }));
 
 app.get("/api/workspaces", async () => toWorkspaces(workspaceRoots));
@@ -113,6 +115,13 @@ app.patch<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply
 
 app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
   if (!store.deleteSession(request.params.id)) return reply.code(404).send({ error: "session not found" });
+  const hub = sessionHubs.get(request.params.id);
+  if (hub) {
+    sessionHubs.delete(request.params.id);
+    await hub.dispose();
+  } else {
+    await runner.disposeSession(request.params.id);
+  }
   return reply.code(204).send();
 });
 
@@ -145,6 +154,154 @@ function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
   return { seq, time: new Date().toISOString(), payload };
 }
 
+type SocketClient = {
+  clientId: string;
+  seq: number;
+  socket: { send(data: string): void; close(code?: number, reason?: string): void; on(event: string, listener: (...args: never[]) => void): void };
+};
+
+class SessionHub {
+  private readonly clients = new Map<string, SocketClient>();
+  private controllerId: string | null = null;
+  private disposeTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly unsubscribe: () => void;
+
+  constructor(private readonly handle: Awaited<ReturnType<typeof runner.createSession>>) {
+    this.unsubscribe = handle.subscribe((event, raw) => {
+      this.broadcast({ type: "agent_event", event, raw });
+      const webSession = store.getSession(handle.id);
+      if (this.clients.size === 0 && webSession && handle.snapshot(webSession).status === "idle") this.scheduleDispose();
+    });
+  }
+
+  add(socket: SocketClient["socket"], requestedClientId?: string): void {
+    if (this.disposeTimer) clearTimeout(this.disposeTimer);
+    this.disposeTimer = undefined;
+
+    const clientId = requestedClientId && !this.clients.has(requestedClientId) ? requestedClientId : crypto.randomUUID();
+    const client: SocketClient = { clientId, seq: 0, socket };
+    this.clients.set(clientId, client);
+    if (!this.controllerId) this.controllerId = clientId;
+
+    const webSession = store.getSession(this.handle.id);
+    if (!webSession) {
+      socket.close(1008, "session not found");
+      return;
+    }
+
+    const hello: HelloMessage = {
+      type: "hello",
+      protocolVersion: PROTOCOL_VERSION,
+      sessionId: webSession.id,
+      serverVersion: "0.0.0",
+      clientId,
+    };
+    socket.send(JSON.stringify(hello));
+    this.send(client, { type: "session_snapshot", snapshot: { ...this.handle.snapshot(webSession), controller: this.controllerFor(clientId) } });
+    this.broadcastControllerUpdate();
+
+    socket.on("message", (...args: never[]) => {
+      const [raw] = args as unknown as [Buffer | string];
+      void this.handleMessage(client, raw);
+    });
+
+    socket.on("close", () => {
+      this.clients.delete(clientId);
+      if (this.controllerId === clientId) this.controllerId = this.clients.keys().next().value ?? null;
+      this.broadcastControllerUpdate();
+      if (this.clients.size === 0) this.scheduleDispose();
+    });
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposeTimer) clearTimeout(this.disposeTimer);
+    this.unsubscribe();
+    for (const client of this.clients.values()) client.socket.close(1001, "session disposed");
+    this.clients.clear();
+    await runner.disposeSession(this.handle.id);
+  }
+
+  private controllerFor(currentClientId: string): ControllerInfo {
+    return {
+      clientId: this.controllerId,
+      connectedClients: this.clients.size,
+      currentClientId,
+      isController: this.controllerId === currentClientId,
+    };
+  }
+
+  private send(client: SocketClient, payload: ServerMessage): void {
+    client.socket.send(JSON.stringify(envelope(client.seq++, payload)));
+  }
+
+  private broadcast(payload: ServerMessage): void {
+    for (const client of this.clients.values()) this.send(client, payload);
+  }
+
+  private broadcastControllerUpdate(): void {
+    for (const client of this.clients.values()) this.send(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
+  }
+
+  private scheduleDispose(): void {
+    if (this.disposeTimer) return;
+    this.disposeTimer = setTimeout(() => {
+      void (async () => {
+        if (this.clients.size > 0) return;
+        const webSession = store.getSession(this.handle.id);
+        const status = webSession ? this.handle.snapshot(webSession).status : "idle";
+        if (status === "running" && config.sessionLifecycle.disconnectedRunningPolicy === "let-finish") {
+          this.disposeTimer = undefined;
+          return;
+        }
+        if (status === "running") await this.handle.abort();
+        sessionHubs.delete(this.handle.id);
+        await this.dispose();
+      })();
+    }, config.sessionLifecycle.disconnectedIdleTimeoutMs);
+  }
+
+  private async handleMessage(client: SocketClient, raw: Buffer | string): Promise<void> {
+    const text = typeof raw === "string" ? raw : raw.toString();
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      this.send(client, { type: "error", code: "bad_json", message: "Invalid JSON" });
+      return;
+    }
+
+    const parsed = clientMessageSchema.safeParse(data);
+    if (!parsed.success) {
+      this.send(client, { type: "error", code: "bad_message", message: "Invalid client message" });
+      return;
+    }
+    if (parsed.data.type === "hello_ack") return;
+    if (parsed.data.type === "take_control") {
+      this.controllerId = client.clientId;
+      this.broadcastControllerUpdate();
+      return;
+    }
+    if (this.controllerId !== client.clientId) {
+      this.send(client, { type: "error", code: "not_controller", message: "Another browser tab controls this session. Take control to send commands." });
+      return;
+    }
+
+    try {
+      if (parsed.data.type === "prompt") {
+        const webSession = store.getSession(this.handle.id);
+        if (webSession && !webSession.title) store.updateSession(webSession.id, { title: parsed.data.text.slice(0, 60) });
+        await this.handle.prompt(parsed.data.text);
+      } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text);
+      else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text);
+      else if (parsed.data.type === "abort") await this.handle.abort();
+    } catch (error) {
+      this.send(client, { type: "error", code: "agent_error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+}
+
+const sessionHubs = new Map<string, SessionHub>();
+
 app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true }, async (socket, request) => {
   const webSession = store.getSession(request.params.id);
   if (!webSession) {
@@ -152,67 +309,32 @@ app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true },
     return;
   }
 
-  let seq = 0;
-  const send = (payload: ServerMessage) => socket.send(JSON.stringify(envelope(seq++, payload)));
-
-  let handle;
-  try {
-    handle = await runner.createSession({
-      id: webSession.id,
-      cwd: webSession.cwd,
-      piSessionFile: webSession.piSessionFile,
-    });
-  } catch (error) {
-    socket.close(1011, error instanceof Error ? error.message : String(error));
-    return;
+  let hub = sessionHubs.get(webSession.id);
+  if (!hub) {
+    try {
+      const handle = await runner.createSession({
+        id: webSession.id,
+        cwd: webSession.cwd,
+        piSessionFile: webSession.piSessionFile,
+      });
+      hub = new SessionHub(handle);
+      sessionHubs.set(webSession.id, hub);
+    } catch (error) {
+      socket.close(1011, error instanceof Error ? error.message : String(error));
+      return;
+    }
   }
 
-  const unsubscribe = handle.subscribe((event, raw) => {
-    send({ type: "agent_event", event, raw });
-  });
-
-  const hello: HelloMessage = {
-    type: "hello",
-    protocolVersion: PROTOCOL_VERSION,
-    sessionId: webSession.id,
-    serverVersion: "0.0.0",
-  };
-  socket.send(JSON.stringify(hello));
-  send({ type: "session_snapshot", snapshot: handle.snapshot(webSession) });
-
-  socket.on("message", (raw: Buffer | string) => {
-    void (async () => {
-      const text = typeof raw === "string" ? raw : raw.toString();
-      let data: unknown;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        send({ type: "error", code: "bad_json", message: "Invalid JSON" });
-        return;
-      }
-
-      const parsed = clientMessageSchema.safeParse(data);
-      if (!parsed.success) {
-        send({ type: "error", code: "bad_message", message: "Invalid client message" });
-        return;
-      }
-
-      try {
-        if (parsed.data.type === "prompt") await handle.prompt(parsed.data.text);
-        else if (parsed.data.type === "steer") await handle.steer(parsed.data.text);
-        else if (parsed.data.type === "follow_up") await handle.followUp(parsed.data.text);
-        else if (parsed.data.type === "abort") await handle.abort();
-      } catch (error) {
-        send({ type: "error", code: "agent_error", message: error instanceof Error ? error.message : String(error) });
-      }
-    })();
-  });
-
-  socket.on("close", () => unsubscribe());
+  const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+  hub.add(socket, url.searchParams.get("clientId") ?? undefined);
 });
 
 const close = async () => {
   app.log.info("shutting down");
+  for (const [id, hub] of sessionHubs) {
+    sessionHubs.delete(id);
+    await hub.dispose();
+  }
   for (const session of store.listSessions()) await runner.disposeSession(session.id);
   store.close();
   await app.close();

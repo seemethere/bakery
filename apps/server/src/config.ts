@@ -60,5 +60,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       additionalExtensionPaths: splitList(env.PI_WEB_EXTENSION_PATHS),
       additionalSkillPaths: splitList(env.PI_WEB_SKILL_PATHS),
     },
+    sessionLifecycle: {
+      disconnectedIdleTimeoutMs: Number(env.PI_WEB_DISCONNECTED_IDLE_TIMEOUT_MS ?? "900000"),
+      disconnectedRunningPolicy: env.PI_WEB_DISCONNECTED_RUNNING_POLICY === "abort-after-timeout" ? "abort-after-timeout" : "let-finish",
+    },
   };
 }
