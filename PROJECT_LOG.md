@@ -13,6 +13,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - WebSocket session hubs now support reconnect snapshots, multiple clients, first-client controller assignment, take-control, per-client sequence envelopes, and disconnected idle disposal.
 - Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, readable transcript rendering, model/thinking selectors, prompt/steer/follow-up input, abort controls, controller/viewer status, and TUI-like transcript follow-latest auto-scroll.
 - Assistant transcript rendering now handles Markdown via `marked`, hides thinking by default with a `Show thinking` toggle, renders readable thinking traces dim/italic when enabled, and formats inline tool calls compactly instead of dumping raw provider JSON/encrypted thinking payloads.
+- Tool execution cards now use more TUI-like compact titles, green/blue/red status backgrounds, and cleaner result extraction from text/image/diff/stdout/stderr result payloads.
 
 ## How to run
 
@@ -38,11 +39,11 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after adding Markdown assistant rendering, hidden-by-default thinking display, and compact inline tool-call rendering.
+Latest: `bun run check` passes after restyling tool execution cards and formatting live tool titles/results more cleanly.
 
 ## Next priorities
 
-1. Restyle tool call/result blocks to more closely match the pi TUI, including compact headers and readable stdout/stderr/error states.
+1. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
 2. Implement ignore-aware file search/complete endpoints for `@file` autocomplete.
 3. Add command metadata endpoint and slash-command autocomplete.
 4. Add right-side details/preview panel for selected message/tool data.

@@ -76,6 +76,51 @@ function formatToolCall(part: Record<string, unknown>): string {
   return `↳ ${name}`;
 }
 
+function formatToolTitle(name: unknown, args: unknown): string {
+  const toolName = String(name ?? "tool");
+  const toolArgs = isRecord(args) ? args : {};
+  if (toolName === "bash" && toolArgs.command) return `$ ${String(toolArgs.command)}`;
+  if (toolName === "read" && toolArgs.path) return `read ${String(toolArgs.path)}${toolArgs.offset ? `:${String(toolArgs.offset)}` : ""}${toolArgs.limit ? `-${String(toolArgs.limit)}` : ""}`;
+  if ((toolName === "edit" || toolName === "write") && toolArgs.path) return `${toolName} ${String(toolArgs.path)}`;
+  if (toolName === "grep" && toolArgs.pattern) return `grep ${String(toolArgs.pattern)}`;
+  if (toolName === "find" && toolArgs.pattern) return `find ${String(toolArgs.pattern)}`;
+  return toolName;
+}
+
+function toolContentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return stringify(content);
+  return content
+    .map((part) => {
+      if (!isRecord(part)) return stringify(part);
+      if (part.type === "text") return String(part.text ?? "");
+      if (part.type === "image") return `[image${part.mimeType ? `: ${String(part.mimeType)}` : ""}]`;
+      return stringify(part);
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function toolResultToText(result: unknown): string {
+  if (!isRecord(result)) return stringify(result);
+  const parts: string[] = [];
+  if ("content" in result) parts.push(toolContentToText(result.content));
+  if (isRecord(result.details)) {
+    if (result.details.diff) parts.push(String(result.details.diff));
+    if (result.details.stdout) parts.push(String(result.details.stdout));
+    if (result.details.stderr) parts.push(String(result.details.stderr));
+    if (result.details.exitCode !== undefined) parts.push(`exit code: ${String(result.details.exitCode)}`);
+  }
+  const text = parts.filter(Boolean).join("\n\n").trim();
+  return text || stringify(result);
+}
+
+function toolArgsToText(args: unknown): string {
+  if (!isRecord(args)) return stringify(args);
+  if (Object.keys(args).length === 0) return "";
+  return stringify(args);
+}
+
 function contentToSegments(content: unknown): TranscriptSegment[] {
   if (typeof content === "string") return [{ kind: "markdown", text: content }];
   if (!Array.isArray(content)) return [{ kind: "pre", text: stringify(content) }];
@@ -285,30 +330,33 @@ class PiWebAgentApp extends HTMLElement {
       this.upsertTranscript({
         id: `tool:${String(event.toolCallId ?? Date.now())}`,
         kind: "tool",
-        title: `Running ${String(event.toolName ?? "tool")}`,
-        body: stringify(event.args ?? {}),
+        title: formatToolTitle(event.toolName, event.args),
+        body: toolArgsToText(event.args ?? {}),
         status: "running",
       });
       return;
     }
 
     if (type === "tool_execution_update") {
+      const partialText = toolResultToText(event.partialResult ?? {});
       this.upsertTranscript({
         id: `tool:${String(event.toolCallId ?? Date.now())}`,
         kind: "tool",
-        title: `Running ${String(event.toolName ?? "tool")}`,
-        body: stringify(event.partialResult ?? event.args ?? {}),
+        title: formatToolTitle(event.toolName, event.args),
+        body: partialText || toolArgsToText(event.args ?? {}),
         status: "running",
       });
       return;
     }
 
     if (type === "tool_execution_end") {
+      const id = `tool:${String(event.toolCallId ?? Date.now())}`;
+      const existing = this.transcript.find((item) => item.id === id);
       this.upsertTranscript({
-        id: `tool:${String(event.toolCallId ?? Date.now())}`,
+        id,
         kind: "tool",
-        title: `${event.isError ? "Failed" : "Finished"} ${String(event.toolName ?? "tool")}`,
-        body: stringify(event.result ?? {}),
+        title: existing?.title ?? formatToolTitle(event.toolName, {}),
+        body: toolResultToText(event.result ?? {}),
         status: event.isError ? "error" : "done",
       });
       return;

@@ -232,14 +232,56 @@ textarea:disabled {
 }
 
 .message.tool {
-  border-color: #4a3f2a;
-  background: #1f1a10;
+  border-color: #294631;
+  background: #1e3324;
+  border-radius: 6px;
+}
+
+.message.tool.running {
+  border-color: #314f65;
+  background: #1a2c38;
 }
 
 .message.error,
 .message.tool.error {
-  border-color: #7d3434;
-  background: #281515;
+  border-color: #6e3438;
+  background: #3a2023;
+}
+
+.message.tool .message-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  color: #d8e8d6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  padding: 9px 10px;
+}
+
+.message.tool .message-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message.tool.done .message-header span {
+  color: #a9c4a3;
+}
+
+.message.tool.running .message-header span {
+  color: #9fc7e8;
+}
+
+.message.tool.error .message-header span {
+  color: #ffb1b1;
+}
+
+.message.tool pre {
+  color: #aeb7ad;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.message.tool.done:not([open]) {
+  opacity: 0.9;
 }
 
 .message-header {
