@@ -201,11 +201,24 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
 
+  const imagePath = join(artifactDir, "fixture.png");
+  await page.locator("#prompt").fill("queued steer mixed with follow-ups");
+  await page.locator("#send").click();
+  await page.locator(".queue-pill.steer", { hasText: "queued steer mixed with follow-ups" }).waitFor({ timeout: 5_000 });
+
+  await page.locator("#imageInput").setInputFiles(imagePath);
+  await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("queued follow-up with screenshot");
+  await page.locator("#followUp").click();
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".queue-pill.follow-up", { hasText: "queued follow-up with screenshot" }).waitFor({ timeout: 5_000 });
+
   await page.locator("#prompt").fill("queued follow-up that should be edited");
   await page.locator("#followUp").click();
   const editPill = page.locator(".queue-pill.follow-up", { hasText: "queued follow-up that should be edited" });
   await editPill.waitFor({ timeout: 5_000 });
-  await page.locator("footer").screenshot({ path: join(artifactDir, "queued-follow-up-before-edit-composer.png") });
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: join(artifactDir, "queued-follow-up-before-edit.png"), fullPage: true });
   await editPill.locator(".queue-edit").click();
   await editPill.waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "queued follow-up that should be edited" && document.activeElement?.id === "prompt", null, { timeout: 5_000 });
@@ -218,11 +231,9 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   const pill = page.locator(".queue-pill.follow-up", { hasText: "queued follow-up that should be canceled" });
   await pill.waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "queued-follow-up-before-cancel.png"), fullPage: true });
-  await page.locator("footer").screenshot({ path: join(artifactDir, "queued-follow-up-before-cancel-composer.png") });
   await pill.locator(".queue-cancel").click();
   await pill.waitFor({ state: "detached", timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "queued-follow-up-after-cancel.png"), fullPage: true });
-  await page.locator("footer").screenshot({ path: join(artifactDir, "queued-follow-up-after-cancel-composer.png") });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(artifactDir, "queued-follow-up-final.png"), fullPage: true });
   return collectMetrics(page);

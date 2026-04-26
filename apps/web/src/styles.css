@@ -756,7 +756,7 @@ textarea {
 
 .queue-pill {
   display: inline-grid;
-  grid-template-columns: auto minmax(80px, 1fr) auto auto;
+  grid-template-columns: auto minmax(80px, 1fr) auto auto auto;
   align-items: center;
   gap: 6px;
   max-width: min(520px, 100%);
@@ -802,6 +802,16 @@ textarea {
 .queue-pill span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-image-badge {
+  border-radius: 999px;
+  background: rgba(129, 166, 255, 0.16);
+  color: #d7e5ff;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-style: normal;
   white-space: nowrap;
 }
 

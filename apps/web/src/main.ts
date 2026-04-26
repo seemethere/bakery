@@ -60,9 +60,14 @@ type PromptImage = {
   size: number;
 };
 
+type RunningQueueItem = {
+  text: string;
+  imageCount: number | undefined;
+};
+
 type RunningQueueState = {
-  steering: string[];
-  followUp: string[];
+  steering: RunningQueueItem[];
+  followUp: RunningQueueItem[];
 };
 
 type BrowserPerfMetrics = {
@@ -1025,9 +1030,18 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (type === "queue_update") {
+      const preserveImageCounts = (queue: "steering" | "followUp", values: unknown[]): RunningQueueItem[] => {
+        const previous = [...this.runningQueue[queue]];
+        return values.map((value) => {
+          const text = String(value);
+          const matchIndex = previous.findIndex((item) => item.text === text);
+          const match = matchIndex >= 0 ? previous.splice(matchIndex, 1)[0] : undefined;
+          return { text, imageCount: match?.imageCount };
+        });
+      };
       this.runningQueue = {
-        steering: Array.isArray(event.steering) ? event.steering.map(String) : [],
-        followUp: Array.isArray(event.followUp) ? event.followUp.map(String) : [],
+        steering: preserveImageCounts("steering", Array.isArray(event.steering) ? event.steering : []),
+        followUp: preserveImageCounts("followUp", Array.isArray(event.followUp) ? event.followUp : []),
       };
     }
   }
@@ -1198,13 +1212,8 @@ class PiWebAgentApp extends HTMLElement {
 
   private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const text = input?.value.trim() || (type === "prompt" && this.promptImages.length > 0 ? "Please inspect the attached image." : "");
+    const text = input?.value.trim() || (this.promptImages.length > 0 ? "Please inspect the attached image." : "");
     if (!input || !text) return;
-    if (this.promptImages.length > 0 && type !== "prompt") {
-      this.notice = "Image attachments can be sent with a new prompt while the agent is idle.";
-      this.render();
-      return;
-    }
     if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
       this.promptDraft = "";
       this.savePromptDraft();
@@ -1219,10 +1228,11 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
-    const images = type === "prompt" && this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
+    const images = this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
     this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
-    if (type === "steer") this.runningQueue = { ...this.runningQueue, steering: [...this.runningQueue.steering, text] };
-    if (type === "follow_up") this.runningQueue = { ...this.runningQueue, followUp: [...this.runningQueue.followUp, text] };
+    const queuedItem = { text, imageCount: images?.length };
+    if (type === "steer") this.runningQueue = { ...this.runningQueue, steering: [...this.runningQueue.steering, queuedItem] };
+    if (type === "follow_up") this.runningQueue = { ...this.runningQueue, followUp: [...this.runningQueue.followUp, queuedItem] };
     if (type === "prompt" && this.selectedSession && !this.selectedSession.title) {
       const optimistic = { ...this.selectedSession, title: text.slice(0, 60), lastUserPrompt: text.slice(0, 160), lastActivityAt: new Date().toISOString(), status: "running" as const };
       this.selectedSession = optimistic;
@@ -1245,7 +1255,7 @@ class PiWebAgentApp extends HTMLElement {
       return false;
     }
     const current = this.runningQueue[queue];
-    if (current[index] !== text) {
+    if (current[index]?.text !== text) {
       this.notice = "Queued message changed before it could be updated.";
       this.render();
       return false;
@@ -1880,12 +1890,13 @@ class PiWebAgentApp extends HTMLElement {
     const steering = this.runningQueue.steering;
     const followUp = this.runningQueue.followUp;
     if (steering.length === 0 && followUp.length === 0) return "";
-    const renderPill = (kind: "Steer" | "Follow-up", queue: "steering" | "followUp", text: string, index: number) => `
-      <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(text)}">
+    const renderPill = (kind: "Steer" | "Follow-up", queue: "steering" | "followUp", item: RunningQueueItem, index: number) => `
+      <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(item.text)}">
         <strong>${escapeHtml(kind)} ${index + 1}</strong>
-        <span>${escapeHtml(text)}</span>
-        <button type="button" class="queue-edit" data-edit-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(text)}" aria-label="Edit ${escapeHtml(kind)} ${index + 1}">✎</button>
-        <button type="button" class="queue-cancel" data-cancel-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(text)}" aria-label="Cancel ${escapeHtml(kind)} ${index + 1}">×</button>
+        <span>${escapeHtml(item.text)}</span>
+        ${item.imageCount ? `<em class="queue-image-badge" title="${item.imageCount} attached image${item.imageCount === 1 ? "" : "s"}">🖼 ${item.imageCount}</em>` : ""}
+        <button type="button" class="queue-edit" data-edit-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(item.text)}" aria-label="Edit ${escapeHtml(kind)} ${index + 1}">✎</button>
+        <button type="button" class="queue-cancel" data-cancel-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(item.text)}" aria-label="Cancel ${escapeHtml(kind)} ${index + 1}">×</button>
       </span>`;
     const total = steering.length + followUp.length;
     return `
@@ -1895,8 +1906,8 @@ class PiWebAgentApp extends HTMLElement {
           <span>${total} pending</span>
         </div>
         <div class="running-queue-items">
-          ${steering.map((text, index) => renderPill("Steer", "steering", text, index)).join("")}
-          ${followUp.map((text, index) => renderPill("Follow-up", "followUp", text, index)).join("")}
+          ${steering.map((item, index) => renderPill("Steer", "steering", item, index)).join("")}
+          ${followUp.map((item, index) => renderPill("Follow-up", "followUp", item, index)).join("")}
         </div>
       </div>`;
   }
@@ -2338,7 +2349,7 @@ class PiWebAgentApp extends HTMLElement {
             ${this.renderFileAutocomplete()}
           </div>
           <div class="controls ${isRunning ? "running" : ""}">
-            <button id="attachImages" class="icon-button" title="Attach images" aria-label="Attach images" ${isController && !isRunning ? "" : "disabled"}>📎</button>
+            <button id="attachImages" class="icon-button" title="Attach images" aria-label="Attach images" ${isController ? "" : "disabled"}>📎</button>
             <button id="send" class="primary-action" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}<small>Enter</small></button>
             <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
             <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>

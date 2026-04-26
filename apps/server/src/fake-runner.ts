@@ -89,8 +89,8 @@ class FakeSessionHandle implements SessionHandle {
   private aborted = false;
   private currentModel = "fake/fast";
   private currentThinking: string;
-  private steeringQueue: string[] = [];
-  private followUpQueue: string[] = [];
+  private steeringQueue: Array<{ text: string; images: ImageContent[] | undefined }> = [];
+  private followUpQueue: Array<{ text: string; images: ImageContent[] | undefined }> = [];
 
   constructor(
     readonly id: string,
@@ -155,23 +155,23 @@ class FakeSessionHandle implements SessionHandle {
     this.emitQueueUpdate();
   }
 
-  async steer(text: string): Promise<void> {
-    this.steeringQueue.push(text);
+  async steer(text: string, images?: ImageContent[]): Promise<void> {
+    this.steeringQueue.push({ text, images });
     this.emitQueueUpdate();
   }
 
-  async followUp(text: string): Promise<void> {
-    this.followUpQueue.push(text);
+  async followUp(text: string, images?: ImageContent[]): Promise<void> {
+    this.followUpQueue.push({ text, images });
     this.emitQueueUpdate();
   }
 
   async cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }> {
     const target = queue === "steering" ? this.steeringQueue : this.followUpQueue;
     if (index >= target.length) throw new Error("Queued message no longer exists.");
-    if (text !== undefined && target[index] !== text) throw new Error("Queued message changed before it could be canceled.");
+    if (text !== undefined && target[index]?.text !== text) throw new Error("Queued message changed before it could be canceled.");
     target.splice(index, 1);
     this.emitQueueUpdate();
-    return { steering: [...this.steeringQueue], followUp: [...this.followUpQueue] };
+    return { steering: this.steeringQueue.map((message) => message.text), followUp: this.followUpQueue.map((message) => message.text) };
   }
 
   async abort(): Promise<void> {
@@ -243,7 +243,7 @@ class FakeSessionHandle implements SessionHandle {
   }
 
   private emitQueueUpdate(): void {
-    this.emit({ type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+    this.emit({ type: "queue_update", steering: this.steeringQueue.map((message) => message.text), followUp: this.followUpQueue.map((message) => message.text) });
   }
 
   private restoreMessagesFromSession(): void {

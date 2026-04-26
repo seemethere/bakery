@@ -30,8 +30,8 @@ export type SessionHandle = {
   sessionFile: string;
   session: AgentSession;
   prompt(text: string, images?: ImageContent[]): Promise<void>;
-  steer(text: string): Promise<void>;
-  followUp(text: string): Promise<void>;
+  steer(text: string, images?: ImageContent[]): Promise<void>;
+  followUp(text: string, images?: ImageContent[]): Promise<void>;
   cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }>;
   abort(): Promise<void>;
   setModel(model: string): Promise<void>;
@@ -137,27 +137,37 @@ class InProcessSessionHandle implements SessionHandle {
     await this.session.prompt(text, images?.length ? { images } : undefined);
   }
 
-  async steer(text: string): Promise<void> {
-    await this.session.steer(text);
+  private readonly queuedMessages: { steering: Array<{ text: string; images: ImageContent[] | undefined }>; followUp: Array<{ text: string; images: ImageContent[] | undefined }> } = { steering: [], followUp: [] };
+
+  async steer(text: string, images?: ImageContent[]): Promise<void> {
+    this.queuedMessages.steering.push({ text, images });
+    await this.session.steer(text, images);
   }
 
-  async followUp(text: string): Promise<void> {
-    await this.session.followUp(text);
+  async followUp(text: string, images?: ImageContent[]): Promise<void> {
+    this.queuedMessages.followUp.push({ text, images });
+    await this.session.followUp(text, images);
   }
 
   async cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }> {
-    const queued = {
+    const sdkQueued = {
       steering: [...this.session.getSteeringMessages()],
       followUp: [...this.session.getFollowUpMessages()],
     };
-    const current = queued[queue];
+    const current = sdkQueued[queue];
     if (index >= current.length) throw new Error("Queued message no longer exists.");
     if (text !== undefined && current[index] !== text) throw new Error("Queued message changed before it could be canceled.");
-    current.splice(index, 1);
+    const queued = {
+      steering: this.queuedMessages.steering.length === sdkQueued.steering.length ? [...this.queuedMessages.steering] : sdkQueued.steering.map((message) => ({ text: message, images: undefined })),
+      followUp: this.queuedMessages.followUp.length === sdkQueued.followUp.length ? [...this.queuedMessages.followUp] : sdkQueued.followUp.map((message) => ({ text: message, images: undefined })),
+    };
+    queued[queue].splice(index, 1);
     this.session.clearQueue();
-    for (const steering of queued.steering) await this.session.steer(steering);
-    for (const followUp of queued.followUp) await this.session.followUp(followUp);
-    return queued;
+    this.queuedMessages.steering = [];
+    this.queuedMessages.followUp = [];
+    for (const steering of queued.steering) await this.steer(steering.text, steering.images);
+    for (const followUp of queued.followUp) await this.followUp(followUp.text, followUp.images);
+    return { steering: queued.steering.map((message) => message.text), followUp: queued.followUp.map((message) => message.text) };
   }
 
   async abort(): Promise<void> {

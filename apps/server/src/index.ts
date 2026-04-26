@@ -625,8 +625,8 @@ class SessionHub {
         if (webSession && !webSession.title) store.updateSession(webSession.id, { title: parsed.data.text.slice(0, 60) });
         await this.handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
         await this.broadcastSettingsUpdate();
-      } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text);
-      else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text);
+      } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+      else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
       else if (parsed.data.type === "cancel_queued_message") {
         const queued = await this.handle.cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
         this.broadcast({
