@@ -26,6 +26,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Improved streaming UI responsiveness by throttling WebSocket-driven renders, reducing transcript follow-scroll layout work, and caching rendered transcript segment HTML.
 - Added basic session tree/fork/navigation support: shared tree/fork/navigate protocol schemas, `GET /api/sessions/:id/tree`, `POST /api/sessions/:id/fork`, `POST /api/sessions/:id/tree/navigate`, a right-inspector Tree tab, and a TUI-inspired wide tree drawer opened with `/tree`; rows navigate within the current pi session and user-message entries can fork a new web session.
 - Reduced streaming render lockups by throttling live renders further, patching only dirty transcript items during active runs instead of replacing the whole app shell, and rendering live assistant Markdown as escaped plain text until the message completes.
+- Added an agent-operable Playwright UI harness: `PI_WEB_FAKE_AGENT=1` enables a deterministic fake session runner, and `bun run test:web-perf` starts backend/web against temp dirs, drives the real browser UI, measures prompt/control responsiveness during synthetic streaming, and writes screenshots/traces/metrics under ignored `test-results/`.
 
 ## How to run
 
@@ -48,17 +49,18 @@ Open `http://127.0.0.1:5173/`. The API URL should be `http://127.0.0.1:3141`. Le
 ```bash
 bun install
 bun run check
+bun run test:web-perf
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after adding dirty transcript patching for live streaming renders.
+Latest: `bun run check` and `bun run test:web-perf` pass after adding the fake-agent Playwright UI harness. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
-1. Refresh the browser page and manually test responsiveness while the agent streams a long answer; verify the prompt, inspector collapse button, header controls, and transcript scrolling remain clickable with dirty transcript patching.
-2. Continue performance work by moving transcript rows into dedicated custom elements or DOM nodes so live assistant text can update textContent without reparsing/replacing row HTML.
-3. Manually test the revised collapsible Details/Preview inspector against real tool runs, Markdown/code responses, HTML/SVG snippets, and narrow window widths to confirm main content no longer draws under the inspector.
-4. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
+1. Expand the Playwright UI harness scenarios for inspector Details/Preview, slash commands, tree/fork/navigation, reconnect, controller handoff, narrow widths, and tool-heavy fake streams.
+2. Add richer browser-side performance metrics to the harness, especially `PerformanceObserver` long-task counts/durations and render/patch timing exported through `window.__piWebPerf`.
+3. Continue performance work by moving transcript rows into dedicated custom elements or DOM nodes so live assistant text can update textContent without reparsing/replacing row HTML.
+4. Manually spot-check real-model streaming after harness changes; current browser page needs refresh to pick up frontend changes, backend needs restart for `PI_WEB_FAKE_AGENT`/server changes.
 5. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
 6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
 7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.

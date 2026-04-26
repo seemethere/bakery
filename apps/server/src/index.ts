@@ -24,6 +24,7 @@ import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { MetadataStore } from "./metadata-store.js";
 import { completeFiles, searchFiles } from "./file-search.js";
+import { FakePiSessionRunner } from "./fake-runner.js";
 import { InProcessPiSessionRunner } from "./pi-runner.js";
 import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
 
@@ -32,7 +33,7 @@ const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
 mkdirSync(config.sessionDir, { recursive: true });
 
 const store = new MetadataStore(config.metadataDbPath);
-const runner = new InProcessPiSessionRunner(config.modelPolicy);
+const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 await app.register(websocket);

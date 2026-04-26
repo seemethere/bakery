@@ -19,6 +19,7 @@ export type ServerConfig = AppConfig & {
   authToken?: string | undefined;
   metadataDbPath: string;
   sessionDir: string;
+  fakeAgent: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -36,6 +37,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     workspaceRoots,
     metadataDbPath: env.PI_WEB_METADATA_DB ?? resolve(dataDir, "metadata.sqlite"),
     sessionDir: env.PI_WEB_SESSION_DIR ? expandHome(env.PI_WEB_SESSION_DIR) : resolve(dataDir, "sessions"),
+    fakeAgent: env.PI_WEB_FAKE_AGENT === "true" || env.PI_WEB_FAKE_AGENT === "1",
     toolPermissionPolicy: {
       allowedModes: ["bypass", "confirm"],
       defaultMode: "bypass",
