@@ -11,7 +11,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fastify backend with localhost/token auth, workspace allowlist checks, config/workspace/model endpoints, session CRUD, SQLite metadata, and WebSocket session endpoint.
 - In-process pi SDK session runner wired for prompt, steer, follow-up, abort, model/thinking changes, snapshots, and normalized event streaming.
 - WebSocket session hubs now support reconnect snapshots, multiple clients, first-client controller assignment, take-control, per-client sequence envelopes, and disconnected idle disposal.
-- Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, readable transcript rendering, model/thinking selectors, prompt/steer/follow-up input, abort controls, controller/viewer status, and transcript auto-scroll toggle.
+- Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, readable transcript rendering, model/thinking selectors, prompt/steer/follow-up input, abort controls, controller/viewer status, and TUI-like transcript follow-latest auto-scroll.
 
 ## How to run
 
@@ -37,7 +37,7 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after adding session transcript auto-scroll.
+Latest: `bun run check` passes after fixing transcript layout/auto-scroll to follow the latest message.
 
 ## Next priorities
 

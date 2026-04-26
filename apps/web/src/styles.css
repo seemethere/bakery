@@ -7,18 +7,22 @@
 
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 pi-web-agent {
   display: grid;
   grid-template-columns: 340px 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 aside {
   border-right: 1px solid #2a2f3a;
   padding: 16px;
   background: #171a21;
+  overflow-y: auto;
 }
 
 h1 {
@@ -84,6 +88,7 @@ main {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  min-height: 0;
 }
 
 header,
@@ -201,8 +206,16 @@ textarea:disabled {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
   padding: 16px;
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+.transcript-end {
+  height: 1px;
+  flex: 0 0 1px;
 }
 
 .message {
