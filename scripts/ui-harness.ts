@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
+  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "reconnect-draft", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -92,6 +92,7 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
       transcriptChildren: transcript?.children.length ?? 0,
       transcriptTextLength: transcript?.textContent?.length ?? 0,
       status: document.querySelector(".status")?.textContent ?? null,
+      connectionBanner: document.querySelector(".connection-banner")?.textContent?.replace(/\s+/g, " ").trim() ?? null,
       promptValue: (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value ?? null,
       rightPanelCollapsed: document.querySelector("pi-web-agent")?.classList.contains("inspector-collapsed") ?? null,
       renderedImages: document.querySelectorAll(".message img").length,
@@ -216,6 +217,24 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   return collectMetrics(page);
 }
 
+async function runReconnectDraft(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const draft = `draft survives reload ${Date.now()}`;
+  await page.locator("#prompt").fill(draft);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("#prompt").waitFor({ state: "visible" });
+  await page.waitForFunction((expected) => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === expected, draft);
+  await page.locator(".connection-banner.connected", { hasText: "Draft saved locally" }).waitFor({ timeout: 5_000 });
+  await page.evaluate(() => {
+    const app = document.querySelector("pi-web-agent") as unknown as { ws?: WebSocket } | null;
+    app?.ws?.close();
+  });
+  await page.locator(".connection-banner.reconnecting").waitFor({ timeout: 5_000 });
+  await page.locator(".connection-banner.connected", { hasText: "Draft saved locally" }).waitFor({ timeout: 10_000 });
+  await page.waitForFunction((expected) => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === expected, draft);
+  return collectMetrics(page);
+}
+
 async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 760, height: 900 });
   await prepareSession(page);
@@ -311,6 +330,7 @@ async function runScenario(name: string, page: Page, browser: Browser): Promise<
   if (name === "slash-commands") return runSlashCommands(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
   if (name === "reconnect-controller") return runReconnectController(page);
+  if (name === "reconnect-draft") return runReconnectDraft(page);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);

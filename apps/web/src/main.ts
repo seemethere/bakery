@@ -3,6 +3,7 @@ import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type Controll
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
+type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type TranscriptKind = "user" | "assistant" | "tool" | "system" | "error";
 type TranscriptSegment =
   | { kind: "markdown"; text: string }
@@ -380,6 +381,8 @@ class PiWebAgentApp extends HTMLElement {
   private ws: WebSocket | null = null;
   private transcript: TranscriptItem[] = [];
   private status: AgentStatus = "disconnected";
+  private connectionState: ConnectionState = "disconnected";
+  private connectionMessage = "No session connected.";
   private notice = "";
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
@@ -396,6 +399,9 @@ class PiWebAgentApp extends HTMLElement {
   private preserveTranscriptScrollOnce = false;
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private socketGeneration = 0;
   private fileAutocomplete: FileAutocompleteState = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
   private fileAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private fileAutocompleteRequest = 0;
@@ -407,14 +413,20 @@ class PiWebAgentApp extends HTMLElement {
   private forceFullRender = false;
   private dirtyTranscriptIds = new Set<string>();
   private renderedSegmentCache = new Map<string, string>();
+  private readonly beforeUnloadHandler = () => this.persistAttachmentWarningIfNeeded();
 
   connectedCallback(): void {
+    window.addEventListener("beforeunload", this.beforeUnloadHandler);
     this.render();
     void this.refresh();
   }
 
   disconnectedCallback(): void {
+    window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    this.persistAttachmentWarningIfNeeded();
     if (this.renderTimer) clearTimeout(this.renderTimer);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.socketGeneration++;
     this.ws?.close();
   }
 
@@ -435,6 +447,30 @@ class PiWebAgentApp extends HTMLElement {
     else this.transcript[index] = { ...this.transcript[index], ...item };
     this.dirtyTranscriptIds.add(item.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(item.id, false);
+  }
+
+  private draftKey(sessionId = this.selectedSession?.id): string | null {
+    return sessionId ? `piWebPromptDraft:${sessionId}` : null;
+  }
+
+  private attachmentWarningKey(sessionId = this.selectedSession?.id): string | null {
+    return sessionId ? `piWebPromptAttachmentWarning:${sessionId}` : null;
+  }
+
+  private savePromptDraft(): void {
+    const key = this.draftKey();
+    if (!key) return;
+    if (this.promptDraft) localStorage.setItem(key, this.promptDraft);
+    else localStorage.removeItem(key);
+  }
+
+  private loadPromptDraft(sessionId: string): string {
+    return localStorage.getItem(`piWebPromptDraft:${sessionId}`) ?? "";
+  }
+
+  private persistAttachmentWarningIfNeeded(): void {
+    const key = this.attachmentWarningKey();
+    if (key && this.promptImages.length > 0) localStorage.setItem(key, "lost");
   }
 
   private async refresh(): Promise<void> {
@@ -478,12 +514,18 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private openSession(session: WebSession): void {
+    this.persistAttachmentWarningIfNeeded();
     this.selectedSession = session;
     this.lastSelectedSessionId = session.id;
     localStorage.setItem("piWebLastSessionId", session.id);
     this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
     this.status = "connecting";
-    this.notice = "";
+    const attachmentWarningKey = this.attachmentWarningKey(session.id);
+    const hadLostAttachments = attachmentWarningKey ? localStorage.getItem(attachmentWarningKey) === "lost" : false;
+    if (attachmentWarningKey) localStorage.removeItem(attachmentWarningKey);
+    this.notice = hadLostAttachments ? "Image attachments are not restored after a refresh. Please attach them again before sending." : "";
+    this.promptDraft = this.loadPromptDraft(session.id);
+    this.promptImages = [];
     this.controller = null;
     this.settings = null;
     this.sessionTree = null;
@@ -491,7 +533,22 @@ class PiWebAgentApp extends HTMLElement {
     this.transcriptScrollTop = 0;
     this.selectedTranscriptId = "opened";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
+    this.socketGeneration++;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
+    this.connectWebSocket(session, "connecting");
+    this.render();
+  }
+
+  private connectWebSocket(session: WebSession, state: ConnectionState): void {
+    const generation = ++this.socketGeneration;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    this.connectionState = state;
+    this.connectionMessage = state === "reconnecting" ? `Reconnecting to ${session.id}...` : `Connecting to ${session.id}...`;
+    this.status = this.status === "running" ? this.status : "connecting";
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -499,22 +556,55 @@ class PiWebAgentApp extends HTMLElement {
     const rememberedClientId = localStorage.getItem(`piWebClientId:${session.id}`);
     if (rememberedClientId) url.searchParams.set("clientId", rememberedClientId);
 
-    this.ws = new WebSocket(url);
-    this.ws.addEventListener("open", () => {
-      this.status = "connecting";
-      this.render();
+    const socket = new WebSocket(url);
+    this.ws = socket;
+    socket.addEventListener("open", () => {
+      if (generation !== this.socketGeneration) return;
+      this.connectionState = state === "reconnecting" ? "reconnecting" : "connecting";
+      this.connectionMessage = "Socket opened; waiting for session snapshot...";
+      this.requestRender(0);
     });
-    this.ws.addEventListener("message", (event) => this.handleSocketMessage(event.data as string));
-    this.ws.addEventListener("close", () => {
-      this.status = "disconnected";
-      this.upsertTranscript({ id: `closed:${Date.now()}`, kind: "system", title: "Connection", body: "WebSocket closed" });
-      this.requestRender();
+    socket.addEventListener("message", (event) => {
+      if (generation !== this.socketGeneration) return;
+      this.handleSocketMessage(event.data as string);
     });
-    this.ws.addEventListener("error", () => {
-      this.notice = "WebSocket error";
-      this.render();
+    socket.addEventListener("close", () => {
+      if (generation !== this.socketGeneration) return;
+      this.handleSocketClose(session);
     });
-    this.render();
+    socket.addEventListener("error", () => {
+      if (generation !== this.socketGeneration) return;
+      this.connectionMessage = "Connection error; retrying if possible.";
+      this.requestRender(0);
+    });
+  }
+
+  private handleSocketClose(session: WebSession): void {
+    if (this.selectedSession?.id !== session.id) return;
+    this.status = "disconnected";
+    this.connectionState = "disconnected";
+    this.connectionMessage = "Connection lost. Retrying shortly...";
+    this.upsertTranscript({ id: `closed:${Date.now()}`, kind: "system", title: "Connection", body: "WebSocket closed; reconnecting." });
+    this.scheduleReconnect(session);
+    this.requestRender(0);
+  }
+
+  private scheduleReconnect(session: WebSession): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectAttempt++;
+    if (this.reconnectAttempt > 8) {
+      this.connectionState = "retry_failed";
+      this.connectionMessage = "Reconnect failed. Check whether the backend is running, then use Save / Refresh or reopen the session.";
+      return;
+    }
+    const delay = Math.min(8_000, 500 * 2 ** Math.max(0, this.reconnectAttempt - 1));
+    this.connectionState = "reconnecting";
+    this.connectionMessage = `Connection lost. Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempt}/8)...`;
+    this.reconnectTimer = setTimeout(() => {
+      if (this.selectedSession?.id !== session.id) return;
+      this.connectWebSocket(session, "reconnecting");
+      this.requestRender(0);
+    }, delay);
   }
 
   private applySnapshot(snapshot: SessionSnapshot): void {
@@ -543,6 +633,9 @@ class PiWebAgentApp extends HTMLElement {
 
     const { payload } = data;
     if (payload.type === "session_snapshot") {
+      this.connectionState = "connected";
+      this.connectionMessage = "Connected.";
+      this.reconnectAttempt = 0;
       this.applySnapshot(payload.snapshot);
     } else if (payload.type === "agent_event") {
       this.applyAgentEvent(payload.event.data ?? payload.event);
@@ -684,7 +777,10 @@ class PiWebAgentApp extends HTMLElement {
         body: JSON.stringify({ entryId, summarize: false }),
       });
       this.applySnapshot(result.snapshot);
-      if (result.editorText) this.promptDraft = result.editorText;
+      if (result.editorText) {
+        this.promptDraft = result.editorText;
+        this.savePromptDraft();
+      }
       this.notice = result.editorText ? "Navigated to user message draft" : "Navigated to selected point";
       this.render();
     } catch (error) {
@@ -728,16 +824,22 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
       this.promptDraft = "";
+      this.savePromptDraft();
       this.closeFileAutocomplete();
       this.closeCommandAutocomplete();
       input.value = "";
       this.openTreeDrawer();
       return;
     }
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.notice = "Not connected. Your draft is saved locally; sending will be available after reconnect.";
+      this.render();
+      return;
+    }
     const images = type === "prompt" && this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
     this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
     this.promptDraft = "";
+    this.savePromptDraft();
     this.promptImages = [];
     this.closeFileAutocomplete();
     this.closeCommandAutocomplete();
@@ -777,7 +879,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (added.length > 0) {
       this.promptImages = [...this.promptImages, ...added];
-      this.notice = "";
+      this.notice = "Image attachments are ready for this prompt only and are not preserved across page refreshes.";
     }
     this.render();
   }
@@ -815,6 +917,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private updatePromptDraft(input: HTMLTextAreaElement): void {
     this.promptDraft = input.value;
+    this.savePromptDraft();
     this.updateCommandAutocomplete(input);
     this.updateFileAutocomplete(input);
   }
@@ -924,6 +1027,7 @@ class PiWebAgentApp extends HTMLElement {
     const before = this.promptDraft.slice(0, this.commandAutocomplete.start);
     const after = this.promptDraft.slice(this.commandAutocomplete.end);
     this.promptDraft = `${before}${inserted} ${after}`;
+    this.savePromptDraft();
     input.value = this.promptDraft;
     const cursor = before.length + inserted.length + 1;
     input.focus();
@@ -942,6 +1046,7 @@ class PiWebAgentApp extends HTMLElement {
     const before = this.promptDraft.slice(0, this.fileAutocomplete.start);
     const after = this.promptDraft.slice(this.fileAutocomplete.end);
     this.promptDraft = `${before}${inserted}${spacer}${after}`;
+    this.savePromptDraft();
     input.value = this.promptDraft;
     const cursor = before.length + inserted.length + spacer.length;
     input.focus();
@@ -1385,6 +1490,17 @@ class PiWebAgentApp extends HTMLElement {
     status.textContent = this.status;
   }
 
+  private patchConnectionBanner(): void {
+    const banner = this.querySelector<HTMLElement>(".connection-banner");
+    if (!banner) return;
+    banner.className = `connection-banner ${this.connectionState}`;
+    banner.innerHTML = `
+      <strong>${escapeHtml(this.connectionState.replace("_", " "))}</strong>
+      <span>${escapeHtml(this.connectionMessage)}</span>
+      ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
+      ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
+  }
+
   private patchLiveRender(): boolean {
     const start = performance.now();
     const transcript = this.querySelector<HTMLElement>(".transcript");
@@ -1406,6 +1522,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
+    this.patchConnectionBanner();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
     recordPerfSample("patch", performance.now() - start);
@@ -1487,6 +1604,12 @@ class PiWebAgentApp extends HTMLElement {
             <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
           </div>
         </header>
+        <div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">
+          <strong>${escapeHtml(this.connectionState.replace("_", " "))}</strong>
+          <span>${escapeHtml(this.connectionMessage)}</span>
+          ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
+          ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
+        </div>
         <section class="transcript">${this.renderTranscript()}</section>
         <footer>
           <div class="prompt-shell">
