@@ -18,8 +18,16 @@ pi-web-agent {
   overflow: hidden;
 }
 
+pi-web-agent.session-sidebar-collapsed {
+  grid-template-columns: 48px minmax(0, 1fr) minmax(360px, 28vw);
+}
+
 pi-web-agent.inspector-collapsed {
   grid-template-columns: 340px minmax(0, 1fr) 44px;
+}
+
+pi-web-agent.session-sidebar-collapsed.inspector-collapsed {
+  grid-template-columns: 48px minmax(0, 1fr) 44px;
 }
 
 aside {
@@ -32,6 +40,54 @@ aside {
 h1 {
   font-size: 20px;
   margin: 0 0 16px;
+}
+
+.sidebar-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.sidebar-titlebar h1 {
+  margin: 0;
+}
+
+.collapse-sidebar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.session-sidebar.collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 6px;
+  overflow: hidden;
+}
+
+.session-sidebar.collapsed .sidebar-titlebar {
+  margin-bottom: 0;
+}
+
+.session-sidebar.collapsed h1 {
+  display: none;
+}
+
+.collapsed-sidebar-label {
+  color: #8b94a7;
+  font-size: 12px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.collapsed-sidebar-session {
+  color: #aef0c3;
+  font-size: 12px;
 }
 
 h2 {

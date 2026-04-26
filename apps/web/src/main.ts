@@ -224,6 +224,7 @@ class PiWebAgentApp extends HTMLElement {
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
+  private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
   private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
@@ -753,6 +754,11 @@ class PiWebAgentApp extends HTMLElement {
       void this.refresh();
     });
     this.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void this.createSession());
+    this.querySelector<HTMLButtonElement>("#toggleSessionSidebar")?.addEventListener("click", () => {
+      this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
+      localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
+      this.render();
+    });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
@@ -1190,6 +1196,7 @@ class PiWebAgentApp extends HTMLElement {
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
     const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
     const isRunning = this.status === "running";
+    this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("inspector-collapsed", this.rightPanelCollapsed);
     const isController = this.controller?.isController ?? true;
     const controllerLabel = this.controller
@@ -1197,23 +1204,31 @@ class PiWebAgentApp extends HTMLElement {
       : "";
     const currentModelId = this.settings?.model?.id ?? "";
     this.innerHTML = `
-      <aside>
-        <h1>Pi Web Agent</h1>
-        <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
-        <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
-        <button id="saveSettings">Save / Refresh</button>
-        ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
-        <hr />
-        <label>Workspace
-          <select id="workspace">
-            ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
-          </select>
-        </label>
-        <button id="newSession">New session</button>
-        <h2>Sessions</h2>
-        <div class="sessions">
-          ${this.sessions.map((session) => `<button data-session-id="${escapeHtml(session.id)}" class="${session.id === this.selectedSession?.id ? "active" : ""}">${escapeHtml(session.title ?? session.cwd)}<small>${escapeHtml(session.id)}</small></button>`).join("")}
+      <aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""}">
+        <div class="sidebar-titlebar">
+          <h1>Pi Web Agent</h1>
+          <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
         </div>
+        ${this.sessionSidebarCollapsed ? `
+          <span class="collapsed-sidebar-label">Sessions</span>
+          ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
+        ` : `
+          <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
+          <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
+          <button id="saveSettings">Save / Refresh</button>
+          ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
+          <hr />
+          <label>Workspace
+            <select id="workspace">
+              ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
+            </select>
+          </label>
+          <button id="newSession">New session</button>
+          <h2>Sessions</h2>
+          <div class="sessions">
+            ${this.sessions.map((session) => `<button data-session-id="${escapeHtml(session.id)}" class="${session.id === this.selectedSession?.id ? "active" : ""}">${escapeHtml(session.title ?? session.cwd)}<small>${escapeHtml(session.id)}</small></button>`).join("")}
+          </div>
+        `}
       </aside>
       <main>
         <header>

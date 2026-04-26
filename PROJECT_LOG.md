@@ -27,6 +27,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Added basic session tree/fork/navigation support: shared tree/fork/navigate protocol schemas, `GET /api/sessions/:id/tree`, `POST /api/sessions/:id/fork`, `POST /api/sessions/:id/tree/navigate`, a right-inspector Tree tab, and a TUI-inspired wide tree drawer opened with `/tree`; rows navigate within the current pi session and user-message entries can fork a new web session.
 - Reduced streaming render lockups by throttling live renders further, patching only dirty transcript items during active runs instead of replacing the whole app shell, and rendering live assistant Markdown as escaped plain text until the message completes.
 - Added an agent-operable Playwright UI harness: `PI_WEB_FAKE_AGENT=1` enables a deterministic fake session runner, `bun run test:web-perf` starts backend/web against temp dirs, drives the real browser UI, measures prompt/control responsiveness during synthetic streaming, and writes screenshots/traces/metrics under ignored `test-results/`; `bun run ui:manual` opens a headed fake-agent browser session for exploratory manual validation until Ctrl+C.
+- The left workspace/session sidebar is now collapsible, with state persisted in local storage and compatible grid sizing when the right inspector is also collapsed.
 
 ## How to run
 
@@ -54,7 +55,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after adding the fake-agent Playwright UI harness. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after adding the collapsible session sidebar. Latest harness scenario: `streaming-responsiveness`; artifacts at `test-results/ui-harness/streaming-responsiveness-2026-04-26T17-54-11-886Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
