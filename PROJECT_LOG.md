@@ -110,6 +110,7 @@ At the end of each work session:
 
 ## UI validation convention
 
+- For any UI feature touching typing, autocomplete, streaming, scrolling, or keyboard navigation: avoid full-app renders in the interaction path; patch local DOM islands and add focused harness coverage for responsiveness.
 - UI-affecting changes should run `bun run test:web-perf` after `bun run check`.
 - Use `bun run ui:manual` for headed fake-agent exploratory validation in a temp workspace.
 - Include harness scenario names and artifact paths in handoffs.
