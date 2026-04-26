@@ -10,7 +10,7 @@ Implemented the first basic vertical slice scaffold:
 - Shared Zod/TypeScript protocol definitions.
 - Fastify backend with localhost/token auth, workspace allowlist checks, config/workspace/model endpoints, session CRUD, SQLite metadata, and WebSocket session endpoint.
 - In-process pi SDK session runner wired for prompt, steer, follow-up, abort, snapshots, and normalized event streaming.
-- Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, event log, and prompt input.
+- Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, readable transcript rendering, prompt/steer/follow-up input, and abort controls.
 
 ## How to run
 
@@ -38,13 +38,13 @@ curl http://127.0.0.1:3141/healthz
 
 ## Next priorities
 
-1. Render transcript events as readable user/assistant/tool messages instead of JSON dumps.
-2. Improve WebSocket/session lifecycle: loading/error states, reconnect, multiple clients, controller status.
-3. Add model and thinking selectors wired through backend policy and pi session changes.
-4. Implement ignore-aware file search/complete endpoints for `@file` autocomplete.
-5. Add command metadata endpoint and slash-command autocomplete.
-6. Add collapsible tool cards and right-side details panel.
-7. Add basic branch/fork controls and tree summary using pi session manager APIs.
+1. Improve WebSocket/session lifecycle: reconnect, multiple clients, controller status, and richer error states.
+2. Add model and thinking selectors wired through backend policy and pi session changes.
+3. Implement ignore-aware file search/complete endpoints for `@file` autocomplete.
+4. Add command metadata endpoint and slash-command autocomplete.
+5. Add collapsible tool cards and right-side details panel.
+6. Add basic branch/fork controls and tree summary using pi session manager APIs.
+7. Persist/update default session titles from the first user prompt.
 8. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention

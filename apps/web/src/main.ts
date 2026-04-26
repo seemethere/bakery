@@ -1,5 +1,75 @@
-import { PROTOCOL_VERSION, type ServerEnvelope, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type ServerEnvelope, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
+
+type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
+type TranscriptKind = "user" | "assistant" | "tool" | "system" | "error";
+
+type TranscriptItem = {
+  id: string;
+  kind: TranscriptKind;
+  title: string;
+  body: string;
+  status?: "running" | "done" | "error";
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char] ?? char);
+}
+
+function stringify(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function contentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return stringify(content);
+
+  const parts = content.map((part) => {
+    if (!isRecord(part)) return stringify(part);
+    if (part.type === "text") return String(part.text ?? "");
+    if (part.type === "toolCall") return `↳ tool call: ${String(part.name ?? "tool")}\n${stringify(part.arguments ?? {})}`;
+    if (part.type === "image") return "[image]";
+    return stringify(part);
+  });
+  return parts.filter(Boolean).join("\n\n");
+}
+
+function messageKey(message: Record<string, unknown>, fallback: string): string {
+  const role = String(message.role ?? "message");
+  const timestamp = message.timestamp ?? message.id;
+  return timestamp ? `${role}:${String(timestamp)}` : fallback;
+}
+
+function messageToTranscriptItem(message: unknown, fallbackId: string): TranscriptItem {
+  if (!isRecord(message)) {
+    return { id: fallbackId, kind: "system", title: "Event", body: stringify(message) };
+  }
+
+  const role = String(message.role ?? "message");
+  const body = contentToText(message.content);
+  if (role === "user") return { id: messageKey(message, fallbackId), kind: "user", title: "You", body };
+  if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body };
+  if (role === "toolResult") {
+    const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";
+    return {
+      id: messageKey(message, fallbackId),
+      kind: "tool",
+      title: `Tool result${message.toolName ? `: ${String(message.toolName)}` : ""}`,
+      body: `${body}${details}`,
+      status: message.isError ? "error" : "done",
+    };
+  }
+  return { id: messageKey(message, fallbackId), kind: "system", title: role, body: body || stringify(message) };
+}
 
 class PiWebAgentApp extends HTMLElement {
   private token = localStorage.getItem("piWebAuthToken") ?? "";
@@ -8,7 +78,9 @@ class PiWebAgentApp extends HTMLElement {
   private workspaces: Workspace[] = [];
   private selectedSession: WebSession | null = null;
   private ws: WebSocket | null = null;
-  private log: string[] = [];
+  private transcript: TranscriptItem[] = [];
+  private status: AgentStatus = "disconnected";
+  private notice = "";
 
   connectedCallback(): void {
     this.render();
@@ -30,6 +102,12 @@ class PiWebAgentApp extends HTMLElement {
     return response.json() as Promise<T>;
   }
 
+  private upsertTranscript(item: TranscriptItem): void {
+    const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
+    if (index === -1) this.transcript.push(item);
+    else this.transcript[index] = { ...this.transcript[index], ...item };
+  }
+
   private async refresh(): Promise<void> {
     try {
       const [workspaces, sessions] = await Promise.all([
@@ -38,9 +116,10 @@ class PiWebAgentApp extends HTMLElement {
       ]);
       this.workspaces = workspaces;
       this.sessions = sessions;
+      this.notice = "";
       this.render();
     } catch (error) {
-      this.log.push(`Refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.notice = `Refresh failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
     }
   }
@@ -49,17 +128,24 @@ class PiWebAgentApp extends HTMLElement {
     const select = this.querySelector<HTMLSelectElement>("#workspace");
     const cwd = select?.value || this.workspaces[0]?.path;
     if (!cwd) return;
-    const session = await this.api<WebSession>("/api/sessions", {
-      method: "POST",
-      body: JSON.stringify({ cwd }),
-    });
-    this.sessions = [session, ...this.sessions];
-    this.openSession(session);
+    try {
+      const session = await this.api<WebSession>("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify({ cwd }),
+      });
+      this.sessions = [session, ...this.sessions];
+      this.openSession(session);
+    } catch (error) {
+      this.notice = `Create session failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
   }
 
   private openSession(session: WebSession): void {
     this.selectedSession = session;
-    this.log = [`Opened ${session.cwd}`];
+    this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
+    this.status = "connecting";
+    this.notice = "";
     this.ws?.close();
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
@@ -67,26 +153,113 @@ class PiWebAgentApp extends HTMLElement {
     if (this.token) url.searchParams.set("token", this.token);
 
     this.ws = new WebSocket(url);
-    this.ws.addEventListener("message", (event) => {
-      const data = JSON.parse(event.data as string) as ServerEnvelope | { type: string };
-      if ("payload" in data) this.log.push(JSON.stringify(data.payload));
-      else if (data.type === "hello") this.ws?.send(JSON.stringify({ type: "hello_ack", protocolVersion: PROTOCOL_VERSION }));
-      else this.log.push(JSON.stringify(data));
+    this.ws.addEventListener("open", () => {
+      this.status = "connecting";
       this.render();
     });
+    this.ws.addEventListener("message", (event) => this.handleSocketMessage(event.data as string));
     this.ws.addEventListener("close", () => {
-      this.log.push("WebSocket closed");
+      this.status = "disconnected";
+      this.upsertTranscript({ id: `closed:${Date.now()}`, kind: "system", title: "Connection", body: "WebSocket closed" });
+      this.render();
+    });
+    this.ws.addEventListener("error", () => {
+      this.notice = "WebSocket error";
       this.render();
     });
     this.render();
   }
 
-  private sendPrompt(): void {
+  private handleSocketMessage(raw: string): void {
+    const data = JSON.parse(raw) as ServerEnvelope | { type: string };
+    if (!("payload" in data)) {
+      if (data.type === "hello") this.ws?.send(JSON.stringify({ type: "hello_ack", protocolVersion: PROTOCOL_VERSION }));
+      return;
+    }
+
+    const { payload } = data;
+    if (payload.type === "session_snapshot") {
+      this.status = payload.snapshot.status;
+      this.transcript = payload.snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
+      if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
+    } else if (payload.type === "agent_event") {
+      this.applyAgentEvent(payload.event.data ?? payload.event);
+    } else if (payload.type === "error") {
+      this.upsertTranscript({ id: `error:${Date.now()}`, kind: "error", title: payload.code, body: payload.message });
+    }
+    this.render();
+  }
+
+  private applyAgentEvent(event: unknown): void {
+    if (!isRecord(event)) return;
+    const type = String(event.type ?? "event");
+
+    if (type === "agent_start" || type === "turn_start") this.status = "running";
+    if (type === "agent_end" || type === "turn_end") this.status = "idle";
+
+    if ((type === "message_start" || type === "message_update" || type === "message_end") && isRecord(event.message)) {
+      const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
+      const item = messageToTranscriptItem(event.message, fallback);
+      item.status = type === "message_update" ? "running" : "done";
+      this.upsertTranscript(item);
+      return;
+    }
+
+    if (type === "tool_execution_start") {
+      this.upsertTranscript({
+        id: `tool:${String(event.toolCallId ?? Date.now())}`,
+        kind: "tool",
+        title: `Running ${String(event.toolName ?? "tool")}`,
+        body: stringify(event.args ?? {}),
+        status: "running",
+      });
+      return;
+    }
+
+    if (type === "tool_execution_update") {
+      this.upsertTranscript({
+        id: `tool:${String(event.toolCallId ?? Date.now())}`,
+        kind: "tool",
+        title: `Running ${String(event.toolName ?? "tool")}`,
+        body: stringify(event.partialResult ?? event.args ?? {}),
+        status: "running",
+      });
+      return;
+    }
+
+    if (type === "tool_execution_end") {
+      this.upsertTranscript({
+        id: `tool:${String(event.toolCallId ?? Date.now())}`,
+        kind: "tool",
+        title: `${event.isError ? "Failed" : "Finished"} ${String(event.toolName ?? "tool")}`,
+        body: stringify(event.result ?? {}),
+        status: event.isError ? "error" : "done",
+      });
+      return;
+    }
+
+    if (type === "queue_update") {
+      const steering = Array.isArray(event.steering) ? event.steering.length : 0;
+      const followUp = Array.isArray(event.followUp) ? event.followUp.length : 0;
+      this.upsertTranscript({ id: "queue", kind: "system", title: "Queue", body: `${steering} steer / ${followUp} follow-up queued` });
+    }
+  }
+
+  private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = input?.value.trim();
     if (!input || !text || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({ type: "prompt", text }));
+    this.ws.send(JSON.stringify({ type, text }));
     input.value = "";
+  }
+
+  private sendFromInput(followUp = false): void {
+    if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
+    else this.sendClientMessage("prompt");
+  }
+
+  private abort(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "abort" }));
   }
 
   private bindEvents(): void {
@@ -102,11 +275,13 @@ class PiWebAgentApp extends HTMLElement {
       void this.refresh();
     });
     this.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void this.createSession());
-    this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendPrompt());
+    this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
+    this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
+    this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        this.sendPrompt();
+        this.sendFromInput(event.altKey);
       }
     });
     this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
@@ -117,31 +292,52 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
+  private renderTranscript(): string {
+    return this.transcript
+      .map(
+        (item) => `
+          <article class="message ${item.kind} ${item.status ?? ""}">
+            <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${item.status ? `<span>${escapeHtml(item.status)}</span>` : ""}</div>
+            <pre>${escapeHtml(item.body)}</pre>
+          </article>`,
+      )
+      .join("");
+  }
+
   private render(): void {
+    const isRunning = this.status === "running";
     this.innerHTML = `
       <aside>
         <h1>Pi Web Agent</h1>
-        <label>API <input id="apiBase" value="${this.apiBase}" /></label>
-        <label>Token <input id="token" type="password" value="${this.token}" /></label>
+        <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
+        <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
         <button id="saveSettings">Save / Refresh</button>
+        ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
         <hr />
         <label>Workspace
           <select id="workspace">
-            ${this.workspaces.map((workspace) => `<option value="${workspace.path}">${workspace.label} — ${workspace.path}</option>`).join("")}
+            ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
           </select>
         </label>
         <button id="newSession">New session</button>
         <h2>Sessions</h2>
         <div class="sessions">
-          ${this.sessions.map((session) => `<button data-session-id="${session.id}" class="${session.id === this.selectedSession?.id ? "active" : ""}">${session.title ?? session.cwd}<small>${session.id}</small></button>`).join("")}
+          ${this.sessions.map((session) => `<button data-session-id="${escapeHtml(session.id)}" class="${session.id === this.selectedSession?.id ? "active" : ""}">${escapeHtml(session.title ?? session.cwd)}<small>${escapeHtml(session.id)}</small></button>`).join("")}
         </div>
       </aside>
       <main>
-        <header>${this.selectedSession ? `<strong>${this.selectedSession.cwd}</strong>` : "Create or open a session"}</header>
-        <section class="transcript">${this.log.map((line) => `<pre>${line.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c)}</pre>`).join("")}</section>
+        <header>
+          <strong>${this.selectedSession ? escapeHtml(this.selectedSession.cwd) : "Create or open a session"}</strong>
+          <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
+        </header>
+        <section class="transcript">${this.renderTranscript()}</section>
         <footer>
-          <textarea id="prompt" placeholder="Prompt pi..."></textarea>
-          <button id="send">Send</button>
+          <textarea id="prompt" placeholder="${isRunning ? "Steer pi... (Alt+Enter for follow-up)" : "Prompt pi..."}"></textarea>
+          <div class="controls">
+            <button id="send">${isRunning ? "Steer" : "Send"}</button>
+            <button id="followUp" class="${isRunning ? "" : "hidden"}">Follow-up</button>
+            <button id="abort" class="${isRunning ? "danger" : "hidden"}">Abort</button>
+          </div>
         </footer>
       </main>
     `;

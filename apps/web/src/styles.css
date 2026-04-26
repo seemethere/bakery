@@ -92,6 +92,13 @@ footer {
   border-bottom: 1px solid #2a2f3a;
 }
 
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 footer {
   border-top: 1px solid #2a2f3a;
   border-bottom: 0;
@@ -105,16 +112,98 @@ textarea {
   resize: vertical;
 }
 
+.notice {
+  border: 1px solid #6d4b1f;
+  border-radius: 8px;
+  background: #2a1d0e;
+  color: #ffd18a;
+  padding: 10px;
+  font-size: 12px;
+}
+
+.status {
+  border: 1px solid #343b49;
+  border-radius: 999px;
+  color: #aab2c0;
+  font-size: 12px;
+  padding: 4px 9px;
+}
+
+.status.running {
+  border-color: #668cff;
+  color: #bcd0ff;
+}
+
+.controls {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+button.danger {
+  border-color: #ff6b6b;
+  color: #ffd6d6;
+}
+
+.hidden {
+  display: none;
+}
+
 .transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   padding: 16px;
   overflow: auto;
+}
+
+.message {
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  background: #171a21;
+  overflow: hidden;
+}
+
+.message.user {
+  border-color: #35568f;
+  background: #142037;
+}
+
+.message.assistant {
+  border-color: #34443a;
+  background: #151f19;
+}
+
+.message.tool {
+  border-color: #4a3f2a;
+  background: #1f1a10;
+}
+
+.message.error,
+.message.tool.error {
+  border-color: #7d3434;
+  background: #281515;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #2a2f3a;
+  color: #c8ced8;
+}
+
+.message-header span {
+  color: #8b94a7;
+  font-size: 12px;
 }
 
 pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  background: #171a21;
-  border: 1px solid #2a2f3a;
-  border-radius: 10px;
+  margin: 0;
   padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
 }
