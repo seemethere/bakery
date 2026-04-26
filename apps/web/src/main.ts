@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type ControllerInfo, type HelloMessage, type ServerEnvelope, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type ControllerInfo, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -82,6 +82,7 @@ class PiWebAgentApp extends HTMLElement {
   private status: AgentStatus = "disconnected";
   private notice = "";
   private controller: ControllerInfo | null = null;
+  private settings: SessionRuntimeSettings | null = null;
 
   connectedCallback(): void {
     this.render();
@@ -148,6 +149,7 @@ class PiWebAgentApp extends HTMLElement {
     this.status = "connecting";
     this.notice = "";
     this.controller = null;
+    this.settings = null;
     this.ws?.close();
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
@@ -190,12 +192,15 @@ class PiWebAgentApp extends HTMLElement {
     if (payload.type === "session_snapshot") {
       this.status = payload.snapshot.status;
       this.controller = payload.snapshot.controller ?? this.controller;
+      this.settings = payload.snapshot.settings ?? this.settings;
       this.transcript = payload.snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
       if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     } else if (payload.type === "agent_event") {
       this.applyAgentEvent(payload.event.data ?? payload.event);
     } else if (payload.type === "controller_update") {
       this.controller = payload.controller;
+    } else if (payload.type === "settings_update") {
+      this.settings = payload.settings;
     } else if (payload.type === "error") {
       this.upsertTranscript({ id: `error:${Date.now()}`, kind: "error", title: payload.code, body: payload.message });
     }
@@ -278,6 +283,14 @@ class PiWebAgentApp extends HTMLElement {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "take_control" }));
   }
 
+  private setModel(model: string): void {
+    if (model && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_model", model }));
+  }
+
+  private setThinking(level: string): void {
+    if (level && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_thinking", level }));
+  }
+
   private bindEvents(): void {
     this.querySelector<HTMLButtonElement>("#saveSettings")?.addEventListener("click", () => {
       const apiBase = this.querySelector<HTMLInputElement>("#apiBase")?.value.trim();
@@ -295,6 +308,8 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
+    this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
+    this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -327,6 +342,7 @@ class PiWebAgentApp extends HTMLElement {
     const controllerLabel = this.controller
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
       : "";
+    const currentModelId = this.settings?.model?.id ?? "";
     this.innerHTML = `
       <aside>
         <h1>Pi Web Agent</h1>
@@ -352,6 +368,16 @@ class PiWebAgentApp extends HTMLElement {
           <div class="header-status">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl">Take control</button>` : ""}
+            ${this.settings ? `<label class="inline-control">Model
+              <select id="model" ${isController ? "" : "disabled"}>
+                ${this.settings.availableModels.map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === currentModelId ? "selected" : ""}>${escapeHtml(model.name ?? model.id)} [${escapeHtml(model.provider)}]</option>`).join("")}
+              </select>
+            </label>
+            <label class="inline-control">Thinking
+              <select id="thinking" ${isController ? "" : "disabled"}>
+                ${this.settings.availableThinkingLevels.map((level) => `<option value="${escapeHtml(level)}" ${level === this.settings?.thinkingLevel ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
+              </select>
+            </label>` : ""}
             <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
           </div>
         </header>

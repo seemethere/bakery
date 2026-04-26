@@ -23,7 +23,7 @@ const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
 mkdirSync(config.sessionDir, { recursive: true });
 
 const store = new MetadataStore(config.metadataDbPath);
-const runner = new InProcessPiSessionRunner();
+const runner = new InProcessPiSessionRunner(config.modelPolicy);
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 await app.register(websocket);
@@ -170,7 +170,11 @@ class SessionHub {
     this.unsubscribe = handle.subscribe((event, raw) => {
       this.broadcast({ type: "agent_event", event, raw });
       const webSession = store.getSession(handle.id);
-      if (this.clients.size === 0 && webSession && handle.snapshot(webSession).status === "idle") this.scheduleDispose();
+      if (this.clients.size === 0 && webSession) {
+        void handle.snapshot(webSession).then((snapshot) => {
+          if (snapshot.status === "idle") this.scheduleDispose();
+        });
+      }
     });
   }
 
@@ -197,8 +201,10 @@ class SessionHub {
       clientId,
     };
     socket.send(JSON.stringify(hello));
-    this.send(client, { type: "session_snapshot", snapshot: { ...this.handle.snapshot(webSession), controller: this.controllerFor(clientId) } });
-    this.broadcastControllerUpdate();
+    void this.handle.snapshot(webSession).then((snapshot) => {
+      this.send(client, { type: "session_snapshot", snapshot: { ...snapshot, controller: this.controllerFor(clientId) } });
+      this.broadcastControllerUpdate();
+    });
 
     socket.on("message", (...args: never[]) => {
       const [raw] = args as unknown as [Buffer | string];
@@ -242,13 +248,18 @@ class SessionHub {
     for (const client of this.clients.values()) this.send(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
   }
 
+  private async broadcastSettingsUpdate(): Promise<void> {
+    const settings = await this.handle.getSettings();
+    this.broadcast({ type: "settings_update", settings });
+  }
+
   private scheduleDispose(): void {
     if (this.disposeTimer) return;
     this.disposeTimer = setTimeout(() => {
       void (async () => {
         if (this.clients.size > 0) return;
         const webSession = store.getSession(this.handle.id);
-        const status = webSession ? this.handle.snapshot(webSession).status : "idle";
+        const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
         if (status === "running" && config.sessionLifecycle.disconnectedRunningPolicy === "let-finish") {
           this.disposeTimer = undefined;
           return;
@@ -294,6 +305,13 @@ class SessionHub {
       } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text);
       else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text);
       else if (parsed.data.type === "abort") await this.handle.abort();
+      else if (parsed.data.type === "set_model") {
+        await this.handle.setModel(parsed.data.model);
+        await this.broadcastSettingsUpdate();
+      } else if (parsed.data.type === "set_thinking") {
+        await this.handle.setThinkingLevel(parsed.data.level);
+        await this.broadcastSettingsUpdate();
+      }
     } catch (error) {
       this.send(client, { type: "error", code: "agent_error", message: error instanceof Error ? error.message : String(error) });
     }

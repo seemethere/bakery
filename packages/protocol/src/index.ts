@@ -91,11 +91,28 @@ export const controllerInfoSchema = z.object({
 });
 export type ControllerInfo = z.infer<typeof controllerInfoSchema>;
 
+export const modelInfoSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  name: z.string().optional(),
+  reasoning: z.boolean().optional(),
+});
+export type ModelInfo = z.infer<typeof modelInfoSchema>;
+
+export const sessionRuntimeSettingsSchema = z.object({
+  model: modelInfoSchema.nullable(),
+  availableModels: z.array(modelInfoSchema),
+  thinkingLevel: z.string(),
+  availableThinkingLevels: z.array(z.string()),
+});
+export type SessionRuntimeSettings = z.infer<typeof sessionRuntimeSettingsSchema>;
+
 export const sessionSnapshotSchema = z.object({
   session: webSessionSchema,
   status: agentStatusSchema,
   messages: z.array(z.unknown()),
   controller: controllerInfoSchema.optional(),
+  settings: sessionRuntimeSettingsSchema.optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 
@@ -110,6 +127,7 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session_snapshot"), snapshot: sessionSnapshotSchema }),
   z.object({ type: z.literal("agent_event"), event: normalizedAgentEventSchema, raw: z.unknown().optional() }),
   z.object({ type: z.literal("controller_update"), controller: controllerInfoSchema }),
+  z.object({ type: z.literal("settings_update"), settings: sessionRuntimeSettingsSchema }),
   z.object({ type: z.literal("error"), code: z.string(), message: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
@@ -128,6 +146,8 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("follow_up"), text: z.string().min(1) }),
   z.object({ type: z.literal("abort") }),
   z.object({ type: z.literal("take_control") }),
+  z.object({ type: z.literal("set_model"), model: z.string().min(1) }),
+  z.object({ type: z.literal("set_thinking"), level: z.string().min(1) }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 

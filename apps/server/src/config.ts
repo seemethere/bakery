@@ -47,7 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       defaultThinkingLevel: env.PI_WEB_DEFAULT_THINKING ?? "medium",
       allowedThinkingLevels: splitList(env.PI_WEB_ALLOWED_THINKING).length
         ? splitList(env.PI_WEB_ALLOWED_THINKING)
-        : ["none", "low", "medium", "high"],
+        : ["off", "low", "medium", "high", "xhigh"],
       ...(splitList(env.PI_WEB_ALLOWED_MODELS).length ? { allowedModels: splitList(env.PI_WEB_ALLOWED_MODELS) } : {}),
     },
     resourcePolicy: {
