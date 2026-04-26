@@ -1665,7 +1665,12 @@ class PiWebAgentApp extends HTMLElement {
       this.editingTitleDraft = (event.currentTarget as HTMLInputElement).value;
     });
     this.querySelector<HTMLInputElement>("#sessionTitle")?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") (event.currentTarget as HTMLInputElement).blur();
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.updateSessionTitle((event.currentTarget as HTMLInputElement).value);
+        return;
+      }
       if (event.key === "Escape") {
         this.editingTitleDraft = null;
         (event.currentTarget as HTMLInputElement).value = this.selectedSession?.title ?? "";
@@ -2424,9 +2429,13 @@ class PiWebAgentApp extends HTMLElement {
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
     if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
     const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
     const restorePromptFocus = document.activeElement === prompt;
+    const restoreTitleFocus = document.activeElement === titleInput;
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
     const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
+    const titleSelectionStart = titleInput?.selectionStart ?? (this.editingTitleDraft?.length ?? 0);
+    const titleSelectionEnd = titleInput?.selectionEnd ?? titleSelectionStart;
     const isRunning = this.status === "running";
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("inspector-collapsed", this.rightPanelCollapsed);
@@ -2543,7 +2552,14 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.bindEvents();
     this.hydrateTranscriptRows();
-    if (restorePromptFocus || this.focusPromptOnNextReadyRender) {
+    if (restoreTitleFocus) {
+      const nextTitle = this.querySelector<HTMLInputElement>("#sessionTitle");
+      if (nextTitle) {
+        nextTitle.focus();
+        const max = nextTitle.value.length;
+        nextTitle.setSelectionRange(Math.min(titleSelectionStart, max), Math.min(titleSelectionEnd, max));
+      }
+    } else if (restorePromptFocus || this.focusPromptOnNextReadyRender) {
       const nextPrompt = this.querySelector<HTMLTextAreaElement>("#prompt");
       if (nextPrompt && !nextPrompt.disabled) {
         nextPrompt.focus();
