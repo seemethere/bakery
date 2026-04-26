@@ -1,5 +1,4 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -8,6 +7,8 @@ import { chromium, type Browser, type Page } from "playwright";
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const keep = process.argv.includes("--keep");
+const headed = process.argv.includes("--headed") || scenario === "manual";
+const interactive = scenario === "manual" || process.argv.includes("--interactive");
 const serverPort = Number(process.env.PI_WEB_HARNESS_SERVER_PORT ?? "43141");
 const webPort = Number(process.env.PI_WEB_HARNESS_WEB_PORT ?? "45173");
 const apiBase = `http://127.0.0.1:${serverPort}`;
@@ -20,6 +21,7 @@ function spawnLogged(name: string, command: string, args: string[], options: { c
     cwd: options.cwd ?? root,
     env: { ...process.env, ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   child.stdout.on("data", (chunk) => process.stdout.write(`[${name}] ${chunk}`));
   child.stderr.on("data", (chunk) => process.stderr.write(`[${name}] ${chunk}`));
@@ -28,6 +30,15 @@ function spawnLogged(name: string, command: string, args: string[], options: { c
     else if (signal) console.error(`[${name}] exited with signal ${signal}`);
   });
   return child;
+}
+
+function stopProcessTree(child: ChildProcessWithoutNullStreams): void {
+  if (!child.pid || child.killed) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill("SIGTERM");
+  }
 }
 
 async function waitForUrl(url: string, label: string, timeoutMs = 20_000): Promise<void> {
@@ -69,13 +80,17 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
   });
 }
 
-async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
+async function prepareSession(page: Page): Promise<void> {
   await page.goto(webBase, { waitUntil: "domcontentloaded" });
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
   await page.locator("#saveSettings").click();
   await page.locator("#newSession").click();
   await page.locator("#prompt").waitFor({ state: "visible" });
+}
+
+async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
 
   await page.locator("#prompt").fill("Please produce a long streaming performance response with markdown and code.");
   await page.locator("#send").click();
@@ -97,6 +112,23 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   }
 
   return { responsiveness, maxLatencyMs, ...(await collectMetrics(page)) };
+}
+
+async function runManual(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, /session, /reload, /tree, @README.md, inspector tabs, and narrow-window resizing.");
+  return collectMetrics(page);
+}
+
+async function waitForInterrupt(): Promise<string> {
+  return await new Promise<string>((resolve) => {
+    const done = (signal: string) => {
+      process.exitCode = 0;
+      resolve(signal);
+    };
+    process.once("SIGINT", () => done("SIGINT"));
+    process.once("SIGTERM", () => done("SIGTERM"));
+  });
 }
 
 async function main(): Promise<void> {
@@ -124,21 +156,44 @@ async function main(): Promise<void> {
   try {
     await waitForUrl(`${apiBase}/healthz`, "server");
     await waitForUrl(webBase, "web");
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: !headed });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     await context.tracing.start({ screenshots: true, snapshots: true });
     const page = await context.newPage();
     page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
     page.on("pageerror", (error) => consoleMessages.push(`pageerror: ${error.message}`));
 
-    const metrics = scenario === "streaming-responsiveness"
-      ? await runStreamingResponsiveness(page)
-      : await runStreamingResponsiveness(page);
+    const metrics = scenario === "manual"
+      ? await runManual(page)
+      : scenario === "streaming-responsiveness"
+        ? await runStreamingResponsiveness(page)
+        : await runStreamingResponsiveness(page);
 
     await page.screenshot({ path: join(artifactDir, "final.png"), fullPage: true });
-    await context.tracing.stop({ path: join(artifactDir, "trace.zip") });
     await writeFile(join(artifactDir, "metrics.json"), JSON.stringify({ scenario, workspace, dataDir, metrics }, null, 2));
     await writeFile(join(artifactDir, "console.log"), consoleMessages.join("\n"));
+
+    let stoppedByUser = false;
+    if (interactive) {
+      console.log("\nManual UI harness is ready.");
+      console.log(`Web UI:     ${webBase}`);
+      console.log(`API:        ${apiBase}`);
+      console.log(`Workspace:  ${workspace}`);
+      console.log(`Data dir:   ${dataDir}`);
+      console.log(`Artifacts:  ${artifactDir}`);
+      console.log("Fake agent: enabled");
+      console.log("Press Ctrl+C in this terminal to stop the harness.\n");
+      const signal = await waitForInterrupt();
+      stoppedByUser = true;
+      console.log(`Stopping manual harness after ${signal}...`);
+    }
+
+    try {
+      await context.tracing.stop({ path: join(artifactDir, "trace.zip") });
+    } catch (error) {
+      if (!stoppedByUser) throw error;
+      await writeFile(join(artifactDir, "trace-stop-warning.txt"), error instanceof Error ? `${error.stack ?? error.message}\n` : String(error));
+    }
     console.log(`UI harness passed: ${scenario}`);
     console.log(`Artifacts: ${artifactDir}`);
   } catch (error) {
@@ -148,8 +203,8 @@ async function main(): Promise<void> {
     throw error;
   } finally {
     await browser?.close().catch(() => undefined);
-    server.kill("SIGTERM");
-    web.kill("SIGTERM");
+    stopProcessTree(server);
+    stopProcessTree(web);
     if (keep) console.log(`Kept temp workspace: ${workspace}\nKept temp data dir: ${dataDir}`);
   }
 }

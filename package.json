@@ -13,6 +13,7 @@
     "start": "bun run --cwd apps/server start",
     "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check",
     "ui:harness": "bun scripts/ui-harness.ts",
+    "ui:manual": "bun scripts/ui-harness.ts --scenario manual --headed --keep",
     "test:web-perf": "bun scripts/ui-harness.ts --scenario streaming-responsiveness"
   },
   "devDependencies": {
