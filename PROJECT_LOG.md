@@ -88,7 +88,7 @@ Latest: `bun run check` and focused `bun scripts/ui-harness.ts --scenario slash-
 
 ## Next priorities
 
-1. Finish hardening the new session metadata feature: add a dedicated fake-agent harness scenario for header edits, `/name`, `/name --clear`, generic first prompts, ✨ suggestions, summary expand/collapse, and sidebar summary previews; then wire a real model-backed generator because the heuristic fallback is intentionally title-only and should not produce summaries.
+1. Finish hardening the new session metadata feature: add a dedicated fake-agent harness scenario for header edits, `/name`, `/name --clear`, generic first prompts, ✨ suggestions, summary expand/collapse, and sidebar summary previews. Keep metadata generation explicit-only via ✨ to avoid surprise token spend; keep the heuristic fallback title-only; wire a real model-backed generator before offering summaries.
 2. Fix the current full-harness `transcript-scroll-stability` regression around `#jumpToLatest` visibility/scroll drift after the metadata/header changes.
 3. Refine transcript/tool-output ergonomics from real-use feedback: tune terminal-output viewport sizing, local image artifact thumbnail sizing, and compact summaries if they still feel noisy.
 4. Tune session identity/sidebar details: adjust status labels, snippets, auto-collapse behavior, and pin-mode copy if they feel noisy in ongoing use.
