@@ -22,7 +22,7 @@ Before ending a work session, unless the user asks otherwise:
 
 1. Run `bun run check`.
 2. Update `PROJECT_LOG.md` with changed status and next priorities.
-3. If the user asked to commit, commit with a concise message.
+3. Commit with a concise message, unless the user explicitly asks not to commit.
 
 ## Useful commands
 
