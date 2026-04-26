@@ -617,6 +617,7 @@ class SessionHub {
               },
             },
           });
+          await this.broadcastSettingsUpdate();
           return;
         }
         const webSession = store.getSession(this.handle.id);

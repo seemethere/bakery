@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking"]
+  ? ["streaming-responsiveness", "transcript-scroll-stability", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-availability"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -143,6 +143,18 @@ async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+}
+
+async function runContextAvailability(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator(".context-availability").waitFor({ timeout: 5_000 });
+  const chips = await page.locator(".context-chip").allTextContents();
+  const combined = chips.join(" ");
+  for (const expected of ["Context", "AGENTS.md", "Skills", "pi-subagents", "Extensions"]) {
+    if (!combined.includes(expected)) throw new Error(`Missing context availability label: ${expected}; saw ${combined}`);
+  }
+  await page.screenshot({ path: join(artifactDir, "context-availability.png"), fullPage: true });
+  return { chips, ...(await collectMetrics(page)) };
 }
 
 async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
@@ -515,6 +527,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "repeated-image-artifact-paths") return runRepeatedImageArtifactPaths(page);
   if (name === "artifact-path-formats") return runArtifactPathFormats(page);
   if (name === "model-thinking") return runModelThinking(page);
+  if (name === "context-availability") return runContextAvailability(page);
   throw new Error(`Unknown scenario: ${name}`);
 }
 

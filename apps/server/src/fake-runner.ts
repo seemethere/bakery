@@ -22,6 +22,12 @@ function fakeSettings(modelPolicy: ModelPolicy): SessionRuntimeSettings {
     availableModels,
     thinkingLevel: modelPolicy.defaultThinkingLevel,
     availableThinkingLevels: modelPolicy.allowedThinkingLevels,
+    resources: {
+      contextFiles: [{ name: "AGENTS.md", path: `${process.cwd()}/AGENTS.md`, source: "fake", scope: "project" }],
+      skills: [{ name: "pi-subagents", source: "fake", scope: "user" }],
+      extensions: [{ name: "pi-subagents", source: "fake", scope: "user" }],
+      promptTemplates: [],
+    },
   };
 }
 

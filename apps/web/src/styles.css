@@ -308,6 +308,36 @@ footer.running-footer {
   min-width: 0;
 }
 
+.context-availability {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: #8b94a7;
+  font-size: 11px;
+}
+
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #2d3544;
+  border-radius: 999px;
+  background: rgba(15, 17, 23, 0.72);
+  padding: 2px 8px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.context-chip strong {
+  flex: 0 0 auto;
+  color: #f3d96b;
+  text-transform: uppercase;
+}
+
 .composer-mode {
   display: flex;
   align-items: center;
