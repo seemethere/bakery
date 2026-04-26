@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   createAgentSession,
@@ -59,8 +59,7 @@ function getStatus(session: AgentSession): SessionSnapshot["status"] {
   return session.isStreaming ? "running" : "idle";
 }
 
-const require = createRequire(import.meta.url);
-const piPackageEntry = require.resolve("@mariozechner/pi-coding-agent");
+const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
 const piChangelogPath = resolve(dirname(piPackageEntry), "../CHANGELOG.md");
 
 const BUILTIN_COMMANDS: CommandInfo[] = [
