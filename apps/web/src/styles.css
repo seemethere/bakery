@@ -270,8 +270,10 @@ header {
 }
 
 .session-title-input {
-  width: 100%;
-  min-width: 0;
+  flex: 0 1 auto;
+  width: auto;
+  max-width: min(100%, 52ch);
+  min-width: 10ch;
   border-color: transparent;
   background: transparent;
   color: #f3f5fb;
@@ -1751,8 +1753,18 @@ pre {
 .session-title-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+}
+
+.metadata-generate-button {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .session-summary {
