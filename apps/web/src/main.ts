@@ -578,7 +578,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const text = input?.value.trim();
+    const text = input?.value.trim() || (type === "prompt" && this.promptImages.length > 0 ? "Please inspect the attached image." : "");
     if (!input || !text) return;
     if (this.promptImages.length > 0 && type !== "prompt") {
       this.notice = "Image attachments can be sent with a new prompt while the agent is idle.";
@@ -601,6 +601,7 @@ class PiWebAgentApp extends HTMLElement {
     this.closeFileAutocomplete();
     this.closeCommandAutocomplete();
     input.value = "";
+    this.render();
   }
 
   private sendFromInput(followUp = false): void {
