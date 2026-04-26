@@ -1,0 +1,19 @@
+{
+  "name": "pi-web-agent",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "bun run --cwd apps/server dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "start": "bun run --cwd apps/server start",
+    "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.2"
+  }
+}

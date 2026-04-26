@@ -1,0 +1,120 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #111318;
+  color: #e8eaf0;
+}
+
+body {
+  margin: 0;
+}
+
+pi-web-agent {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  min-height: 100vh;
+}
+
+aside {
+  border-right: 1px solid #2a2f3a;
+  padding: 16px;
+  background: #171a21;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0 0 16px;
+}
+
+h2 {
+  font-size: 14px;
+  margin-top: 20px;
+  color: #aab2c0;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: #aab2c0;
+}
+
+input,
+select,
+textarea,
+button {
+  border: 1px solid #343b49;
+  border-radius: 8px;
+  background: #0f1117;
+  color: #e8eaf0;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: #202637;
+}
+
+button:hover,
+button.active {
+  border-color: #668cff;
+  background: #27345f;
+}
+
+.sessions {
+  display: grid;
+  gap: 8px;
+}
+
+.sessions button {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sessions small {
+  display: block;
+  color: #8b94a7;
+  margin-top: 4px;
+}
+
+main {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+}
+
+header,
+footer {
+  padding: 14px 16px;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+footer {
+  border-top: 1px solid #2a2f3a;
+  border-bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.transcript {
+  padding: 16px;
+  overflow: auto;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #171a21;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  padding: 12px;
+}

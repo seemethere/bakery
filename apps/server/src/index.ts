@@ -1,0 +1,223 @@
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
+import cors from "@fastify/cors";
+import websocket from "@fastify/websocket";
+import {
+  PROTOCOL_VERSION,
+  clientMessageSchema,
+  createSessionRequestSchema,
+  updateSessionRequestSchema,
+  type HelloMessage,
+  type ServerEnvelope,
+  type ServerMessage,
+} from "@pi-web-agent/protocol";
+import Fastify from "fastify";
+import { loadConfig } from "./config.js";
+import { MetadataStore } from "./metadata-store.js";
+import { InProcessPiSessionRunner } from "./pi-runner.js";
+import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
+
+const config = loadConfig();
+const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
+mkdirSync(config.sessionDir, { recursive: true });
+
+const store = new MetadataStore(config.metadataDbPath);
+const runner = new InProcessPiSessionRunner();
+const app = Fastify({ logger: true });
+await app.register(cors, { origin: true });
+await app.register(websocket);
+
+function isLocalhost(ip: string): boolean {
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
+app.addHook("onRequest", async (request, reply) => {
+  if (request.url === "/healthz") return;
+
+  if (config.authToken) {
+    const header = request.headers.authorization;
+    const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+    const queryToken = url.searchParams.get("token");
+    if (header !== `Bearer ${config.authToken}` && queryToken !== config.authToken) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    return;
+  }
+
+  if (!isLocalhost(request.ip)) {
+    return reply.code(403).send({ error: "unauthenticated access is only allowed from localhost" });
+  }
+});
+
+app.get("/healthz", async () => ({ ok: true, time: new Date().toISOString() }));
+
+app.get("/api/config", async () => ({
+  host: config.host,
+  port: config.port,
+  authRequired: config.authRequired,
+  workspaceRoots,
+  toolPermissionPolicy: config.toolPermissionPolicy,
+  modelPolicy: config.modelPolicy,
+  resourcePolicy: config.resourcePolicy,
+}));
+
+app.get("/api/workspaces", async () => toWorkspaces(workspaceRoots));
+
+app.get("/api/models", async () => ({
+  defaultModel: config.modelPolicy.defaultModel ?? null,
+  models: config.modelPolicy.allowedModels ?? [],
+  thinking: {
+    default: config.modelPolicy.defaultThinkingLevel,
+    levels: config.modelPolicy.allowedThinkingLevels,
+  },
+}));
+
+app.get("/api/sessions", async () => store.listSessions());
+
+app.post("/api/sessions", async (request, reply) => {
+  const parsed = createSessionRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+  try {
+    const cwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
+    const id = crypto.randomUUID();
+    const piSessionFile = resolve(config.sessionDir, `${id}.jsonl`);
+    const session = store.createSession({ id, cwd, piSessionFile, title: parsed.data.title ?? null });
+    return reply.code(201).send(session);
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  store.touchSession(session.id);
+  return session;
+});
+
+app.patch<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
+  const parsed = updateSessionRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+  const existing = store.getSession(request.params.id);
+  if (!existing) return reply.code(404).send({ error: "session not found" });
+
+  if (Object.hasOwn(parsed.data, "title")) store.updateSession(existing.id, { title: parsed.data.title ?? null });
+  store.updatePreferences(existing.id, {
+    ...(parsed.data.toolPermissionMode ? { toolPermissionMode: parsed.data.toolPermissionMode } : {}),
+    ...(parsed.data.uiStateJson ? { uiStateJson: parsed.data.uiStateJson } : {}),
+  });
+  return store.getSession(existing.id);
+});
+
+app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
+  if (!store.deleteSession(request.params.id)) return reply.code(404).send({ error: "session not found" });
+  return reply.code(204).send();
+});
+
+app.get<{ Params: { id: string } }>("/api/sessions/:id/tree", async (request, reply) => {
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  return { sessionId: session.id, tree: null, note: "Pi session tree integration pending" };
+});
+
+app.get<{ Params: { id: string } }>("/api/sessions/:id/commands", async (request, reply) => {
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  return { commands: [] };
+});
+
+app.get<{ Params: { id: string }; Querystring: { q?: string } }>("/api/sessions/:id/files/search", async (request, reply) => {
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  // Deliberately tiny placeholder until ignore-aware search is added.
+  return { query: request.query.q ?? "", files: [] };
+});
+
+app.get<{ Params: { id: string }; Querystring: { prefix?: string } }>("/api/sessions/:id/files/complete", async (request, reply) => {
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  return { prefix: request.query.prefix ?? "", files: [] };
+});
+
+function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
+  return { seq, time: new Date().toISOString(), payload };
+}
+
+app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true }, async (socket, request) => {
+  const webSession = store.getSession(request.params.id);
+  if (!webSession) {
+    socket.close(1008, "session not found");
+    return;
+  }
+
+  let seq = 0;
+  const send = (payload: ServerMessage) => socket.send(JSON.stringify(envelope(seq++, payload)));
+
+  let handle;
+  try {
+    handle = await runner.createSession({
+      id: webSession.id,
+      cwd: webSession.cwd,
+      piSessionFile: webSession.piSessionFile,
+    });
+  } catch (error) {
+    socket.close(1011, error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  const unsubscribe = handle.subscribe((event, raw) => {
+    send({ type: "agent_event", event, raw });
+  });
+
+  const hello: HelloMessage = {
+    type: "hello",
+    protocolVersion: PROTOCOL_VERSION,
+    sessionId: webSession.id,
+    serverVersion: "0.0.0",
+  };
+  socket.send(JSON.stringify(hello));
+  send({ type: "session_snapshot", snapshot: handle.snapshot(webSession) });
+
+  socket.on("message", (raw: Buffer | string) => {
+    void (async () => {
+      const text = typeof raw === "string" ? raw : raw.toString();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        send({ type: "error", code: "bad_json", message: "Invalid JSON" });
+        return;
+      }
+
+      const parsed = clientMessageSchema.safeParse(data);
+      if (!parsed.success) {
+        send({ type: "error", code: "bad_message", message: "Invalid client message" });
+        return;
+      }
+
+      try {
+        if (parsed.data.type === "prompt") await handle.prompt(parsed.data.text);
+        else if (parsed.data.type === "steer") await handle.steer(parsed.data.text);
+        else if (parsed.data.type === "follow_up") await handle.followUp(parsed.data.text);
+        else if (parsed.data.type === "abort") await handle.abort();
+      } catch (error) {
+        send({ type: "error", code: "agent_error", message: error instanceof Error ? error.message : String(error) });
+      }
+    })();
+  });
+
+  socket.on("close", () => unsubscribe());
+});
+
+const close = async () => {
+  app.log.info("shutting down");
+  for (const session of store.listSessions()) await runner.disposeSession(session.id);
+  store.close();
+  await app.close();
+};
+process.on("SIGINT", () => void close().finally(() => process.exit(0)));
+process.on("SIGTERM", () => void close().finally(() => process.exit(0)));
+
+await app.listen({ host: config.host, port: config.port });
