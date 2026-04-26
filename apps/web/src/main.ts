@@ -660,6 +660,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderScheduled = false;
   private forceFullRender = false;
   private dirtyTranscriptIds = new Set<string>();
+  private focusPromptOnNextReadyRender = false;
   private renderedSegmentCache = new Map<string, string>();
   private readonly beforeUnloadHandler = () => this.persistAttachmentWarningIfNeeded();
 
@@ -1261,8 +1262,12 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     const cwd = this.selectedSession?.cwd;
+    this.focusPromptOnNextReadyRender = true;
     const session = await this.createSession(cwd);
-    if (!session) return;
+    if (!session) {
+      this.focusPromptOnNextReadyRender = false;
+      return;
+    }
     this.promptDraft = "";
     this.savePromptDraft();
     this.closeFileAutocomplete();
@@ -2282,11 +2287,16 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.bindEvents();
     this.hydrateTranscriptRows();
-    if (restorePromptFocus) {
+    if (restorePromptFocus || this.focusPromptOnNextReadyRender) {
       const nextPrompt = this.querySelector<HTMLTextAreaElement>("#prompt");
-      nextPrompt?.focus();
-      const max = nextPrompt?.value.length ?? 0;
-      nextPrompt?.setSelectionRange(Math.min(promptSelectionStart, max), Math.min(promptSelectionEnd, max));
+      if (nextPrompt && !nextPrompt.disabled) {
+        nextPrompt.focus();
+        const max = nextPrompt.value.length;
+        const start = this.focusPromptOnNextReadyRender ? max : Math.min(promptSelectionStart, max);
+        const end = this.focusPromptOnNextReadyRender ? max : Math.min(promptSelectionEnd, max);
+        nextPrompt.setSelectionRange(start, end);
+        if (!this.focusPromptOnNextReadyRender || this.connectionState === "connected") this.focusPromptOnNextReadyRender = false;
+      }
     }
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();

@@ -265,6 +265,7 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#send").click();
   await page.waitForFunction((count) => document.querySelectorAll("[data-session-id]").length > count, beforeNewSessions, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator("#prompt").fill("/tree");
   await page.locator("#send").click();
   await page.locator(".tree-drawer").waitFor({ timeout: 5_000 });
