@@ -22,11 +22,10 @@ function fakeSettings(modelPolicy: ModelPolicy): SessionRuntimeSettings {
     availableModels,
     thinkingLevel: modelPolicy.defaultThinkingLevel,
     availableThinkingLevels: modelPolicy.allowedThinkingLevels,
-    resources: {
-      contextFiles: [{ name: "AGENTS.md", path: `${process.cwd()}/AGENTS.md`, source: "fake", scope: "project" }],
-      skills: [{ name: "pi-subagents", source: "fake", scope: "user" }],
-      extensions: [{ name: "pi-subagents", source: "fake", scope: "user" }],
-      promptTemplates: [],
+    contextUsage: {
+      tokens: 4_200,
+      contextWindow: 200_000,
+      percent: 2.1,
     },
   };
 }
@@ -173,10 +172,17 @@ class FakeSessionHandle implements SessionHandle {
 
   async getSettings(): Promise<SessionRuntimeSettings> {
     const settings = fakeSettings(this.modelPolicy);
+    const tokens = 4_200 + this.messages.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : JSON.stringify(message.content).length), 0) / 4;
+    const contextWindow = 200_000;
     return {
       ...settings,
       model: settings.availableModels.find((model) => model.id === this.currentModel) ?? settings.model,
       thinkingLevel: this.currentThinking,
+      contextUsage: {
+        tokens: Math.round(tokens),
+        contextWindow,
+        percent: (tokens / contextWindow) * 100,
+      },
     };
   }
 

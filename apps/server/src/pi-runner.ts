@@ -1,13 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { basename, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   createAgentSession,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, ResourceAvailability, ResourceAvailabilityItem, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
+import type { CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
 
@@ -47,10 +47,6 @@ export interface PiSessionRunner {
   createSession(options: CreateSessionOptions): Promise<SessionHandle>;
   getSession(id: string): SessionHandle | undefined;
   disposeSession(id: string): Promise<void>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function normalizeEvent(event: AgentSessionEvent): NormalizedAgentEvent {
@@ -127,46 +123,6 @@ function toModelInfo(model: { id: string; provider: string; name?: string; reaso
   };
 }
 
-function resourceItem(name: string, path?: string, sourceInfo?: unknown): ResourceAvailabilityItem {
-  const info = isRecord(sourceInfo) ? sourceInfo : {};
-  return {
-    name,
-    path,
-    source: typeof info.source === "string" ? info.source : undefined,
-    scope: typeof info.scope === "string" ? info.scope : undefined,
-  };
-}
-
-function uniqueResourceItems(items: ResourceAvailabilityItem[]): ResourceAvailabilityItem[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = `${item.name}\u0000${item.path ?? ""}\u0000${item.source ?? ""}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function sourceDisplayName(path: string | undefined, sourceInfo: unknown): string {
-  const info = isRecord(sourceInfo) ? sourceInfo : {};
-  const source = typeof info.source === "string" && info.source !== "auto" ? info.source : undefined;
-  if (source) return source;
-  return path ? basename(path) : "unknown";
-}
-
-function getResourceAvailability(session: AgentSession): ResourceAvailability {
-  const contextFiles = session.resourceLoader.getAgentsFiles().agentsFiles.map((file) => resourceItem(basename(file.path), file.path));
-  const skills = session.resourceLoader.getSkills().skills.map((skill) => resourceItem(skill.name, isRecord(skill.sourceInfo) && typeof skill.sourceInfo.path === "string" ? skill.sourceInfo.path : undefined, skill.sourceInfo));
-  const extensions = session.resourceLoader.getExtensions().extensions.map((extension) => resourceItem(sourceDisplayName(extension.path, extension.sourceInfo), extension.path, extension.sourceInfo));
-  const promptTemplates = session.promptTemplates.map((template) => resourceItem(template.name, isRecord(template.sourceInfo) && typeof template.sourceInfo.path === "string" ? template.sourceInfo.path : undefined, template.sourceInfo));
-  return {
-    contextFiles: uniqueResourceItems(contextFiles),
-    skills: uniqueResourceItems(skills),
-    extensions: uniqueResourceItems(extensions),
-    promptTemplates: uniqueResourceItems(promptTemplates),
-  };
-}
-
 class InProcessSessionHandle implements SessionHandle {
   constructor(
     readonly id: string,
@@ -219,7 +175,7 @@ class InProcessSessionHandle implements SessionHandle {
       availableModels,
       thinkingLevel: this.session.thinkingLevel,
       availableThinkingLevels,
-      resources: getResourceAvailability(this.session),
+      contextUsage: this.session.getContextUsage(),
     };
   }
 

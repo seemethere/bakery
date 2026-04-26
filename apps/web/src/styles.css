@@ -308,34 +308,41 @@ footer.running-footer {
   min-width: 0;
 }
 
-.context-availability {
+.context-usage {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   color: #8b94a7;
   font-size: 11px;
 }
 
-.context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 260px;
+.context-usage span:first-child {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #2d3544;
-  border-radius: 999px;
-  background: rgba(15, 17, 23, 0.72);
-  padding: 2px 8px;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.context-chip strong {
-  flex: 0 0 auto;
+.context-usage strong {
   color: #f3d96b;
   text-transform: uppercase;
+}
+
+.context-usage-bar {
+  flex: 0 0 96px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #272d39;
+}
+
+.context-usage-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6aa6ff, #f3d96b);
 }
 
 .composer-mode {

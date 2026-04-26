@@ -213,28 +213,19 @@ export const modelInfoSchema = z.object({
 });
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
 
-export const resourceAvailabilityItemSchema = z.object({
-  name: z.string(),
-  path: z.string().optional(),
-  source: z.string().optional(),
-  scope: z.string().optional(),
+export const contextUsageSchema = z.object({
+  tokens: z.number().int().nonnegative().nullable(),
+  contextWindow: z.number().int().positive(),
+  percent: z.number().nonnegative().nullable(),
 });
-export type ResourceAvailabilityItem = z.infer<typeof resourceAvailabilityItemSchema>;
-
-export const resourceAvailabilitySchema = z.object({
-  contextFiles: z.array(resourceAvailabilityItemSchema),
-  skills: z.array(resourceAvailabilityItemSchema),
-  extensions: z.array(resourceAvailabilityItemSchema),
-  promptTemplates: z.array(resourceAvailabilityItemSchema),
-});
-export type ResourceAvailability = z.infer<typeof resourceAvailabilitySchema>;
+export type ContextUsage = z.infer<typeof contextUsageSchema>;
 
 export const sessionRuntimeSettingsSchema = z.object({
   model: modelInfoSchema.nullable(),
   availableModels: z.array(modelInfoSchema),
   thinkingLevel: z.string(),
   availableThinkingLevels: z.array(z.string()),
-  resources: resourceAvailabilitySchema.optional(),
+  contextUsage: contextUsageSchema.optional(),
 });
 export type SessionRuntimeSettings = z.infer<typeof sessionRuntimeSettingsSchema>;
 

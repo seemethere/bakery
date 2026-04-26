@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type ResourceAvailabilityItem, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -145,15 +145,16 @@ function pathParent(path: string): string {
   return parts.length > 1 ? parts.slice(0, -1).join("/") : path;
 }
 
-function resourceDisplayName(item: ResourceAvailabilityItem): string {
-  return item.name || (item.path ? pathBasename(item.path) : item.source ?? "unknown");
+function formatTokenCount(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "unknown";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}k`;
+  return String(value);
 }
 
-function summarizeResources(items: ResourceAvailabilityItem[], empty = "none"): string {
-  if (items.length === 0) return empty;
-  const names = items.map(resourceDisplayName);
-  const visible = names.slice(0, 3).join(", ");
-  return items.length > 3 ? `${visible} +${items.length - 3}` : visible;
+function contextUsageLabel(usage: ContextUsage): string {
+  const percent = usage.percent === null ? "unknown" : `${usage.percent.toFixed(usage.percent >= 10 ? 0 : 1)}%`;
+  return `${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} (${percent})`;
 }
 
 const markdownRenderer = new marked.Renderer();
@@ -2119,17 +2120,16 @@ class PiWebAgentApp extends HTMLElement {
     }, delayMs);
   }
 
-  private renderContextAvailabilityNotice(): string {
-    const resources = this.settings?.resources;
-    if (!this.selectedSession || !resources) return "";
-    const contextTitle = resources.contextFiles.map((item) => `${resourceDisplayName(item)}${item.path ? ` — ${item.path}` : ""}`).join("\n");
-    const skillsTitle = resources.skills.map((item) => `${resourceDisplayName(item)}${item.source ? ` (${item.source})` : ""}`).join("\n");
-    const extensionsTitle = resources.extensions.map((item) => `${resourceDisplayName(item)}${item.source ? ` (${item.source})` : ""}`).join("\n");
-    return `<div class="context-availability" aria-label="Available pi context resources">
-      <span class="context-chip" title="${escapeHtml(contextTitle || "No context files loaded")}"><strong>Context</strong>${escapeHtml(summarizeResources(resources.contextFiles))}</span>
-      <span class="context-chip" title="${escapeHtml(skillsTitle || "No skills loaded")}"><strong>Skills</strong>${escapeHtml(summarizeResources(resources.skills))}</span>
-      <span class="context-chip" title="${escapeHtml(extensionsTitle || "No extensions loaded")}"><strong>Extensions</strong>${escapeHtml(summarizeResources(resources.extensions))}</span>
-      ${resources.promptTemplates.length ? `<span class="context-chip" title="${escapeHtml(resources.promptTemplates.map((item) => resourceDisplayName(item)).join("\n"))}"><strong>Prompts</strong>${escapeHtml(summarizeResources(resources.promptTemplates))}</span>` : ""}
+  private renderContextUsageNotice(): string {
+    const usage = this.settings?.contextUsage;
+    if (!this.selectedSession || !usage) return "";
+    const percent = Math.max(0, Math.min(100, usage.percent ?? 0));
+    const title = usage.tokens === null
+      ? `Context usage is currently unknown. Model context window: ${usage.contextWindow.toLocaleString()} tokens.`
+      : `Estimated context usage: ${usage.tokens.toLocaleString()} of ${usage.contextWindow.toLocaleString()} tokens (${usage.percent?.toFixed(2) ?? "unknown"}%).`;
+    return `<div class="context-usage" aria-label="Model context usage" title="${escapeHtml(title)}">
+      <span><strong>Context</strong> ${escapeHtml(contextUsageLabel(usage))}</span>
+      <span class="context-usage-bar" aria-hidden="true"><i style="width: ${percent}%"></i></span>
     </div>`;
   }
 
@@ -2225,7 +2225,7 @@ class PiWebAgentApp extends HTMLElement {
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
           <div class="prompt-shell">
-            ${this.renderContextAvailabilityNotice()}
+            ${this.renderContextUsageNotice()}
             <div class="composer-mode ${isRunning ? "running" : "idle"}">
               <strong>${isRunning ? "Running input" : "Prompt"}</strong>
               <span>${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>

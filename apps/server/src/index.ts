@@ -400,6 +400,7 @@ class SessionHub {
   constructor(private readonly handle: Awaited<ReturnType<typeof runner.createSession>>) {
     this.unsubscribe = handle.subscribe((event, raw) => {
       this.broadcast({ type: "agent_event", event, raw });
+      if (event.type === "agent_end" || event.type === "turn_end") void this.broadcastSettingsUpdate();
       const webSession = store.getSession(handle.id);
       if (this.clients.size === 0 && webSession) {
         void handle.snapshot(webSession).then((snapshot) => {
@@ -623,6 +624,7 @@ class SessionHub {
         const webSession = store.getSession(this.handle.id);
         if (webSession && !webSession.title) store.updateSession(webSession.id, { title: parsed.data.text.slice(0, 60) });
         await this.handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+        await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text);
       else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text);
       else if (parsed.data.type === "abort") await this.handle.abort();
