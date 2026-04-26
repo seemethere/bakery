@@ -454,6 +454,23 @@ textarea {
   color: #ffd18a;
 }
 
+.control-request {
+  align-items: center;
+  background: rgba(255, 209, 138, 0.08);
+  border: 1px solid #6d4b1f;
+  border-radius: 999px;
+  color: #ffd18a;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  padding: 3px 5px 3px 9px;
+}
+
+.control-request button {
+  font-size: 12px;
+  padding: 3px 7px;
+}
+
 .status.running {
   border-color: #668cff;
   color: #bcd0ff;

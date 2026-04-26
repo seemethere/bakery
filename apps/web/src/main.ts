@@ -894,7 +894,16 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private takeControl(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "take_control" }));
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "take_control" }));
+      this.notice = "Control request sent to the current controller.";
+      this.render();
+    }
+  }
+
+  private respondToControlRequest(approve: boolean, requesterClientId: string): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ type: approve ? "approve_control" : "deny_control", requesterClientId }));
   }
 
   private getFileToken(input: HTMLTextAreaElement): { token: string; start: number; end: number } | null {
@@ -1088,6 +1097,12 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
+    this.querySelector<HTMLButtonElement>("#approveControl")?.addEventListener("click", (event) => {
+      this.respondToControlRequest(true, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
+    });
+    this.querySelector<HTMLButtonElement>("#denyControl")?.addEventListener("click", (event) => {
+      this.respondToControlRequest(false, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
+    });
     this.querySelector<HTMLInputElement>("#autoScroll")?.addEventListener("change", (event) => {
       this.autoScroll = (event.currentTarget as HTMLInputElement).checked;
       localStorage.setItem("piWebAutoScroll", String(this.autoScroll));
@@ -1552,6 +1567,9 @@ class PiWebAgentApp extends HTMLElement {
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("inspector-collapsed", this.rightPanelCollapsed);
     const isController = this.controller?.isController ?? true;
+    const takeoverRequest = this.controller?.takeoverRequest;
+    const takeoverPending = takeoverRequest?.state === "requested";
+    const takeoverIncoming = takeoverRequest?.state === "incoming";
     const controllerLabel = this.controller
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
       : "";
@@ -1588,7 +1606,8 @@ class PiWebAgentApp extends HTMLElement {
           <strong>${this.selectedSession ? escapeHtml(this.selectedSession.cwd) : "Create or open a session"}</strong>
           <div class="header-status">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
-            ${!isController ? `<button id="takeControl">Take control</button>` : ""}
+            ${!isController ? `<button id="takeControl" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button>` : ""}
+            ${takeoverIncoming ? `<span class="control-request">Another tab wants control <button id="approveControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Approve</button><button id="denyControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Deny</button></span>` : ""}
             <label class="inline-control autoscroll"><input id="autoScroll" type="checkbox" ${this.autoScroll ? "checked" : ""} /> Auto-scroll</label>
             <label class="inline-control"><input id="showThinking" type="checkbox" ${this.showThinking ? "checked" : ""} /> Show thinking</label>
             ${this.settings ? `<label class="inline-control">Model
@@ -1607,6 +1626,8 @@ class PiWebAgentApp extends HTMLElement {
         <div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">
           <strong>${escapeHtml(this.connectionState.replace("_", " "))}</strong>
           <span>${escapeHtml(this.connectionMessage)}</span>
+          ${takeoverPending ? `<small>Waiting for the current controller to approve your control request.</small>` : ""}
+          ${takeoverIncoming ? `<small>A viewer is asking to control this session. Approve only if you are ready to hand off input.</small>` : ""}
           ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
           ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
         </div>

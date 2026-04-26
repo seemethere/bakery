@@ -181,11 +181,19 @@ export type NavigateTreeRequest = z.infer<typeof navigateTreeRequestSchema>;
 export const agentStatusSchema = z.enum(["idle", "running", "aborting", "error"]);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
+export const controllerTakeoverRequestSchema = z.object({
+  state: z.enum(["incoming", "requested"]),
+  requesterClientId: z.string(),
+  expiresAt: z.string(),
+});
+export type ControllerTakeoverRequest = z.infer<typeof controllerTakeoverRequestSchema>;
+
 export const controllerInfoSchema = z.object({
   clientId: z.string().nullable(),
   connectedClients: z.number().int().nonnegative(),
   currentClientId: z.string().optional(),
   isController: z.boolean().optional(),
+  takeoverRequest: controllerTakeoverRequestSchema.optional(),
 });
 export type ControllerInfo = z.infer<typeof controllerInfoSchema>;
 
@@ -250,6 +258,8 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("follow_up"), text: z.string().min(1) }),
   z.object({ type: z.literal("abort") }),
   z.object({ type: z.literal("take_control") }),
+  z.object({ type: z.literal("approve_control"), requesterClientId: z.string().min(1) }),
+  z.object({ type: z.literal("deny_control"), requesterClientId: z.string().min(1) }),
   z.object({ type: z.literal("set_model"), model: z.string().min(1) }),
   z.object({ type: z.literal("set_thinking"), level: z.string().min(1) }),
 ]);

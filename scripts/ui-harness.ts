@@ -213,7 +213,13 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   await viewer.locator("#prompt").waitFor({ state: "visible" });
   await viewer.locator(".controller.viewer").waitFor({ timeout: 5_000 });
   await viewer.locator("#takeControl").click();
+  await viewer.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
+  await page.locator(".control-request", { hasText: "Another tab wants control" }).waitFor({ timeout: 5_000 });
+  await page.locator("#approveControl").click();
   await viewer.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
+  await viewer.locator("#prompt").fill("controller handoff smoke");
+  await viewer.locator("#send").click();
+  await viewer.locator(".status.idle").waitFor({ timeout: 8_000 });
   await viewer.close();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("#prompt").waitFor({ state: "visible" });
