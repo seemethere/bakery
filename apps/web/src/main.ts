@@ -818,7 +818,9 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private syncAutocompleteScroll(): void {
-    const container = this.querySelector<HTMLElement>(this.commandAutocomplete.active ? ".command-autocomplete" : this.fileAutocomplete.active ? ".file-autocomplete" : "");
+    const selector = this.commandAutocomplete.active ? ".command-autocomplete" : this.fileAutocomplete.active ? ".file-autocomplete" : null;
+    if (!selector) return;
+    const container = this.querySelector<HTMLElement>(selector);
     const selected = container?.querySelector<HTMLElement>("button.selected");
     if (!container || !selected) return;
 

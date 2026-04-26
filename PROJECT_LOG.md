@@ -21,6 +21,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - WebSocket prompt handling now intercepts built-in slash commands before they reach the LLM as normal prompts. Implemented web results for `/reload`, `/changelog`, `/session`, `/compact`, `/name`, and `/copy`; unsupported built-ins render a structured web error instead of being sent to the agent.
 - Fixed the server startup regression from the `/changelog` implementation by replacing Bun-incompatible `createRequire(...).resolve("@mariozechner/pi-coding-agent")` usage with `import.meta.resolve` for locating the pi package changelog.
 - Fixed command and file autocomplete keyboard navigation so the dropdown scrolls to keep the selected row visible after arrow-key selection changes.
+- Fixed the follow-up regression from that change: initial render no longer calls `querySelector("")`, so the app refreshes workspaces/sessions instead of staying empty.
 
 ## How to run
 
@@ -46,17 +47,18 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after fixing autocomplete dropdown scroll-follow for arrow-key navigation.
+Latest: `bun run check` passes after fixing the empty initial web UI caused by `querySelector("")` in autocomplete scroll sync.
 
 ## Next priorities
 
-1. Manually test prompt-box autocomplete in the browser, especially slash commands, directory continuation, keyboard selection, and behavior during live agent output.
-2. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
-3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
-4. Add right-side details/preview panel for selected message/tool data.
-5. Add basic branch/fork controls and tree summary using pi session manager APIs.
-6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Manually verify the browser loads workspaces/sessions after the autocomplete scroll-sync regression fix.
+2. Manually test prompt-box autocomplete in the browser, especially slash commands, directory continuation, keyboard selection, and behavior during live agent output.
+3. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
+4. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
+5. Add right-side details/preview panel for selected message/tool data.
+6. Add basic branch/fork controls and tree summary using pi session manager APIs.
+7. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+8. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 
