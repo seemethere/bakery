@@ -936,7 +936,7 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const choice = this.fileAutocomplete.files[index];
     if (!input || !choice) return;
-    const suffix = choice.type === "directory" ? "/" : "";
+    const suffix = choice.type === "directory" && !choice.path.endsWith("/") ? "/" : "";
     const inserted = `@${choice.path}${suffix}`;
     const spacer = choice.type === "directory" ? "" : " ";
     const before = this.promptDraft.slice(0, this.fileAutocomplete.start);
@@ -1178,7 +1178,7 @@ class PiWebAgentApp extends HTMLElement {
         ${this.fileAutocomplete.files.map((file, index) => `
           <button type="button" role="option" data-file-index="${index}" class="${index === this.fileAutocomplete.selectedIndex ? "selected" : ""}">
             <span>${file.type === "directory" ? "📁" : "📄"}</span>
-            <strong>${escapeHtml(file.path)}${file.type === "directory" ? "/" : ""}</strong>
+            <strong>${escapeHtml(file.path)}${file.type === "directory" && !file.path.endsWith("/") ? "/" : ""}</strong>
           </button>`).join("")}
       </div>`;
   }

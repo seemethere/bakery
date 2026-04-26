@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "narrow-tool-stream"]
+  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -25,6 +25,7 @@ const apiBase = `http://127.0.0.1:${serverPort}`;
 const webBase = `http://127.0.0.1:${webPort}`;
 const runId = new Date().toISOString().replace(/[:.]/g, "-");
 const artifactDir = resolve(root, "test-results", "ui-harness", `${scenario}-${runId}`);
+const fixturePngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2Y9WQAAAABJRU5ErkJggg==";
 
 function spawnLogged(name: string, command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): ChildProcessWithoutNullStreams {
   const child = spawn(command, args, {
@@ -224,6 +225,50 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   return collectMetrics(page);
 }
 
+async function runFileAutocomplete(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please inspect @Button");
+  await page.locator(".file-autocomplete", { hasText: "src/components/Button.ts" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").press("Enter");
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes("@src/components/Button.ts "));
+
+  await page.locator("#prompt").fill("Open @src/");
+  await page.locator(".file-autocomplete", { hasText: "components/" }).waitFor({ timeout: 5_000 });
+  await page.getByRole("option", { name: /src\/components\/$/ }).click();
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes("@src/components/"));
+  await page.locator(".file-autocomplete", { hasText: "Button.ts" }).waitFor({ timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const imagePath = join(artifactDir, "fixture.png");
+  await page.locator("#imageInput").setInputFiles(imagePath);
+  await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
+  await page.locator(".prompt-image button").click();
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+
+  await page.locator("#imageInput").setInputFiles(imagePath);
+  await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
+  await sendPromptAndWaitIdle(page, "Please inspect this attached image and include an image preview in the reply.");
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.assistant img").first().waitFor({ timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+async function runModelThinking(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#model").selectOption("fake/slow");
+  await page.waitForFunction(() => (document.querySelector("#model") as HTMLSelectElement | null)?.value === "fake/slow");
+  await page.locator("#thinking").selectOption("high");
+  await page.waitForFunction(() => (document.querySelector("#thinking") as HTMLSelectElement | null)?.value === "high");
+  await sendPromptAndWaitIdle(page, "Confirm model and thinking selectors remain usable after settings updates.");
+  await page.waitForFunction(() => (document.querySelector("#model") as HTMLSelectElement | null)?.value === "fake/slow");
+  await page.waitForFunction(() => (document.querySelector("#thinking") as HTMLSelectElement | null)?.value === "high");
+  return collectMetrics(page);
+}
+
 async function runManual(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, a prompt asking for an image/screenshot preview, /session, /reload, /tree, @README.md, inspector tabs, and narrow-window resizing.");
@@ -267,6 +312,9 @@ async function runScenario(name: string, page: Page, browser: Browser): Promise<
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
   if (name === "reconnect-controller") return runReconnectController(page);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
+  if (name === "file-autocomplete") return runFileAutocomplete(page);
+  if (name === "image-attachments") return runImageAttachments(page);
+  if (name === "model-thinking") return runModelThinking(page);
   throw new Error(`Unknown scenario: ${name}`);
 }
 
@@ -285,7 +333,12 @@ async function main(): Promise<void> {
   await mkdir(artifactDir, { recursive: true });
   const workspace = await mkdtemp(join(tmpdir(), "pi-web-agent-ui-"));
   const dataDir = await mkdtemp(join(tmpdir(), "pi-web-agent-data-"));
+  await writeFile(join(artifactDir, "fixture.png"), Buffer.from(fixturePngBase64, "base64"));
+  await mkdir(join(workspace, "src", "components"), { recursive: true });
+  await mkdir(join(workspace, "docs"), { recursive: true });
   await writeFile(join(workspace, "README.md"), "# Temporary pi-web-agent UI harness workspace\n", "utf8");
+  await writeFile(join(workspace, "src", "components", "Button.ts"), "export const Button = 'fake harness fixture';\n", "utf8");
+  await writeFile(join(workspace, "docs", "guide.md"), "# Harness Guide\n", "utf8");
 
   const server = spawnLogged("server", "bun", ["run", "dev:server"], {
     cwd: root,

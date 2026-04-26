@@ -35,6 +35,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Added web-perf threshold checks to the Playwright harness for long tasks plus render/patch/row-update max timings. Thresholds are intentionally loose and configurable with `PI_WEB_PERF_MAX_*`; set `PI_WEB_PERF_THRESHOLDS=off` to disable locally.
 - Fixed transcript selection scroll jumps: clicking an earlier message/image/tool while auto-scroll is enabled now preserves the current transcript scroll position instead of jumping to the bottom.
 - Made the fake-agent runner more realistic and deterministic: uneven chunk sizes/cadence, no-delay event bursts, repeated partial Markdown/code fences, and delayed/bursty tool updates interleaved during assistant streaming.
+- Added focused Playwright harness coverage for `@file` autocomplete/search+directory continuation, prompt image attachment add/remove/send/render flows, and model/thinking selector updates. This caught and fixed duplicate trailing slashes for directory autocomplete insertion/rendering.
 
 ## How to run
 
@@ -62,7 +63,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after making fake-agent streaming/tool cadence more realistic. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `narrow-tool-stream`); artifacts at `test-results/ui-harness/all-2026-04-26T18-35-09-511Z`. Earlier transcript selection/image-click scroll preservation artifacts are at `test-results/ui-harness/all-2026-04-26T18-32-28-072Z`; transcript-row perf run artifacts are at `test-results/ui-harness/all-2026-04-26T18-28-10-743Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after adding focused file autocomplete/image attachment/model selector harness scenarios and fixing duplicate directory autocomplete slashes. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `narrow-tool-stream`, `file-autocomplete`, `image-attachments`, `model-thinking`); artifacts at `test-results/ui-harness/all-2026-04-26T18-40-26-213Z`. Earlier fake-agent realism artifacts are at `test-results/ui-harness/all-2026-04-26T18-35-09-511Z`; transcript selection/image-click scroll preservation artifacts are at `test-results/ui-harness/all-2026-04-26T18-32-28-072Z`; transcript-row perf run artifacts are at `test-results/ui-harness/all-2026-04-26T18-28-10-743Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
@@ -71,7 +72,7 @@ Latest: `bun run check` and `bun run test:web-perf` pass after making fake-agent
 3. Add sanitized real-event playback to complement the deterministic fake runner.
 4. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
 5. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-6. Add more focused harness coverage for image attachment edge cases, file autocomplete, model/thinking selectors, copy buttons/clipboard fallbacks, and mobile breakpoints.
+6. Add more focused harness coverage for copy buttons/clipboard fallbacks, mobile breakpoints, paste/drag-drop image attachments, attachment validation errors, and deeper autocomplete edge cases.
 7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
