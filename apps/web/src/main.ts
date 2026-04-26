@@ -107,6 +107,31 @@ function stringify(value: unknown): string {
   }
 }
 
+function relativeTime(value: string | undefined): string {
+  if (!value) return "never";
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return value;
+  const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+  if (seconds < 60) return "now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 14) return `${days}d ago`;
+  return new Date(value).toLocaleDateString();
+}
+
+function pathBasename(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+function pathParent(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.length > 1 ? parts.slice(0, -1).join("/") : path;
+}
+
 const markdownRenderer = new marked.Renderer();
 markdownRenderer.html = ({ text }) => escapeHtml(text);
 markdownRenderer.link = function ({ href, title, tokens }) {
@@ -392,6 +417,8 @@ class PiWebAgentApp extends HTMLElement {
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
+  private sessionSidebarPinned = localStorage.getItem("piWebSessionSidebarPinned") === "true";
+  private showOlderSessions = localStorage.getItem("piWebShowOlderSessions") === "true";
   private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
@@ -483,6 +510,10 @@ class PiWebAgentApp extends HTMLElement {
       ]);
       this.workspaces = workspaces;
       this.sessions = sessions;
+      if (this.selectedSession) {
+        const updated = sessions.find((candidate) => candidate.id === this.selectedSession?.id);
+        if (updated) this.selectedSession = updated;
+      }
       this.notice = "";
       if (!this.selectedSession && this.lastSelectedSessionId) {
         const session = sessions.find((candidate) => candidate.id === this.lastSelectedSessionId);
@@ -611,6 +642,8 @@ class PiWebAgentApp extends HTMLElement {
 
   private applySnapshot(snapshot: SessionSnapshot): void {
     this.status = snapshot.status;
+    this.selectedSession = snapshot.session;
+    this.sessions = this.sessions.map((session) => session.id === snapshot.session.id ? snapshot.session : session);
     this.controller = snapshot.controller ?? this.controller;
     this.settings = snapshot.settings ?? this.settings;
     this.transcript = snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
@@ -816,6 +849,30 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
+  private async updateSessionTitle(title: string): Promise<void> {
+    if (!this.selectedSession) return;
+    const nextTitle = title.trim();
+    const previous = this.selectedSession;
+    if ((previous.title ?? "") === nextTitle || (!previous.title && nextTitle === this.sessionDisplayTitle(previous))) return;
+    this.selectedSession = { ...previous, title: nextTitle || null };
+    this.sessions = this.sessions.map((session) => session.id === previous.id ? this.selectedSession! : session);
+    this.render();
+    try {
+      const updated = await this.api<WebSession>(`/api/sessions/${previous.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: nextTitle || null }),
+      });
+      this.selectedSession = updated;
+      this.sessions = this.sessions.map((session) => session.id === updated.id ? updated : session);
+      this.notice = nextTitle ? "Session title updated." : "Session title cleared.";
+    } catch (error) {
+      this.selectedSession = previous;
+      this.sessions = this.sessions.map((session) => session.id === previous.id ? previous : session);
+      this.notice = `Title update failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    this.render();
+  }
+
   private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = input?.value.trim() || (type === "prompt" && this.promptImages.length > 0 ? "Please inspect the attached image." : "");
@@ -841,6 +898,12 @@ class PiWebAgentApp extends HTMLElement {
     }
     const images = type === "prompt" && this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
     this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
+    if (type === "prompt" && this.selectedSession && !this.selectedSession.title) {
+      const optimistic = { ...this.selectedSession, title: text.slice(0, 60), lastUserPrompt: text.slice(0, 160), lastActivityAt: new Date().toISOString(), status: "running" as const };
+      this.selectedSession = optimistic;
+      this.sessions = this.sessions.map((session) => session.id === optimistic.id ? optimistic : session);
+      window.setTimeout(() => void this.refresh(), 500);
+    }
     this.promptDraft = "";
     this.savePromptDraft();
     this.promptImages = [];
@@ -1093,8 +1156,25 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void this.createSession());
     this.querySelector<HTMLButtonElement>("#toggleSessionSidebar")?.addEventListener("click", () => {
       this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
+      this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
       localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
+      localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
       this.render();
+    });
+    this.querySelector<HTMLButtonElement>("#toggleOlderSessions")?.addEventListener("click", () => {
+      this.showOlderSessions = !this.showOlderSessions;
+      localStorage.setItem("piWebShowOlderSessions", String(this.showOlderSessions));
+      this.render();
+    });
+    this.querySelector<HTMLInputElement>("#sessionTitle")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") (event.currentTarget as HTMLInputElement).blur();
+      if (event.key === "Escape") {
+        (event.currentTarget as HTMLInputElement).value = this.selectedSession ? this.sessionDisplayTitle(this.selectedSession) : "";
+        (event.currentTarget as HTMLInputElement).blur();
+      }
+    });
+    this.querySelector<HTMLInputElement>("#sessionTitle")?.addEventListener("blur", (event) => {
+      void this.updateSessionTitle((event.currentTarget as HTMLInputElement).value);
     });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
@@ -1277,6 +1357,44 @@ class PiWebAgentApp extends HTMLElement {
         void this.forkFromEntry(button.dataset.forkEntryId ?? "");
       });
     });
+  }
+
+  private sessionDisplayTitle(session: WebSession): string {
+    return session.title?.trim() || session.lastUserPrompt?.trim().slice(0, 60) || pathBasename(session.cwd) || "Untitled session";
+  }
+
+  private sessionMetadata(session: WebSession): string {
+    const repo = pathBasename(session.cwd);
+    const parent = pathParent(session.cwd);
+    return `${repo}${parent && parent !== repo ? ` · ${parent}` : ""}`;
+  }
+
+  private sortedSessions(): WebSession[] {
+    return [...this.sessions].sort((a, b) => (b.lastActivityAt ?? b.lastOpenedAt).localeCompare(a.lastActivityAt ?? a.lastOpenedAt));
+  }
+
+  private recentSessions(): { visible: WebSession[]; olderCount: number } {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const sorted = this.sortedSessions();
+    const recent = sorted.filter((session) => new Date(session.lastActivityAt ?? session.lastOpenedAt).getTime() >= cutoff || session.id === this.selectedSession?.id);
+    const older = sorted.filter((session) => !recent.includes(session));
+    return { visible: this.showOlderSessions ? sorted : recent, olderCount: older.length };
+  }
+
+  private renderSessionCard(session: WebSession): string {
+    const title = this.sessionDisplayTitle(session);
+    const activity = session.lastActivityAt ?? session.lastOpenedAt;
+    const snippet = session.lastUserPrompt?.trim() || "No prompt yet";
+    const status = session.status ?? (session.id === this.selectedSession?.id ? this.status === "connecting" || this.status === "disconnected" ? undefined : this.status : "idle");
+    return `
+      <button data-session-id="${escapeHtml(session.id)}" class="session-card ${session.id === this.selectedSession?.id ? "active" : ""}">
+        <span class="session-card-top">
+          <strong>${escapeHtml(title)}</strong>
+          ${status ? `<em class="session-indicator ${escapeHtml(status)}">${escapeHtml(status)}</em>` : ""}
+        </span>
+        <span class="session-snippet">${escapeHtml(snippet)}</span>
+        <small>${escapeHtml(relativeTime(activity))} · ${escapeHtml(pathBasename(session.cwd))}</small>
+      </button>`;
   }
 
   private renderCommandAutocomplete(): string {
@@ -1633,6 +1751,9 @@ class PiWebAgentApp extends HTMLElement {
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
       : "";
     const currentModelId = this.settings?.model?.id ?? "";
+    const sessionGroups = this.recentSessions();
+    const selectedTitle = this.selectedSession ? this.sessionDisplayTitle(this.selectedSession) : "";
+    const selectedMeta = this.selectedSession ? this.sessionMetadata(this.selectedSession) : "";
     this.innerHTML = `
       <aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""}">
         <div class="sidebar-titlebar">
@@ -1654,15 +1775,21 @@ class PiWebAgentApp extends HTMLElement {
             </select>
           </label>
           <button id="newSession">New session</button>
-          <h2>Sessions</h2>
+          <div class="sessions-heading">
+            <h2>Recent sessions</h2>
+            ${sessionGroups.olderCount > 0 ? `<button id="toggleOlderSessions" type="button">${this.showOlderSessions ? "Hide older" : `Show older (${sessionGroups.olderCount})`}</button>` : ""}
+          </div>
           <div class="sessions">
-            ${this.sessions.map((session) => `<button data-session-id="${escapeHtml(session.id)}" class="${session.id === this.selectedSession?.id ? "active" : ""}">${escapeHtml(session.title ?? session.cwd)}<small>${escapeHtml(session.id)}</small></button>`).join("")}
+            ${sessionGroups.visible.length ? sessionGroups.visible.map((session) => this.renderSessionCard(session)).join("") : `<p class="empty-sidebar">No recent sessions. Create one from the selected workspace.</p>`}
           </div>
         `}
       </aside>
       <main>
         <header>
-          <strong>${this.selectedSession ? escapeHtml(this.selectedSession.cwd) : "Create or open a session"}</strong>
+          <div class="session-identity">
+            ${this.selectedSession ? `<input id="sessionTitle" class="session-title-input" value="${escapeHtml(selectedTitle)}" aria-label="Session title" title="Edit session title" />
+              <span title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
+          </div>
           <div class="header-status">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button>` : ""}

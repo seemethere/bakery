@@ -64,6 +64,9 @@ export const webSessionSchema = z.object({
   title: z.string().nullable(),
   createdAt: z.string(),
   lastOpenedAt: z.string(),
+  lastActivityAt: z.string().optional(),
+  lastUserPrompt: z.string().optional(),
+  status: z.enum(["idle", "running", "aborting", "error"]).optional(),
 });
 export type WebSession = z.infer<typeof webSessionSchema>;
 

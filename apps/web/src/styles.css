@@ -127,21 +127,96 @@ button.active {
   background: #27345f;
 }
 
+.sessions-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.sessions-heading h2 {
+  margin: 0;
+}
+
+.sessions-heading button {
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
 .sessions {
   display: grid;
   gap: 8px;
+  margin-top: 10px;
 }
 
-.sessions button {
+.session-card {
+  display: grid;
+  gap: 5px;
   text-align: left;
+}
+
+.session-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-card strong,
+.session-snippet,
+.session-card small {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.sessions small {
+.session-card strong {
+  min-width: 0;
+  color: #e8eaf0;
+}
+
+.session-snippet {
+  display: block;
+  color: #aab2c0;
+  font-size: 12px;
+}
+
+.session-card small {
   display: block;
   color: #8b94a7;
-  margin-top: 4px;
+  font-size: 11px;
+}
+
+.session-indicator {
+  flex: 0 0 auto;
+  border: 1px solid #343b49;
+  border-radius: 999px;
+  color: #aab2c0;
+  font-size: 10px;
+  font-style: normal;
+  padding: 1px 6px;
+  text-transform: uppercase;
+}
+
+.session-indicator.running {
+  border-color: #315e9d;
+  background: #162c4f;
+  color: #b7d4ff;
+}
+
+.session-indicator.error,
+.session-indicator.aborting {
+  border-color: #8b3d3d;
+  background: #3a1717;
+  color: #ffb5b5;
+}
+
+.empty-sidebar {
+  color: #8b94a7;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 main {
@@ -167,11 +242,41 @@ header {
   overflow: hidden;
 }
 
-header > strong {
-  min-width: 160px;
+.session-identity {
+  display: grid;
+  gap: 3px;
+  min-width: 180px;
+  max-width: min(560px, 42vw);
+}
+
+.session-identity strong,
+.session-identity span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-identity span {
+  color: #8b94a7;
+  font-size: 12px;
+}
+
+.session-title-input {
+  width: 100%;
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+  color: #f3f5fb;
+  padding: 2px 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.session-title-input:hover,
+.session-title-input:focus {
+  border-color: #343b49;
+  background: #0f1117;
+  padding: 2px 8px;
 }
 
 footer {

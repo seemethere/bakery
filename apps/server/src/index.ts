@@ -18,6 +18,7 @@ import {
   type ServerEnvelope,
   type ServerMessage,
   type SessionTreeNode,
+  type WebSession,
 } from "@pi-web-agent/protocol";
 import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import Fastify from "fastify";
@@ -90,9 +91,50 @@ app.get("/api/models", async () => ({
   },
 }));
 
-app.get("/api/sessions", async () => store.listSessions());
-
 type PiSessionTreeNode = ReturnType<SessionManager["getTree"]>[number];
+
+function flattenTree(nodes: PiSessionTreeNode[]): PiSessionTreeNode[] {
+  return nodes.flatMap((node) => [node, ...flattenTree(node.children)]);
+}
+
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : "")
+    .filter(Boolean)
+    .join(" ");
+}
+
+async function enrichSession(session: WebSession): Promise<WebSession> {
+  const handle = runner.getSession(session.id);
+  let status: WebSession["status"] | undefined;
+  if (handle) status = (await handle.snapshot(session)).status;
+
+  try {
+    const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, config.sessionDir, session.cwd);
+    const entries = flattenTree(manager.getTree())
+      .map((node) => node.entry)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const last = entries.at(-1);
+    const lastUser = [...entries].reverse().find((entry: SessionEntry) => {
+      if (entry.type !== "message") return false;
+      const message = entry.message as { role?: string };
+      return message.role === "user";
+    });
+    const lastUserPrompt = lastUser?.type === "message" ? messageText((lastUser.message as { content?: unknown }).content).replace(/\s+/g, " ").trim().slice(0, 160) : undefined;
+    return {
+      ...session,
+      lastActivityAt: last?.timestamp ?? session.lastOpenedAt,
+      lastUserPrompt: lastUserPrompt || undefined,
+      status: status ?? "idle",
+    };
+  } catch {
+    return { ...session, lastActivityAt: session.lastOpenedAt, status: status ?? "idle" };
+  }
+}
+
+app.get("/api/sessions", async () => Promise.all(store.listSessions().map(enrichSession)));
 
 function entryTitle(entry: SessionEntry): { title: string; role?: string } {
   if (entry.type === "message") {
