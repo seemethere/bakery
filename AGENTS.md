@@ -22,7 +22,8 @@ Before ending a work session, unless the user asks otherwise:
 
 1. Run `bun run check`.
 2. Update `PROJECT_LOG.md` with changed status and next priorities.
-3. Commit with a concise message, unless the user explicitly asks not to commit.
+3. Tell the human operator how to test the changes manually, including whether the currently running browser page can pick them up automatically, requires a page refresh, or requires a backend/dev-server restart.
+4. Commit with a concise message, unless the user explicitly asks not to commit.
 
 ## Useful commands
 

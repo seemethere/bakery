@@ -65,5 +65,6 @@ At the end of each work session:
 
 1. Run `bun run check`.
 2. Update `PROJECT_LOG.md` current status / next priorities if anything changed.
-3. Commit with a concise message.
-4. In the next AI session, start by reading `DESIGN.md` and `PROJECT_LOG.md`.
+3. Tell the human operator how to test the changes manually, including whether the current browser page can pick them up automatically, requires a page refresh, or requires a backend/dev-server restart.
+4. Commit with a concise message.
+5. In the next AI session, start by reading `DESIGN.md` and `PROJECT_LOG.md`.
