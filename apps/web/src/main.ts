@@ -23,6 +23,7 @@ type TranscriptItem = {
 };
 
 type RightPanelTab = "details" | "preview" | "tree";
+type TranscriptRowAction = "copy" | "details" | "preview" | "fork";
 
 type FileAutocompleteState = {
   active: boolean;
@@ -324,27 +325,32 @@ class PiTranscriptRow extends HTMLElement {
   private showThinking = false;
   private selected = false;
   private collapsed = false;
+  private actionMenuOpen = false;
+  private canFork = false;
   private lastRenderKey = "";
   private lastStreamingText = "";
 
   connectedCallback(): void {
     this.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement | null)?.closest(".message-action-area")) return;
       if ((event.target as HTMLElement | null)?.closest(".message-header") && this.isCollapsible()) {
         event.stopImmediatePropagation();
         this.collapsed = !this.collapsed;
-        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected });
+        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork });
         else this.classList.toggle("collapsed", this.collapsed);
       }
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; cache?: Map<string, string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; cache?: Map<string, string> }): void {
     const start = performance.now();
     const previous = this.item;
     const wasSelected = this.selected;
     this.item = item;
     this.showThinking = options.showThinking;
     this.selected = options.selected;
+    this.actionMenuOpen = options.actionMenuOpen ?? false;
+    this.canFork = options.canFork ?? false;
     const isCollapsible = this.isCollapsible();
     const defaultOpen = item.status === "running" || item.status === "error" || options.selected || itemHasRenderedImage(item);
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
@@ -357,7 +363,7 @@ class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${streamingText !== null ? "streaming" : item.body}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -369,12 +375,28 @@ class PiTranscriptRow extends HTMLElement {
       <div class="message-header">
         <strong>${escapeHtml(item.title)}</strong>
         ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
+        <span class="message-header-spacer"></span>
         ${item.status ? `<span class="message-status">${escapeHtml(item.status)}</span>` : ""}
+        <span class="message-action-area">
+          <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="Message actions">⋯</button>
+          ${this.actionMenuOpen ? this.renderActionMenu(item) : ""}
+        </span>
       </div>
       <div class="message-body">${renderTranscriptSegments(item, this.showThinking, options.cache)}</div>`;
     this.lastRenderKey = renderKey;
     this.lastStreamingText = streamingText ?? "";
     recordPerfSample("rowUpdate", performance.now() - start);
+  }
+
+  private renderActionMenu(item: TranscriptItem): string {
+    const previewable = item.body.trim().length > 0;
+    return `
+      <div class="message-action-menu" role="menu">
+        <button type="button" role="menuitem" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}">Copy</button>
+        <button type="button" role="menuitem" data-row-action="details" data-transcript-id="${escapeHtml(item.id)}">Details</button>
+        ${previewable ? `<button type="button" role="menuitem" data-row-action="preview" data-transcript-id="${escapeHtml(item.id)}">Preview</button>` : ""}
+        ${this.canFork ? `<button type="button" role="menuitem" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}">Fork from here</button>` : ""}
+      </div>`;
   }
 
   private isCollapsible(): boolean {
@@ -452,6 +474,7 @@ class PiWebAgentApp extends HTMLElement {
   private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
+  private openActionMenuId = "";
   private transcriptScrollTop = 0;
   private preserveTranscriptScrollOnce = false;
   private unreadTranscriptIds = new Set<string>();
@@ -814,6 +837,24 @@ class PiWebAgentApp extends HTMLElement {
     return this.transcript.find((item) => item.id === this.selectedTranscriptId) ?? this.transcript[this.transcript.length - 1] ?? null;
   }
 
+  private treeNodes(nodes = this.sessionTree?.tree ?? []): SessionTreeNode[] {
+    return nodes.flatMap((node) => [node, ...this.treeNodes(node.children)]);
+  }
+
+  private forkEntryIdForTranscriptItem(item: TranscriptItem): string | null {
+    if (item.kind !== "user") return null;
+    const rawTimestamp = isRecord(item.raw) ? String(item.raw.timestamp ?? "") : "";
+    const idTimestamp = item.id.startsWith("user:") ? item.id.slice("user:".length) : "";
+    const timestamp = rawTimestamp || idTimestamp;
+    const text = item.body.replace(/\s+/g, " ").trim();
+    const node = this.treeNodes().find((candidate) => {
+      if (candidate.type !== "message" || candidate.role !== "user") return false;
+      if (timestamp && candidate.timestamp === timestamp) return true;
+      return Boolean(text && candidate.title.replace(/^user:\s*/, "").startsWith(text.slice(0, 80)));
+    });
+    return node?.id ?? null;
+  }
+
   private async refreshTree(): Promise<void> {
     if (!this.selectedSession) return;
     try {
@@ -882,6 +923,43 @@ class PiWebAgentApp extends HTMLElement {
       this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
     }
     this.render();
+  }
+
+  private async handleTranscriptRowAction(action: TranscriptRowAction | "menu", transcriptId: string): Promise<void> {
+    const item = this.transcript.find((candidate) => candidate.id === transcriptId);
+    if (!item) return;
+    if (action === "menu") {
+      this.openActionMenuId = this.openActionMenuId === transcriptId ? "" : transcriptId;
+      this.selectTranscriptItem(transcriptId, false);
+      if (item.kind === "user" && !this.forkEntryIdForTranscriptItem(item)) await this.refreshTree();
+      this.render();
+      return;
+    }
+
+    this.openActionMenuId = "";
+    if (action === "copy") {
+      await this.copyText(item.body, "Copied message content");
+      return;
+    }
+    if (action === "details" || action === "preview") {
+      this.selectedTranscriptId = transcriptId;
+      localStorage.setItem("piWebSelectedTranscriptId", transcriptId);
+      this.rightPanelTab = action;
+      this.rightPanelCollapsed = false;
+      localStorage.setItem("piWebRightPanelTab", action);
+      localStorage.setItem("piWebRightPanelCollapsed", "false");
+      this.preserveTranscriptScrollOnce = true;
+      this.render();
+      return;
+    }
+    if (action === "fork") {
+      const entryId = this.forkEntryIdForTranscriptItem(item);
+      if (entryId) await this.forkFromEntry(entryId);
+      else {
+        this.notice = "Fork is only available after this user message appears in the session tree.";
+        this.render();
+      }
+    }
   }
 
   private async updateSessionTitle(title: string): Promise<void> {
@@ -1347,6 +1425,20 @@ class PiWebAgentApp extends HTMLElement {
         this.sendFromInput(event.altKey);
       }
     });
+    this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
+      if (!button) {
+        if (this.openActionMenuId) {
+          this.openActionMenuId = "";
+          this.render();
+        }
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const action = button.dataset.rowAction as TranscriptRowAction | "menu";
+      void this.handleTranscriptRowAction(action, button.dataset.transcriptId ?? "");
+    });
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("scroll", (event) => {
       const transcript = event.currentTarget as HTMLElement;
       this.transcriptScrollTop = transcript.scrollTop;
@@ -1694,13 +1786,21 @@ class PiWebAgentApp extends HTMLElement {
     if (element.dataset.transcriptBound === "true") return;
     element.dataset.transcriptBound = "true";
     element.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement | null)?.closest(".message-action-area")) return;
       if ((event.target as HTMLElement | null)?.closest(".message-header") && element.classList.contains("collapsible")) return;
+      this.openActionMenuId = "";
       this.selectTranscriptItem(element.dataset.transcriptId ?? "");
     });
   }
 
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
-    row.setState(item, { showThinking: this.showThinking, selected: item.id === this.selectedTranscriptId, cache: this.renderedSegmentCache });
+    row.setState(item, {
+      showThinking: this.showThinking,
+      selected: item.id === this.selectedTranscriptId,
+      actionMenuOpen: item.id === this.openActionMenuId,
+      canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
+      cache: this.renderedSegmentCache,
+    });
   }
 
   private hydrateTranscriptRows(): void {

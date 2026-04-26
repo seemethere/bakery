@@ -203,11 +203,14 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
 async function runInspectorPreview(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector validation.");
-  await page.locator(".message.assistant:has(img)").last().click();
+  const assistant = page.locator(".message.assistant:has(img)").last();
+  await assistant.click();
   await page.waitForFunction(() => document.querySelector(".message.assistant.selected img"));
-  await page.locator('[data-right-tab="preview"]').click();
+  await assistant.locator('[data-row-action="menu"]').click();
+  await assistant.locator('.message-action-menu [data-row-action="preview"]').click();
   await page.locator(".preview-markdown img").first().waitFor({ timeout: 5_000 });
-  await page.locator('[data-right-tab="details"]').click();
+  await assistant.locator('[data-row-action="menu"]').click();
+  await assistant.locator('.message-action-menu [data-row-action="details"]').click();
   await page.locator(".raw-detail").waitFor({ state: "visible" });
   const tool = page.locator(".message.tool").first();
   await tool.locator(".message-header").click();

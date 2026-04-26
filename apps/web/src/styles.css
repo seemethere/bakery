@@ -751,14 +751,20 @@ textarea:disabled {
 }
 
 .message {
+  position: relative;
   box-sizing: border-box;
   display: block;
   max-width: 100%;
   border: 1px solid #2a2f3a;
   border-radius: 12px;
   background: #171a21;
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
+}
+
+.message-body {
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
 }
 
 .message.selected {
@@ -897,6 +903,71 @@ textarea:disabled {
 
 .message-status {
   flex: 0 0 auto;
+}
+
+.message-header-spacer {
+  flex: 1 1 auto;
+}
+
+.message-action-area {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.message-overflow {
+  width: 26px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: #8b94a7;
+  opacity: 0.62;
+}
+
+.message:hover .message-overflow,
+.message:focus-within .message-overflow,
+.message.selected .message-overflow,
+.message-overflow[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.message-overflow:hover,
+.message-overflow[aria-expanded="true"] {
+  border-color: #4a5568;
+  background: #202635;
+  color: #eef2ff;
+}
+
+.message-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid #3a4152;
+  border-radius: 10px;
+  background: #111722;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+
+.message-action-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 7px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: #d5dbea;
+  font-size: 13px;
+  text-align: left;
+}
+
+.message-action-menu button:hover,
+.message-action-menu button:focus-visible {
+  border-color: #3d4963;
+  background: #1f2a3d;
 }
 
 .message-header span {
