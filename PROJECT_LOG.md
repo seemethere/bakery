@@ -18,6 +18,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - File search/complete endpoints now call the ignore-aware workspace scanner, validate query params with shared Zod schemas, cap result limits, skip default heavy/binary paths, and keep nested `.gitignore` rules scoped to their subtree.
 - Prompt input now has `@file` autocomplete backed by the file search/complete endpoints, with keyboard navigation, click selection, directory continuation, and prompt draft preservation across live transcript rerenders; fixed dropdown closing during rerenders while the prompt remains focused.
 - Added shared command metadata protocol, `GET /api/sessions/:id/commands`, and prompt-box slash-command autocomplete for built-ins, extension commands, prompt templates, and skills; terminal/UI-only built-ins are marked unsupported in metadata.
+- WebSocket prompt handling now intercepts built-in slash commands before they reach the LLM as normal prompts. Implemented web results for `/reload`, `/changelog`, `/session`, `/compact`, `/name`, and `/copy`; unsupported built-ins render a structured web error instead of being sent to the agent.
 
 ## How to run
 
@@ -43,12 +44,12 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after adding the command metadata endpoint and slash-command autocomplete.
+Latest: `bun run check` passes after intercepting built-in slash commands and rendering structured web command results.
 
 ## Next priorities
 
 1. Manually test prompt-box autocomplete in the browser, especially slash commands, directory continuation, keyboard selection, and behavior during live agent output.
-2. Test unsupported built-in slash commands in web sessions and route more of them to native web controls or structured unsupported responses.
+2. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
 3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
 4. Add right-side details/preview panel for selected message/tool data.
 5. Add basic branch/fork controls and tree summary using pi session manager APIs.

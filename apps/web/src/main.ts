@@ -355,6 +355,16 @@ class PiWebAgentApp extends HTMLElement {
     if (type === "agent_start" || type === "turn_start") this.status = "running";
     if (type === "agent_end" || type === "turn_end") this.status = "idle";
 
+    if (type === "web_command_result") {
+      this.upsertTranscript({
+        id: String(event.id ?? `command:${Date.now()}`),
+        kind: event.isError ? "error" : "system",
+        title: String(event.title ?? "Slash command"),
+        body: String(event.body ?? ""),
+      });
+      return;
+    }
+
     if ((type === "message_start" || type === "message_update" || type === "message_end") && isRecord(event.message)) {
       const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
       const item = messageToTranscriptItem(event.message, fallback);

@@ -329,6 +329,24 @@ class SessionHub {
 
     try {
       if (parsed.data.type === "prompt") {
+        const builtinResult = await this.handle.runBuiltinCommand(parsed.data.text);
+        if (builtinResult.handled) {
+          this.broadcast({
+            type: "agent_event",
+            event: {
+              type: "web_command_result",
+              time: new Date().toISOString(),
+              data: {
+                type: "web_command_result",
+                id: `command:${Date.now()}`,
+                title: builtinResult.title ?? "Slash command",
+                body: builtinResult.body ?? "",
+                isError: builtinResult.isError ?? false,
+              },
+            },
+          });
+          return;
+        }
         const webSession = store.getSession(this.handle.id);
         if (webSession && !webSession.title) store.updateSession(webSession.id, { title: parsed.data.text.slice(0, 60) });
         await this.handle.prompt(parsed.data.text);

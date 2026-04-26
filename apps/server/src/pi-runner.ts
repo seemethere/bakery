@@ -1,4 +1,6 @@
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import {
   createAgentSession,
   SessionManager,
@@ -11,6 +13,13 @@ export type CreateSessionOptions = {
   id: string;
   cwd: string;
   piSessionFile: string;
+};
+
+export type BuiltinCommandResult = {
+  handled: boolean;
+  title?: string;
+  body?: string;
+  isError?: boolean;
 };
 
 export type SessionHandle = {
@@ -26,6 +35,7 @@ export type SessionHandle = {
   setThinkingLevel(level: string): Promise<void>;
   getSettings(): Promise<SessionRuntimeSettings>;
   getCommands(): CommandInfo[];
+  runBuiltinCommand(text: string): Promise<BuiltinCommandResult>;
   subscribe(listener: (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void): () => void;
   snapshot(webSession: WebSession): Promise<SessionSnapshot>;
   dispose(): void;
@@ -49,6 +59,10 @@ function getStatus(session: AgentSession): SessionSnapshot["status"] {
   return session.isStreaming ? "running" : "idle";
 }
 
+const require = createRequire(import.meta.url);
+const piPackageEntry = require.resolve("@mariozechner/pi-coding-agent");
+const piChangelogPath = resolve(dirname(piPackageEntry), "../CHANGELOG.md");
+
 const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "settings", description: "Open settings menu", source: "builtin", unsupported: true },
   { name: "model", description: "Select model (use the web Model selector instead)", source: "builtin", unsupported: true },
@@ -56,7 +70,7 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)", source: "builtin" },
   { name: "import", description: "Import and resume a session from a JSONL file", source: "builtin", unsupported: true },
   { name: "share", description: "Share session as a secret GitHub gist", source: "builtin" },
-  { name: "copy", description: "Copy last agent message to clipboard", source: "builtin", unsupported: true },
+  { name: "copy", description: "Show last agent message text", source: "builtin" },
   { name: "name", description: "Set session display name", source: "builtin" },
   { name: "session", description: "Show session info and stats", source: "builtin" },
   { name: "changelog", description: "Show changelog entries", source: "builtin" },
@@ -69,9 +83,34 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "new", description: "Start a new session", source: "builtin", unsupported: true },
   { name: "compact", description: "Manually compact the session context", source: "builtin" },
   { name: "resume", description: "Resume a different session", source: "builtin", unsupported: true },
-  { name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes", source: "builtin" },
+  { name: "reload", description: "Reload extensions, skills, prompts, and other resources", source: "builtin" },
   { name: "quit", description: "Quit pi", source: "builtin", unsupported: true },
 ];
+
+const BUILTIN_COMMAND_NAMES = new Set(BUILTIN_COMMANDS.map((command) => command.name));
+
+function parseSlashCommand(text: string): { name: string; args: string } | null {
+  const match = /^\/([\w:-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!match) return null;
+  return { name: match[1] ?? "", args: match[2]?.trim() ?? "" };
+}
+
+function formatSessionStats(stats: ReturnType<AgentSession["getSessionStats"]>): string {
+  return [
+    `Session: ${stats.sessionId}`,
+    `File: ${stats.sessionFile ?? "none"}`,
+    `Messages: ${stats.totalMessages} (${stats.userMessages} user, ${stats.assistantMessages} assistant, ${stats.toolCalls} tool calls, ${stats.toolResults} tool results)`,
+    `Tokens: ${stats.tokens.total} (${stats.tokens.input} input, ${stats.tokens.output} output, ${stats.tokens.cacheRead} cache read, ${stats.tokens.cacheWrite} cache write)`,
+    `Cost: $${stats.cost.toFixed(6)}`,
+  ].join("\n");
+}
+
+async function readChangelog(): Promise<string> {
+  const changelog = await readFile(piChangelogPath, "utf8");
+  const lines = changelog.split("\n");
+  const nextHeading = lines.findIndex((line, index) => index > 0 && /^##\s+/.test(line));
+  return lines.slice(0, nextHeading === -1 ? Math.min(lines.length, 160) : nextHeading).join("\n").trim();
+}
 
 function toModelInfo(model: { id: string; provider: string; name?: string; reasoning?: boolean } | undefined): ModelInfo | null {
   if (!model) return null;
@@ -159,6 +198,51 @@ class InProcessSessionHandle implements SessionHandle {
       sourceInfo: skill.sourceInfo,
     }));
     return [...BUILTIN_COMMANDS, ...extensionCommands, ...promptCommands, ...skillCommands];
+  }
+
+  async runBuiltinCommand(text: string): Promise<BuiltinCommandResult> {
+    const parsed = parseSlashCommand(text);
+    if (!parsed || !BUILTIN_COMMAND_NAMES.has(parsed.name)) return { handled: false };
+
+    const command = BUILTIN_COMMANDS.find((candidate) => candidate.name === parsed.name);
+    if (command?.unsupported) {
+      return {
+        handled: true,
+        title: `/${parsed.name}`,
+        body: `/${parsed.name} is a terminal-only command in pi and is not supported in the web UI yet.`,
+        isError: true,
+      };
+    }
+
+    if (parsed.name === "reload") {
+      await this.session.reload();
+      return { handled: true, title: "/reload", body: "Reloaded extensions, skills, prompt templates, and context resources." };
+    }
+    if (parsed.name === "compact") {
+      const result = await this.session.compact(parsed.args || undefined);
+      return { handled: true, title: "/compact", body: `Compaction complete.\n\n${JSON.stringify(result, null, 2)}` };
+    }
+    if (parsed.name === "session") {
+      return { handled: true, title: "/session", body: formatSessionStats(this.session.getSessionStats()) };
+    }
+    if (parsed.name === "name") {
+      if (!parsed.args) return { handled: true, title: "/name", body: "Usage: /name <session name>", isError: true };
+      this.session.setSessionName(parsed.args);
+      return { handled: true, title: "/name", body: `Session name set to: ${parsed.args}` };
+    }
+    if (parsed.name === "copy") {
+      return { handled: true, title: "/copy", body: this.session.getLastAssistantText() || "No assistant message to copy yet." };
+    }
+    if (parsed.name === "changelog") {
+      return { handled: true, title: "/changelog", body: await readChangelog() };
+    }
+
+    return {
+      handled: true,
+      title: `/${parsed.name}`,
+      body: `/${parsed.name} is recognized but does not have a web implementation yet.`,
+      isError: true,
+    };
   }
 
   subscribe(listener: (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void): () => void {
