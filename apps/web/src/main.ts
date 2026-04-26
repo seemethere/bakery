@@ -1,14 +1,22 @@
+import { marked } from "marked";
 import { PROTOCOL_VERSION, type ControllerInfo, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type TranscriptKind = "user" | "assistant" | "tool" | "system" | "error";
+type TranscriptSegment =
+  | { kind: "markdown"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "toolCall"; label: string }
+  | { kind: "image"; label: string }
+  | { kind: "pre"; text: string };
 
 type TranscriptItem = {
   id: string;
   kind: TranscriptKind;
   title: string;
   body: string;
+  segments?: TranscriptSegment[];
   status?: "running" | "done" | "error";
 };
 
@@ -29,18 +37,64 @@ function stringify(value: unknown): string {
   }
 }
 
-function contentToText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return stringify(content);
+const markdownRenderer = new marked.Renderer();
+markdownRenderer.html = ({ text }) => escapeHtml(text);
+markdownRenderer.link = function ({ href, title, tokens }) {
+  const label = this.parser.parseInline(tokens);
+  const safeHref = sanitizeUrl(href);
+  if (!safeHref) return label;
+  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+  return `<a href="${escapeHtml(safeHref)}"${titleAttr} target="_blank" rel="noreferrer noopener">${label}</a>`;
+};
+markdownRenderer.image = function ({ href, title, text }) {
+  const safeHref = sanitizeUrl(href);
+  if (!safeHref) return escapeHtml(text || "image");
+  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+  return `<img src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy" />`;
+};
 
-  const parts = content.map((part) => {
-    if (!isRecord(part)) return stringify(part);
-    if (part.type === "text") return String(part.text ?? "");
-    if (part.type === "toolCall") return `↳ tool call: ${String(part.name ?? "tool")}\n${stringify(part.arguments ?? {})}`;
-    if (part.type === "image") return "[image]";
-    return stringify(part);
+function sanitizeUrl(value: string): string | null {
+  try {
+    const url = new URL(value, window.location.href);
+    if (["http:", "https:", "mailto:", "file:"].includes(url.protocol)) return value;
+  } catch {
+    if (value.startsWith("#") || value.startsWith("/")) return value;
+  }
+  return null;
+}
+
+function renderMarkdown(value: string): string {
+  return marked.parse(value, { async: false, gfm: true, breaks: false, renderer: markdownRenderer });
+}
+
+function formatToolCall(part: Record<string, unknown>): string {
+  const name = String(part.name ?? part.toolName ?? "tool");
+  const args = isRecord(part.arguments) ? part.arguments : isRecord(part.args) ? part.args : {};
+  if (name === "read" && args.path) return `↳ read ${String(args.path)}${args.offset ? `:${String(args.offset)}` : ""}${args.limit ? `-${String(args.limit)}` : ""}`;
+  if (name === "bash" && args.command) return `↳ bash ${String(args.command)}`;
+  if ((name === "edit" || name === "write") && args.path) return `↳ ${name} ${String(args.path)}`;
+  return `↳ ${name}`;
+}
+
+function contentToSegments(content: unknown): TranscriptSegment[] {
+  if (typeof content === "string") return [{ kind: "markdown", text: content }];
+  if (!Array.isArray(content)) return [{ kind: "pre", text: stringify(content) }];
+
+  return content.flatMap((part): TranscriptSegment[] => {
+    if (!isRecord(part)) return [{ kind: "pre", text: stringify(part) }];
+    if (part.type === "text" && String(part.text ?? "").trim()) return [{ kind: "markdown", text: String(part.text) }];
+    if (part.type === "thinking" && String(part.thinking ?? "").trim()) return [{ kind: "thinking", text: String(part.thinking) }];
+    if (part.type === "toolCall") return [{ kind: "toolCall", label: formatToolCall(part) }];
+    if (part.type === "image") return [{ kind: "image", label: "[image]" }];
+    return [];
   });
-  return parts.filter(Boolean).join("\n\n");
+}
+
+function contentToText(content: unknown): string {
+  return contentToSegments(content)
+    .map((segment) => "text" in segment ? segment.text : segment.label)
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function messageKey(message: Record<string, unknown>, fallback: string): string {
@@ -55,9 +109,10 @@ function messageToTranscriptItem(message: unknown, fallbackId: string): Transcri
   }
 
   const role = String(message.role ?? "message");
+  const segments = contentToSegments(message.content);
   const body = contentToText(message.content);
-  if (role === "user") return { id: messageKey(message, fallbackId), kind: "user", title: "You", body };
-  if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body };
+  if (role === "user") return { id: messageKey(message, fallbackId), kind: "user", title: "You", body, segments };
+  if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments };
   if (role === "toolResult") {
     const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";
     return {
@@ -84,6 +139,7 @@ class PiWebAgentApp extends HTMLElement {
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
+  private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private transcriptScrollTop = 0;
 
   connectedCallback(): void {
@@ -316,6 +372,11 @@ class PiWebAgentApp extends HTMLElement {
       localStorage.setItem("piWebAutoScroll", String(this.autoScroll));
       if (this.autoScroll) this.scrollTranscriptToBottom();
     });
+    this.querySelector<HTMLInputElement>("#showThinking")?.addEventListener("change", (event) => {
+      this.showThinking = (event.currentTarget as HTMLInputElement).checked;
+      localStorage.setItem("piWebShowThinking", String(this.showThinking));
+      this.render();
+    });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
@@ -335,6 +396,22 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
+  private renderSegments(item: TranscriptItem): string {
+    const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
+    return segments
+      .map((segment) => {
+        if (segment.kind === "markdown") return `<div class="markdown-body">${renderMarkdown(segment.text)}</div>`;
+        if (segment.kind === "thinking") {
+          const content = this.showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
+          return `<div class="markdown-body thinking-trace">${content}</div>`;
+        }
+        if (segment.kind === "toolCall") return `<div class="inline-tool-call">${escapeHtml(segment.label)}</div>`;
+        if (segment.kind === "image") return `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
+        return `<pre>${escapeHtml(segment.text)}</pre>`;
+      })
+      .join("");
+  }
+
   private renderTranscript(): string {
     return this.transcript
       .map((item) => {
@@ -345,13 +422,13 @@ class PiWebAgentApp extends HTMLElement {
           return `
             <details class="message ${item.kind} ${item.status ?? ""}" ${isOpen ? "open" : ""}>
               <summary class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</summary>
-              <pre>${escapeHtml(item.body)}</pre>
+              ${this.renderSegments(item)}
             </details>`;
         }
         return `
           <article class="message ${item.kind} ${item.status ?? ""}">
             <div class="message-header"><strong>${escapeHtml(item.title)}</strong>${status}</div>
-            <pre>${escapeHtml(item.body)}</pre>
+            ${this.renderSegments(item)}
           </article>`;
       })
       .join("");
@@ -419,6 +496,7 @@ class PiWebAgentApp extends HTMLElement {
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl">Take control</button>` : ""}
             <label class="inline-control autoscroll"><input id="autoScroll" type="checkbox" ${this.autoScroll ? "checked" : ""} /> Auto-scroll</label>
+            <label class="inline-control"><input id="showThinking" type="checkbox" ${this.showThinking ? "checked" : ""} /> Show thinking</label>
             ${this.settings ? `<label class="inline-control">Model
               <select id="model" ${isController ? "" : "disabled"}>
                 ${this.settings.availableModels.map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === currentModelId ? "selected" : ""}>${escapeHtml(model.name ?? model.id)} [${escapeHtml(model.provider)}]</option>`).join("")}

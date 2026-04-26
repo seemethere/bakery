@@ -4,7 +4,7 @@ Use this file to preserve context between coding sessions. Keep entries short an
 
 ## Current status
 
-Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support:
+Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support and improved transcript readability:
 
 - Bun workspaces monorepo with `apps/server`, `apps/web`, and `packages/protocol`.
 - Shared Zod/TypeScript protocol definitions, including controller state, session lifecycle config, and runtime model/thinking settings.
@@ -12,6 +12,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - In-process pi SDK session runner wired for prompt, steer, follow-up, abort, model/thinking changes, snapshots, and normalized event streaming.
 - WebSocket session hubs now support reconnect snapshots, multiple clients, first-client controller assignment, take-control, per-client sequence envelopes, and disconnected idle disposal.
 - Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, readable transcript rendering, model/thinking selectors, prompt/steer/follow-up input, abort controls, controller/viewer status, and TUI-like transcript follow-latest auto-scroll.
+- Assistant transcript rendering now handles Markdown via `marked`, hides thinking by default with a `Show thinking` toggle, renders readable thinking traces dim/italic when enabled, and formats inline tool calls compactly instead of dumping raw provider JSON/encrypted thinking payloads.
 
 ## How to run
 
@@ -37,16 +38,17 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after fixing transcript layout/auto-scroll and collapsing completed tool/system messages to keep long chats readable.
+Latest: `bun run check` passes after adding Markdown assistant rendering, hidden-by-default thinking display, and compact inline tool-call rendering.
 
 ## Next priorities
 
-1. Implement ignore-aware file search/complete endpoints for `@file` autocomplete.
-2. Add command metadata endpoint and slash-command autocomplete.
-3. Add collapsible tool cards and right-side details panel.
-4. Add basic branch/fork controls and tree summary using pi session manager APIs.
-5. Improve controller handoff policy/confirmation and richer reconnect/error UX.
-6. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Restyle tool call/result blocks to more closely match the pi TUI, including compact headers and readable stdout/stderr/error states.
+2. Implement ignore-aware file search/complete endpoints for `@file` autocomplete.
+3. Add command metadata endpoint and slash-command autocomplete.
+4. Add right-side details/preview panel for selected message/tool data.
+5. Add basic branch/fork controls and tree summary using pi session manager APIs.
+6. Improve controller handoff policy/confirmation and richer reconnect/error UX.
+7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 
