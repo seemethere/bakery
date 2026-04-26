@@ -347,6 +347,10 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator(".message-header").click();
   await page.waitForFunction(() => !document.querySelector(".message.tool")?.classList.contains("collapsed"));
+  await page.waitForFunction(() => {
+    const body = document.querySelector<HTMLElement>(".message.tool .message-body");
+    return Boolean(body && body.scrollHeight > body.clientHeight && body.clientHeight < 460);
+  });
   await tool.locator(".message-header").click();
   await page.waitForFunction(() => document.querySelector(".message.tool")?.classList.contains("collapsed"));
   await page.locator("#prompt").waitFor({ state: "visible" });

@@ -239,9 +239,23 @@ function toolResultToText(result: unknown): string {
   return text || stringify(result);
 }
 
+function toolTextToSegment(text: string): TranscriptSegment {
+  return /!\[[^\]]*\]\((?:data:image\/|https?:\/\/|file:|\/)[^)]+\)/i.test(text)
+    ? { kind: "markdown", text }
+    : { kind: "pre", text };
+}
+
 function toolResultToSegments(result: unknown): TranscriptSegment[] {
   if (!isRecord(result) || !("content" in result)) return [];
-  return contentToSegments(result.content);
+  const content = result.content;
+  if (typeof content === "string") return [toolTextToSegment(content)];
+  if (!Array.isArray(content)) return [{ kind: "pre", text: stringify(content) }];
+  return content.flatMap((part): TranscriptSegment[] => {
+    if (!isRecord(part)) return [{ kind: "pre", text: stringify(part) }];
+    if (part.type === "text" && String(part.text ?? "").trim()) return [toolTextToSegment(String(part.text))];
+    if (part.type === "image") return [imagePartToSegment(part)];
+    return [];
+  });
 }
 
 function toolArgsToText(args: unknown): string {
@@ -310,7 +324,7 @@ function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, c
           ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
-      return `<pre>${escapeHtml(segment.text)}</pre>`;
+      return `<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>`;
     })
     .join("");
   if (cache) {
@@ -383,9 +397,17 @@ class PiTranscriptRow extends HTMLElement {
         </span>
       </div>
       <div class="message-body">${renderTranscriptSegments(item, this.showThinking, options.cache)}</div>`;
+    this.pinRunningToolOutputToBottom(item);
     this.lastRenderKey = renderKey;
     this.lastStreamingText = streamingText ?? "";
     recordPerfSample("rowUpdate", performance.now() - start);
+  }
+
+  private pinRunningToolOutputToBottom(item: TranscriptItem): void {
+    if (item.kind !== "tool" || item.status !== "running") return;
+    const body = this.querySelector<HTMLElement>(".message-body");
+    if (!body) return;
+    body.scrollTop = body.scrollHeight;
   }
 
   private renderActionMenu(item: TranscriptItem): string {

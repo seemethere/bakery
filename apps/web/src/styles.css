@@ -834,10 +834,24 @@ textarea:disabled {
   color: #ffb1b1;
 }
 
-.message.tool pre {
-  color: #aeb7ad;
-  padding: 10px;
+.message.tool .message-body {
+  max-height: min(38vh, calc(26.1em + 22px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: rgba(0, 0, 0, 0.08);
+}
+
+.message.tool pre {
+  color: #b8c2b8;
+  padding: 10px;
+  background: transparent;
+}
+
+.message.tool .terminal-output {
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .message.tool.done.collapsed {

@@ -125,7 +125,7 @@ class FakeSessionHandle implements SessionHandle {
 
       if (!emittedTool && offset >= toolAtOffset) {
         emittedTool = true;
-        await this.emitFakeToolRun();
+        await this.emitFakeToolRun(/(?:long|narrow)/i.test(text));
       }
 
       const delay = streamDelayMs(chunkIndex);
@@ -233,24 +233,27 @@ class FakeSessionHandle implements SessionHandle {
     return editorText === undefined ? { cancelled: false } : { cancelled: false, editorText };
   }
 
-  private async emitFakeToolRun(): Promise<void> {
+  private async emitFakeToolRun(longOutput = false): Promise<void> {
     const toolCallId = crypto.randomUUID();
-    const args = { command: "echo fake tool" };
+    const args = { command: longOutput ? "for i in {1..80}; do echo fake tool line $i; done" : "echo fake tool" };
+    const outputLines = longOutput
+      ? Array.from({ length: 80 }, (_, index) => `[server] fake tool line ${String(index + 1).padStart(2, "0")} {\"level\":30,\"msg\":\"synthetic streaming terminal output\"}`).join("\n")
+      : "fake tool output\nstdout: first line\nstderr: delayed diagnostic";
     this.emit({ type: "tool_execution_start", toolCallId, toolName: "bash", args });
     await sleep(35);
     this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: "running fake tool...\n" }] } });
     // Burst two updates together to exercise tool-card patching under clustered events.
-    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: "running fake tool...\nstdout: first line\n" }] } });
+    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: `running fake tool...\n${longOutput ? outputLines.split("\n").slice(0, 18).join("\n") + "\n" : "stdout: first line\n"}` }] } });
     await sleep(120);
-    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: "running fake tool...\nstdout: first line\nstderr: delayed diagnostic\n" }] } });
+    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: longOutput ? `running fake tool...\n${outputLines}\n` : "running fake tool...\nstdout: first line\nstderr: delayed diagnostic\n" }] } });
     await sleep(25);
     this.emit({
       type: "tool_execution_end",
       toolCallId,
       toolName: "bash",
       result: {
-        content: [{ type: "text", text: "fake tool output\nstdout: first line\nstderr: delayed diagnostic" }],
-        details: { stdout: "fake tool output\nstdout: first line\n", stderr: "delayed diagnostic\n", exitCode: 0 },
+        content: [{ type: "text", text: outputLines }],
+        details: { stdout: `${outputLines}\n`, stderr: longOutput ? "" : "delayed diagnostic\n", exitCode: 0 },
       },
     });
   }
