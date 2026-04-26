@@ -28,7 +28,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Reduced streaming render lockups by throttling live renders further, patching only dirty transcript items during active runs instead of replacing the whole app shell, and rendering live assistant Markdown as escaped plain text until the message completes.
 - Added an agent-operable Playwright UI harness: `PI_WEB_FAKE_AGENT=1` enables a deterministic fake session runner, `bun run test:web-perf` starts backend/web against temp dirs, drives the real browser UI, measures prompt/control responsiveness during synthetic streaming, and writes screenshots/traces/metrics under ignored `test-results/`; `bun run ui:manual` opens a headed fake-agent browser session for exploratory manual validation until Ctrl+C.
 - The left workspace/session sidebar is now collapsible, with state persisted in local storage and compatible grid sizing when the right inspector is also collapsed.
-- Assistant Markdown and image content parts now render safe inline images (`http(s)`, `file`, app-relative, and base64 `data:image/png|jpeg|gif|webp`); the fake-agent runner can emit a sample inline PNG when prompts mention images/screenshots for visual validation.
+- Assistant Markdown, assistant/user image content parts, and tool-result image content now render safe inline images (`http(s)`, `file`, app-relative, and base64 `data:image/png|jpeg|gif|webp`); tool cards containing rendered images stay open by default, and the fake-agent runner can emit a sample inline PNG when prompts mention images/screenshots for visual validation.
 
 ## How to run
 
@@ -56,7 +56,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after adding inline image rendering. Latest harness scenario: `streaming-responsiveness`; artifacts at `test-results/ui-harness/streaming-responsiveness-2026-04-26T17-58-58-245Z`. A targeted image-rendering browser check also passed with screenshot artifacts at `test-results/ui-harness/image-rendering-manual-2026-04-26T17-58-30Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after adding tool-result image rendering. Latest harness scenario: `streaming-responsiveness`; artifacts at `test-results/ui-harness/streaming-responsiveness-2026-04-26T18-08-43-305Z`. A targeted image-rendering browser check also passed with screenshot artifacts at `test-results/ui-harness/image-rendering-manual-2026-04-26T17-58-30Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 

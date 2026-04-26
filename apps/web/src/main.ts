@@ -161,6 +161,11 @@ function toolResultToText(result: unknown): string {
   return text || stringify(result);
 }
 
+function toolResultToSegments(result: unknown): TranscriptSegment[] {
+  if (!isRecord(result) || !("content" in result)) return [];
+  return contentToSegments(result.content);
+}
+
 function toolArgsToText(args: unknown): string {
   if (!isRecord(args)) return stringify(args);
   if (Object.keys(args).length === 0) return "";
@@ -211,6 +216,7 @@ function messageToTranscriptItem(message: unknown, fallbackId: string): Transcri
       kind: "tool",
       title: `Tool result${message.toolName ? `: ${String(message.toolName)}` : ""}`,
       body: `${body}${details}`,
+      segments,
       status: message.isError ? "error" : "done",
       raw: message,
     };
@@ -443,12 +449,14 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (type === "tool_execution_update") {
-      const partialText = toolResultToText(event.partialResult ?? {});
+      const partialResult = event.partialResult ?? {};
+      const partialText = toolResultToText(partialResult);
       this.upsertTranscript({
         id: `tool:${String(event.toolCallId ?? Date.now())}`,
         kind: "tool",
         title: formatToolTitle(event.toolName, event.args),
         body: partialText || toolArgsToText(event.args ?? {}),
+        segments: toolResultToSegments(partialResult),
         status: "running",
         raw: event,
       });
@@ -458,11 +466,13 @@ class PiWebAgentApp extends HTMLElement {
     if (type === "tool_execution_end") {
       const id = `tool:${String(event.toolCallId ?? Date.now())}`;
       const existing = this.transcript.find((item) => item.id === id);
+      const result = event.result ?? {};
       this.upsertTranscript({
         id,
         kind: "tool",
         title: existing?.title ?? formatToolTitle(event.toolName, {}),
-        body: toolResultToText(event.result ?? {}),
+        body: toolResultToText(result),
+        segments: toolResultToSegments(result),
         status: event.isError ? "error" : "done",
         raw: event,
       });
@@ -1095,7 +1105,7 @@ class PiWebAgentApp extends HTMLElement {
     const status = item.status ? `<span>${escapeHtml(item.status)}</span>` : "";
     const isCollapsible = item.kind === "tool" || item.kind === "system";
     const selected = item.id === this.selectedTranscriptId ? "selected" : "";
-    const isOpen = item.status === "running" || item.status === "error" || Boolean(selected);
+    const isOpen = item.status === "running" || item.status === "error" || Boolean(selected) || Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
     const dataAttr = `data-transcript-id="${escapeHtml(item.id)}"`;
     if (isCollapsible) {
       return `
