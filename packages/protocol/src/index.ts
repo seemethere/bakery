@@ -135,6 +135,43 @@ export const commandResponseSchema = z.object({
 });
 export type CommandResponse = z.infer<typeof commandResponseSchema>;
 
+export type SessionTreeNode = {
+  id: string;
+  parentId: string | null;
+  type: string;
+  timestamp: string;
+  role?: string | undefined;
+  title: string;
+  label?: string | undefined;
+  current: boolean;
+  children: SessionTreeNode[];
+};
+
+export const sessionTreeNodeSchema: z.ZodType<SessionTreeNode> = z.lazy(() => z.object({
+  id: z.string(),
+  parentId: z.string().nullable(),
+  type: z.string(),
+  timestamp: z.string(),
+  role: z.string().optional(),
+  title: z.string(),
+  label: z.string().optional(),
+  current: z.boolean(),
+  children: z.array(sessionTreeNodeSchema),
+}));
+
+export const sessionTreeResponseSchema = z.object({
+  sessionId: z.string(),
+  leafId: z.string().nullable(),
+  tree: z.array(sessionTreeNodeSchema),
+});
+export type SessionTreeResponse = z.infer<typeof sessionTreeResponseSchema>;
+
+export const forkSessionRequestSchema = z.object({
+  entryId: z.string().min(1),
+  title: z.string().min(1).max(120).optional(),
+});
+export type ForkSessionRequest = z.infer<typeof forkSessionRequestSchema>;
+
 export const agentStatusSchema = z.enum(["idle", "running", "aborting", "error"]);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 

@@ -591,7 +591,7 @@ pre {
 
 .right-tabs {
   display: grid;
-  grid-template-columns: auto 1fr 1fr;
+  grid-template-columns: auto 1fr 1fr 1fr;
   gap: 6px;
   padding: 10px;
   border-bottom: 1px solid #2a2f3a;
@@ -658,6 +658,59 @@ pre {
 .right-actions button {
   padding: 6px 8px;
   font-size: 12px;
+}
+
+.right-panel-heading.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.tree-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.session-tree,
+.session-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-node {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 8px 8px 8px calc(10px + var(--depth, 0) * 16px);
+}
+
+.tree-node.current {
+  background: rgba(102, 140, 255, 0.12);
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.tree-node small {
+  display: block;
+  margin-top: 3px;
+  color: #8b94a7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.tree-row button {
+  padding: 4px 7px;
+  font-size: 11px;
 }
 
 .details-panel,

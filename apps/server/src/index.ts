@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
@@ -9,12 +10,15 @@ import {
   createSessionRequestSchema,
   fileCompleteQuerySchema,
   fileSearchQuerySchema,
+  forkSessionRequestSchema,
   updateSessionRequestSchema,
   type ControllerInfo,
   type HelloMessage,
   type ServerEnvelope,
   type ServerMessage,
+  type SessionTreeNode,
 } from "@pi-web-agent/protocol";
+import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { MetadataStore } from "./metadata-store.js";
@@ -80,6 +84,64 @@ app.get("/api/models", async () => ({
 
 app.get("/api/sessions", async () => store.listSessions());
 
+type PiSessionTreeNode = ReturnType<SessionManager["getTree"]>[number];
+
+function entryTitle(entry: SessionEntry): { title: string; role?: string } {
+  if (entry.type === "message") {
+    const message = entry.message as { role?: string; content?: unknown };
+    const role = String(message.role ?? "message");
+    const content = message.content;
+    const text = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : "").join(" ")
+        : "";
+    return { role, title: `${role}: ${text.replace(/\s+/g, " ").trim().slice(0, 80) || "(empty)"}` };
+  }
+  if (entry.type === "compaction") return { title: `compaction: ${entry.summary.slice(0, 80)}` };
+  if (entry.type === "branch_summary") return { title: `branch summary: ${entry.summary.slice(0, 80)}` };
+  if (entry.type === "model_change") return { title: `model: ${entry.provider}/${entry.modelId}` };
+  if (entry.type === "thinking_level_change") return { title: `thinking: ${entry.thinkingLevel}` };
+  if (entry.type === "session_info") return { title: `name: ${entry.name ?? "unnamed"}` };
+  if (entry.type === "label") return { title: `label: ${entry.label ?? "cleared"}` };
+  return { title: entry.type };
+}
+
+function mapTreeNode(node: PiSessionTreeNode, leafId: string | null): SessionTreeNode {
+  const formatted = entryTitle(node.entry);
+  return {
+    id: node.entry.id,
+    parentId: node.entry.parentId,
+    type: node.entry.type,
+    timestamp: node.entry.timestamp,
+    role: formatted.role,
+    title: node.label ? `${formatted.title} · ${node.label}` : formatted.title,
+    label: node.label,
+    current: node.entry.id === leafId,
+    children: node.children.map((child) => mapTreeNode(child, leafId)),
+  };
+}
+
+async function createForkFile(sourceFile: string, cwd: string, entryId: string): Promise<string> {
+  const manager = SessionManager.open(sourceFile, config.sessionDir, cwd);
+  const branch = manager.getBranch(entryId);
+  if (branch.length === 0) throw new Error(`Entry not found: ${entryId}`);
+  const timestamp = new Date().toISOString();
+  const piSessionId = crypto.randomUUID();
+  const targetFile = resolve(config.sessionDir, `${piSessionId}.jsonl`);
+  const header = {
+    type: "session",
+    version: 3,
+    id: piSessionId,
+    timestamp,
+    cwd,
+    parentSession: sourceFile,
+  };
+  const lines = [header, ...branch].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+  await writeFile(targetFile, lines, "utf8");
+  return targetFile;
+}
+
 app.post("/api/sessions", async (request, reply) => {
   const parsed = createSessionRequestSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
@@ -130,9 +192,32 @@ app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, repl
 });
 
 app.get<{ Params: { id: string } }>("/api/sessions/:id/tree", async (request, reply) => {
-  const session = store.getSession(request.params.id);
-  if (!session) return reply.code(404).send({ error: "session not found" });
-  return { sessionId: session.id, tree: null, note: "Pi session tree integration pending" };
+  const webSession = store.getSession(request.params.id);
+  if (!webSession) return reply.code(404).send({ error: "session not found" });
+  try {
+    const handle = runner.getSession(webSession.id);
+    const manager = handle?.session.sessionManager ?? SessionManager.open(webSession.piSessionFile, config.sessionDir, webSession.cwd);
+    const leafId = manager.getLeafId();
+    return { sessionId: webSession.id, leafId, tree: manager.getTree().map((node) => mapTreeNode(node, leafId)) };
+  } catch (error) {
+    return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post<{ Params: { id: string } }>("/api/sessions/:id/fork", async (request, reply) => {
+  const parsed = forkSessionRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  const source = store.getSession(request.params.id);
+  if (!source) return reply.code(404).send({ error: "session not found" });
+  try {
+    const id = crypto.randomUUID();
+    const piSessionFile = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId);
+    const title = parsed.data.title ?? `Fork of ${source.title ?? source.cwd}`;
+    const session = store.createSession({ id, cwd: source.cwd, piSessionFile, title });
+    return reply.code(201).send(session);
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string | number } }>("/api/sessions/:id/commands", async (request, reply) => {

@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -21,7 +21,7 @@ type TranscriptItem = {
   raw?: unknown;
 };
 
-type RightPanelTab = "details" | "preview";
+type RightPanelTab = "details" | "preview" | "tree";
 
 type FileAutocompleteState = {
   active: boolean;
@@ -219,6 +219,7 @@ class PiWebAgentApp extends HTMLElement {
   private notice = "";
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
+  private sessionTree: SessionTreeResponse | null = null;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
@@ -314,6 +315,7 @@ class PiWebAgentApp extends HTMLElement {
     this.notice = "";
     this.controller = null;
     this.settings = null;
+    this.sessionTree = null;
     this.transcriptScrollTop = 0;
     this.selectedTranscriptId = "opened";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
@@ -363,6 +365,7 @@ class PiWebAgentApp extends HTMLElement {
       this.transcript = payload.snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
       if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
       if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
+      void this.refreshTree();
     } else if (payload.type === "agent_event") {
       this.applyAgentEvent(payload.event.data ?? payload.event);
     } else if (payload.type === "controller_update") {
@@ -380,7 +383,10 @@ class PiWebAgentApp extends HTMLElement {
     const type = String(event.type ?? "event");
 
     if (type === "agent_start" || type === "turn_start") this.status = "running";
-    if (type === "agent_end" || type === "turn_end") this.status = "idle";
+    if (type === "agent_end" || type === "turn_end") {
+      this.status = "idle";
+      void this.refreshTree();
+    }
 
     if (type === "web_command_result") {
       this.upsertTranscript({
@@ -455,6 +461,32 @@ class PiWebAgentApp extends HTMLElement {
 
   private selectedTranscriptItem(): TranscriptItem | null {
     return this.transcript.find((item) => item.id === this.selectedTranscriptId) ?? this.transcript[this.transcript.length - 1] ?? null;
+  }
+
+  private async refreshTree(): Promise<void> {
+    if (!this.selectedSession) return;
+    try {
+      this.sessionTree = await this.api<SessionTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree`);
+      this.requestRender(0);
+    } catch (error) {
+      this.notice = `Tree refresh failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.requestRender(0);
+    }
+  }
+
+  private async forkFromEntry(entryId: string): Promise<void> {
+    if (!this.selectedSession) return;
+    try {
+      const session = await this.api<WebSession>(`/api/sessions/${this.selectedSession.id}/fork`, {
+        method: "POST",
+        body: JSON.stringify({ entryId }),
+      });
+      this.sessions = [session, ...this.sessions];
+      this.openSession(session);
+    } catch (error) {
+      this.notice = `Fork failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
   }
 
   private async copyText(value: string, label = "Copied"): Promise<void> {
@@ -691,7 +723,7 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelectorAll<HTMLButtonElement>("[data-right-tab]").forEach((button) => {
       button.addEventListener("click", () => {
-        const tab = button.dataset.rightTab === "preview" ? "preview" : "details";
+        const tab = button.dataset.rightTab === "preview" ? "preview" : button.dataset.rightTab === "tree" ? "tree" : "details";
         this.rightPanelTab = tab;
         this.rightPanelCollapsed = false;
         localStorage.setItem("piWebRightPanelTab", tab);
@@ -787,6 +819,13 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelectorAll<HTMLElement>("[data-transcript-id]").forEach((element) => {
       element.addEventListener("click", () => this.selectTranscriptItem(element.dataset.transcriptId ?? ""));
     });
+    this.querySelector<HTMLButtonElement>("#refreshTree")?.addEventListener("click", () => void this.refreshTree());
+    this.querySelectorAll<HTMLButtonElement>("[data-fork-entry-id]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void this.forkFromEntry(button.dataset.forkEntryId ?? "");
+      });
+    });
   }
 
   private renderSegments(item: TranscriptItem): string {
@@ -855,6 +894,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderRightPanel(): string {
     const item = this.selectedTranscriptItem();
     const detailsActive = this.rightPanelTab === "details";
+    const previewActive = this.rightPanelTab === "preview";
     if (this.rightPanelCollapsed) {
       return `
         <aside class="right-panel collapsed" aria-label="Collapsed inspector">
@@ -867,9 +907,10 @@ class PiWebAgentApp extends HTMLElement {
         <div class="right-tabs">
           <button id="toggleRightPanel" class="collapse-panel" title="Hide inspector" aria-label="Hide inspector">▶</button>
           <button data-right-tab="details" class="${detailsActive ? "active" : ""}">Details</button>
-          <button data-right-tab="preview" class="${!detailsActive ? "active" : ""}">Preview</button>
+          <button data-right-tab="preview" class="${previewActive ? "active" : ""}">Preview</button>
+          <button data-right-tab="tree" class="${this.rightPanelTab === "tree" ? "active" : ""}">Tree</button>
         </div>
-        ${item ? `
+        ${this.rightPanelTab === "tree" ? this.renderTreePanel() : item ? `
           <div class="right-panel-heading">
             <div>
               <strong>${escapeHtml(item.title)}</strong>
@@ -883,6 +924,38 @@ class PiWebAgentApp extends HTMLElement {
           ${detailsActive ? this.renderDetailsPanel(item) : this.renderPreviewPanel(item)}
         ` : `<p class="empty-panel">Select a message or tool to inspect it.</p>`}
       </aside>`;
+  }
+
+  private renderTreeNodes(nodes: SessionTreeNode[], depth = 0): string {
+    return nodes.map((node) => {
+      const canFork = node.type === "message" && node.role === "user";
+      return `
+        <li class="tree-node ${node.current ? "current" : ""}" style="--depth: ${depth}">
+          <div class="tree-row">
+            <span class="tree-title">${node.current ? "● " : ""}${escapeHtml(node.title)}</span>
+            ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message">Fork</button>` : ""}
+          </div>
+          <small>${escapeHtml(node.type)} · ${escapeHtml(node.id)}</small>
+          ${node.children.length ? `<ul>${this.renderTreeNodes(node.children, depth + 1)}</ul>` : ""}
+        </li>`;
+    }).join("");
+  }
+
+  private renderTreePanel(): string {
+    if (!this.selectedSession) return `<p class="empty-panel">Open a session to inspect its tree.</p>`;
+    return `
+      <div class="tree-panel">
+        <div class="right-panel-heading compact">
+          <div>
+            <strong>Session tree</strong>
+            <small>${this.sessionTree?.leafId ? `current ${escapeHtml(this.sessionTree.leafId)}` : "No entries yet"}</small>
+          </div>
+          <div class="right-actions"><button id="refreshTree">Refresh</button></div>
+        </div>
+        ${this.sessionTree?.tree.length
+          ? `<ul class="session-tree">${this.renderTreeNodes(this.sessionTree.tree)}</ul>`
+          : `<p class="empty-panel">No tree entries yet. Send a prompt first.</p>`}
+      </div>`;
   }
 
   private renderDetailsPanel(item: TranscriptItem): string {
