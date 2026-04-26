@@ -323,16 +323,6 @@ function itemHasRenderedImage(item: TranscriptItem): boolean {
   return Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
 }
 
-function localImageArtifactPaths(item: TranscriptItem, localImageUrl?: RenderContext["localImageUrl"]): Set<string> {
-  const paths = new Set<string>();
-  if (!localImageUrl) return paths;
-  for (const segment of item.segments?.length ? item.segments : [{ kind: "pre", text: item.body } satisfies TranscriptSegment]) {
-    if (!("text" in segment)) continue;
-    for (const artifact of localImageArtifacts(segment.text, localImageUrl)) paths.add(artifact.path);
-  }
-  return paths;
-}
-
 function itemHasLocalImageArtifacts(item: TranscriptItem, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths?: Set<string>): boolean {
   if (!localImageUrl) return false;
   return Boolean((item.segments?.length ? item.segments : [{ kind: "pre", text: item.body } satisfies TranscriptSegment])
@@ -1894,10 +1884,6 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
-    const suppressedArtifactPaths = new Set<string>();
-    for (const candidate of this.transcript.slice(0, this.transcript.findIndex((entry) => entry.id === item.id))) {
-      for (const path of localImageArtifactPaths(candidate, (candidatePath) => this.localImageUrl(candidatePath))) suppressedArtifactPaths.add(path);
-    }
     row.setState(item, {
       showThinking: this.showThinking,
       selected: item.id === this.selectedTranscriptId,
@@ -1905,7 +1891,6 @@ class PiWebAgentApp extends HTMLElement {
       canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
       cache: this.renderedSegmentCache,
       localImageUrl: (path) => this.localImageUrl(path),
-      suppressLocalImageArtifactPaths: suppressedArtifactPaths,
     });
   }
 
