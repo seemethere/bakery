@@ -36,7 +36,7 @@ function responseFor(text: string): string {
   const includesImage = /(?:image|screenshot|picture)/i.test(text);
   const includesArtifactPath = /(?:artifact path|screenshot path|local image path)/i.test(text);
   const includesArtifactFormatVariants = /(?:artifact format variants|inline fenced long artifact)/i.test(text);
-  const requestedLength = /(?:long|stream|perf|performance)/i.test(text) ? 50000 : includesImage ? 3200 : 1400;
+  const requestedLength = /(?:long|stream|perf|performance)/i.test(text) ? 18000 : includesImage ? 3200 : 1400;
   const imageBlock = includesArtifactFormatVariants
     ? "\nRelevant screenshot artifact format variants:\n\nInline code: `screenshots/inline.png`\n\nFenced code:\n\n```text\nscreenshots/fenced.png\n```\n\nLong generated path: `test-results/ui-harness/sample-run/final.png`\n\nAll three workspace-relative paths should render safe local image previews.\n"
     : includesArtifactPath

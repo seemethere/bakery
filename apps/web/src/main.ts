@@ -682,7 +682,6 @@ class PiWebAgentApp extends HTMLElement {
   private commandAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private commandAutocompleteRequest = 0;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
-  private scrollMonitorTimer: ReturnType<typeof setInterval> | undefined;
   private renderScheduled = false;
   private forceFullRender = false;
   private dirtyTranscriptIds = new Set<string>();
@@ -692,7 +691,6 @@ class PiWebAgentApp extends HTMLElement {
 
   connectedCallback(): void {
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
-    this.startScrollMonitor();
     this.render();
     void this.refresh();
   }
@@ -701,7 +699,6 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     this.persistAttachmentWarningIfNeeded();
     if (this.renderTimer) clearTimeout(this.renderTimer);
-    if (this.scrollMonitorTimer) clearInterval(this.scrollMonitorTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.socketGeneration++;
     this.ws?.close();
@@ -938,8 +935,12 @@ class PiWebAgentApp extends HTMLElement {
 
   private applySnapshot(snapshot: SessionSnapshot): void {
     this.status = snapshot.status;
-    this.selectedSession = snapshot.session;
-    this.sessions = this.sessions.map((session) => session.id === snapshot.session.id ? snapshot.session : session);
+    const previous = this.selectedSession?.id === snapshot.session.id ? this.selectedSession : null;
+    const session = previous && previous.titleSource === "manual" && snapshot.session.titleSource !== "manual"
+      ? { ...snapshot.session, title: previous.title, titleSource: previous.titleSource }
+      : snapshot.session;
+    this.selectedSession = session;
+    this.sessions = this.sessions.map((candidate) => candidate.id === session.id ? session : candidate);
     this.controller = snapshot.controller ?? this.controller;
     this.settings = snapshot.settings ?? this.settings;
     this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
@@ -2211,24 +2212,6 @@ class PiWebAgentApp extends HTMLElement {
     return this.transcript.map((item) => this.renderTranscriptItemShell(item)).join("");
   }
 
-  private startScrollMonitor(): void {
-    if (this.scrollMonitorTimer) return;
-    this.scrollMonitorTimer = setInterval(() => {
-      const transcript = this.querySelector<HTMLElement>(".transcript");
-      if (!transcript) return;
-      if (this.autoScroll && !this.isTranscriptNearBottom(transcript)) {
-        this.autoScroll = false;
-        this.transcriptScrollTop = transcript.scrollTop;
-      }
-      if (!this.autoScroll) this.patchJumpToLatest();
-    }, 120);
-  }
-
-  private stopScrollMonitor(): void {
-    if (this.scrollMonitorTimer) clearInterval(this.scrollMonitorTimer);
-    this.scrollMonitorTimer = undefined;
-  }
-
   private renderJumpToLatest(): string {
     if (this.autoScroll) return "";
     const count = this.unreadTranscriptIds.size;
@@ -2439,10 +2422,7 @@ class PiWebAgentApp extends HTMLElement {
   private render(): void {
     const renderStart = performance.now();
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
-    if (existingTranscript) {
-      if (this.autoScroll && !this.isTranscriptNearBottom(existingTranscript)) this.autoScroll = false;
-      this.transcriptScrollTop = existingTranscript.scrollTop;
-    }
+    if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
     const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
     const restorePromptFocus = document.activeElement === prompt;
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
