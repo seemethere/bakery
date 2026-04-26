@@ -203,9 +203,6 @@ textarea:disabled {
 }
 
 .transcript {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
   min-height: 0;
   padding: 16px;
   overflow-y: auto;
@@ -213,16 +210,15 @@ textarea:disabled {
   overflow-anchor: none;
 }
 
-.transcript-end {
-  height: 1px;
-  flex: 0 0 1px;
-}
-
 .message {
   border: 1px solid #2a2f3a;
   border-radius: 12px;
   background: #171a21;
   overflow: hidden;
+}
+
+.message + .message {
+  margin-top: 14px;
 }
 
 .message.user {

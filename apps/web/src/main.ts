@@ -350,10 +350,17 @@ class PiWebAgentApp extends HTMLElement {
   private scrollTranscriptToBottom(): void {
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript) return;
-    const anchor = transcript.querySelector<HTMLElement>(".transcript-end");
-    anchor?.scrollIntoView({ block: "end" });
-    transcript.scrollTop = transcript.scrollHeight;
+    transcript.scrollTop = Math.max(0, transcript.scrollHeight - transcript.clientHeight);
     this.transcriptScrollTop = transcript.scrollTop;
+  }
+
+  private scheduleTranscriptFollow(): void {
+    this.scrollTranscriptToBottom();
+    requestAnimationFrame(() => {
+      this.scrollTranscriptToBottom();
+      requestAnimationFrame(() => this.scrollTranscriptToBottom());
+    });
+    window.setTimeout(() => this.scrollTranscriptToBottom(), 50);
   }
 
   private syncTranscriptScroll(): void {
@@ -364,8 +371,7 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
 
-    this.scrollTranscriptToBottom();
-    requestAnimationFrame(() => this.scrollTranscriptToBottom());
+    this.scheduleTranscriptFollow();
   }
 
   private render(): void {
@@ -416,7 +422,7 @@ class PiWebAgentApp extends HTMLElement {
             <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
           </div>
         </header>
-        <section class="transcript">${this.renderTranscript()}<div class="transcript-end" aria-hidden="true"></div></section>
+        <section class="transcript">${this.renderTranscript()}</section>
         <footer>
           <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up)" : "Prompt pi...") : "Viewer mode — take control to send"}"></textarea>
           <div class="controls">
