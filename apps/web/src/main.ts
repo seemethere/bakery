@@ -52,6 +52,11 @@ type PromptImage = {
   size: number;
 };
 
+type RunningQueueState = {
+  steering: string[];
+  followUp: string[];
+};
+
 type BrowserPerfMetrics = {
   renderCount: number;
   renderMs: number[];
@@ -452,6 +457,7 @@ class PiWebAgentApp extends HTMLElement {
   private unreadTranscriptIds = new Set<string>();
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
+  private runningQueue: RunningQueueState = { steering: [], followUp: [] };
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private socketGeneration = 0;
@@ -584,6 +590,7 @@ class PiWebAgentApp extends HTMLElement {
     this.notice = hadLostAttachments ? "Image attachments are not restored after a refresh. Please attach them again before sending." : "";
     this.promptDraft = this.loadPromptDraft(session.id);
     this.promptImages = [];
+    this.runningQueue = { steering: [], followUp: [] };
     this.controller = null;
     this.settings = null;
     this.sessionTree = null;
@@ -672,6 +679,7 @@ class PiWebAgentApp extends HTMLElement {
     this.controller = snapshot.controller ?? this.controller;
     this.settings = snapshot.settings ?? this.settings;
     this.transcript = snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`));
+    this.runningQueue = { steering: [], followUp: [] };
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     this.unreadTranscriptIds.clear();
     this.forceFullRender = true;
@@ -717,6 +725,7 @@ class PiWebAgentApp extends HTMLElement {
     if (type === "agent_start" || type === "turn_start") this.status = "running";
     if (type === "agent_end" || type === "turn_end") {
       this.status = "idle";
+      this.runningQueue = { steering: [], followUp: [] };
       void this.refreshTree();
     }
 
@@ -783,9 +792,10 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (type === "queue_update") {
-      const steering = Array.isArray(event.steering) ? event.steering.length : 0;
-      const followUp = Array.isArray(event.followUp) ? event.followUp.length : 0;
-      this.upsertTranscript({ id: "queue", kind: "system", title: "Queue", body: `${steering} steer / ${followUp} follow-up queued`, raw: event });
+      this.runningQueue = {
+        steering: Array.isArray(event.steering) ? event.steering.map(String) : [],
+        followUp: Array.isArray(event.followUp) ? event.followUp.map(String) : [],
+      };
     }
   }
 
@@ -923,6 +933,8 @@ class PiWebAgentApp extends HTMLElement {
     }
     const images = type === "prompt" && this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
     this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
+    if (type === "steer") this.runningQueue = { ...this.runningQueue, steering: [...this.runningQueue.steering, text] };
+    if (type === "follow_up") this.runningQueue = { ...this.runningQueue, followUp: [...this.runningQueue.followUp, text] };
     if (type === "prompt" && this.selectedSession && !this.selectedSession.title) {
       const optimistic = { ...this.selectedSession, title: text.slice(0, 60), lastUserPrompt: text.slice(0, 160), lastActivityAt: new Date().toISOString(), status: "running" as const };
       this.selectedSession = optimistic;
@@ -1473,6 +1485,22 @@ class PiWebAgentApp extends HTMLElement {
       </div>`;
   }
 
+  private renderRunningQueue(): string {
+    const steering = this.runningQueue.steering;
+    const followUp = this.runningQueue.followUp;
+    if (steering.length === 0 && followUp.length === 0) return "";
+    const renderPill = (kind: string, text: string, index: number) => `
+      <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(text)}">
+        <strong>${escapeHtml(kind)} ${index + 1}</strong>
+        <span>${escapeHtml(text)}</span>
+      </span>`;
+    return `
+      <div class="running-queue" aria-label="Queued running controls">
+        ${steering.map((text, index) => renderPill("Steer", text, index)).join("")}
+        ${followUp.map((text, index) => renderPill("Follow-up", text, index)).join("")}
+      </div>`;
+  }
+
   private renderRightPanel(): string {
     const item = this.selectedTranscriptItem();
     const detailsActive = this.rightPanelTab === "details";
@@ -1853,18 +1881,23 @@ class PiWebAgentApp extends HTMLElement {
           <section class="transcript">${this.renderTranscript()}</section>
           ${this.renderJumpToLatest()}
         </div>
-        <footer>
+        <footer class="${isRunning ? "running-footer" : ""}">
           <div class="prompt-shell">
+            <div class="composer-mode ${isRunning ? "running" : "idle"}">
+              <strong>${isRunning ? "Running input" : "Prompt"}</strong>
+              <span>${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
+            </div>
+            ${this.renderRunningQueue()}
             ${this.renderPromptImages()}
-            <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up). Type / for commands or @ for files." : "Prompt pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
             <input id="imageInput" class="hidden-file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple />
             ${this.renderCommandAutocomplete()}
             ${this.renderFileAutocomplete()}
           </div>
-          <div class="controls">
-            <button id="attachImages" title="Attach images" aria-label="Attach images" ${isController && !isRunning ? "" : "disabled"}>📎</button>
-            <button id="send" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}</button>
-            <button id="followUp" class="${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up</button>
+          <div class="controls ${isRunning ? "running" : ""}">
+            <button id="attachImages" class="icon-button" title="Attach images" aria-label="Attach images" ${isController && !isRunning ? "" : "disabled"}>📎</button>
+            <button id="send" class="primary-action" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}<small>Enter</small></button>
+            <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
             <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>
           </div>
         </footer>
