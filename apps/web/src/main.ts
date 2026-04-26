@@ -572,7 +572,7 @@ class PiWebAgentApp extends HTMLElement {
       if (!this.selectedSession && this.lastSelectedSessionId) {
         const session = sessions.find((candidate) => candidate.id === this.lastSelectedSessionId);
         if (session) {
-          this.openSession(session);
+          this.openSession(session, false);
           return;
         }
       }
@@ -593,16 +593,17 @@ class PiWebAgentApp extends HTMLElement {
         body: JSON.stringify({ cwd }),
       });
       this.sessions = [session, ...this.sessions];
-      this.openSession(session);
+      this.openSession(session, false);
     } catch (error) {
       this.notice = `Create session failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
     }
   }
 
-  private openSession(session: WebSession): void {
+  private openSession(session: WebSession, collapseSidebar = true): void {
     this.persistAttachmentWarningIfNeeded();
     this.selectedSession = session;
+    if (collapseSidebar && !this.sessionSidebarPinned) this.sessionSidebarCollapsed = true;
     this.lastSelectedSessionId = session.id;
     localStorage.setItem("piWebLastSessionId", session.id);
     this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
@@ -874,7 +875,7 @@ class PiWebAgentApp extends HTMLElement {
         body: JSON.stringify({ entryId }),
       });
       this.sessions = [session, ...this.sessions];
-      this.openSession(session);
+      this.openSession(session, false);
     } catch (error) {
       this.notice = `Fork failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
@@ -1274,6 +1275,7 @@ class PiWebAgentApp extends HTMLElement {
       this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
       localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
       localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
+      this.notice = this.sessionSidebarPinned ? "Session sidebar pinned open for future sessions." : "Session sidebar will auto-collapse after opening a session.";
       this.render();
     });
     this.querySelector<HTMLButtonElement>("#toggleOlderSessions")?.addEventListener("click", () => {
@@ -1918,7 +1920,7 @@ class PiWebAgentApp extends HTMLElement {
       <aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""}">
         <div class="sidebar-titlebar">
           <h1>Pi Web Agent</h1>
-          <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
+          <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : this.sessionSidebarPinned ? "Hide sessions and unpin auto-collapse" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
         </div>
         ${this.sessionSidebarCollapsed ? `
           <span class="collapsed-sidebar-label">Sessions</span>
@@ -1928,6 +1930,7 @@ class PiWebAgentApp extends HTMLElement {
           <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
           <button id="saveSettings">Save / Refresh</button>
           ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
+          ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open for new sessions</p>` : `<p class="sidebar-mode">Auto-collapses after opening a session</p>`}
           <hr />
           <label>Workspace
             <select id="workspace">

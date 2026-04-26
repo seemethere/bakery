@@ -213,10 +213,15 @@ button.active {
   color: #ffb5b5;
 }
 
-.empty-sidebar {
+.empty-sidebar,
+.sidebar-mode {
   color: #8b94a7;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.sidebar-mode {
+  margin: 8px 0 0;
 }
 
 main {
