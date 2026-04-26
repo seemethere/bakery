@@ -606,8 +606,12 @@ pre {
 }
 
 .markdown-body img {
+  display: block;
   max-width: 100%;
+  max-height: 520px;
+  border: 1px solid #343b49;
   border-radius: 8px;
+  object-fit: contain;
 }
 
 .markdown-body.streaming-plain pre {
@@ -640,6 +644,26 @@ pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   background: rgba(30, 64, 45, 0.35);
+}
+
+.rendered-image {
+  margin: 0;
+}
+
+.rendered-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  border: 1px solid #343b49;
+  border-radius: 8px;
+  background: #0f1117;
+  object-fit: contain;
+}
+
+.rendered-image figcaption {
+  margin-top: 6px;
+  color: #8b94a7;
+  font-size: 12px;
 }
 
 .right-panel {

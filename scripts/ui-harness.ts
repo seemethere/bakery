@@ -76,6 +76,7 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
       status: document.querySelector(".status")?.textContent ?? null,
       promptValue: (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value ?? null,
       rightPanelCollapsed: document.querySelector("pi-web-agent")?.classList.contains("inspector-collapsed") ?? null,
+      renderedImages: document.querySelectorAll(".message img").length,
     };
   });
 }
@@ -116,7 +117,7 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
 
 async function runManual(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, /session, /reload, /tree, @README.md, inspector tabs, and narrow-window resizing.");
+  await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, a prompt asking for an image/screenshot preview, /session, /reload, /tree, @README.md, inspector tabs, and narrow-window resizing.");
   return collectMetrics(page);
 }
 

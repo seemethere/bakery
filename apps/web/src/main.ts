@@ -8,7 +8,7 @@ type TranscriptSegment =
   | { kind: "markdown"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "toolCall"; label: string }
-  | { kind: "image"; label: string }
+  | { kind: "image"; label: string; src?: string }
   | { kind: "pre"; text: string };
 
 type TranscriptItem = {
@@ -77,6 +77,7 @@ markdownRenderer.image = function ({ href, title, text }) {
 };
 
 function sanitizeUrl(value: string): string | null {
+  if (/^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) return value.replace(/\s/g, "");
   try {
     const url = new URL(value, window.location.href);
     if (["http:", "https:", "mailto:", "file:"].includes(url.protocol)) return value;
@@ -84,6 +85,16 @@ function sanitizeUrl(value: string): string | null {
     if (value.startsWith("#") || value.startsWith("/")) return value;
   }
   return null;
+}
+
+function imagePartToSegment(part: Record<string, unknown>): TranscriptSegment {
+  const mimeType = typeof part.mimeType === "string" ? part.mimeType : typeof part.mediaType === "string" ? part.mediaType : "image/png";
+  const label = `[image${mimeType ? `: ${mimeType}` : ""}]`;
+  const rawUrl = typeof part.url === "string" ? part.url : typeof part.src === "string" ? part.src : undefined;
+  const rawData = typeof part.data === "string" ? part.data : typeof part.base64 === "string" ? part.base64 : undefined;
+  const candidate = rawUrl ?? (rawData ? `data:${mimeType};base64,${rawData}` : undefined);
+  const src = candidate ? sanitizeUrl(candidate) : null;
+  return src ? { kind: "image", label, src } : { kind: "image", label };
 }
 
 function renderMarkdown(value: string): string {
@@ -165,7 +176,7 @@ function contentToSegments(content: unknown): TranscriptSegment[] {
     if (part.type === "text" && String(part.text ?? "").trim()) return [{ kind: "markdown", text: String(part.text) }];
     if (part.type === "thinking" && String(part.thinking ?? "").trim()) return [{ kind: "thinking", text: String(part.thinking) }];
     if (part.type === "toolCall") return [{ kind: "toolCall", label: formatToolCall(part) }];
-    if (part.type === "image") return [{ kind: "image", label: "[image]" }];
+    if (part.type === "image") return [imagePartToSegment(part)];
     return [];
   });
 }
@@ -912,7 +923,11 @@ class PiWebAgentApp extends HTMLElement {
           return `<div class="markdown-body thinking-trace">${content}</div>`;
         }
         if (segment.kind === "toolCall") return `<div class="inline-tool-call">${escapeHtml(segment.label)}</div>`;
-        if (segment.kind === "image") return `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
+        if (segment.kind === "image") {
+          return segment.src
+            ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
+            : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
+        }
         return `<pre>${escapeHtml(segment.text)}</pre>`;
       })
       .join("");
