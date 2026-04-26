@@ -4,7 +4,7 @@ Use this file to preserve context between coding sessions. Keep entries short an
 
 ## Current status
 
-Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support and improved transcript readability:
+Implemented the first basic vertical slice scaffold plus initial multi-client lifecycle support, improved transcript readability, file autocomplete, and slash-command autocomplete:
 
 - Bun workspaces monorepo with `apps/server`, `apps/web`, and `packages/protocol`.
 - Shared Zod/TypeScript protocol definitions, including controller state, session lifecycle config, and runtime model/thinking settings.
@@ -17,6 +17,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Web dev server now disables Vite browser HMR/reload by default so in-browser agent edits do not refresh/kill the UI session; set `PI_WEB_VITE_HMR=true` to opt back in. Server `dev` now runs without Bun watch by default so edits to backend/shared packages do not restart and kill in-process pi sessions; use `bun run dev:server:watch` to opt into backend watch mode. The web UI also remembers and reopens the last selected session after a page reload.
 - File search/complete endpoints now call the ignore-aware workspace scanner, validate query params with shared Zod schemas, cap result limits, skip default heavy/binary paths, and keep nested `.gitignore` rules scoped to their subtree.
 - Prompt input now has `@file` autocomplete backed by the file search/complete endpoints, with keyboard navigation, click selection, directory continuation, and prompt draft preservation across live transcript rerenders; fixed dropdown closing during rerenders while the prompt remains focused.
+- Added shared command metadata protocol, `GET /api/sessions/:id/commands`, and prompt-box slash-command autocomplete for built-ins, extension commands, prompt templates, and skills; terminal/UI-only built-ins are marked unsupported in metadata.
 
 ## How to run
 
@@ -42,13 +43,13 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after fixing prompt autocomplete focus/rerender behavior.
+Latest: `bun run check` passes after adding the command metadata endpoint and slash-command autocomplete.
 
 ## Next priorities
 
-1. Manually test prompt-box `@file` autocomplete in the browser, especially directory continuation, keyboard selection, and behavior during live agent output.
-2. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
-3. Add command metadata endpoint and slash-command autocomplete.
+1. Manually test prompt-box autocomplete in the browser, especially slash commands, directory continuation, keyboard selection, and behavior during live agent output.
+2. Test unsupported built-in slash commands in web sessions and route more of them to native web controls or structured unsupported responses.
+3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
 4. Add right-side details/preview panel for selected message/tool data.
 5. Add basic branch/fork controls and tree summary using pi session manager APIs.
 6. Improve controller handoff policy/confirmation and richer reconnect/error UX.

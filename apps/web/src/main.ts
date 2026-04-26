@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { PROTOCOL_VERSION, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type CommandInfo, type CommandResponse, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type ServerEnvelope, type SessionRuntimeSettings, type SessionSnapshot, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -26,6 +26,16 @@ type FileAutocompleteState = {
   start: number;
   end: number;
   files: FileMatch[];
+  selectedIndex: number;
+  loading: boolean;
+};
+
+type CommandAutocompleteState = {
+  active: boolean;
+  token: string;
+  start: number;
+  end: number;
+  commands: CommandInfo[];
   selectedIndex: number;
   loading: boolean;
 };
@@ -201,6 +211,9 @@ class PiWebAgentApp extends HTMLElement {
   private fileAutocomplete: FileAutocompleteState = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
   private fileAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private fileAutocompleteRequest = 0;
+  private commandAutocomplete: CommandAutocompleteState = { active: false, token: "", start: 0, end: 0, commands: [], selectedIndex: 0, loading: false };
+  private commandAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
+  private commandAutocompleteRequest = 0;
 
   connectedCallback(): void {
     this.render();
@@ -400,6 +413,7 @@ class PiWebAgentApp extends HTMLElement {
     this.ws.send(JSON.stringify({ type, text }));
     this.promptDraft = "";
     this.closeFileAutocomplete();
+    this.closeCommandAutocomplete();
     input.value = "";
   }
 
@@ -424,8 +438,19 @@ class PiWebAgentApp extends HTMLElement {
     return { token: match[2] ?? "", start: end - (match[2]?.length ?? 0) - 1, end };
   }
 
+  private getCommandToken(input: HTMLTextAreaElement): { token: string; start: number; end: number } | null {
+    const end = input.selectionStart ?? input.value.length;
+    const beforeCursor = input.value.slice(0, end);
+    const lineStart = Math.max(beforeCursor.lastIndexOf("\n") + 1, 0);
+    const line = beforeCursor.slice(lineStart);
+    const match = /^\/([^\s]*)$/.exec(line);
+    if (!match) return null;
+    return { token: match[1] ?? "", start: lineStart, end };
+  }
+
   private updatePromptDraft(input: HTMLTextAreaElement): void {
     this.promptDraft = input.value;
+    this.updateCommandAutocomplete(input);
     this.updateFileAutocomplete(input);
   }
 
@@ -438,6 +463,7 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
 
+    if (this.commandAutocomplete.active) this.closeCommandAutocomplete();
     this.fileAutocomplete = { ...this.fileAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
     this.render();
     if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
@@ -476,6 +502,69 @@ class PiWebAgentApp extends HTMLElement {
     if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
     this.fileAutocompleteRequest++;
     this.fileAutocomplete = { active: false, token: "", start: 0, end: 0, files: [], selectedIndex: 0, loading: false };
+  }
+
+  private updateCommandAutocomplete(input: HTMLTextAreaElement): void {
+    const token = this.getCommandToken(input);
+    if (!token || !this.selectedSession) {
+      const wasActive = this.commandAutocomplete.active;
+      this.closeCommandAutocomplete();
+      if (wasActive) this.render();
+      return;
+    }
+
+    if (this.fileAutocomplete.active) this.closeFileAutocomplete();
+    this.commandAutocomplete = { ...this.commandAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
+    this.render();
+    if (this.commandAutocompleteTimer) clearTimeout(this.commandAutocompleteTimer);
+    const requestId = ++this.commandAutocompleteRequest;
+    this.commandAutocompleteTimer = setTimeout(() => void this.fetchCommandAutocomplete(token, requestId), 120);
+  }
+
+  private async fetchCommandAutocomplete(token: { token: string; start: number; end: number }, requestId: number): Promise<void> {
+    if (!this.selectedSession) return;
+    try {
+      const encoded = encodeURIComponent(token.token);
+      const response = await this.api<CommandResponse>(`/api/sessions/${this.selectedSession.id}/commands?q=${encoded}&limit=20`);
+      if (requestId !== this.commandAutocompleteRequest) return;
+      this.commandAutocomplete = {
+        active: true,
+        token: token.token,
+        start: token.start,
+        end: token.end,
+        commands: response.commands,
+        selectedIndex: 0,
+        loading: false,
+      };
+      this.render();
+    } catch (error) {
+      if (requestId !== this.commandAutocompleteRequest) return;
+      this.commandAutocomplete = { ...this.commandAutocomplete, loading: false, commands: [] };
+      this.notice = `Command autocomplete failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private closeCommandAutocomplete(): void {
+    if (this.commandAutocompleteTimer) clearTimeout(this.commandAutocompleteTimer);
+    this.commandAutocompleteRequest++;
+    this.commandAutocomplete = { active: false, token: "", start: 0, end: 0, commands: [], selectedIndex: 0, loading: false };
+  }
+
+  private chooseCommandAutocomplete(index = this.commandAutocomplete.selectedIndex): void {
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const choice = this.commandAutocomplete.commands[index];
+    if (!input || !choice) return;
+    const inserted = `/${choice.name}`;
+    const before = this.promptDraft.slice(0, this.commandAutocomplete.start);
+    const after = this.promptDraft.slice(this.commandAutocomplete.end);
+    this.promptDraft = `${before}${inserted} ${after}`;
+    input.value = this.promptDraft;
+    const cursor = before.length + inserted.length + 1;
+    input.focus();
+    input.setSelectionRange(cursor, cursor);
+    this.closeCommandAutocomplete();
+    this.render();
   }
 
   private chooseFileAutocomplete(index = this.fileAutocomplete.selectedIndex): void {
@@ -540,12 +629,34 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
       window.setTimeout(() => {
         const focused = this.querySelector(":focus");
-        if (focused?.id === "prompt" || focused?.closest(".file-autocomplete")) return;
+        if (focused?.id === "prompt" || focused?.closest(".file-autocomplete") || focused?.closest(".command-autocomplete")) return;
         this.closeFileAutocomplete();
+        this.closeCommandAutocomplete();
         this.render();
       }, 120);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
+      if (this.commandAutocomplete.active) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          const count = Math.max(1, this.commandAutocomplete.commands.length);
+          this.commandAutocomplete.selectedIndex = (this.commandAutocomplete.selectedIndex + direction + count) % count;
+          this.render();
+          return;
+        }
+        if ((event.key === "Tab" || event.key === "Enter") && this.commandAutocomplete.commands.length > 0) {
+          event.preventDefault();
+          this.chooseCommandAutocomplete();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this.closeCommandAutocomplete();
+          this.render();
+          return;
+        }
+      }
       if (this.fileAutocomplete.active) {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
@@ -585,6 +696,10 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => this.chooseFileAutocomplete(Number(button.dataset.fileIndex ?? "0")));
     });
+    this.querySelectorAll<HTMLButtonElement>("[data-command-index]").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => this.chooseCommandAutocomplete(Number(button.dataset.commandIndex ?? "0")));
+    });
   }
 
   private renderSegments(item: TranscriptItem): string {
@@ -601,6 +716,28 @@ class PiWebAgentApp extends HTMLElement {
         return `<pre>${escapeHtml(segment.text)}</pre>`;
       })
       .join("");
+  }
+
+  private renderCommandAutocomplete(): string {
+    if (!this.commandAutocomplete.active) return "";
+    const title = this.commandAutocomplete.loading
+      ? "Loading commands..."
+      : this.commandAutocomplete.commands.length === 0
+        ? "No command matches"
+        : "Slash commands";
+    return `
+      <div class="command-autocomplete" role="listbox" aria-label="Slash command autocomplete">
+        <div class="file-autocomplete-title">${escapeHtml(title)} <kbd>Tab</kbd>/<kbd>Enter</kbd> to insert</div>
+        ${this.commandAutocomplete.commands.map((command, index) => `
+          <button type="button" role="option" data-command-index="${index}" class="${index === this.commandAutocomplete.selectedIndex ? "selected" : ""}">
+            <span class="command-name">/${escapeHtml(command.name)}</span>
+            <span class="command-meta">
+              <strong>${escapeHtml(command.source)}${command.unsupported ? " · UI-only/unsupported" : ""}</strong>
+              ${command.argumentHint ? `<em>${escapeHtml(command.argumentHint)}</em>` : ""}
+              ${command.description ? `<small>${escapeHtml(command.description)}</small>` : ""}
+            </span>
+          </button>`).join("")}
+      </div>`;
   }
 
   private renderFileAutocomplete(): string {
@@ -726,7 +863,8 @@ class PiWebAgentApp extends HTMLElement {
         <section class="transcript">${this.renderTranscript()}</section>
         <footer>
           <div class="prompt-shell">
-            <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up). Type @ to attach a file path." : "Prompt pi... Type @ to attach a file path.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            <textarea id="prompt" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer pi... (Alt+Enter for follow-up). Type / for commands or @ for files." : "Prompt pi... Type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            ${this.renderCommandAutocomplete()}
             ${this.renderFileAutocomplete()}
           </div>
           <div class="controls">

@@ -5,6 +5,7 @@ import websocket from "@fastify/websocket";
 import {
   PROTOCOL_VERSION,
   clientMessageSchema,
+  commandQuerySchema,
   createSessionRequestSchema,
   fileCompleteQuerySchema,
   fileSearchQuerySchema,
@@ -134,10 +135,31 @@ app.get<{ Params: { id: string } }>("/api/sessions/:id/tree", async (request, re
   return { sessionId: session.id, tree: null, note: "Pi session tree integration pending" };
 });
 
-app.get<{ Params: { id: string } }>("/api/sessions/:id/commands", async (request, reply) => {
+app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string | number } }>("/api/sessions/:id/commands", async (request, reply) => {
   const session = store.getSession(request.params.id);
   if (!session) return reply.code(404).send({ error: "session not found" });
-  return { commands: [] };
+  const parsed = commandQuerySchema.safeParse(request.query);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+  try {
+    const handle = await runner.createSession({
+      id: session.id,
+      cwd: session.cwd,
+      piSessionFile: session.piSessionFile,
+    });
+    const query = parsed.data.q.toLowerCase();
+    const commands = handle.getCommands()
+      .filter((command) => !query || command.name.toLowerCase().includes(query) || command.description?.toLowerCase().includes(query))
+      .sort((a, b) => {
+        const aStarts = query && a.name.toLowerCase().startsWith(query) ? 0 : 1;
+        const bStarts = query && b.name.toLowerCase().startsWith(query) ? 0 : 1;
+        return aStarts - bStarts || a.name.localeCompare(b.name);
+      })
+      .slice(0, parsed.data.limit);
+    return { query: parsed.data.q, commands };
+  } catch (error) {
+    return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string | number } }>("/api/sessions/:id/files/search", async (request, reply) => {

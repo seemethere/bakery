@@ -124,7 +124,8 @@ textarea {
   width: 100%;
 }
 
-.file-autocomplete {
+.file-autocomplete,
+.command-autocomplete {
   position: absolute;
   left: 0;
   right: 0;
@@ -148,7 +149,8 @@ textarea {
   padding: 5px 7px 8px;
 }
 
-.file-autocomplete kbd {
+.file-autocomplete kbd,
+.command-autocomplete kbd {
   border: 1px solid #343b49;
   border-radius: 4px;
   background: #0f1117;
@@ -158,7 +160,8 @@ textarea {
   font-size: 11px;
 }
 
-.file-autocomplete button {
+.file-autocomplete button,
+.command-autocomplete button {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -171,9 +174,43 @@ textarea {
 }
 
 .file-autocomplete button:hover,
-.file-autocomplete button.selected {
+.file-autocomplete button.selected,
+.command-autocomplete button:hover,
+.command-autocomplete button.selected {
   border-color: #668cff;
   background: #22305a;
+}
+
+.command-name {
+  color: #a9c1ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+.command-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.command-meta strong,
+.command-meta em,
+.command-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-meta strong {
+  color: #c8ced8;
+  font-size: 12px;
+}
+
+.command-meta em,
+.command-meta small {
+  color: #8b94a7;
+  font-size: 12px;
+  font-style: normal;
 }
 
 .file-autocomplete strong {

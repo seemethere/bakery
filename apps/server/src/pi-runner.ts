@@ -5,7 +5,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { ModelInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
+import type { CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 
 export type CreateSessionOptions = {
   id: string;
@@ -25,6 +25,7 @@ export type SessionHandle = {
   setModel(model: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
   getSettings(): Promise<SessionRuntimeSettings>;
+  getCommands(): CommandInfo[];
   subscribe(listener: (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void): () => void;
   snapshot(webSession: WebSession): Promise<SessionSnapshot>;
   dispose(): void;
@@ -47,6 +48,30 @@ function normalizeEvent(event: AgentSessionEvent): NormalizedAgentEvent {
 function getStatus(session: AgentSession): SessionSnapshot["status"] {
   return session.isStreaming ? "running" : "idle";
 }
+
+const BUILTIN_COMMANDS: CommandInfo[] = [
+  { name: "settings", description: "Open settings menu", source: "builtin", unsupported: true },
+  { name: "model", description: "Select model (use the web Model selector instead)", source: "builtin", unsupported: true },
+  { name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling", source: "builtin", unsupported: true },
+  { name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)", source: "builtin" },
+  { name: "import", description: "Import and resume a session from a JSONL file", source: "builtin", unsupported: true },
+  { name: "share", description: "Share session as a secret GitHub gist", source: "builtin" },
+  { name: "copy", description: "Copy last agent message to clipboard", source: "builtin", unsupported: true },
+  { name: "name", description: "Set session display name", source: "builtin" },
+  { name: "session", description: "Show session info and stats", source: "builtin" },
+  { name: "changelog", description: "Show changelog entries", source: "builtin" },
+  { name: "hotkeys", description: "Show all keyboard shortcuts", source: "builtin", unsupported: true },
+  { name: "fork", description: "Create a new fork from a previous user message", source: "builtin", unsupported: true },
+  { name: "clone", description: "Duplicate the current session at the current position", source: "builtin", unsupported: true },
+  { name: "tree", description: "Navigate session tree (switch branches)", source: "builtin", unsupported: true },
+  { name: "login", description: "Configure provider authentication", source: "builtin", unsupported: true },
+  { name: "logout", description: "Remove provider authentication", source: "builtin", unsupported: true },
+  { name: "new", description: "Start a new session", source: "builtin", unsupported: true },
+  { name: "compact", description: "Manually compact the session context", source: "builtin" },
+  { name: "resume", description: "Resume a different session", source: "builtin", unsupported: true },
+  { name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes", source: "builtin" },
+  { name: "quit", description: "Quit pi", source: "builtin", unsupported: true },
+];
 
 function toModelInfo(model: { id: string; provider: string; name?: string; reasoning?: boolean } | undefined): ModelInfo | null {
   if (!model) return null;
@@ -111,6 +136,29 @@ class InProcessSessionHandle implements SessionHandle {
       thinkingLevel: this.session.thinkingLevel,
       availableThinkingLevels,
     };
+  }
+
+  getCommands(): CommandInfo[] {
+    const extensionCommands = this.session.extensionRunner.getRegisteredCommands().map((command) => ({
+      name: command.invocationName,
+      description: command.description,
+      source: "extension" as const,
+      sourceInfo: command.sourceInfo,
+    }));
+    const promptCommands = this.session.promptTemplates.map((template) => ({
+      name: template.name,
+      description: template.description,
+      argumentHint: template.argumentHint,
+      source: "prompt" as const,
+      sourceInfo: template.sourceInfo,
+    }));
+    const skillCommands = this.session.resourceLoader.getSkills().skills.map((skill) => ({
+      name: `skill:${skill.name}`,
+      description: skill.description,
+      source: "skill" as const,
+      sourceInfo: skill.sourceInfo,
+    }));
+    return [...BUILTIN_COMMANDS, ...extensionCommands, ...promptCommands, ...skillCommands];
   }
 
   subscribe(listener: (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void): () => void {

@@ -110,6 +110,31 @@ export const fileCompleteResponseSchema = z.object({
 });
 export type FileCompleteResponse = z.infer<typeof fileCompleteResponseSchema>;
 
+export const commandSourceSchema = z.enum(["builtin", "extension", "prompt", "skill"]);
+export type CommandSource = z.infer<typeof commandSourceSchema>;
+
+export const commandInfoSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  source: commandSourceSchema,
+  argumentHint: z.string().optional(),
+  unsupported: z.boolean().optional(),
+  sourceInfo: z.unknown().optional(),
+});
+export type CommandInfo = z.infer<typeof commandInfoSchema>;
+
+export const commandQuerySchema = z.object({
+  q: z.string().max(100).optional().default(""),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+});
+export type CommandQuery = z.infer<typeof commandQuerySchema>;
+
+export const commandResponseSchema = z.object({
+  query: z.string(),
+  commands: z.array(commandInfoSchema),
+});
+export type CommandResponse = z.infer<typeof commandResponseSchema>;
+
 export const agentStatusSchema = z.enum(["idle", "running", "aborting", "error"]);
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
