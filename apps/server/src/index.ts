@@ -12,9 +12,12 @@ import {
   fileRawQuerySchema,
   fileSearchQuerySchema,
   forkSessionRequestSchema,
+  generateSessionMetadataRequestSchema,
   navigateTreeRequestSchema,
+  updateAppSettingsRequestSchema,
   updateSessionRequestSchema,
   type ControllerInfo,
+  type SessionMetadataSuggestion,
   type HelloMessage,
   type ServerEnvelope,
   type ServerMessage,
@@ -92,6 +95,14 @@ app.get("/api/models", async () => ({
   },
 }));
 
+app.get("/api/settings", async () => store.getSettings());
+
+app.patch("/api/settings", async (request, reply) => {
+  const parsed = updateAppSettingsRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  return store.updateSettings(parsed.data);
+});
+
 type PiSessionTreeNode = ReturnType<SessionManager["getTree"]>[number];
 
 function flattenTree(nodes: PiSessionTreeNode[]): PiSessionTreeNode[] {
@@ -105,6 +116,71 @@ function messageText(content: unknown): string {
     .map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : "")
     .filter(Boolean)
     .join(" ");
+}
+
+function cleanMetadataText(value: string, max: number): string {
+  return value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/(?:bearer\s+)[a-z0-9._~+/-]+=*/gi, "bearer [redacted]")
+    .replace(/[a-z0-9]{32,}/gi, "[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+function isGenericPrompt(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
+  return /^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|what'?s next|what next|next|next up|next thing|okay next thing|alright what'?s next|nice what'?s next)(?: please)?$/.test(normalized);
+}
+
+function firstPromptTitle(text: string): string | null {
+  const cleaned = cleanMetadataText(text, 60);
+  if (!cleaned || isGenericPrompt(cleaned) || cleaned.length < 8) return null;
+  return cleaned;
+}
+
+function sessionEntries(session: WebSession): SessionEntry[] {
+  const handle = runner.getSession(session.id);
+  const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, config.sessionDir, session.cwd);
+  return flattenTree(manager.getTree()).map((node) => node.entry).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
+function transcriptSignals(session: WebSession): { users: string[]; assistants: string[]; compactions: string[] } {
+  const users: string[] = [];
+  const assistants: string[] = [];
+  const compactions: string[] = [];
+  for (const entry of sessionEntries(session)) {
+    if (entry.type === "message") {
+      const message = entry.message as { role?: string; content?: unknown };
+      const text = cleanMetadataText(messageText(message.content), 360);
+      if (!text) continue;
+      if (message.role === "user") users.push(text);
+      if (message.role === "assistant") assistants.push(text);
+    } else if (entry.type === "compaction" || entry.type === "branch_summary") {
+      compactions.push(cleanMetadataText(entry.summary, 360));
+    }
+  }
+  return { users, assistants, compactions };
+}
+
+function generateHeuristicMetadata(session: WebSession): SessionMetadataSuggestion {
+  let signals: ReturnType<typeof transcriptSignals>;
+  try {
+    signals = transcriptSignals(session);
+  } catch (error) {
+    return { confidence: "low", deferred: true, reason: error instanceof Error ? error.message : String(error) };
+  }
+  const meaningfulUsers = signals.users.filter((text) => !isGenericPrompt(text));
+  const hasAssistant = signals.assistants.length > 0 || signals.compactions.length > 0;
+  if (meaningfulUsers.length === 0 && !hasAssistant) return { confidence: "low", deferred: true, reason: "Not enough session context yet." };
+  const basis = meaningfulUsers[0] ?? signals.assistants[0] ?? signals.compactions[0] ?? "";
+  const title = firstPromptTitle(basis)?.replace(/[.!?]+$/, "") || undefined;
+  const topicParts = [...meaningfulUsers.slice(0, 3), ...signals.assistants.slice(0, 1), ...signals.compactions.slice(0, 1)].filter(Boolean);
+  const summary = hasAssistant
+    ? cleanMetadataText(`Discusses ${topicParts.join(". ")}`, 300).replace(/\.$/, "")
+    : undefined;
+  if (!title && !summary) return { confidence: "low", deferred: true, reason: "Not enough specific session context yet." };
+  return { title, summary, confidence: meaningfulUsers.length > 0 && hasAssistant ? "medium" : "low" };
 }
 
 async function enrichSession(session: WebSession): Promise<WebSession> {
@@ -201,7 +277,7 @@ app.post("/api/sessions", async (request, reply) => {
     const cwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
     const id = crypto.randomUUID();
     const piSessionFile = resolve(config.sessionDir, `${id}.jsonl`);
-    const session = store.createSession({ id, cwd, piSessionFile, title: parsed.data.title ?? null });
+    const session = store.createSession({ id, cwd, piSessionFile, title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
     return reply.code(201).send(session);
   } catch (error) {
     return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
@@ -222,12 +298,30 @@ app.patch<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply
   const existing = store.getSession(request.params.id);
   if (!existing) return reply.code(404).send({ error: "session not found" });
 
-  if (Object.hasOwn(parsed.data, "title")) store.updateSession(existing.id, { title: parsed.data.title ?? null });
+  if (Object.hasOwn(parsed.data, "title")) store.updateSession(existing.id, { title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
+  if (Object.hasOwn(parsed.data, "summary")) store.updateSession(existing.id, { summary: parsed.data.summary ?? null, summarySource: parsed.data.summary ? "manual" : "unset" });
+  if (parsed.data.autoGenerateMetadataOverride) store.updateSession(existing.id, { autoGenerateMetadataOverride: parsed.data.autoGenerateMetadataOverride });
+  const updatedAfterMetadata = store.getSession(existing.id);
+  const handle = runner.getSession(existing.id);
+  if (handle && Object.hasOwn(parsed.data, "title") && parsed.data.title) handle.setSessionName(parsed.data.title);
+  const hub = sessionHubs.get(existing.id);
+  if (hub && updatedAfterMetadata) hub.broadcastMetadataUpdate(updatedAfterMetadata);
   store.updatePreferences(existing.id, {
     ...(parsed.data.toolPermissionMode ? { toolPermissionMode: parsed.data.toolPermissionMode } : {}),
     ...(parsed.data.uiStateJson ? { uiStateJson: parsed.data.uiStateJson } : {}),
   });
   return store.getSession(existing.id);
+});
+
+app.post<{ Params: { id: string } }>("/api/sessions/:id/metadata/generate", async (request, reply) => {
+  const parsed = generateSessionMetadataRequestSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  const session = store.getSession(request.params.id);
+  if (!session) return reply.code(404).send({ error: "session not found" });
+  const handle = runner.getSession(session.id);
+  if (handle && (await handle.snapshot(session)).status !== "idle") return reply.code(409).send({ error: "metadata generation is available when the session is idle" });
+  const suggestion = generateHeuristicMetadata(session);
+  return suggestion;
 });
 
 app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
@@ -285,7 +379,7 @@ app.post<{ Params: { id: string } }>("/api/sessions/:id/fork", async (request, r
     const id = crypto.randomUUID();
     const piSessionFile = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId);
     const title = parsed.data.title ?? `Fork of ${source.title ?? source.cwd}`;
-    const session = store.createSession({ id, cwd: source.cwd, piSessionFile, title });
+    const session = store.createSession({ id, cwd: source.cwd, piSessionFile, title, titleSource: parsed.data.title ? "manual" : "derived", summary: source.summary, summarySource: source.summary ? "derived" : "unset" });
     return reply.code(201).send(session);
   } catch (error) {
     return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
@@ -383,6 +477,15 @@ function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
   return { seq, time: new Date().toISOString(), payload };
 }
 
+function parseNameCommand(text: string): { matched: boolean; clear?: boolean; title?: string } {
+  const trimmed = text.trim();
+  if (!/^\/name(?:\s|$)/.test(trimmed)) return { matched: false };
+  const args = trimmed.replace(/^\/name(?:\s+)?/, "").trim();
+  if (args === "--clear") return { matched: true, clear: true };
+  if (!args) return { matched: true };
+  return { matched: true, title: cleanMetadataText(args, 120) };
+}
+
 type SocketClient = {
   clientId: string;
   seq: number;
@@ -400,7 +503,9 @@ class SessionHub {
   constructor(private readonly handle: Awaited<ReturnType<typeof runner.createSession>>) {
     this.unsubscribe = handle.subscribe((event, raw) => {
       this.broadcast({ type: "agent_event", event, raw });
-      if (event.type === "agent_end" || event.type === "turn_end") void this.broadcastSettingsUpdate();
+      if (event.type === "agent_end" || event.type === "turn_end") {
+        void this.broadcastSettingsUpdate();
+      }
       const webSession = store.getSession(handle.id);
       if (this.clients.size === 0 && webSession) {
         void handle.snapshot(webSession).then((snapshot) => {
@@ -513,6 +618,10 @@ class SessionHub {
     for (const client of this.clients.values()) this.send(client, payload);
   }
 
+  broadcastMetadataUpdate(session: WebSession): void {
+    this.broadcast({ type: "session_metadata_update", session });
+  }
+
   private broadcastControllerUpdate(): void {
     for (const client of this.clients.values()) this.send(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
   }
@@ -602,6 +711,33 @@ class SessionHub {
 
     try {
       if (parsed.data.type === "prompt") {
+        const nameCommand = parseNameCommand(parsed.data.text);
+        if (nameCommand.matched) {
+          const webSession = store.getSession(this.handle.id);
+          if (!webSession) throw new Error("session not found");
+          let body: string;
+          if (nameCommand.clear) {
+            const updated = store.updateSession(webSession.id, { title: null, titleSource: "unset" });
+            if (updated) this.broadcastMetadataUpdate(updated);
+            body = "Session title cleared. Click ✨ to generate a new title/summary suggestion when enough context is available.";
+          } else if (nameCommand.title) {
+            this.handle.setSessionName(nameCommand.title);
+            const updated = store.updateSession(webSession.id, { title: nameCommand.title, titleSource: "manual" });
+            if (updated) this.broadcastMetadataUpdate(updated);
+            body = `Session title set to: ${nameCommand.title}`;
+          } else {
+            body = `Current title: ${webSession.title ?? "(unset)"}\nSource: ${webSession.titleSource}\nUsage: /name <title> or /name --clear`;
+          }
+          this.broadcast({
+            type: "agent_event",
+            event: {
+              type: "web_command_result",
+              time: new Date().toISOString(),
+              data: { type: "web_command_result", id: `command:${Date.now()}`, title: "/name", body },
+            },
+          });
+          return;
+        }
         const builtinResult = await this.handle.runBuiltinCommand(parsed.data.text);
         if (builtinResult.handled) {
           this.broadcast({
@@ -622,7 +758,13 @@ class SessionHub {
           return;
         }
         const webSession = store.getSession(this.handle.id);
-        if (webSession && !webSession.title) store.updateSession(webSession.id, { title: parsed.data.text.slice(0, 60) });
+        if (webSession && !webSession.title) {
+          const title = firstPromptTitle(parsed.data.text);
+          if (title) {
+            const updated = store.updateSession(webSession.id, { title, titleSource: "first_prompt" });
+            if (updated) this.broadcastMetadataUpdate(updated);
+          }
+        }
         await this.handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
         await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));

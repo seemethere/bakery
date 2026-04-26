@@ -143,11 +143,17 @@ session_preferences (
 );
 ```
 
-Titles:
+Titles and summaries:
 
-- Default title is the first user prompt truncated to about 60 characters.
-- User can manually edit.
-- LLM-generated titles are deferred.
+- The canonical visible session title lives in web metadata and is used by the header, sidebar, `/name`, and future generated metadata flows.
+- Titles track provenance: `unset`, `first_prompt`, `agent`, `manual`, or `derived`.
+- Summaries track provenance: `unset`, `agent`, `manual`, or `derived`.
+- Manual/user-approved metadata is protected from automatic overwrite. Clearing a field returns it to `unset`.
+- Specific first prompts may create an immediate provisional `first_prompt` title; generic prompts like “what's next?” remain untitled and display a temporary “New session” label/snippet until enough context exists.
+- Title/summary generation is explicit and separate from the main transcript; it should not add conversation messages or mutate the session tree.
+- To avoid surprise token spend, generation runs only when the user clicks the magic title/summary action. Automatic background generation is deferred.
+- The magic action generates title+summary suggestions inline; accepting suggestions marks those fields as `manual`.
+- Session summaries are plain-text web metadata, collapsed by default, and expandable in session chrome/sidebar/details rather than transcript content.
 
 ## Pi SDK integration
 

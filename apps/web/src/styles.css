@@ -1743,3 +1743,92 @@ pre {
   color: #8b94a7;
   font-size: 13px;
 }
+
+.session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(720px, 60vw);
+  font-size: 12px;
+  color: #aeb8ca;
+}
+
+.session-summary-toggle {
+  border: 1px solid rgba(142, 155, 180, 0.22);
+  background: rgba(20, 28, 42, 0.7);
+  color: #c9d3e6;
+  border-radius: 7px;
+  padding: 3px 7px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-summary-body,
+.metadata-suggestion {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(142, 155, 180, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 36, 0.82);
+  line-height: 1.4;
+}
+
+.session-summary-empty {
+  color: #768197;
+}
+
+.metadata-suggestion p {
+  margin: 4px 0;
+}
+
+.metadata-suggestion.error {
+  color: #ffb4b4;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.metadata-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.app-settings {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(142, 155, 180, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 36, 0.55);
+  font-size: 12px;
+}
+
+.app-settings label {
+  display: grid;
+  gap: 3px;
+}
+
+.app-settings small {
+  color: #7f8ba3;
+}
+
+@media (max-width: 900px) {
+  .session-summary {
+    max-width: 52vw;
+  }
+
+  .session-summary-body,
+  .metadata-suggestion {
+    max-height: 120px;
+    overflow: auto;
+  }
+}

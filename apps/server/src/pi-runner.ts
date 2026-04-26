@@ -36,6 +36,7 @@ export type SessionHandle = {
   abort(): Promise<void>;
   setModel(model: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
+  setSessionName(name: string): void;
   getSettings(): Promise<SessionRuntimeSettings>;
   getCommands(): CommandInfo[];
   runBuiltinCommand(text: string): Promise<BuiltinCommandResult>;
@@ -190,6 +191,10 @@ class InProcessSessionHandle implements SessionHandle {
     this.session.setThinkingLevel(level as never);
   }
 
+  setSessionName(name: string): void {
+    this.session.setSessionName(name);
+  }
+
   async getSettings(): Promise<SessionRuntimeSettings> {
     const availableModels = (await this.session.modelRegistry.getAvailable())
       .map((model) => toModelInfo(model))
@@ -253,11 +258,7 @@ class InProcessSessionHandle implements SessionHandle {
     if (parsed.name === "session") {
       return { handled: true, title: "/session", body: formatSessionStats(this.session.getSessionStats()) };
     }
-    if (parsed.name === "name") {
-      if (!parsed.args) return { handled: true, title: "/name", body: "Usage: /name <session name>", isError: true };
-      this.session.setSessionName(parsed.args);
-      return { handled: true, title: "/name", body: `Session name set to: ${parsed.args}` };
-    }
+    if (parsed.name === "name") return { handled: false };
     if (parsed.name === "copy") {
       return { handled: true, title: "/copy", body: this.session.getLastAssistantText() || "No assistant message to copy yet." };
     }

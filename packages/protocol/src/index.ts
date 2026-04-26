@@ -57,11 +57,44 @@ export const workspaceSchema = z.object({
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
+export const titleSourceSchema = z.enum(["unset", "first_prompt", "agent", "manual", "derived"]);
+export type TitleSource = z.infer<typeof titleSourceSchema>;
+
+export const summarySourceSchema = z.enum(["unset", "agent", "manual", "derived"]);
+export type SummarySource = z.infer<typeof summarySourceSchema>;
+
+export const autoGenerateMetadataOverrideSchema = z.enum(["default", "on", "off"]);
+export type AutoGenerateMetadataOverride = z.infer<typeof autoGenerateMetadataOverrideSchema>;
+
+export const metadataModelSelectionSchema = z.object({
+  model: z.string().min(1),
+}).nullable();
+export type MetadataModelSelection = z.infer<typeof metadataModelSelectionSchema>;
+
+export const appSettingsSchema = z.object({
+  autoGenerateSessionMetadata: z.boolean(),
+  sessionMetadataModel: metadataModelSelectionSchema,
+});
+export type AppSettings = z.infer<typeof appSettingsSchema>;
+
+export const updateAppSettingsRequestSchema = z.object({
+  autoGenerateSessionMetadata: z.boolean().optional(),
+  sessionMetadataModel: metadataModelSelectionSchema.optional(),
+});
+export type UpdateAppSettingsRequest = z.infer<typeof updateAppSettingsRequestSchema>;
+
 export const webSessionSchema = z.object({
   id: z.string(),
   cwd: z.string(),
   piSessionFile: z.string(),
   title: z.string().nullable(),
+  titleSource: titleSourceSchema,
+  summary: z.string().nullable(),
+  summarySource: summarySourceSchema,
+  summaryUpdatedAt: z.string().nullable(),
+  metadataGenerationCount: z.number().int().nonnegative(),
+  metadataLastGeneratedAt: z.string().nullable(),
+  autoGenerateMetadataOverride: autoGenerateMetadataOverrideSchema,
   createdAt: z.string(),
   lastOpenedAt: z.string(),
   lastActivityAt: z.string().optional(),
@@ -78,10 +111,26 @@ export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 
 export const updateSessionRequestSchema = z.object({
   title: z.string().min(1).max(120).nullable().optional(),
+  summary: z.string().min(1).max(600).nullable().optional(),
+  autoGenerateMetadataOverride: autoGenerateMetadataOverrideSchema.optional(),
   toolPermissionMode: toolPermissionModeSchema.optional(),
   uiStateJson: z.string().optional(),
 });
 export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
+
+export const generateSessionMetadataRequestSchema = z.object({
+  mode: z.literal("suggest").default("suggest"),
+});
+export type GenerateSessionMetadataRequest = z.infer<typeof generateSessionMetadataRequestSchema>;
+
+export const sessionMetadataSuggestionSchema = z.object({
+  title: z.string().max(60).optional(),
+  summary: z.string().max(600).optional(),
+  confidence: z.enum(["low", "medium", "high"]),
+  deferred: z.boolean().optional(),
+  reason: z.string().optional(),
+});
+export type SessionMetadataSuggestion = z.infer<typeof sessionMetadataSuggestionSchema>;
 
 export const fileMatchSchema = z.object({
   path: z.string(),
@@ -256,6 +305,7 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("agent_event"), event: normalizedAgentEventSchema, raw: z.unknown().optional() }),
   z.object({ type: z.literal("controller_update"), controller: controllerInfoSchema }),
   z.object({ type: z.literal("settings_update"), settings: sessionRuntimeSettingsSchema }),
+  z.object({ type: z.literal("session_metadata_update"), session: webSessionSchema }),
   z.object({ type: z.literal("error"), code: z.string(), message: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
