@@ -30,12 +30,15 @@ const fakePreviewPng = "iVBORw0KGgoAAAANSUhEUgAAAWgAAACgCAYAAAAhKfa4AAADUElEQVR4
 function responseFor(text: string): string {
   const includesImage = /(?:image|screenshot|picture)/i.test(text);
   const includesArtifactPath = /(?:artifact path|screenshot path|local image path)/i.test(text);
+  const includesArtifactFormatVariants = /(?:artifact format variants|inline fenced long artifact)/i.test(text);
   const requestedLength = /(?:long|stream|perf|performance)/i.test(text) ? 18000 : includesImage ? 3200 : 1400;
-  const imageBlock = includesArtifactPath
-    ? "\nRelevant screenshot artifacts:\n\n- `screenshots/fixture.png`\n- screenshots/fixture.png\n\nThe UI should render a safe local image preview for that workspace-relative path.\n"
-    : includesImage
-      ? `\n![Fake UI validation preview](data:image/png;base64,${fakePreviewPng})\n\nThe image above is an inline base64 PNG rendered from assistant Markdown.\n`
-      : "";
+  const imageBlock = includesArtifactFormatVariants
+    ? "\nRelevant screenshot artifact format variants:\n\nInline code: `screenshots/inline.png`\n\nFenced code:\n\n```text\nscreenshots/fenced.png\n```\n\nLong generated path: `test-results/ui-harness/sample-run/final.png`\n\nAll three workspace-relative paths should render safe local image previews.\n"
+    : includesArtifactPath
+      ? "\nRelevant screenshot artifacts:\n\n- `screenshots/fixture.png`\n- screenshots/fixture.png\n\nThe UI should render a safe local image preview for that workspace-relative path.\n"
+      : includesImage
+        ? `\n![Fake UI validation preview](data:image/png;base64,${fakePreviewPng})\n\nThe image above is an inline base64 PNG rendered from assistant Markdown.\n`
+        : "";
   const seed = [
     "# Synthetic streaming response",
     "",
