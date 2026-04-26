@@ -539,10 +539,10 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
       window.setTimeout(() => {
-        if (!this.querySelector(":focus")?.closest(".file-autocomplete")) {
-          this.closeFileAutocomplete();
-          this.render();
-        }
+        const focused = this.querySelector(":focus");
+        if (focused?.id === "prompt" || focused?.closest(".file-autocomplete")) return;
+        this.closeFileAutocomplete();
+        this.render();
       }, 120);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
