@@ -93,6 +93,7 @@ main {
   grid-template-rows: auto 1fr auto;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 header,
@@ -106,6 +107,15 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+header > strong {
+  min-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 footer {
@@ -237,7 +247,11 @@ textarea {
 .header-status {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .header-status button,
@@ -314,11 +328,14 @@ textarea:disabled {
   min-height: 0;
   padding: 16px;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
 }
 
 .message {
+  box-sizing: border-box;
+  max-width: 100%;
   border: 1px solid #2a2f3a;
   border-radius: 12px;
   background: #171a21;
@@ -559,6 +576,8 @@ pre {
 }
 
 .right-panel {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;

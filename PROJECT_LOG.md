@@ -48,11 +48,11 @@ bun run check
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` passes after making the right-side inspector collapsible.
+Latest: `bun run check` passes after clipping main-column overflow so transcript/header content does not draw under the right-side inspector.
 
 ## Next priorities
 
-1. Refresh the browser page and manually test the revised collapsible Details/Preview inspector against real tool runs, Markdown/code responses, and HTML/SVG snippets.
+1. Refresh the browser page and manually test the revised collapsible Details/Preview inspector against real tool runs, Markdown/code responses, HTML/SVG snippets, and narrow window widths to confirm main content no longer draws under the inspector.
 2. Test implemented and unsupported built-in slash commands in web sessions and route more of them to native web controls where useful.
 3. Test transcript rendering against real long sessions and tune grouping/collapse behavior for assistant + tool event duplication.
 4. Add basic branch/fork controls and tree summary using pi session manager APIs.
