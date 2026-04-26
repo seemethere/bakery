@@ -16,6 +16,16 @@ Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verificati
 - Preserve local-first security assumptions from `DESIGN.md`.
 - Prefer small, incremental vertical slices over large rewrites.
 
+## "What's next?" dev loop
+
+When the operator asks "what's next?" or asks to continue planning:
+
+1. Re-read `PROJECT_LOG.md`, especially `Current status`, `Verification`, and `Next priorities`.
+2. Summarize the top 1-3 candidate next slices in priority order, including why each is next.
+3. Recommend one small vertical slice as the default next action.
+4. If continuing into implementation, state the focused scope and validation plan before editing.
+5. Keep generated session summaries/title metadata explicit-only unless the operator asks to change that product policy.
+
 ## UI validation expectations
 
 For changes that affect the browser UI, WebSocket/session lifecycle, transcript rendering, slash commands, inspector/tree panels, or perceived responsiveness:
