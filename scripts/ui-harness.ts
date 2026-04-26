@@ -14,7 +14,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
+  ? ["streaming-responsiveness", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "model-thinking"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -227,6 +227,43 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   return collectMetrics(page);
 }
 
+async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const context = page.context();
+  const viewer = await context.newPage();
+  await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
+  await viewer.locator(".controller.viewer").waitFor({ timeout: 5_000 });
+
+  await viewer.locator("#takeControl").click();
+  await page.locator(".control-request", { hasText: "Another tab wants control" }).waitFor({ timeout: 5_000 });
+  await page.locator("#denyControl").click();
+  await viewer.locator(".message.error", { hasText: "denied" }).waitFor({ timeout: 5_000 });
+  await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
+
+  await viewer.locator("#takeControl").click();
+  await viewer.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
+  await viewer.locator(".message.error", { hasText: "expired" }).waitFor({ timeout: 6_000 });
+  await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
+  await viewer.close();
+
+  const isolated = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const owner = await isolated.newPage();
+  await prepareSession(owner);
+  const requester = await isolated.newPage();
+  await requester.goto(webBase, { waitUntil: "domcontentloaded" });
+  await requester.locator(".controller.viewer").waitFor({ timeout: 5_000 });
+  await requester.locator("#takeControl").click();
+  await requester.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
+  await owner.close();
+  await requester.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
+  await requester.locator("#prompt").fill("disconnected controller handoff smoke");
+  await requester.locator("#send").click();
+  await requester.locator(".status.idle").waitFor({ timeout: 8_000 });
+  const metrics = await collectMetrics(requester);
+  await isolated.close();
+  return metrics;
+}
+
 async function runReconnectDraft(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const draft = `draft survives reload ${Date.now()}`;
@@ -353,6 +390,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "slash-commands") return runSlashCommands(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
   if (name === "reconnect-controller") return runReconnectController(page);
+  if (name === "controller-handoff-edges") return runControllerHandoffEdges(page, browser);
   if (name === "reconnect-draft") return runReconnectDraft(page);
   if (name === "backend-restart") return runBackendRestart(page, runtime);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
@@ -390,6 +428,7 @@ async function main(): Promise<void> {
     PI_WEB_WORKSPACE_ROOT: workspace,
     PI_WEB_DATA_DIR: dataDir,
     PI_WEB_FAKE_AGENT: "1",
+    PI_WEB_CONTROLLER_TAKEOVER_TIMEOUT_MS: "1000",
     PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
     PI_WEB_LOAD_PROJECT_RESOURCES: "false",
   };

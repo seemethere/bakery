@@ -475,7 +475,8 @@ class SessionHub {
         this.grantControl(client.clientId);
         return;
       }
-      const expiresAt = Date.now() + 30_000;
+      const timeoutMs = Math.max(1, config.controllerTakeoverTimeoutMs);
+      const expiresAt = Date.now() + timeoutMs;
       this.pendingTakeover = { requesterId: client.clientId, expiresAt };
       if (this.takeoverTimer) clearTimeout(this.takeoverTimer);
       this.takeoverTimer = setTimeout(() => {
@@ -485,7 +486,7 @@ class SessionHub {
           this.clearPendingTakeover();
           this.broadcastControllerUpdate();
         }
-      }, 30_000);
+      }, timeoutMs);
       this.broadcastControllerUpdate();
       return;
     }

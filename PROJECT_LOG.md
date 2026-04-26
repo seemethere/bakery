@@ -37,7 +37,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Made the fake-agent runner more realistic and deterministic: uneven chunk sizes/cadence, no-delay event bursts, repeated partial Markdown/code fences, and delayed/bursty tool updates interleaved during assistant streaming.
 - Added focused Playwright harness coverage for `@file` autocomplete/search+directory continuation, prompt image attachment add/remove/send/render flows, and model/thinking selector updates. This caught and fixed duplicate trailing slashes for directory autocomplete insertion/rendering.
 - Added reconnect/restart UX basics: a visible connection-state banner (`connected`/`connecting`/`reconnecting`/`disconnected`/`retry failed`), automatic WebSocket reconnect with backoff, clearer disconnected/send-failed copy, per-session prompt draft persistence in `localStorage`, and warnings that image attachments are prompt-only and not restored after refresh. Added fake-agent harness coverage for reload/reconnect draft preservation and an actual backend process restart (`backend-restart`) that verifies reconnect, draft preservation, and post-restart send usability.
-- Improved multi-tab controller handoff: viewer take-control now creates a pending request instead of stealing control from a connected controller, the controller gets inline Approve/Deny controls, requests expire after 30 seconds, and disconnected controllers hand off to a pending requester when possible. Expanded the reconnect/controller harness scenario to cover request approval and post-handoff sending.
+- Improved multi-tab controller handoff: viewer take-control now creates a pending request instead of stealing control from a connected controller, the controller gets inline Approve/Deny controls, requests expire after 30 seconds, and disconnected controllers hand off to a pending requester when possible. Expanded the reconnect/controller harness scenario to cover request approval and post-handoff sending, and added edge coverage for denial, timeout, and disconnected-controller handoff.
 
 ## How to run
 
@@ -65,17 +65,16 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run check` and `bun run test:web-perf` pass after adding controller handoff request/approval. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `reconnect-draft`, `backend-restart`, `narrow-tool-stream`, `file-autocomplete`, `image-attachments`, `model-thinking`); artifacts at `test-results/ui-harness/all-2026-04-26T18-55-03-214Z`. Focused controller artifacts are at `test-results/ui-harness/reconnect-controller-2026-04-26T18-54-47-889Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
+Latest: `bun run check` and `bun run test:web-perf` pass after adding controller handoff edge coverage. Latest harness scenario set: `all` (`streaming-responsiveness`, `inspector-preview`, `slash-commands`, `tree-fork-navigation`, `reconnect-controller`, `controller-handoff-edges`, `reconnect-draft`, `backend-restart`, `narrow-tool-stream`, `file-autocomplete`, `image-attachments`, `model-thinking`); artifacts at `test-results/ui-harness/all-2026-04-26T18-58-17-563Z`. Focused controller edge artifacts are at `test-results/ui-harness/controller-handoff-edges-2026-04-26T18-58-10-146Z`. `bun scripts/ui-harness.ts --scenario manual --keep` opens and seeds the manual headed harness successfully; terminating it via SIGINT prints the artifact/temp paths before shutdown. On a fresh machine, run `bun x playwright install chromium` once if Playwright reports a missing browser.
 
 ## Next priorities
 
 1. Keep dogfooding the controller handoff and reconnect/restart UX with real model sessions; fix concrete issues around duplicate snapshots, stale controller state, or confusing retry/copy if they appear.
-2. Add denial/timeout/disconnected-controller edge coverage for controller handoff if those paths get more UI polish.
-3. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
-4. Add sanitized real-event playback to complement the deterministic fake runner if dogfooding exposes SDK/provider event patterns the fake runner does not cover.
-5. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
-6. Add more focused harness coverage for copy buttons/clipboard fallbacks, mobile breakpoints, paste/drag-drop image attachments, attachment validation errors, and deeper autocomplete edge cases.
-7. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+2. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
+3. Add sanitized real-event playback to complement the deterministic fake runner if dogfooding exposes SDK/provider event patterns the fake runner does not cover.
+4. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
+5. Add more focused harness coverage for copy buttons/clipboard fallbacks, mobile breakpoints, paste/drag-drop image attachments, attachment validation errors, and deeper autocomplete edge cases.
+6. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 

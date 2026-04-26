@@ -20,6 +20,7 @@ export type ServerConfig = AppConfig & {
   metadataDbPath: string;
   sessionDir: string;
   fakeAgent: boolean;
+  controllerTakeoverTimeoutMs: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -28,6 +29,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const dataDir = expandHome(env.PI_WEB_DATA_DIR ?? "~/.pi-web-agent");
   const authToken = env.PI_WEB_AUTH_TOKEN?.trim() || undefined;
+  const controllerTakeoverTimeoutMs = Number(env.PI_WEB_CONTROLLER_TAKEOVER_TIMEOUT_MS ?? "30000");
 
   return {
     host: env.PI_WEB_HOST ?? "127.0.0.1",
@@ -38,6 +40,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     metadataDbPath: env.PI_WEB_METADATA_DB ?? resolve(dataDir, "metadata.sqlite"),
     sessionDir: env.PI_WEB_SESSION_DIR ? expandHome(env.PI_WEB_SESSION_DIR) : resolve(dataDir, "sessions"),
     fakeAgent: env.PI_WEB_FAKE_AGENT === "true" || env.PI_WEB_FAKE_AGENT === "1",
+    controllerTakeoverTimeoutMs: Number.isFinite(controllerTakeoverTimeoutMs) ? controllerTakeoverTimeoutMs : 30000,
     toolPermissionPolicy: {
       allowedModes: ["bypass", "confirm"],
       defaultMode: "bypass",
