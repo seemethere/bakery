@@ -55,6 +55,7 @@ bun run report:iteration --session-context
 
 Look for:
 
+- compact `Action summary` totals for tool calls/results, validation reruns, edit failures, unique read/bash inputs, largest result size, and event-span timing;
 - large context contributors in `Largest tool results`;
 - repeated reads or repeated bash commands;
 - validation reruns and failures;
@@ -82,6 +83,7 @@ Use the aggregate sections to identify recurring optimization opportunities:
 - `Validation command summary`: commands/scenarios with high run or failure counts;
 - `Edit/write attempts`: files where agents often retry exact edits;
 - `Top read paths` and `Top bash commands`: recurring context sinks;
+- `Action summary`: cross-session totals for tool calls/results, validation reruns, edit failures, unique read/bash inputs, largest result size, and summed event spans;
 - `Largest sessions` and `Largest tool results`: sessions/commands worth studying for workflow friction;
 - `Sessions with edit failures`: candidate files for refactors, helper extraction, or smaller edit islands.
 

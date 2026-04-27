@@ -55,10 +55,34 @@ type AgentActionInsight = {
   optimizeAgentBy: string[];
 };
 
+type SessionActionSummary = {
+  toolCalls: number;
+  toolResults: number;
+  toolResultChars: number;
+  validationRuns: number;
+  validationFailures: number;
+  validationReruns: number;
+  editAttempts: number;
+  editFailures: number;
+  uniqueReadPaths: number;
+  uniqueBashCommands: number;
+  largestToolResultChars: number;
+  elapsedMs?: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+};
+
+type SessionHistoryActionSummary = SessionActionSummary & {
+  sessionsWithValidationReruns: number;
+  sessionsWithEditFailures: number;
+  largestSessionToolResultChars: number;
+};
+
 type SessionContextReport = {
   sessionPath?: string;
   sessionCwd?: string;
   lines: number;
+  actionSummary: SessionActionSummary;
   toolCallsByName: Record<string, number>;
   toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
   toolInputsByName: Record<string, Array<{ input: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>>;
@@ -76,6 +100,7 @@ type SessionContextReport = {
 };
 
 type SessionHistoryReport = {
+  actionSummary: SessionHistoryActionSummary;
   sessionCount: number;
   totalLines: number;
   totalBytes: number;
@@ -339,6 +364,28 @@ function incrementEditAttempt(
   summary.resultChars += resultChars;
 }
 
+function emptySessionActionSummary(): SessionActionSummary {
+  return {
+    toolCalls: 0,
+    toolResults: 0,
+    toolResultChars: 0,
+    validationRuns: 0,
+    validationFailures: 0,
+    validationReruns: 0,
+    editAttempts: 0,
+    editFailures: 0,
+    uniqueReadPaths: 0,
+    uniqueBashCommands: 0,
+    largestToolResultChars: 0,
+  };
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60_000).toFixed(1)}m`;
+}
+
 function candidateSessionDirs(): string[] {
   const dirs = [process.env.PI_WEB_SESSION_DIR, join(homedir(), ".pi-web-agent", "sessions")].filter((dir): dir is string => Boolean(dir));
   return Array.from(new Set(dirs.map((dir) => resolve(expandHome(dir)))));
@@ -387,6 +434,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
   const sessionPath = sessionPathOverride ?? findSessionLogPath();
   const missingReport: SessionContextReport = {
     lines: 0,
+    actionSummary: emptySessionActionSummary(),
     toolCallsByName: {},
     toolResultsByName: {},
     toolInputsByName: {},
@@ -407,6 +455,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     sessionPath: relative(root, sessionPath).startsWith("..") ? sessionPath : relative(root, sessionPath),
     sessionCwd: undefined,
     lines: lines.length,
+    actionSummary: emptySessionActionSummary(),
     toolCallsByName: {},
     toolResultsByName: {},
     toolInputsByName: {},
@@ -426,6 +475,10 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
   const bashCommandSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
   const validationCommandSummaries: Record<string, { runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }> = {};
   const editAttemptSummaries: Record<string, { attempts: number; successes: number; failures: number; resultChars: number }> = {};
+  let firstEventMs: number | undefined;
+  let lastEventMs: number | undefined;
+  let firstTimestamp: string | undefined;
+  let lastTimestamp: string | undefined;
 
   for (const line of lines) {
     let event: Record<string, unknown>;
@@ -433,6 +486,17 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
       event = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
+    }
+    const eventMs = timestampMs(event.timestamp);
+    if (typeof eventMs === "number") {
+      if (firstEventMs === undefined || eventMs < firstEventMs) {
+        firstEventMs = eventMs;
+        firstTimestamp = typeof event.timestamp === "string" ? event.timestamp : undefined;
+      }
+      if (lastEventMs === undefined || eventMs > lastEventMs) {
+        lastEventMs = eventMs;
+        lastTimestamp = typeof event.timestamp === "string" ? event.timestamp : undefined;
+      }
     }
     if (event.type === "session" && typeof event.cwd === "string") report.sessionCwd = event.cwd;
     if (event.type !== "message" || !event.message || typeof event.message !== "object") continue;
@@ -546,6 +610,22 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     .slice(0, 10);
   report.largestToolResults.sort((a, b) => b.chars - a.chars);
   report.largestToolResults = report.largestToolResults.slice(0, 8);
+  report.actionSummary = {
+    toolCalls: Object.values(report.toolCallsByName).reduce((sum, count) => sum + count, 0),
+    toolResults: Object.values(report.toolResultsByName).reduce((sum, item) => sum + item.calls, 0),
+    toolResultChars: Object.values(report.toolResultsByName).reduce((sum, item) => sum + item.chars, 0),
+    validationRuns: report.validationCommands.reduce((sum, item) => sum + item.runs, 0),
+    validationFailures: report.validationCommands.reduce((sum, item) => sum + item.failures, 0),
+    validationReruns: report.validationCommands.reduce((sum, item) => sum + Math.max(0, item.runs - 1), 0),
+    editAttempts: report.editAttempts.reduce((sum, item) => sum + item.attempts, 0),
+    editFailures: report.editAttempts.reduce((sum, item) => sum + item.failures, 0),
+    uniqueReadPaths: Object.keys(readPathSummaries).length,
+    uniqueBashCommands: Object.keys(bashCommandSummaries).length,
+    largestToolResultChars: report.largestToolResults[0]?.chars ?? 0,
+    elapsedMs: typeof firstEventMs === "number" && typeof lastEventMs === "number" ? Math.max(0, lastEventMs - firstEventMs) : undefined,
+    firstTimestamp,
+    lastTimestamp,
+  };
 
   const repeatedReadPaths = report.readPaths.filter((item) => item.calls > 1);
   if (repeatedReadPaths.length > 0) {
@@ -610,6 +690,12 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   const largestSessions: SessionHistoryReport["largestSessions"] = [];
   const largestToolResults: SessionHistoryReport["largestToolResults"] = [];
   const sessionsWithEditFailures: SessionHistoryReport["sessionsWithEditFailures"] = [];
+  const actionSummary: SessionHistoryActionSummary = {
+    ...emptySessionActionSummary(),
+    sessionsWithValidationReruns: 0,
+    sessionsWithEditFailures: 0,
+    largestSessionToolResultChars: 0,
+  };
   let totalLines = 0;
   let totalBytes = 0;
   let oldestMtimeMs: number | undefined;
@@ -648,6 +734,19 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     const toolResultChars = Object.values(report.toolResultsByName).reduce((sum, item) => sum + item.chars, 0);
     const validationRuns = report.validationCommands.reduce((sum, item) => sum + item.runs, 0);
     const editFailures = report.editAttempts.reduce((sum, item) => sum + item.failures, 0);
+    actionSummary.toolCalls += report.actionSummary.toolCalls;
+    actionSummary.toolResults += report.actionSummary.toolResults;
+    actionSummary.toolResultChars += report.actionSummary.toolResultChars;
+    actionSummary.validationRuns += report.actionSummary.validationRuns;
+    actionSummary.validationFailures += report.actionSummary.validationFailures;
+    actionSummary.validationReruns += report.actionSummary.validationReruns;
+    actionSummary.editAttempts += report.actionSummary.editAttempts;
+    actionSummary.editFailures += report.actionSummary.editFailures;
+    actionSummary.largestToolResultChars = Math.max(actionSummary.largestToolResultChars, report.actionSummary.largestToolResultChars);
+    actionSummary.largestSessionToolResultChars = Math.max(actionSummary.largestSessionToolResultChars, toolResultChars);
+    if (report.actionSummary.validationReruns > 0) actionSummary.sessionsWithValidationReruns += 1;
+    if (editFailures > 0) actionSummary.sessionsWithEditFailures += 1;
+    if (typeof report.actionSummary.elapsedMs === "number") actionSummary.elapsedMs = (actionSummary.elapsedMs ?? 0) + report.actionSummary.elapsedMs;
     largestSessions.push({
       sessionPath: displayPath ?? path,
       cwd: report.sessionCwd,
@@ -686,6 +785,11 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     .sort((a, b) => b.resultChars - a.resultChars)
     .slice(0, 20);
 
+  actionSummary.uniqueReadPaths = Object.keys(readSummaries).length;
+  actionSummary.uniqueBashCommands = Object.keys(bashSummaries).length;
+  actionSummary.firstTimestamp = typeof oldestMtimeMs === "number" ? new Date(oldestMtimeMs).toISOString() : undefined;
+  actionSummary.lastTimestamp = typeof newestMtimeMs === "number" ? new Date(newestMtimeMs).toISOString() : undefined;
+
   const actionRecommendations: string[] = [];
   const topValidation = validationCommands.find((item) => item.runs > 1);
   if (topValidation) actionRecommendations.push(`Across backfilled sessions, ${topValidation.command} ran ${topValidation.runs} times with ${topValidation.failures} reported failure result(s); use this to tune validation selectors and rerun guidance.`);
@@ -698,6 +802,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   if (actionRecommendations.length === 0) actionRecommendations.push("No obvious cross-session retry/context hotspot found in the backfilled JSONL logs yet.");
 
   return {
+    actionSummary,
     sessionCount: paths.length,
     totalLines,
     totalBytes,
@@ -717,7 +822,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     notes: [
       `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateSessionDirs().join(", ")}.`,
       "Backfill is metadata-only: raw prompts/tool outputs are not printed; deleted/unlogged sessions and human intent for reruns cannot be reconstructed.",
-      "Aggregate read/bash totals are based on each session's retained top inputs, so long-tail per-input counts may be underreported while total tool-result sizes remain accurate.",
+      "Action summaries count all parsed tool calls/results; history-level unique read/bash counts and top input lists are capped per session, so long-tail per-input counts may be underreported while totals remain accurate.",
     ],
   };
 }
@@ -731,6 +836,13 @@ function printSessionContextReport(report: SessionContextReport): void {
   console.log(`Session log: ${report.sessionPath}`);
   if (report.sessionCwd) console.log(`Session cwd: ${report.sessionCwd}`);
   console.log(`JSONL lines: ${report.lines}`);
+  console.log("\nAction summary:");
+  const summary = report.actionSummary;
+  console.log(`- tools: ${summary.toolCalls.toLocaleString()} calls requested, ${summary.toolResults.toLocaleString()} results, ${summary.toolResultChars.toLocaleString()} result chars`);
+  console.log(`- validation: ${summary.validationRuns.toLocaleString()} runs, ${summary.validationFailures.toLocaleString()} failures, ${summary.validationReruns.toLocaleString()} reruns`);
+  console.log(`- edits: ${summary.editAttempts.toLocaleString()} attempts, ${summary.editFailures.toLocaleString()} failures`);
+  console.log(`- context shape: ${summary.uniqueReadPaths.toLocaleString()} read path(s), ${summary.uniqueBashCommands.toLocaleString()} bash command(s), largest result ${summary.largestToolResultChars.toLocaleString()} chars`);
+  if (typeof summary.elapsedMs === "number") console.log(`- elapsed event span: ${formatDuration(summary.elapsedMs)}${summary.firstTimestamp && summary.lastTimestamp ? ` (${summary.firstTimestamp} → ${summary.lastTimestamp})` : ""}`);
   console.log("\nTool calls requested:");
   const toolCalls = Object.entries(report.toolCallsByName).sort((a, b) => b[1] - a[1]);
   if (toolCalls.length === 0) console.log("- none found");
@@ -790,6 +902,13 @@ function printSessionHistoryReport(report: SessionHistoryReport): void {
   console.log(`JSONL lines: ${report.totalLines.toLocaleString()}`);
   console.log(`JSONL bytes: ${report.totalBytes.toLocaleString()}`);
   if (report.oldestMtime || report.newestMtime) console.log(`Mtime range: ${report.oldestMtime ?? "unknown"} → ${report.newestMtime ?? "unknown"}`);
+  console.log("\nAction summary:");
+  const summary = report.actionSummary;
+  console.log(`- tools: ${summary.toolCalls.toLocaleString()} calls requested, ${summary.toolResults.toLocaleString()} results, ${summary.toolResultChars.toLocaleString()} result chars`);
+  console.log(`- validation: ${summary.validationRuns.toLocaleString()} runs, ${summary.validationFailures.toLocaleString()} failures, ${summary.validationReruns.toLocaleString()} reruns across ${summary.sessionsWithValidationReruns.toLocaleString()} session(s)`);
+  console.log(`- edits: ${summary.editAttempts.toLocaleString()} attempts, ${summary.editFailures.toLocaleString()} failures across ${summary.sessionsWithEditFailures.toLocaleString()} session(s)`);
+  console.log(`- context shape: ${summary.uniqueReadPaths.toLocaleString()} read path(s), ${summary.uniqueBashCommands.toLocaleString()} bash command(s), largest result ${summary.largestToolResultChars.toLocaleString()} chars, largest session ${summary.largestSessionToolResultChars.toLocaleString()} chars`);
+  if (typeof summary.elapsedMs === "number") console.log(`- summed event spans: ${formatDuration(summary.elapsedMs)}`);
   console.log("\nTop workspaces:");
   if (report.cwdFrequency.length === 0) console.log("- none found");
   report.cwdFrequency.forEach((item) => console.log(`- ${item.cwd}: ${item.sessions} sessions`));
@@ -1155,15 +1274,16 @@ function buildAgentActionInsights(report: IterationReport): AgentActionInsight[]
       ],
     },
     {
-      area: "Missing per-tool action telemetry",
-      confidence: "missing-telemetry",
+      area: "Session action telemetry",
+      confidence: "medium",
       evidence: [
-        "Current local artifacts do not include structured counts for agent `read`, `bash`, `edit`, `ask_question`, failed edit attempts, or phase durations.",
-        "Available evidence comes from git churn, PROJECT_LOG command mentions, and UI harness artifacts, not raw agent tool-call traces.",
+        "`--session-context` and `--session-history` now include compact action summaries for tool calls/results, validation reruns, edit failures, unique read/bash inputs, largest result size, and event-span timing.",
+        "Phase timing is still approximate because JSONL logs expose event timestamps, not explicit plan/edit/validate phase markers.",
       ],
       optimizeAgentBy: [
-        "Add future session-level action summaries if we want to optimize specific tool calls, e.g. reads per file, bash commands, edit failures, validation reruns, and time by phase.",
-        "Until then, optimize the high-confidence behaviors visible in existing telemetry: validation selection, high-churn edit surfaces, and hot-path harness loops.",
+        "Use `bun run report:iteration --session-context` near the end of long sessions to spot repeated validation, edit retry loops, and context-heavy commands before handoff.",
+        "Use `bun run report:iteration --session-history` periodically to decide whether more main-file extraction, harness output trimming, or selector tuning is paying off.",
+        "If this remains too coarse, add explicit phase markers or per-command intent labels rather than printing raw prompts/tool outputs.",
       ],
     },
   ];
@@ -1186,7 +1306,7 @@ function printAgentActionInsights(report: IterationReport, recommendation?: Vali
       recommendation.optionalCommands.forEach((command) => console.log(`- ${command}`));
     }
   }
-  console.log("\nNext instrumentation if this is not enough: record per-session action summaries for tool-call counts, failed edit attempts, validation reruns, and phase timing.");
+  console.log("\nNext instrumentation if this is not enough: add explicit phase markers or intent labels so timing can distinguish planning, editing, validation, and handoff without printing raw content.");
 }
 
 function printHelp(): void {
