@@ -1798,11 +1798,20 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
+    this.querySelector<HTMLButtonElement>("#attentionRefresh")?.addEventListener("click", () => void this.refresh());
     this.querySelector<HTMLButtonElement>("#approveControl")?.addEventListener("click", (event) => {
       this.respondToControlRequest(true, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
     });
     this.querySelector<HTMLButtonElement>("#denyControl")?.addEventListener("click", (event) => {
       this.respondToControlRequest(false, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-control-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const action = (event.currentTarget as HTMLButtonElement).dataset.controlAction;
+        if (action === "take") this.takeControl();
+        else if (action === "approve") this.respondToControlRequest(true, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
+        else if (action === "deny") this.respondToControlRequest(false, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
+      });
     });
     this.querySelector<HTMLInputElement>("#autoScroll")?.addEventListener("change", (event) => {
       this.autoScroll = (event.currentTarget as HTMLInputElement).checked;
@@ -2384,14 +2393,56 @@ class PiWebAgentApp extends HTMLElement {
     return { label: runningAssistant ? "Pi is responding" : "Pi is working", detail: queued > 0 ? "Queued input will be applied during this run." : "Waiting for the next agent update…", queued };
   }
 
-  private renderCurrentActivity(): string {
+  private renderComposerActivity(): string {
     const activity = this.currentActivity();
     if (!activity) return "";
-    return `<div class="current-activity" role="status" aria-live="polite">
-      <span class="current-activity-pulse" aria-hidden="true"></span>
-      <span class="current-activity-copy"><strong>Current action</strong><b>${escapeHtml(activity.label)}</b><small>${escapeHtml(activity.detail)}</small></span>
-      ${activity.queued > 0 ? `<span class="current-activity-queued">${activity.queued} queued</span>` : ""}
-    </div>`;
+    return `<span class="composer-activity" title="${escapeHtml(`${activity.label} — ${activity.detail}`)}">
+      <span>${escapeHtml(activity.label)}</span>
+      <small>${escapeHtml(activity.detail)}</small>
+      ${activity.queued > 0 ? `<b>${activity.queued} queued</b>` : ""}
+    </span>`;
+  }
+
+  private renderAttentionNeeded(): string {
+    const takeoverRequest = this.controller?.takeoverRequest;
+    const takeoverPending = takeoverRequest?.state === "requested";
+    const takeoverIncoming = takeoverRequest?.state === "incoming";
+    const isController = this.controller?.isController ?? true;
+    if (takeoverIncoming) {
+      const requesterId = escapeHtml(takeoverRequest?.requesterClientId ?? "");
+      return `<div class="attention-needed urgent" role="alert">
+        <strong>Input needed</strong>
+        <span>Another tab wants to control this session.</span>
+        <div class="attention-actions"><button type="button" data-control-action="approve" data-requester-client-id="${requesterId}">Approve</button><button type="button" data-control-action="deny" data-requester-client-id="${requesterId}">Deny</button></div>
+      </div>`;
+    }
+    if (this.connectionState === "retry_failed") {
+      return `<div class="attention-needed urgent" role="alert">
+        <strong>Reconnect failed</strong>
+        <span>Check whether the backend is running, then refresh or reopen the session. Your prompt draft stays local.</span>
+        <div class="attention-actions"><button type="button" id="attentionRefresh">Save / Refresh</button></div>
+      </div>`;
+    }
+    if (this.connectionState === "disconnected") {
+      return `<div class="attention-needed warning" role="status">
+        <strong>Disconnected</strong>
+        <span>Sending is paused while the browser reconnects. Your prompt draft is saved locally.</span>
+      </div>`;
+    }
+    if (takeoverPending) {
+      return `<div class="attention-needed warning" role="status">
+        <strong>Control requested</strong>
+        <span>Waiting for the current controller to approve input from this tab.</span>
+      </div>`;
+    }
+    if (!isController) {
+      return `<div class="attention-needed viewer" role="status">
+        <strong>Viewer mode</strong>
+        <span>Take control before sending prompts or steering the active run.</span>
+        <div class="attention-actions"><button type="button" data-control-action="take" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button></div>
+      </div>`;
+    }
+    return "";
   }
 
   private renderTranscript(): string {
@@ -2543,21 +2594,17 @@ class PiWebAgentApp extends HTMLElement {
       ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
   }
 
-  private patchCurrentActivity(): void {
-    const shell = this.querySelector<HTMLElement>(".transcript-shell");
-    if (!shell) return;
-    const html = this.renderCurrentActivity();
-    shell.classList.toggle("has-current-activity", Boolean(html));
-    const existing = shell.querySelector<HTMLElement>(".current-activity");
+  private patchComposerActivity(): void {
+    const mode = this.querySelector<HTMLElement>(".composer-mode");
+    if (!mode) return;
+    const existing = mode.querySelector<HTMLElement>(".composer-activity");
+    const html = this.renderComposerActivity();
     if (!html) {
       existing?.remove();
       return;
     }
-    if (existing) {
-      existing.outerHTML = html;
-      return;
-    }
-    shell.insertAdjacentHTML("afterbegin", html);
+    if (existing) existing.outerHTML = html;
+    else mode.querySelector(".composer-hint")?.insertAdjacentHTML("afterend", html);
   }
 
   private patchJumpToLatest(): void {
@@ -2606,7 +2653,7 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
-    this.patchCurrentActivity();
+    this.patchComposerActivity();
     this.patchJumpToLatest();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
@@ -2728,13 +2775,11 @@ class PiWebAgentApp extends HTMLElement {
         <div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">
           <strong>${escapeHtml(this.connectionState.replace("_", " "))}</strong>
           <span>${escapeHtml(this.connectionMessage)}</span>
-          ${takeoverPending ? `<small>Waiting for the current controller to approve your control request.</small>` : ""}
-          ${takeoverIncoming ? `<small>A viewer is asking to control this session. Approve only if you are ready to hand off input.</small>` : ""}
           ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
           ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
         </div>
-        <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""} ${this.currentActivity() ? "has-current-activity" : ""}">
-          ${this.renderCurrentActivity()}
+        ${this.renderAttentionNeeded()}
+        <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""}">
           <section class="transcript">${this.renderTranscript()}</section>
           ${this.renderRunningQueue()}
           ${this.renderJumpToLatest()}
@@ -2744,6 +2789,7 @@ class PiWebAgentApp extends HTMLElement {
             <div class="composer-mode ${isRunning ? "running" : "idle"}">
               <strong>${isRunning ? "Running input" : "Prompt"}</strong>
               <span class="composer-hint">${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
+              ${this.renderComposerActivity()}
               ${this.renderContextUsageNotice()}
             </div>
             ${this.renderPromptImages()}
