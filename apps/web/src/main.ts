@@ -161,6 +161,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private renderScheduled = false;
   private forceFullRender = false;
+  private transcriptStructureDirty = false;
   private dirtyTranscriptIds = new Set<string>();
   private focusPromptOnNextReadyRender = false;
   private focusPendingQuestionOnNextRender = false;
@@ -298,7 +299,7 @@ class PiWebAgentApp extends HTMLElement {
       const existingIndex = this.transcript.findIndex((candidate) => candidate.id === item.id);
       if (existingIndex !== -1) {
         this.transcript.splice(existingIndex, 1);
-        this.forceFullRender = true;
+        this.transcriptStructureDirty = true;
       }
       return;
     }
@@ -324,7 +325,7 @@ class PiWebAgentApp extends HTMLElement {
         if (this.selectedTranscriptId === nextItem.id) this.selectTranscriptItem(this.transcript[Math.max(0, index - 1)]?.id ?? "", false);
       }
       this.dirtyTranscriptIds.delete(nextItem.id);
-      this.forceFullRender = true;
+      this.transcriptStructureDirty = true;
       return;
     }
 
@@ -336,7 +337,7 @@ class PiWebAgentApp extends HTMLElement {
     const next = this.transcript[nextIndex + 1];
     if (previous?.kind === "tool") this.dirtyTranscriptIds.add(previous.id);
     if (next?.kind === "tool") this.dirtyTranscriptIds.add(next.id);
-    if (nextItem.kind === "tool" && nextItem.status === "done") this.forceFullRender = true;
+    if (nextItem.kind === "tool" && nextItem.status === "done") this.transcriptStructureDirty = true;
     if (!this.autoScroll) this.unreadTranscriptIds.add(nextItem.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(nextItem.id, false);
   }
@@ -2539,11 +2540,30 @@ class PiWebAgentApp extends HTMLElement {
     shell.append(button);
   }
 
+  private patchTranscriptStructure(transcript: HTMLElement): void {
+    transcript.innerHTML = this.renderTranscript();
+    this.hydrateTranscriptRows();
+    this.transcriptStructureDirty = false;
+    this.dirtyTranscriptIds.clear();
+  }
+
   private patchLiveRender(): boolean {
     const start = performance.now();
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript || this.forceFullRender) return false;
     if (this.autoScroll && !this.isTranscriptNearBottom(transcript)) this.autoScroll = false;
+
+    if (this.transcriptStructureDirty) {
+      this.patchTranscriptStructure(transcript);
+      this.patchHeaderStatus();
+      this.patchConnectionBanner();
+      this.patchComposerActivity();
+      this.patchJumpToLatest();
+      this.syncTranscriptScroll();
+      this.syncAutocompleteScroll();
+      recordPerfSample("patch", performance.now() - start);
+      return true;
+    }
 
     for (const id of this.dirtyTranscriptIds) {
       const item = this.transcript.find((candidate) => candidate.id === id);
@@ -2579,7 +2599,7 @@ class PiWebAgentApp extends HTMLElement {
     this.renderTimer = setTimeout(() => {
       this.renderScheduled = false;
       this.renderTimer = undefined;
-      if (delayMs > 0 && this.patchLiveRender()) return;
+      if ((delayMs > 0 || this.transcriptStructureDirty || this.dirtyTranscriptIds.size > 0) && this.patchLiveRender()) return;
       this.render();
     }, delayMs);
   }
@@ -2724,6 +2744,7 @@ class PiWebAgentApp extends HTMLElement {
       ${this.renderTreeDrawer()}
     `;
     this.forceFullRender = false;
+    this.transcriptStructureDirty = false;
     this.dirtyTranscriptIds.clear();
     this.bindEvents();
     this.hydrateTranscriptRows();

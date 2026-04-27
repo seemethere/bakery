@@ -485,7 +485,7 @@ export class PiTranscriptRow extends HTMLElement {
     const completedDoneTool = item.kind === "tool" && item.status === "done";
     const isQuestionTool = item.kind === "tool" && item.title === "Question";
     const hasVisualResult = itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
-    const defaultOpen = (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done") || (options.selected && !completedDoneTool && !isQuestionTool);
+    const defaultOpen = item.kind === "system" || (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done") || (options.selected && !completedDoneTool && !isQuestionTool);
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
     if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
     if (options.selected && !wasSelected && !completedDoneTool) this.collapsed = false;
