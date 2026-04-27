@@ -18,7 +18,8 @@ const positionalOutput = !recommendMode && cliArgs[0] && !cliArgs[0].startsWith(
 const outputPath = resolve(root, outputFlagIndex >= 0 ? cliArgs[outputFlagIndex + 1] ?? defaultOutputPath : positionalOutput ?? defaultOutputPath);
 const maxCommits = Number(process.env.PI_WEB_ITERATION_COMMITS ?? 40);
 const maxHarnessRuns = Number(process.env.PI_WEB_ITERATION_HARNESS_RUNS ?? 80);
-const maxSessionHistory = Number(process.env.PI_WEB_ITERATION_SESSION_HISTORY ?? 500);
+const maxSessionHistory = parsePositiveIntegerFlag(["--session-history-limit", "--latest-sessions", "--sessions"]) ?? Number(process.env.PI_WEB_ITERATION_SESSION_HISTORY ?? 500);
+const excludeCurrentSessionFromHistory = cliArgs.includes("--exclude-current-session") || cliArgs.includes("--exclude-current");
 
 type GitCommit = {
   hash: string;
@@ -168,6 +169,17 @@ function run(command: string, args: string[]): string {
 
 function increment(record: Record<string, number>, key: string, amount = 1): void {
   record[key] = (record[key] ?? 0) + amount;
+}
+
+function parsePositiveIntegerFlag(names: string[]): number | undefined {
+  for (const name of names) {
+    const index = cliArgs.findIndex((arg) => arg === name || arg.startsWith(`${name}=`));
+    if (index < 0) continue;
+    const raw = cliArgs[index]?.includes("=") ? cliArgs[index]?.split("=", 2)[1] : cliArgs[index + 1];
+    const value = Number(raw);
+    if (Number.isInteger(value) && value > 0) return value;
+  }
+  return undefined;
 }
 
 function parseCommitType(subject: string): string | undefined {
@@ -460,8 +472,10 @@ function findSessionLogPath(): string | undefined {
 }
 
 function findSessionHistoryPaths(): string[] {
+  const currentSessionPath = excludeCurrentSessionFromHistory ? findSessionLogPath() : undefined;
   return sessionLogCandidates()
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .filter((candidate) => !currentSessionPath || candidate.path !== currentSessionPath)
     .slice(0, maxSessionHistory)
     .map((candidate) => candidate.path);
 }
@@ -879,7 +893,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     sessionsWithEditFailures: sessionsWithEditFailures.sort((a, b) => b.failures - a.failures || b.attempts - a.attempts).slice(0, 20),
     actionRecommendations,
     notes: [
-      `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateSessionDirs().join(", ")}.`,
+      `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateSessionDirs().join(", ")}${excludeCurrentSessionFromHistory ? "; excluded the current/latest session log" : ""}.`,
       "Backfill is metadata-only: raw prompts/tool outputs are not printed; deleted/unlogged sessions and human intent for reruns cannot be reconstructed.",
       "Action summaries count all parsed tool calls/results; history-level unique read/bash counts and top input lists are capped per session, so long-tail per-input counts may be underreported while totals remain accurate.",
     ],
@@ -1389,9 +1403,9 @@ function printHelp(): void {
   bun run report:iteration --recommend <changed files...>
   bun run report:iteration --agent-actions [--recommend <changed files...>]
   bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
-  bun run report:iteration --session-history
+  bun run report:iteration --session-history [--latest-sessions 10] [--exclude-current-session]
 
-When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content.`);
+When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Use --latest-sessions/--session-history-limit to cap history and --exclude-current-session to skip the current/latest session log.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {

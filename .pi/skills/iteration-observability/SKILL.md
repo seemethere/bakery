@@ -24,9 +24,10 @@ bun run project:notes
 bun run report:iteration --agent-actions --recommend
 bun run report:iteration --session-context
 bun run report:iteration --session-history
+bun run report:iteration --session-history --latest-sessions 10 --exclude-current-session
 ```
 
-Use `--session-context` for the current/most recent session and `--session-history` to backfill all available local JSONL session logs.
+Use `--session-context` for the current/most recent session and `--session-history` to backfill available local JSONL session logs. Use `--latest-sessions 10 --exclude-current-session` when you want recent-history evidence without counting the active conversation.
 
 ## Choosing validation commands
 
