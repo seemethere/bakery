@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -306,6 +306,39 @@ async function runContextUsage(page: Page): Promise<Record<string, unknown>> {
   if (!after?.includes("%")) throw new Error(`Context usage did not include percentage; saw ${after}`);
   await page.screenshot({ path: join(artifactDir, "context-usage.png"), fullPage: true });
   return { before, after, ...(await collectMetrics(page)) };
+}
+
+async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator(".message", { hasText: "No messages yet." }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "empty-session-layout.png"), fullPage: true });
+
+  const layout = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height), bottom: Math.round(rect.bottom) };
+    };
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      prompt: rectOf("#prompt"),
+      footer: rectOf("footer"),
+      transcript: rectOf(".transcript"),
+      controls: rectOf(".controls"),
+    };
+  });
+
+  const promptHeight = layout.prompt?.height ?? 0;
+  const footerHeight = layout.footer?.height ?? 0;
+  const transcriptHeight = layout.transcript?.height ?? 0;
+  if (promptHeight > 80) throw new Error(`Empty session prompt is too tall: ${promptHeight}px`);
+  if (footerHeight > 125) throw new Error(`Empty session footer is too tall: ${footerHeight}px`);
+  if (transcriptHeight < 600) throw new Error(`Empty session transcript is too short: ${transcriptHeight}px`);
+  if (layout.prompt && layout.controls && layout.prompt.left + layout.prompt.width > layout.controls.left) {
+    throw new Error(`Empty session controls overlap prompt: prompt right ${layout.prompt.left + layout.prompt.width}px, controls left ${layout.controls.left}px`);
+  }
+  return { ...(await collectMetrics(page)), layout };
 }
 
 async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
@@ -888,6 +921,7 @@ function assertPerfThresholds(name: string, metrics: Record<string, unknown>): v
 
 async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void>; stopServer: () => Promise<void> }): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
+  if (name === "empty-session-layout") return runEmptySessionLayout(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
