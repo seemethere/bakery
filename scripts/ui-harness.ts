@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -105,11 +105,16 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
     const transcript = document.querySelector(".transcript");
     const perf = window.__piWebPerf ?? null;
     const longTasks = window.__piWebLongTasks ?? [];
-    const summarize = (samples: number[]) => ({
-      count: samples.length,
-      maxMs: samples.length ? Math.round(Math.max(...samples)) : 0,
-      avgMs: samples.length ? Math.round(samples.reduce((sum, value) => sum + value, 0) / samples.length) : 0,
-    });
+    const summarize = (samples: number[]) => {
+      const sorted = [...samples].sort((a, b) => a - b);
+      const percentile = (p: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))] ?? 0 : 0;
+      return {
+        count: samples.length,
+        maxMs: samples.length ? Math.round(Math.max(...samples)) : 0,
+        p95Ms: Math.round(percentile(0.95)),
+        avgMs: samples.length ? Math.round(samples.reduce((sum, value) => sum + value, 0) / samples.length) : 0,
+      };
+    };
     return {
       navigation: nav,
       resources,
@@ -794,6 +799,29 @@ async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   return { groups: await page.locator(".tool-run-group").count(), ...(await collectMetrics(page)) };
 }
 
+async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for performance measurement.");
+  await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 80, null, { timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
+    return images.length >= 1 && images.slice(0, 12).every((image) => image.complete && image.naturalWidth > 0);
+  }, null, { timeout: 15_000 });
+  const responsiveness = [
+    await timed("fill-prompt-after-heavy-transcript", () => page.locator("#prompt").fill("typing after tool/image-heavy transcript")),
+    await timed("toggle-inspector-after-heavy-transcript", () => page.locator("#toggleRightPanel").click()),
+    await timed("toggle-thinking-after-heavy-transcript", () => page.locator("#showThinking").click()),
+  ];
+  await page.screenshot({ path: join(artifactDir, "tool-image-heavy-transcript.png"), fullPage: true });
+  return {
+    responsiveness,
+    maxLatencyMs: Math.max(...responsiveness.map((sample) => sample.ms)),
+    toolRows: await page.locator(".message.tool").count(),
+    artifactImages: await page.locator(".artifact-image img").count(),
+    ...(await collectMetrics(page)),
+  };
+}
+
 async function runFileAutocomplete(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("Please inspect @Button");
@@ -1024,6 +1052,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "connection-disconnected") return runConnectionDisconnected(page, runtime);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
   if (name === "tool-grouping") return runToolGrouping(page);
+  if (name === "tool-image-heavy-transcript") return runToolImageHeavyTranscript(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
   if (name === "image-artifact-drop-upload") return runImageArtifactDropUpload(page);

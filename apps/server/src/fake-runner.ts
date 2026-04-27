@@ -133,12 +133,23 @@ class FakeSessionHandle implements SessionHandle {
     this.emit({ type: "message_end", message: user });
 
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
-    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion;
+    const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
     this.session.isStreaming = true;
     this.emit({ type: "agent_start" });
+
+    if (shouldEmitToolImageHeavyTranscript) {
+      await this.emitToolImageHeavyTranscript();
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
 
     if (shouldAskQuestion) {
       await this.emitFakeQuestionRun(/cancel/i.test(text));
@@ -381,6 +392,44 @@ class FakeSessionHandle implements SessionHandle {
     this.messages.push(assistant);
     this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: assistant });
+  }
+
+  private async emitToolImageHeavyTranscript(): Promise<void> {
+    const rows = 96;
+    for (let index = 1; index <= rows && !this.aborted; index++) {
+      const assistant: FakeMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        timestamp: new Date().toISOString(),
+        content: [
+          `### Tool/image-heavy sample ${index}`,
+          "",
+          "This synthetic row exists to measure transcript rendering with many image references and completed tool cards.",
+          "",
+          `- Workspace screenshot path: screenshots/fixture.png`,
+          `- Repeated note ${index}: image preview cards should stay stable while the transcript grows.`,
+        ].join("\n"),
+      };
+      this.messages.push(assistant);
+      this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
+      this.emit({ type: "message_end", message: assistant });
+
+      const toolCallId = crypto.randomUUID();
+      const args = { command: `printf 'render image-heavy transcript row ${index}'` };
+      const outputLines = Array.from({ length: 24 }, (_, lineIndex) => `[row ${String(index).padStart(2, "0")}] synthetic tool output line ${String(lineIndex + 1).padStart(2, "0")} with enough text to exercise wrapping and summary generation`).join("\n");
+      const text = `${outputLines}\n\nGenerated screenshot artifact: screenshots/fixture.png\n`;
+      this.emit({ type: "tool_execution_start", toolCallId, toolName: "bash", args });
+      this.emit({
+        type: "tool_execution_end",
+        toolCallId,
+        toolName: "bash",
+        result: {
+          content: [{ type: "text", text }],
+          details: { stdout: `${text}\n`, stderr: "", exitCode: 0 },
+        },
+      });
+      if (index % 4 === 0) await sleep(0);
+    }
   }
 
   private async emitFakeToolRun(longOutput = false, runIndex = 1): Promise<void> {

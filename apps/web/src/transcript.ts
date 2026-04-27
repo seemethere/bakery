@@ -515,7 +515,7 @@ export class PiTranscriptRow extends HTMLElement {
           ${this.actionMenuOpen ? this.renderActionMenu(item) : ""}
         </span>
       </div>
-      <div class="message-body">${renderTranscriptSegments(item, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths })}</div>`;
+      <div class="message-body">${this.collapsed ? "" : renderTranscriptSegments(item, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths })}</div>`;
     this.pinRunningToolOutputToBottom(item);
     this.lastRenderKey = renderKey;
     this.lastStreamingText = streamingText ?? "";
