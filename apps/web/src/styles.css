@@ -1344,10 +1344,7 @@ textarea {
 }
 
 .running-queue {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 10px;
+  position: static;
   z-index: 6;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1359,18 +1356,38 @@ textarea {
   border-radius: 10px;
   background: var(--color-queue-bg);
   padding: 7px 8px;
+  margin: 0 16px 10px;
   box-shadow: var(--color-queue-shadow);
-  backdrop-filter: blur(10px);
 }
 
 .running-queue-heading {
   display: grid;
-  gap: 1px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 6px;
   min-width: 132px;
   color: var(--color-queue-text);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.queue-section-toggle {
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border-color: var(--color-queue-border);
+  background: color-mix(in srgb, var(--color-queue-text) 10%, transparent);
+  color: var(--color-queue-text);
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.running-queue.collapsed {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: none;
 }
 
 .running-queue.expanded {
@@ -1541,6 +1558,8 @@ textarea:disabled {
 .transcript-shell {
   grid-row: 4;
   position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
 }
@@ -1558,7 +1577,7 @@ textarea:disabled {
 }
 
 .transcript-shell.has-running-queue .transcript {
-  padding-bottom: 112px;
+  padding-bottom: 22px;
 }
 
 .jump-to-latest {
@@ -3139,10 +3158,9 @@ pre {
   }
 
   .running-queue {
-    left: 8px;
-    right: 8px;
     grid-template-columns: minmax(0, 1fr);
     max-height: 118px;
+    margin: 0 8px 8px;
   }
 
   .running-queue-heading {
@@ -3196,8 +3214,8 @@ pre {
   }
 
   .running-queue {
-    left: 8px;
-    right: 8px;
+    margin-left: 8px;
+    margin-right: 8px;
   }
 
   .tree-drawer {

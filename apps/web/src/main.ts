@@ -131,6 +131,7 @@ class PiWebAgentApp extends HTMLElement {
   private promptImages: PromptImage[] = [];
   private runningQueue: RunningQueueState = emptyRunningQueue();
   private runningQueueExpanded = false;
+  private runningQueueSectionExpanded = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private socketGeneration = 0;
@@ -1976,6 +1977,12 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private bindRunningQueueControls(): void {
+    this.querySelectorAll<HTMLButtonElement>("#toggleRunningQueueSection").forEach((button) => {
+      button.addEventListener("click", () => {
+        this.runningQueueSectionExpanded = !this.runningQueueSectionExpanded;
+        this.render();
+      });
+    });
     this.querySelector<HTMLButtonElement>("#toggleRunningQueue")?.addEventListener("click", () => {
       this.runningQueueExpanded = !this.runningQueueExpanded;
       this.render();
@@ -2104,7 +2111,7 @@ class PiWebAgentApp extends HTMLElement {
 
 
   private renderRunningQueueHtml(): string {
-    const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded);
+    const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded, this.mobileLayout && !this.runningQueueSectionExpanded);
     this.runningQueueExpanded = rendered.expanded;
     return rendered.html;
   }
@@ -2535,7 +2542,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!shell) return;
     shell.classList.toggle("has-running-queue", hasRunningQueueItems(this.runningQueue));
     const existing = shell.querySelector<HTMLElement>(".running-queue");
-    const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded);
+    const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded, this.mobileLayout && !this.runningQueueSectionExpanded);
     this.runningQueueExpanded = rendered.expanded;
     if (!rendered.html) {
       existing?.remove();

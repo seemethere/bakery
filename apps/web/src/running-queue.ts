@@ -81,28 +81,31 @@ type RunningQueueRenderItem = {
   index: number;
 };
 
-export function renderRunningQueue(queue: RunningQueueState, expanded: boolean): { html: string; expanded: boolean } {
+export function renderRunningQueue(queue: RunningQueueState, expanded: boolean, collapsed = false): { html: string; expanded: boolean } {
   const allItems: RunningQueueRenderItem[] = [
     ...queue.steering.map((item, index) => ({ kind: "Steer" as const, queue: "steering" as const, item, index })),
     ...queue.followUp.map((item, index) => ({ kind: "Follow-up" as const, queue: "followUp" as const, item, index })),
   ];
   if (allItems.length === 0) return { html: "", expanded: false };
 
-  const visibleItems = expanded ? allItems : allItems.slice(0, 3);
+  const visibleItems = collapsed ? [] : expanded ? allItems : allItems.slice(0, 3);
   const hiddenCount = Math.max(0, allItems.length - visibleItems.length);
   const total = allItems.length;
+  const pendingTranscriptCount = allItems.filter(({ item }) => item.status === "pendingTranscript").length;
+  const statusLabel = pendingTranscriptCount > 0 ? `${pendingTranscriptCount} sending · ${total} pending` : `${total} pending`;
   return {
     expanded,
     html: `
-      <div class="running-queue ${expanded ? "expanded" : "compact"}" aria-label="Queued running controls">
+      <div class="running-queue ${collapsed ? "collapsed" : expanded ? "expanded" : "compact"}" aria-label="Queued running controls">
         <div class="running-queue-heading">
+          <button id="toggleRunningQueueSection" class="queue-section-toggle" type="button" aria-expanded="${collapsed ? "false" : "true"}">${collapsed ? "▸" : "▾"}</button>
           <strong>Queued for this run</strong>
-          <span>${total} pending</span>
-          ${hiddenCount > 0 ? `<button id="toggleRunningQueue" class="queue-more" type="button">+${hiddenCount} more</button>` : expanded && total > 3 ? `<button id="toggleRunningQueue" class="queue-more" type="button">Show less</button>` : ""}
+          <span>${escapeHtml(statusLabel)}</span>
+          ${collapsed ? "" : hiddenCount > 0 ? `<button id="toggleRunningQueue" class="queue-more" type="button">+${hiddenCount} more</button>` : expanded && total > 3 ? `<button id="toggleRunningQueue" class="queue-more" type="button">Show less</button>` : ""}
         </div>
-        <div class="running-queue-items">
+        ${collapsed ? "" : `<div class="running-queue-items">
           ${visibleItems.map(renderRunningQueuePill).join("")}
-        </div>
+        </div>`}
       </div>`,
   };
 }
