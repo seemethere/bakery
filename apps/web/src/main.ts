@@ -1,9 +1,10 @@
 import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
 import { TranscriptFollowController } from "./transcript-follow";
@@ -553,15 +554,8 @@ class PiWebAgentApp extends HTMLElement {
     } else if (payload.type === "session_metadata_update") {
       const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
       if (document.activeElement !== titleInput) this.editingTitleDraft = null;
-      const mergeSessionMetadata = (existing: WebSession | undefined): WebSession => ({
-        ...existing,
-        ...payload.session,
-        lastUserPrompt: payload.session.lastUserPrompt ?? existing?.lastUserPrompt,
-        lastActivityAt: payload.session.lastActivityAt ?? existing?.lastActivityAt,
-        status: payload.session.status ?? existing?.status,
-      });
-      this.selectedSession = mergeSessionMetadata(this.selectedSession?.id === payload.session.id ? this.selectedSession : undefined);
-      this.sessions = this.sessions.map((session) => session.id === payload.session.id ? mergeSessionMetadata(session) : session);
+      this.selectedSession = mergeSessionMetadataUpdate(this.selectedSession?.id === payload.session.id ? this.selectedSession : undefined, payload.session);
+      this.sessions = this.sessions.map((session) => session.id === payload.session.id ? mergeSessionMetadataUpdate(session, payload.session) : session);
     } else if (payload.type === "error") {
       this.upsertTranscript({ id: `error:${Date.now()}`, kind: "error", title: payload.code, body: payload.message });
     }
@@ -569,8 +563,8 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private applyAgentEvent(event: unknown): void {
-    if (!isRecord(event)) return;
-    const type = String(event.type ?? "event");
+    const type = agentEventType(event);
+    if (!type || !isRecord(event)) return;
     const transcript = this.querySelector<HTMLElement>(".transcript");
     this.transcriptFollow.disableFollowIfDetached(transcript);
 
@@ -584,128 +578,43 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (type === "web_command_result") {
-      this.upsertTranscript({
-        id: String(event.id ?? `command:${Date.now()}`),
-        kind: event.isError ? "error" : "system",
-        title: String(event.title ?? "Slash command"),
-        body: String(event.body ?? ""),
-        raw: event,
-      });
+      this.upsertTranscript(webCommandResultToTranscriptItem(event));
       return;
     }
 
-    if (type === "bash_execution_start") {
-      const command = String(event.command ?? "bash");
-      const excludeFromContext = Boolean(event.excludeFromContext);
-      this.status = "running";
-      this.transcript = this.transcript.filter((item) => !(item.id.startsWith("bash:pending:") && isRecord(item.raw) && item.raw.command === command));
-      this.upsertTranscript({
-        id: String(event.id ?? `bash:${Date.now()}`),
-        kind: "tool",
-        title: `$ ${command}${excludeFromContext ? " (no context)" : ""}`,
-        body: "Starting…",
-        status: "running",
-        raw: event,
-      });
+    if (type === "bash_execution_start" || type === "bash_execution_update" || type === "bash_execution_end") {
+      const command = bashEventCommand(event);
+      if (type !== "bash_execution_end") this.status = "running";
+      else this.status = "idle";
+      if (type === "bash_execution_start") this.transcript = this.transcript.filter((item) => !(item.id.startsWith("bash:pending:") && isRecord(item.raw) && item.raw.command === command));
+      const item = bashEventToTranscriptItem(event);
+      if (item) this.upsertTranscript(item);
+      if (type === "bash_execution_end") void this.refreshTree();
       return;
     }
 
-    if (type === "bash_execution_update") {
-      const command = String(event.command ?? "bash");
-      const excludeFromContext = Boolean(event.excludeFromContext);
-      this.status = "running";
-      this.upsertTranscript({
-        id: String(event.id ?? `bash:${Date.now()}`),
-        kind: "tool",
-        title: `$ ${command}${excludeFromContext ? " (no context)" : ""}`,
-        body: String(event.output ?? ""),
-        segments: [{ kind: "pre", text: String(event.output ?? "") }],
-        status: "running",
-        raw: event,
-      });
-      return;
-    }
-
-    if (type === "bash_execution_end") {
-      const command = String(event.command ?? "bash");
-      const excludeFromContext = Boolean(event.excludeFromContext);
-      const result = isRecord(event.result) ? event.result : {};
-      const output = typeof result.output === "string" ? result.output : stringify(result);
-      this.status = "idle";
-      this.upsertTranscript({
-        id: String(event.id ?? `bash:${Date.now()}`),
-        kind: "tool",
-        title: `$ ${command}${excludeFromContext ? " (no context)" : ""}`,
-        body: output || "Command completed with no output.",
-        segments: [{ kind: "pre", text: output || "Command completed with no output." }],
-        status: event.isError || (typeof result.exitCode === "number" && result.exitCode !== 0) ? "error" : "done",
-        raw: event,
-      });
-      void this.refreshTree();
-      return;
-    }
-
-    if ((type === "message_start" || type === "message_update" || type === "message_end") && isRecord(event.message)) {
-      const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
-      const item = messageToTranscriptItem(event.message, fallback);
-      item.status = type === "message_update" ? "running" : "done";
+    if (type === "message_start" || type === "message_update" || type === "message_end") {
+      const item = messageEventToTranscriptItem(type, event);
+      if (!item) return;
       this.upsertTranscript(item);
       if (item.kind === "user") this.runningQueue = clearConfirmedRunningQueueItem(this.runningQueue, item.body);
       return;
     }
 
-    if (type === "tool_execution_start") {
-      this.upsertTranscript({
-        id: `tool:${String(event.toolCallId ?? Date.now())}`,
-        kind: "tool",
-        title: formatToolTitle(event.toolName, event.args),
-        body: toolArgsToText(event.args ?? {}),
-        status: "running",
-        raw: event,
-      });
-      return;
-    }
-
-    if (type === "tool_execution_update") {
-      const partialResult = event.partialResult ?? {};
-      const partialText = toolResultToText(partialResult);
-      this.upsertTranscript({
-        id: `tool:${String(event.toolCallId ?? Date.now())}`,
-        kind: "tool",
-        title: formatToolTitle(event.toolName, event.args),
-        body: partialText || toolArgsToText(event.args ?? {}),
-        segments: toolResultToSegments(partialResult),
-        status: "running",
-        raw: event,
-      });
-      return;
-    }
-
-    if (type === "tool_execution_end") {
+    if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
       const id = `tool:${String(event.toolCallId ?? Date.now())}`;
-      const existing = this.transcript.find((item) => item.id === id);
-      const result = event.result ?? {};
-      const toolItem: TranscriptItem = {
-        id,
-        kind: "tool",
-        title: existing?.title ?? formatToolTitle(event.toolName, {}),
-        body: toolResultToText(result),
-        segments: toolResultToSegments(result),
-        status: event.isError ? "error" : "done",
-        raw: event,
-      };
+      const existing = type === "tool_execution_end" ? this.transcript.find((item) => item.id === id) : undefined;
+      const toolItem = toolExecutionToTranscriptItem(type, event, existing);
+      if (!toolItem) return;
       this.upsertTranscript(toolItem);
-      const questionSummary = questionSummaryFromTool(toolItem);
+      const questionSummary = type === "tool_execution_end" ? questionSummaryForToolItem(toolItem) : null;
       if (questionSummary) this.upsertTranscript(questionSummary);
       return;
     }
 
     if (type === "queue_update") {
-      this.runningQueue = runningQueueFromUpdate(
-        this.runningQueue,
-        Array.isArray(event.steering) ? event.steering : [],
-        Array.isArray(event.followUp) ? event.followUp : [],
-      );
+      const update = queueUpdateValues(event);
+      this.runningQueue = runningQueueFromUpdate(this.runningQueue, update.steering, update.followUp);
     }
   }
 
