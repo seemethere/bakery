@@ -782,12 +782,16 @@ footer.running-footer {
   font-size: 11px;
 }
 
-.context-usage span:first-child {
+.context-usage-full {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.context-usage-compact {
+  display: none;
 }
 
 .context-usage strong {
@@ -2889,9 +2893,34 @@ pre {
     min-width: 0;
   }
 
-  .composer-activity,
-  .context-usage {
+  .composer-activity {
     display: none;
+  }
+
+  .context-usage {
+    flex: 0 0 auto;
+    gap: 6px;
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 10px;
+  }
+
+  .context-usage-full {
+    display: none;
+  }
+
+  .context-usage-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+  }
+
+  .context-usage-bar {
+    flex-basis: 28px;
+    height: 4px;
   }
 
   #prompt {

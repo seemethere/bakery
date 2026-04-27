@@ -377,6 +377,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) await page.locator("#toggleSessionSidebar").click();
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".context-usage", { hasText: "Ctx" }).waitFor({ timeout: 5_000 });
   await page.locator("#prompt").fill("Mobile layout regression draft");
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
@@ -406,6 +407,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       footer: rectOf("footer"),
       prompt: rectOf("#prompt"),
       controls: rectOf(".controls"),
+      contextUsage: rectOf(".context-usage"),
+      contextUsageText: document.querySelector(".context-usage")?.textContent?.trim() ?? "",
       mobileMenu: rectOf("#toggleSessionSidebarMobile"),
       closedSidebar: rectOf(".session-sidebar.collapsed"),
       rightPanel: rectOf(".right-panel"),
@@ -418,6 +421,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if ((layout.mobileMenu?.width ?? 0) < 30) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
   if (layout.rightPanel !== null) throw new Error(`Mobile inspector should be detached, saw ${JSON.stringify(layout.rightPanel)}`);
+  if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put sessions before settings: new=${layout.drawerOrder.newSessionIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
   if ((layout.header?.height ?? 999) > 140) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);

@@ -85,8 +85,12 @@ function formatTokenCount(value: number | null | undefined): string {
   return String(value);
 }
 
+function contextUsagePercentLabel(usage: ContextUsage): string {
+  return usage.percent === null ? "unknown" : `${usage.percent.toFixed(usage.percent >= 10 ? 0 : 1)}%`;
+}
+
 function contextUsageLabel(usage: ContextUsage): string {
-  const percent = usage.percent === null ? "unknown" : `${usage.percent.toFixed(usage.percent >= 10 ? 0 : 1)}%`;
+  const percent = contextUsagePercentLabel(usage);
   return `${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} (${percent})`;
 }
 
@@ -2631,7 +2635,8 @@ class PiWebAgentApp extends HTMLElement {
       ? `Context usage is currently unknown. Model context window: ${usage.contextWindow.toLocaleString()} tokens.`
       : `Estimated context usage: ${usage.tokens.toLocaleString()} of ${usage.contextWindow.toLocaleString()} tokens (${usage.percent?.toFixed(2) ?? "unknown"}%).`;
     return `<div class="context-usage" aria-label="Model context usage" title="${escapeHtml(title)}">
-      <span><strong>Context</strong> ${escapeHtml(contextUsageLabel(usage))}</span>
+      <span class="context-usage-full"><strong>Context</strong> ${escapeHtml(contextUsageLabel(usage))}</span>
+      <span class="context-usage-compact" aria-hidden="true"><strong>Ctx</strong> ${escapeHtml(contextUsagePercentLabel(usage))}</span>
       <span class="context-usage-bar" aria-hidden="true"><i style="width: ${percent}%"></i></span>
     </div>`;
   }
