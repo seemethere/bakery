@@ -1012,11 +1012,15 @@ textarea:disabled {
 }
 
 .message.tool .message-body {
-  max-height: min(38vh, calc(26.1em + 22px));
+  max-height: clamp(220px, 42vh, 560px);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   background: rgba(0, 0, 0, 0.08);
+}
+
+.message.tool.running .message-body {
+  max-height: clamp(260px, 50vh, 680px);
 }
 
 .message.tool pre {
@@ -1026,9 +1030,10 @@ textarea:disabled {
 }
 
 .message.tool .terminal-output {
-  line-height: 1.45;
+  line-height: 1.42;
+  tab-size: 2;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .message.tool.done.collapsed {
@@ -1310,7 +1315,7 @@ pre {
 .markdown-body img {
   display: block;
   max-width: 100%;
-  max-height: 520px;
+  max-height: clamp(260px, 62vh, 640px);
   border: 1px solid #343b49;
   border-radius: 8px;
   object-fit: contain;
@@ -1360,7 +1365,7 @@ pre {
 .rendered-image img {
   display: block;
   max-width: 100%;
-  max-height: 520px;
+  max-height: clamp(260px, 62vh, 640px);
   border: 1px solid #343b49;
   border-radius: 8px;
   background: #0f1117;
@@ -1369,7 +1374,7 @@ pre {
 
 .rendered-image.expanded img {
   width: 100%;
-  max-height: min(72vh, 900px);
+  max-height: min(78vh, 1100px);
 }
 
 .rendered-image figcaption {
@@ -1380,7 +1385,7 @@ pre {
 
 .artifact-image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 10px;
   margin-top: 12px;
 }
@@ -1405,15 +1410,20 @@ pre {
 .artifact-image img {
   display: block;
   width: 100%;
-  max-height: 220px;
+  max-height: clamp(180px, 28vh, 300px);
   border: 1px solid #2a2f3a;
   border-radius: 6px;
   background: #0f1117;
   object-fit: contain;
 }
 
-.artifact-image.expanded img {
-  max-height: min(72vh, 900px);
+.message.tool .artifact-image img {
+  max-height: clamp(150px, 22vh, 240px);
+}
+
+.artifact-image.expanded img,
+.message.tool .artifact-image.expanded img {
+  max-height: min(78vh, 1100px);
 }
 
 .artifact-image figcaption {
