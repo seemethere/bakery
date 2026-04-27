@@ -27,21 +27,24 @@ export type RenderContext = {
 
 export type ToolGroupPosition = "single" | "start" | "middle" | "end";
 
-const markdownRenderer = new marked.Renderer();
-markdownRenderer.html = ({ text }) => escapeHtml(text);
-markdownRenderer.link = function ({ href, title, tokens }) {
-  const label = this.parser.parseInline(tokens);
-  const safeHref = sanitizeUrl(href);
-  if (!safeHref) return label;
-  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-  return `<a href="${escapeHtml(safeHref)}"${titleAttr} target="_blank" rel="noreferrer noopener">${label}</a>`;
-};
-markdownRenderer.image = function ({ href, title, text }) {
-  const safeHref = sanitizeUrl(href);
-  if (!safeHref) return escapeHtml(text || "image");
-  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-  return `<img src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy" />`;
-};
+function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) {
+  const renderer = new marked.Renderer();
+  renderer.html = ({ text }) => escapeHtml(text);
+  renderer.link = function ({ href, title, tokens }) {
+    const label = this.parser.parseInline(tokens);
+    const safeHref = sanitizeUrl(href);
+    if (!safeHref) return label;
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<a href="${escapeHtml(safeHref)}"${titleAttr} target="_blank" rel="noreferrer noopener">${label}</a>`;
+  };
+  renderer.image = function ({ href, title, text }) {
+    const safeHref = resolveImageHref(href, localImageUrl);
+    if (!safeHref) return escapeHtml(text || "image");
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+    return `<img src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy" />`;
+  };
+  return renderer;
+}
 
 function sanitizeUrl(value: string): string | null {
   if (/^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) return value.replace(/\s/g, "");
@@ -54,6 +57,17 @@ function sanitizeUrl(value: string): string | null {
   return null;
 }
 
+function isExternalOrRootHref(value: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(value);
+}
+
+function resolveImageHref(value: string, localImageUrl?: RenderContext["localImageUrl"]): string | null {
+  const safeHref = sanitizeUrl(value);
+  if (!safeHref) return null;
+  if (!isExternalOrRootHref(value)) return localImageUrl?.(value) ?? safeHref;
+  return safeHref;
+}
+
 function imagePartToSegment(part: Record<string, unknown>): TranscriptSegment {
   const mimeType = typeof part.mimeType === "string" ? part.mimeType : typeof part.mediaType === "string" ? part.mediaType : "image/png";
   const label = `[image${mimeType ? `: ${mimeType}` : ""}]`;
@@ -64,8 +78,8 @@ function imagePartToSegment(part: Record<string, unknown>): TranscriptSegment {
   return src ? { kind: "image", label, src } : { kind: "image", label };
 }
 
-export function renderMarkdown(value: string): string {
-  return marked.parse(value, { async: false, gfm: true, breaks: false, renderer: markdownRenderer });
+export function renderMarkdown(value: string, localImageUrl?: RenderContext["localImageUrl"]): string {
+  return marked.parse(value, { async: false, gfm: true, breaks: false, renderer: createMarkdownRenderer(localImageUrl) });
 }
 
 const localImagePathPattern = /(?:^|[\s([{"'`])((?:\.{1,2}\/)?(?:[\w@.+-]+\/)+[\w@.+-]+\.(?:png|jpe?g|gif|webp|svg))(?![\w.-])/gi;
@@ -84,6 +98,25 @@ function localImageArtifacts(text: string, localImageUrl?: RenderContext["localI
     if (artifacts.length >= 12) break;
   }
   return artifacts;
+}
+
+const markdownImageHrefPattern = /!\[[^\]]*\]\(\s*<?([^\s>)]+)>?(?:\s+["'][^"']*["'])?\s*\)/gi;
+
+function markdownLocalImagePaths(text: string, localImageUrl?: RenderContext["localImageUrl"]): Set<string> {
+  const paths = new Set<string>();
+  if (!localImageUrl) return paths;
+  for (const match of text.matchAll(markdownImageHrefPattern)) {
+    const href = match[1]?.replace(/^\.\//, "");
+    if (!href || isExternalOrRootHref(href) || !localImageUrl(href)) continue;
+    paths.add(href);
+  }
+  return paths;
+}
+
+function mergeSuppressedPaths(...sets: Array<Set<string> | undefined>): Set<string> | undefined {
+  const merged = new Set<string>();
+  for (const set of sets) for (const value of set ?? []) merged.add(value);
+  return merged.size ? merged : undefined;
 }
 
 function renderLocalImageArtifacts(text: string, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths?: Set<string>): string {
@@ -376,7 +409,9 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
     .map((segment) => {
       if (segment.kind === "markdown") {
         if (usePlainStreamingText) return `<div class="markdown-body streaming-plain"><pre>${escapeHtml(segment.text)}</pre></div>`;
-        return `<div class="markdown-body">${renderMarkdown(segment.text)}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}</div>`;
+        const markdownImagePaths = markdownLocalImagePaths(segment.text, context.localImageUrl);
+        const suppressedPaths = mergeSuppressedPaths(context.suppressLocalImageArtifactPaths, markdownImagePaths);
+        return `<div class="markdown-body">${renderMarkdown(segment.text, context.localImageUrl)}${renderLocalImageArtifacts(segment.text, context.localImageUrl, suppressedPaths)}</div>`;
       }
       if (segment.kind === "thinking") {
         const content = showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
