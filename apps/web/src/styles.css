@@ -923,6 +923,7 @@ footer.running-footer {
 textarea {
   box-sizing: border-box;
   min-height: 48px;
+  max-height: min(28vh, 260px);
   resize: vertical;
   width: 100%;
   padding-block: 8px;
@@ -1208,6 +1209,7 @@ textarea {
   position: relative;
   z-index: 2;
   display: flex;
+  align-self: end;
   align-items: stretch;
   gap: 6px;
 }
