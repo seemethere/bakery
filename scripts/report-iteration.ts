@@ -10,6 +10,7 @@ const cliArgs = process.argv.slice(2);
 const recommendMode = cliArgs.includes("--recommend");
 const agentActionsMode = cliArgs.includes("--agent-actions");
 const sessionContextMode = cliArgs.includes("--session-context");
+const sessionHistoryMode = cliArgs.includes("--session-history") || cliArgs.includes("--all-sessions");
 const helpMode = cliArgs.includes("--help") || cliArgs.includes("-h");
 const outputFlagIndex = cliArgs.findIndex((arg) => arg === "--output" || arg === "-o");
 const sessionFlagIndex = cliArgs.findIndex((arg) => arg === "--session");
@@ -17,6 +18,7 @@ const positionalOutput = !recommendMode && cliArgs[0] && !cliArgs[0].startsWith(
 const outputPath = resolve(root, outputFlagIndex >= 0 ? cliArgs[outputFlagIndex + 1] ?? defaultOutputPath : positionalOutput ?? defaultOutputPath);
 const maxCommits = Number(process.env.PI_WEB_ITERATION_COMMITS ?? 40);
 const maxHarnessRuns = Number(process.env.PI_WEB_ITERATION_HARNESS_RUNS ?? 80);
+const maxSessionHistory = Number(process.env.PI_WEB_ITERATION_SESSION_HISTORY ?? 500);
 
 type GitCommit = {
   hash: string;
@@ -73,6 +75,26 @@ type SessionContextReport = {
   notes: string[];
 };
 
+type SessionHistoryReport = {
+  sessionCount: number;
+  totalLines: number;
+  totalBytes: number;
+  oldestMtime?: string;
+  newestMtime?: string;
+  cwdFrequency: Array<{ cwd: string; sessions: number }>;
+  toolCallsByName: Record<string, number>;
+  toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
+  validationCommands: Array<{ command: string; runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>;
+  editAttempts: Array<{ path: string; attempts: number; successes: number; failures: number; resultChars: number }>;
+  topReadPaths: Array<{ path: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
+  topBashCommands: Array<{ command: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
+  largestSessions: Array<{ sessionPath: string; cwd?: string; lines: number; bytes: number; mtime: string; toolResultChars: number; validationRuns: number; editFailures: number }>;
+  largestToolResults: Array<{ sessionPath?: string; toolName: string; chars: number; estimatedTokens: number; timestamp?: string; input?: string; durationMs?: number }>;
+  sessionsWithEditFailures: Array<{ sessionPath?: string; failures: number; attempts: number; files: string[] }>;
+  actionRecommendations: string[];
+  notes: string[];
+};
+
 type IterationReport = {
   generatedAt: string;
   source: {
@@ -100,6 +122,7 @@ type IterationReport = {
     suggestedAction: string;
   }>;
   sessionContext?: SessionContextReport;
+  sessionHistory?: SessionHistoryReport;
 };
 
 function run(command: string, args: string[]): string {
@@ -273,6 +296,19 @@ function validationLabelsFromCommand(command: string): string[] {
   return Array.from(new Set(labels));
 }
 
+function addInputSummary(
+  record: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>,
+  key: string,
+  summary: { calls: number; resultChars: number; maxResultChars: number },
+): void {
+  record[key] ??= { calls: 0, resultChars: 0, estimatedTokens: 0, maxResultChars: 0 };
+  const existing = record[key];
+  existing.calls += summary.calls;
+  existing.resultChars += summary.resultChars;
+  existing.estimatedTokens = estimateTokensFromChars(existing.resultChars);
+  existing.maxResultChars = Math.max(existing.maxResultChars, summary.maxResultChars);
+}
+
 function incrementValidationSummary(
   record: Record<string, { runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>,
   command: string,
@@ -319,25 +355,36 @@ function readSessionCwd(path: string): string | undefined {
   }
 }
 
-function findSessionLogPath(): string | undefined {
-  const explicit = sessionFlagIndex >= 0 ? cliArgs[sessionFlagIndex + 1] : undefined;
-  if (explicit) return resolve(expandHome(explicit));
-
-  const candidates = candidateSessionDirs().flatMap((dir) => {
+function sessionLogCandidates(): Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> {
+  return candidateSessionDirs().flatMap((dir) => {
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
       .filter((entry) => entry.endsWith(".jsonl"))
       .map((entry) => {
         const path = join(dir, entry);
-        return { path, mtimeMs: statSync(path).mtimeMs, cwd: readSessionCwd(path) };
+        const stat = statSync(path);
+        return { path, mtimeMs: stat.mtimeMs, cwd: readSessionCwd(path), bytes: stat.size };
       });
   });
-  const sorted = candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+function findSessionLogPath(): string | undefined {
+  const explicit = sessionFlagIndex >= 0 ? cliArgs[sessionFlagIndex + 1] : undefined;
+  if (explicit) return resolve(expandHome(explicit));
+
+  const sorted = sessionLogCandidates().sort((a, b) => b.mtimeMs - a.mtimeMs);
   return sorted.find((candidate) => candidate.cwd === root)?.path ?? sorted[0]?.path;
 }
 
-function buildSessionContextReport(): SessionContextReport {
-  const sessionPath = findSessionLogPath();
+function findSessionHistoryPaths(): string[] {
+  return sessionLogCandidates()
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, maxSessionHistory)
+    .map((candidate) => candidate.path);
+}
+
+function buildSessionContextReport(sessionPathOverride?: string): SessionContextReport {
+  const sessionPath = sessionPathOverride ?? findSessionLogPath();
   const missingReport: SessionContextReport = {
     lines: 0,
     toolCallsByName: {},
@@ -538,6 +585,143 @@ function buildSessionContextReport(): SessionContextReport {
   return report;
 }
 
+function addToolResultSummary(
+  record: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>,
+  toolName: string,
+  summary: { calls: number; chars: number; maxChars: number },
+): void {
+  record[toolName] ??= { calls: 0, chars: 0, estimatedTokens: 0, maxChars: 0 };
+  const existing = record[toolName];
+  existing.calls += summary.calls;
+  existing.chars += summary.chars;
+  existing.estimatedTokens = estimateTokensFromChars(existing.chars);
+  existing.maxChars = Math.max(existing.maxChars, summary.maxChars);
+}
+
+function buildSessionHistoryReport(): SessionHistoryReport {
+  const paths = findSessionHistoryPaths();
+  const cwdCounts: Record<string, number> = {};
+  const toolCallsByName: Record<string, number> = {};
+  const toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }> = {};
+  const validationSummaries: Record<string, { runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }> = {};
+  const editSummaries: Record<string, { attempts: number; successes: number; failures: number; resultChars: number }> = {};
+  const readSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
+  const bashSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
+  const largestSessions: SessionHistoryReport["largestSessions"] = [];
+  const largestToolResults: SessionHistoryReport["largestToolResults"] = [];
+  const sessionsWithEditFailures: SessionHistoryReport["sessionsWithEditFailures"] = [];
+  let totalLines = 0;
+  let totalBytes = 0;
+  let oldestMtimeMs: number | undefined;
+  let newestMtimeMs: number | undefined;
+
+  for (const path of paths) {
+    const stat = statSync(path);
+    oldestMtimeMs = Math.min(oldestMtimeMs ?? stat.mtimeMs, stat.mtimeMs);
+    newestMtimeMs = Math.max(newestMtimeMs ?? stat.mtimeMs, stat.mtimeMs);
+    const report = buildSessionContextReport(path);
+    const displayPath = report.sessionPath;
+    totalLines += report.lines;
+    totalBytes += stat.size;
+    if (report.sessionCwd) increment(cwdCounts, report.sessionCwd);
+    for (const [tool, count] of Object.entries(report.toolCallsByName)) increment(toolCallsByName, tool, count);
+    for (const [tool, summary] of Object.entries(report.toolResultsByName)) addToolResultSummary(toolResultsByName, tool, summary);
+    for (const item of report.validationCommands) {
+      validationSummaries[item.command] ??= { runs: 0, failures: 0, resultChars: 0, estimatedTokens: 0 };
+      const summary = validationSummaries[item.command];
+      summary.runs += item.runs;
+      summary.failures += item.failures;
+      summary.resultChars += item.resultChars;
+      summary.estimatedTokens = estimateTokensFromChars(summary.resultChars);
+      if (typeof item.maxDurationMs === "number") summary.maxDurationMs = Math.max(summary.maxDurationMs ?? 0, item.maxDurationMs);
+    }
+    for (const item of report.editAttempts) {
+      editSummaries[item.path] ??= { attempts: 0, successes: 0, failures: 0, resultChars: 0 };
+      const summary = editSummaries[item.path];
+      summary.attempts += item.attempts;
+      summary.successes += item.successes;
+      summary.failures += item.failures;
+      summary.resultChars += item.resultChars;
+    }
+    for (const item of report.readPaths) addInputSummary(readSummaries, item.path, item);
+    for (const item of report.bashCommands) addInputSummary(bashSummaries, item.command, item);
+    const toolResultChars = Object.values(report.toolResultsByName).reduce((sum, item) => sum + item.chars, 0);
+    const validationRuns = report.validationCommands.reduce((sum, item) => sum + item.runs, 0);
+    const editFailures = report.editAttempts.reduce((sum, item) => sum + item.failures, 0);
+    largestSessions.push({
+      sessionPath: displayPath ?? path,
+      cwd: report.sessionCwd,
+      lines: report.lines,
+      bytes: stat.size,
+      mtime: new Date(stat.mtimeMs).toISOString(),
+      toolResultChars,
+      validationRuns,
+      editFailures,
+    });
+    for (const item of report.largestToolResults) largestToolResults.push({ sessionPath: displayPath, ...item });
+    if (editFailures > 0) {
+      sessionsWithEditFailures.push({
+        sessionPath: displayPath,
+        failures: editFailures,
+        attempts: report.editAttempts.reduce((sum, item) => sum + item.attempts, 0),
+        files: report.editAttempts.filter((item) => item.failures > 0).map((item) => item.path).slice(0, 6),
+      });
+    }
+  }
+
+  const validationCommands = Object.entries(validationSummaries)
+    .map(([command, summary]) => ({ command, ...summary }))
+    .sort((a, b) => b.runs - a.runs || b.failures - a.failures || b.resultChars - a.resultChars)
+    .slice(0, 20);
+  const editAttempts = Object.entries(editSummaries)
+    .map(([path, summary]) => ({ path, ...summary }))
+    .sort((a, b) => b.failures - a.failures || b.attempts - a.attempts || b.resultChars - a.resultChars)
+    .slice(0, 20);
+  const topReadPaths = Object.entries(readSummaries)
+    .map(([path, summary]) => ({ path, ...summary }))
+    .sort((a, b) => b.resultChars - a.resultChars)
+    .slice(0, 20);
+  const topBashCommands = Object.entries(bashSummaries)
+    .map(([command, summary]) => ({ command, ...summary }))
+    .sort((a, b) => b.resultChars - a.resultChars)
+    .slice(0, 20);
+
+  const actionRecommendations: string[] = [];
+  const topValidation = validationCommands.find((item) => item.runs > 1);
+  if (topValidation) actionRecommendations.push(`Across backfilled sessions, ${topValidation.command} ran ${topValidation.runs} times with ${topValidation.failures} reported failure result(s); use this to tune validation selectors and rerun guidance.`);
+  const topEditFailure = editAttempts.find((item) => item.failures > 0);
+  if (topEditFailure) actionRecommendations.push(`Edit failures cluster around ${topEditFailure.path} (${topEditFailure.failures}/${topEditFailure.attempts} failures); prefer narrower context reads and smaller exact replacements there.`);
+  const topContext = [...topReadPaths.map((item) => ({ label: `read ${item.path}`, chars: item.resultChars })), ...topBashCommands.map((item) => ({ label: `bash ${item.command}`, chars: item.resultChars }))].sort((a, b) => b.chars - a.chars)[0];
+  if (topContext) actionRecommendations.push(`Largest historical context contributor: ${topContext.label} produced ${topContext.chars.toLocaleString()} chars; consider a narrower report or command pattern.`);
+  const mobileRuns = validationCommands.find((item) => item.command === "ui-harness:mobile-layout");
+  if (mobileRuns) actionRecommendations.push(`Mobile validation appears in history (${mobileRuns.runs} runs); keep mobile artifact paths/screenshots in handoffs for mobile UI slices.`);
+  if (actionRecommendations.length === 0) actionRecommendations.push("No obvious cross-session retry/context hotspot found in the backfilled JSONL logs yet.");
+
+  return {
+    sessionCount: paths.length,
+    totalLines,
+    totalBytes,
+    oldestMtime: typeof oldestMtimeMs === "number" ? new Date(oldestMtimeMs).toISOString() : undefined,
+    newestMtime: typeof newestMtimeMs === "number" ? new Date(newestMtimeMs).toISOString() : undefined,
+    cwdFrequency: Object.entries(cwdCounts).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([cwd, sessions]) => ({ cwd, sessions })),
+    toolCallsByName,
+    toolResultsByName,
+    validationCommands,
+    editAttempts,
+    topReadPaths,
+    topBashCommands,
+    largestSessions: largestSessions.sort((a, b) => b.toolResultChars - a.toolResultChars || b.bytes - a.bytes).slice(0, 20),
+    largestToolResults: largestToolResults.sort((a, b) => b.chars - a.chars).slice(0, 20),
+    sessionsWithEditFailures: sessionsWithEditFailures.sort((a, b) => b.failures - a.failures || b.attempts - a.attempts).slice(0, 20),
+    actionRecommendations,
+    notes: [
+      `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateSessionDirs().join(", ")}.`,
+      "Backfill is metadata-only: raw prompts/tool outputs are not printed; deleted/unlogged sessions and human intent for reruns cannot be reconstructed.",
+      "Aggregate read/bash totals are based on each session's retained top inputs, so long-tail per-input counts may be underreported while total tool-result sizes remain accurate.",
+    ],
+  };
+}
+
 function printSessionContextReport(report: SessionContextReport): void {
   console.log("\n## Session context estimate");
   if (!report.sessionPath) {
@@ -594,6 +778,57 @@ function printSessionContextReport(report: SessionContextReport): void {
   console.log(`- assistant responses with usage: ${report.assistantResponsesWithUsage}`);
   if (report.latestUsage) console.log(`- latest usage: ${JSON.stringify(report.latestUsage)}`);
   if (typeof report.maxReportedInputOrCacheRead === "number") console.log(`- max reported input/cacheRead: ${report.maxReportedInputOrCacheRead.toLocaleString()} tokens`);
+  console.log("\nAction recommendations:");
+  report.actionRecommendations.forEach((item) => console.log(`- ${item}`));
+  console.log("\nNotes:");
+  report.notes.forEach((note) => console.log(`- ${note}`));
+}
+
+function printSessionHistoryReport(report: SessionHistoryReport): void {
+  console.log("\n## Session history backfill");
+  console.log(`Sessions scanned: ${report.sessionCount}`);
+  console.log(`JSONL lines: ${report.totalLines.toLocaleString()}`);
+  console.log(`JSONL bytes: ${report.totalBytes.toLocaleString()}`);
+  if (report.oldestMtime || report.newestMtime) console.log(`Mtime range: ${report.oldestMtime ?? "unknown"} → ${report.newestMtime ?? "unknown"}`);
+  console.log("\nTop workspaces:");
+  if (report.cwdFrequency.length === 0) console.log("- none found");
+  report.cwdFrequency.forEach((item) => console.log(`- ${item.cwd}: ${item.sessions} sessions`));
+  console.log("\nTool calls requested:");
+  const toolCalls = Object.entries(report.toolCallsByName).sort((a, b) => b[1] - a[1]);
+  if (toolCalls.length === 0) console.log("- none found");
+  toolCalls.forEach(([tool, count]) => console.log(`- ${tool}: ${count}`));
+  console.log("\nTool result payloads:");
+  const toolResults = Object.entries(report.toolResultsByName).sort((a, b) => b[1].chars - a[1].chars);
+  if (toolResults.length === 0) console.log("- none found");
+  toolResults.forEach(([tool, summary]) => console.log(`- ${tool}: ${summary.calls} calls, ${summary.chars.toLocaleString()} chars (~${summary.estimatedTokens.toLocaleString()} tokens), largest ${summary.maxChars.toLocaleString()} chars`));
+  console.log("\nValidation command summary:");
+  if (report.validationCommands.length === 0) console.log("- none found");
+  report.validationCommands.slice(0, 12).forEach((item) => {
+    const duration = typeof item.maxDurationMs === "number" ? `, max ${(item.maxDurationMs / 1000).toFixed(1)}s` : "";
+    console.log(`- ${item.command}: ${item.runs} runs, ${item.failures} failures, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)${duration}`);
+  });
+  console.log("\nEdit/write attempts:");
+  if (report.editAttempts.length === 0) console.log("- none found");
+  report.editAttempts.slice(0, 12).forEach((item) => console.log(`- ${item.path}: ${item.attempts} attempts, ${item.successes} successes, ${item.failures} failures, ${item.resultChars.toLocaleString()} result chars`));
+  console.log("\nTop read paths:");
+  if (report.topReadPaths.length === 0) console.log("- none found");
+  report.topReadPaths.slice(0, 10).forEach((item) => console.log(`- ${item.path}: ${item.calls} reads, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)`));
+  console.log("\nTop bash commands:");
+  if (report.topBashCommands.length === 0) console.log("- none found");
+  report.topBashCommands.slice(0, 10).forEach((item) => console.log(`- ${item.command}: ${item.calls} runs, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)`));
+  console.log("\nLargest sessions:");
+  if (report.largestSessions.length === 0) console.log("- none found");
+  report.largestSessions.slice(0, 10).forEach((item) => console.log(`- ${item.sessionPath}: ${item.toolResultChars.toLocaleString()} tool-result chars, ${item.lines} lines, ${item.validationRuns} validation runs, ${item.editFailures} edit failures`));
+  console.log("\nLargest tool results:");
+  if (report.largestToolResults.length === 0) console.log("- none found");
+  report.largestToolResults.slice(0, 10).forEach((item) => {
+    const duration = typeof item.durationMs === "number" ? `${(item.durationMs / 1000).toFixed(1)}s` : undefined;
+    const suffix = [item.sessionPath, item.input, duration, item.timestamp].filter(Boolean).join(" · ");
+    console.log(`- ${item.toolName}: ${item.chars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)${suffix ? ` · ${suffix}` : ""}`);
+  });
+  console.log("\nSessions with edit failures:");
+  if (report.sessionsWithEditFailures.length === 0) console.log("- none found");
+  report.sessionsWithEditFailures.slice(0, 10).forEach((item) => console.log(`- ${item.sessionPath ?? "unknown"}: ${item.failures}/${item.attempts} failures · ${item.files.join(", ")}`));
   console.log("\nAction recommendations:");
   report.actionRecommendations.forEach((item) => console.log(`- ${item}`));
   console.log("\nNotes:");
@@ -945,8 +1180,9 @@ function printHelp(): void {
   bun run report:iteration --recommend <changed files...>
   bun run report:iteration --agent-actions [--recommend <changed files...>]
   bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
+  bun run report:iteration --session-history
 
-When --recommend is passed without files, changed files are read from git status. Session-context mode reads local pi JSONL logs and reports counts/sizes without printing tool content.`);
+When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {
@@ -1009,7 +1245,8 @@ const baseReport = {
 } satisfies Omit<IterationReport, "candidates">;
 
 const sessionContext = sessionContextMode ? buildSessionContextReport() : undefined;
-const report: IterationReport = { ...baseReport, candidates: buildCandidates(baseReport), ...(sessionContext ? { sessionContext } : {}) };
+const sessionHistory = sessionHistoryMode ? buildSessionHistoryReport() : undefined;
+const report: IterationReport = { ...baseReport, candidates: buildCandidates(baseReport), ...(sessionContext ? { sessionContext } : {}), ...(sessionHistory ? { sessionHistory } : {}) };
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
 
@@ -1029,4 +1266,8 @@ if (agentActionsMode) {
 
 if (sessionContext) {
   printSessionContextReport(sessionContext);
+}
+
+if (sessionHistory) {
+  printSessionHistoryReport(sessionHistory);
 }
