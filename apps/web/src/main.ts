@@ -1060,6 +1060,8 @@ class PiWebAgentApp extends HTMLElement {
 
   private async handleImageFiles(files: FileList | File[]): Promise<void> {
     const stableFiles = Array.from(files);
+    this.notice = `Processing ${stableFiles.length} selected file${stableFiles.length === 1 ? "" : "s"}…`;
+    this.render();
     if (stableFiles.length === 0) {
       this.notice = "No files were provided by the browser. Try the paperclip file picker or paste the image.";
       this.render();
@@ -1693,7 +1695,12 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLInputElement>("#imageInput")?.addEventListener("change", (event) => {
       const input = event.currentTarget as HTMLInputElement;
-      void this.handleImageFiles(input.files ?? []);
+      const files = Array.from(input.files ?? []);
+      this.notice = files.length > 0
+        ? `Selected ${files.length} image file${files.length === 1 ? "" : "s"}: ${files.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`
+        : "File picker returned no files.";
+      this.render();
+      void this.handleImageFiles(files);
       input.value = "";
     });
     this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.querySelector<HTMLInputElement>("#imageInput")?.click());
