@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .env
+.bakery/dev/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

@@ -14,7 +14,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Minimal Vite web component UI for API/token settings, workspace/session list, session creation/opening, WebSocket connection, readable transcript rendering, model/thinking selectors, prompt/steer/follow-up input, abort controls, controller/viewer status, and TUI-like transcript follow-latest auto-scroll.
 - Assistant transcript rendering now handles Markdown via `marked`, hides thinking by default with a `Show thinking` toggle, renders readable thinking traces dim/italic when enabled, and formats inline tool calls compactly instead of dumping raw provider JSON/encrypted thinking payloads.
 - Tool execution cards now use more TUI-like compact titles, green/blue/red status backgrounds, and cleaner result extraction from text/image/diff/stdout/stderr result payloads.
-- Web dev server now disables Vite browser HMR/reload by default so in-browser agent edits do not refresh/kill the UI session; set `PI_WEB_VITE_HMR=true` to opt back in. Server `dev` now runs without Bun watch by default so edits to backend/shared packages do not restart and kill in-process pi sessions; use `bun run dev:server:watch` to opt into backend watch mode. The web UI also remembers and reopens the last selected session after a page reload.
+- Web dev server now disables Vite browser HMR/reload by default so in-browser agent edits do not refresh/kill the UI session; set `PI_WEB_VITE_HMR=true` to opt back in. Server `dev` now runs without Bun watch by default so edits to backend/shared packages do not restart and kill in-process pi sessions; use `bun run dev:server:watch` to opt into backend watch mode. The default local bootstrap is now `bun run dev`, which ensures a detached backend is up and then runs Vite in the foreground; use `bun run dev:server:restart` to restart only the backend during the dev loop. The web UI also remembers and reopens the last selected session after a page reload.
 - File search/complete endpoints now call the ignore-aware workspace scanner, validate query params with shared Zod schemas, cap result limits, skip default heavy/binary paths, and keep nested `.gitignore` rules scoped to their subtree.
 - Prompt input now has `@file` autocomplete backed by the file search/complete endpoints, with keyboard navigation, click selection, directory continuation, and prompt draft preservation across live transcript rerenders; fixed dropdown closing during rerenders while the prompt remains focused.
 - Added shared command metadata protocol, `GET /api/sessions/:id/commands`, and prompt-box slash-command autocomplete for built-ins, extension commands, prompt templates, and skills; terminal/UI-only built-ins are marked unsupported in metadata.
@@ -136,15 +136,24 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 
 ## How to run
 
-Terminal 1:
+Default local dev loop:
+
+```bash
+bun run dev
+```
+
+This ensures the backend is running in the background, then starts Vite in the foreground. Restart only the backend without touching Vite/browser state:
+
+```bash
+bun run dev:server:restart
+bun run dev:server:logs
+bun run dev:server:down
+```
+
+The older two-terminal foreground loop still works when desired:
 
 ```bash
 PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server
-```
-
-Terminal 2:
-
-```bash
 bun run dev:web
 ```
 
@@ -162,7 +171,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/transcript.ts apps/web/src/main.ts apps/web/src/styles.css apps/web/src/transcript.test.ts` selected focused-first validation (`bun run check`, focused UI scenarios) with full `bun run test:web-perf` as escalation only. `bun run check` passed; focused harness scenarios passed for `streaming-responsiveness`, `slash-commands`, `question-answer`, `inspector-preview`, `transcript-scroll-stability`, `mobile-layout`, plus optional `tool-grouping`. The first `inspector-preview` run failed on the old header-click-to-expand assumption; the harness was updated to assert deterministic header selection and use the explicit output toggle, then passed.
+Latest: `bun run report:iteration --recommend package.json .gitignore scripts/dev-server-manager.ts` selected focused-first validation (`bun run check`) with full `bun run test:web-perf` skipped by default. `bun run check` passed. Manual detached-backend smoke passed on `PI_WEB_PORT=48123`: `dev:server:up`, `status`, health `curl`, `restart`, health `curl`, `logs`, and `down`.
 
 ## Next priorities
 
