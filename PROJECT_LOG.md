@@ -113,10 +113,11 @@ Latest: `bun run check`, focused `bun scripts/ui-harness.ts --scenario image-art
 
 ## Next priorities
 
-1. Continue dogfooding `/grill-me` in real model sessions and tune launcher prompt/tool guidance if the model asks multi-part questions, fails to inspect the codebase first, or needs stronger recommendation/options guidance.
-2. Promote the thin `/grill-me` launcher into a fuller bundled/default-installed skills layer for bakery-owned workflow prompts: editable/content-like skill instructions, clearer resource provenance, and a reusable path for future workflow skills rather than growing bespoke slash-command branches.
-3. Tune answered-question transcript summaries from real-use feedback: visual density, whether to show the recommendation/chosen option metadata, and interaction with tool-card grouping/collapse.
-4. Continue the theme/color pass from real-use feedback using `theme-gallery` first: inspect the gallery screenshots for remaining light/dark inconsistencies, then tune selected-row emphasis, tool/activity grouping, tree drawer, and lower-frequency overlays with contrast checks rather than trying to mimic GitHub directly.
+1. Continue keyboard-first Q&A polish from dogfooding: add/verify `Esc` cancel, robust focus takeover after reload/reconnect, Tab order, viewer/controller disabled-answer key handling/copy, and harness assertions for each shortcut path.
+2. Continue dogfooding `/grill-me` in real model sessions and tune launcher prompt/tool guidance if the model asks multi-part questions, fails to inspect the codebase first, or needs stronger recommendation/options guidance.
+3. Promote the thin `/grill-me` launcher into a fuller bundled/default-installed skills layer for bakery-owned workflow prompts: editable/content-like skill instructions, clearer resource provenance, and a reusable path for future workflow skills rather than growing bespoke slash-command branches.
+4. Tune answered-question transcript summaries from real-use feedback: visual density, whether to show the recommendation/chosen option metadata, and interaction with tool-card grouping/collapse.
+5. Continue the theme/color pass from real-use feedback using `theme-gallery` first: inspect the gallery screenshots for remaining light/dark inconsistencies, then tune selected-row emphasis, tool/activity grouping, tree drawer, and lower-frequency overlays with contrast checks rather than trying to mimic GitHub directly.
 5. Consider adding a lightweight contrast/token audit for core foreground/background pairs now that the visual gallery exists.
 6. Tune session identity/sidebar details: adjust status labels, snippets, auto-collapse behavior, pin-mode copy, and summary preview density if they feel noisy in ongoing use.
 7. Continue attention hierarchy from new real-use feedback: current-action strip, user-input-needed states, selected-row emphasis, and completed activity grouping now have a first pass but may need tuning during real dogfooding.
