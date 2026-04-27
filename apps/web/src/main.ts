@@ -69,6 +69,18 @@ function contextUsagePercentLabel(usage: ContextUsage): string {
   return usage.percent === null ? "unknown" : `${usage.percent.toFixed(usage.percent >= 10 ? 0 : 1)}%`;
 }
 
+function parseBashPrompt(text: string): { command: string; excludeFromContext: boolean } | null {
+  if (text.startsWith("!!")) {
+    const command = text.slice(2).trim();
+    return command ? { command, excludeFromContext: true } : null;
+  }
+  if (text.startsWith("!")) {
+    const command = text.slice(1).trim();
+    return command ? { command, excludeFromContext: false } : null;
+  }
+  return null;
+}
+
 function contextUsageLabel(usage: ContextUsage): string {
   const percent = contextUsagePercentLabel(usage);
   return `${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} (${percent})`;
@@ -636,6 +648,57 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
 
+    if (type === "bash_execution_start") {
+      const command = String(event.command ?? "bash");
+      const excludeFromContext = Boolean(event.excludeFromContext);
+      this.status = "running";
+      this.transcript = this.transcript.filter((item) => !(item.id.startsWith("bash:pending:") && isRecord(item.raw) && item.raw.command === command));
+      this.upsertTranscript({
+        id: String(event.id ?? `bash:${Date.now()}`),
+        kind: "tool",
+        title: `$ ${command}${excludeFromContext ? " (no context)" : ""}`,
+        body: "Starting…",
+        status: "running",
+        raw: event,
+      });
+      return;
+    }
+
+    if (type === "bash_execution_update") {
+      const command = String(event.command ?? "bash");
+      const excludeFromContext = Boolean(event.excludeFromContext);
+      this.status = "running";
+      this.upsertTranscript({
+        id: String(event.id ?? `bash:${Date.now()}`),
+        kind: "tool",
+        title: `$ ${command}${excludeFromContext ? " (no context)" : ""}`,
+        body: String(event.output ?? ""),
+        segments: [{ kind: "pre", text: String(event.output ?? "") }],
+        status: "running",
+        raw: event,
+      });
+      return;
+    }
+
+    if (type === "bash_execution_end") {
+      const command = String(event.command ?? "bash");
+      const excludeFromContext = Boolean(event.excludeFromContext);
+      const result = isRecord(event.result) ? event.result : {};
+      const output = typeof result.output === "string" ? result.output : stringify(result);
+      this.status = "idle";
+      this.upsertTranscript({
+        id: String(event.id ?? `bash:${Date.now()}`),
+        kind: "tool",
+        title: `$ ${command}${excludeFromContext ? " (no context)" : ""}`,
+        body: output || "Command completed with no output.",
+        segments: [{ kind: "pre", text: output || "Command completed with no output." }],
+        status: event.isError || (typeof result.exitCode === "number" && result.exitCode !== 0) ? "error" : "done",
+        raw: event,
+      });
+      void this.refreshTree();
+      return;
+    }
+
     if ((type === "message_start" || type === "message_update" || type === "message_end") && isRecord(event.message)) {
       const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
       const item = messageToTranscriptItem(event.message, fallback);
@@ -1037,17 +1100,40 @@ class PiWebAgentApp extends HTMLElement {
       this.openTreeDrawer();
       return;
     }
+    const bash = type === "prompt" ? parseBashPrompt(text) : null;
+    if (bash && this.promptImages.length > 0) {
+      this.notice = "Remove image attachments before running a bash command.";
+      this.render();
+      return;
+    }
+    if (bash && this.status === "running") {
+      this.notice = "Bash commands are available when the session is idle.";
+      this.render();
+      return;
+    }
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       this.notice = "Not connected. Your draft is saved locally; sending will be available after reconnect.";
       this.render();
       return;
     }
     const images = this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
-    this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
+    if (bash) this.ws.send(JSON.stringify({ type: "bash", command: bash.command, excludeFromContext: bash.excludeFromContext }));
+    else this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
     const queuedItem = { text, imageCount: images?.length };
     if (type === "steer") this.runningQueue = addRunningQueueItem(this.runningQueue, "steering", queuedItem);
     if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", queuedItem);
-    if (type === "prompt" && this.selectedSession && !this.selectedSession.title) {
+    if (bash) {
+      this.status = "running";
+      this.upsertTranscript({
+        id: `bash:pending:${Date.now()}`,
+        kind: "tool",
+        title: `$ ${bash.command}${bash.excludeFromContext ? " (no context)" : ""}`,
+        body: "Starting…",
+        status: "running",
+        raw: { type: "bash_pending", command: bash.command, excludeFromContext: bash.excludeFromContext },
+      });
+    }
+    if (!bash && type === "prompt" && this.selectedSession && !this.selectedSession.title) {
       const provisionalTitle = provisionalTitleFromPrompt(text);
       const optimisticPrompt = compactWorkflowLaunchSummary(text) ?? text.slice(0, 160);
       const optimistic = { ...this.selectedSession, title: provisionalTitle, titleSource: provisionalTitle ? "first_prompt" as const : "unset" as const, lastUserPrompt: optimisticPrompt, lastActivityAt: new Date().toISOString(), status: "running" as const };
@@ -1104,6 +1190,10 @@ class PiWebAgentApp extends HTMLElement {
     const text = input?.value.trim() ?? "";
     if (input && /^\/new(?:\s|$)/i.test(text)) {
       void this.handleNewSlashCommand(input, text);
+      return;
+    }
+    if (parseBashPrompt(text)) {
+      this.sendClientMessage("prompt");
       return;
     }
     if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");

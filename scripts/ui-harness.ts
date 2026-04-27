@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "mobile-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "mobile-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -801,6 +801,34 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   return collectMetrics(page);
 }
 
+async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("!echo bakery bash");
+  await page.locator("#send").click();
+  const bashRow = page.locator(".message.tool", { hasText: "$ echo bakery bash" }).last();
+  await bashRow.waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery bash")), null, { timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "", null, { timeout: 5_000 });
+
+  await page.locator("#prompt").fill("!!echo bakery hidden");
+  await page.locator("#send").click();
+  const hiddenRow = page.locator(".message.tool", { hasText: "$ echo bakery hidden (no context)" }).last();
+  await hiddenRow.waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery hidden")), null, { timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+
+  await page.locator("#prompt").fill("Please produce a long streaming performance response while bash is blocked.");
+  await page.locator("#send").click();
+  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("!echo blocked while running");
+  await page.locator("#send").click();
+  await page.waitForFunction(() => document.querySelector(".notice")?.textContent?.includes("Bash commands are available when the session is idle"), null, { timeout: 5_000 });
+  await page.locator(".message.tool", { hasText: "blocked while running" }).waitFor({ state: "detached", timeout: 1_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  return collectMetrics(page);
+}
+
 async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   for (let index = 0; index < 12; index += 1) {
@@ -1249,6 +1277,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "session-metadata") return runSessionMetadata(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);
+  if (name === "bash-commands") return runBashCommands(page);
   if (name === "question-answer") return runQuestionAnswer(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
   if (name === "reconnect-controller") return runReconnectController(page);

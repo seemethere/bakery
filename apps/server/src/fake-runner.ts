@@ -7,7 +7,9 @@ import { getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "./workflow-skills.js"
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Listener = (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void;
-type FakeMessage = { id: string; role: "user" | "assistant"; timestamp: string; content: string | ({ type: "text"; text: string } | ImageContent)[] };
+type FakeChatMessage = { id: string; role: "user" | "assistant"; timestamp: string; content: string | ({ type: "text"; text: string } | ImageContent)[] };
+type FakeBashMessage = { id: string; role: "bashExecution"; timestamp: string; command: string; output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; excludeFromContext?: boolean };
+type FakeMessage = FakeChatMessage | FakeBashMessage;
 
 function normalize(event: Record<string, unknown>): NormalizedAgentEvent {
   return { type: String(event.type ?? "event"), time: new Date().toISOString(), data: event };
@@ -117,6 +119,7 @@ class FakeSessionHandle implements SessionHandle {
     this.sessionManager = SessionManager.open(sessionFile, dirname(sessionFile), cwd);
     this.session = {
       isStreaming: false,
+      isBashRunning: false,
       state: { messages: this.messages },
       sessionManager: this.sessionManager,
       navigateTree: (entryId: string) => this.navigateTree(entryId),
@@ -127,7 +130,7 @@ class FakeSessionHandle implements SessionHandle {
   async prompt(text: string, images?: ImageContent[]): Promise<void> {
     const now = new Date().toISOString();
     const userContent = images?.length ? [{ type: "text" as const, text }, ...images] : text;
-    const user: FakeMessage = { id: crypto.randomUUID(), role: "user", timestamp: now, content: userContent };
+    const user: FakeChatMessage = { id: crypto.randomUUID(), role: "user", timestamp: now, content: userContent };
     this.messages.push(user);
     this.sessionManager.appendMessage({ role: "user", content: userContent } as never);
     this.emit({ type: "message_end", message: user });
@@ -161,7 +164,7 @@ class FakeSessionHandle implements SessionHandle {
       return;
     }
 
-    const assistant: FakeMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: "" };
+    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: "" };
     this.messages.push(assistant);
     this.emit({ type: "message_start", message: assistant });
 
@@ -213,6 +216,31 @@ class FakeSessionHandle implements SessionHandle {
   async followUp(text: string, images?: ImageContent[]): Promise<void> {
     this.followUpQueue.push({ text, images });
     this.emitQueueUpdate();
+  }
+
+  async executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }> {
+    this.session.isBashRunning = true;
+    const output = [`fake bash: ${command}`, options?.excludeFromContext ? "excluded from context" : "included in context"].join("\n") + "\n";
+    for (const chunk of output.match(/.{1,24}/gs) ?? []) {
+      onChunk?.(chunk);
+      await sleep(10);
+    }
+    const result = { output, exitCode: 0, cancelled: false, truncated: false };
+    const bashMessage: FakeBashMessage = {
+      id: crypto.randomUUID(),
+      role: "bashExecution",
+      timestamp: new Date().toISOString(),
+      command,
+      output,
+      exitCode: result.exitCode,
+      cancelled: result.cancelled,
+      truncated: result.truncated,
+      ...(options?.excludeFromContext ? { excludeFromContext: true } : {}),
+    };
+    this.messages.push(bashMessage);
+    this.sessionManager.appendMessage(bashMessage as never);
+    this.session.isBashRunning = false;
+    return result;
   }
 
   async cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }> {
@@ -267,7 +295,10 @@ class FakeSessionHandle implements SessionHandle {
 
   async getSettings(): Promise<SessionRuntimeSettings> {
     const settings = fakeSettings(this.modelPolicy);
-    const tokens = 4_200 + this.messages.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : JSON.stringify(message.content).length), 0) / 4;
+    const tokens = 4_200 + this.messages.reduce((sum, message) => {
+      const text = message.role === "bashExecution" ? `${message.command}\n${message.output}` : typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+      return sum + text.length;
+    }, 0) / 4;
     const contextWindow = 200_000;
     return {
       ...settings,
@@ -337,7 +368,7 @@ class FakeSessionHandle implements SessionHandle {
 
   private emitQueuedUserMessage(text: string, images?: ImageContent[]): void {
     const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
-    const user: FakeMessage = { id: crypto.randomUUID(), role: "user", timestamp: new Date().toISOString(), content };
+    const user: FakeChatMessage = { id: crypto.randomUUID(), role: "user", timestamp: new Date().toISOString(), content };
     this.messages.push(user);
     this.sessionManager.appendMessage({ role: "user", content } as never);
     this.emit({ type: "message_end", message: user });
@@ -361,13 +392,27 @@ class FakeSessionHandle implements SessionHandle {
     for (const entry of this.sessionManager.getBranch()) {
       if (entry.type !== "message") continue;
       const message = entry.message as unknown as Record<string, unknown>;
+      if (message.role === "bashExecution") {
+        this.messages.push({
+          id: entry.id,
+          role: "bashExecution",
+          timestamp: entry.timestamp,
+          command: String(message.command ?? ""),
+          output: String(message.output ?? ""),
+          exitCode: typeof message.exitCode === "number" ? message.exitCode : undefined,
+          cancelled: Boolean(message.cancelled),
+          truncated: Boolean(message.truncated),
+          ...(message.excludeFromContext ? { excludeFromContext: true } : {}),
+        });
+        continue;
+      }
       const role = message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : null;
       if (!role) continue;
       this.messages.push({
         id: entry.id,
         role,
         timestamp: entry.timestamp,
-        content: message.content as FakeMessage["content"],
+        content: message.content as FakeChatMessage["content"],
       });
     }
   }
@@ -406,7 +451,7 @@ class FakeSessionHandle implements SessionHandle {
       ? { content: [{ type: "text", text: "User cancelled the question." }], details: { questionId: answer.questionId, question: args.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } }
       : { content: [{ type: "text", text: `${answer.wasCustom ? "User wrote" : `User selected option ${(answer.selectedIndex ?? 0) + 1}`}: ${answer.answer ?? ""}` }], details: { questionId: answer.questionId, question: args.question, answer: answer.answer ?? null, selectedIndex: answer.selectedIndex ?? null, wasCustom: answer.wasCustom ?? false, cancelled: false } };
     this.emit({ type: "tool_execution_end", toolCallId, toolName: "ask_question", result, isError: false });
-    const assistant: FakeMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : `Thanks — I'll proceed with: ${answer.answer}.` };
+    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : `Thanks — I'll proceed with: ${answer.answer}.` };
     this.messages.push(assistant);
     this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: assistant });
@@ -415,7 +460,7 @@ class FakeSessionHandle implements SessionHandle {
   private async emitToolImageHeavyTranscript(): Promise<void> {
     const rows = 96;
     for (let index = 1; index <= rows && !this.aborted; index++) {
-      const assistant: FakeMessage = {
+      const assistant: FakeChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
         timestamp: new Date().toISOString(),

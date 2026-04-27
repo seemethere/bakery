@@ -13,6 +13,7 @@ import { Type } from "typebox";
 import { getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "./workflow-skills.js";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
+export type BashResult = { output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string };
 
 export type CreateSessionOptions = {
   id: string;
@@ -36,6 +37,7 @@ export type SessionHandle = {
   prompt(text: string, images?: ImageContent[]): Promise<void>;
   steer(text: string, images?: ImageContent[]): Promise<void>;
   followUp(text: string, images?: ImageContent[]): Promise<void>;
+  executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<BashResult>;
   cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }>;
   abort(): Promise<void>;
   setModel(model: string): Promise<void>;
@@ -67,7 +69,7 @@ function normalizeEvent(event: AgentSessionEvent): NormalizedAgentEvent {
 }
 
 function getStatus(session: AgentSession): SessionSnapshot["status"] {
-  return session.isStreaming ? "running" : "idle";
+  return session.isStreaming || session.isBashRunning ? "running" : "idle";
 }
 
 const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
@@ -273,6 +275,10 @@ class InProcessSessionHandle implements SessionHandle {
   async followUp(text: string, images?: ImageContent[]): Promise<void> {
     this.queuedMessages.followUp.push({ text, images });
     await this.session.followUp(text, images);
+  }
+
+  async executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<BashResult> {
+    return await this.session.executeBash(command, onChunk, options);
   }
 
   async cancelQueuedMessage(queue: "steering" | "followUp", index: number, text?: string): Promise<{ steering: string[]; followUp: string[] }> {

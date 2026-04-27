@@ -601,6 +601,21 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
     return { id: messageKey(message, fallbackId), kind: "user", title: "You", body: compact?.body ?? body, segments: compact?.segments ?? segments, raw: message };
   }
   if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, raw: message };
+  if (role === "bashExecution") {
+    const command = String(message.command ?? "bash");
+    const output = String(message.output ?? "");
+    const status = message.cancelled || (typeof message.exitCode === "number" && message.exitCode !== 0) ? "error" : "done";
+    const suffix = message.excludeFromContext ? " (no context)" : "";
+    return {
+      id: messageKey(message, fallbackId),
+      kind: "tool",
+      title: `$ ${command}${suffix}`,
+      body: output || "Command completed with no output.",
+      segments: [{ kind: "pre", text: output || "Command completed with no output." }],
+      status,
+      raw: message,
+    };
+  }
   if (role === "toolResult") {
     const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";
     return {

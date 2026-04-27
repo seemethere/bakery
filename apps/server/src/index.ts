@@ -834,6 +834,56 @@ class SessionHub {
     this.broadcast({ type: "settings_update", settings });
   }
 
+  private async runBashCommand(command: string, excludeFromContext?: boolean): Promise<void> {
+    const webSession = store.getSession(this.handle.id);
+    if (!webSession) throw new Error("session not found");
+    const snapshot = await this.handle.snapshot(webSession);
+    if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
+
+    const id = `bash:${crypto.randomUUID()}`;
+    let output = "";
+    this.broadcast({
+      type: "agent_event",
+      event: {
+        type: "bash_execution_start",
+        time: new Date().toISOString(),
+        data: { type: "bash_execution_start", id, command, excludeFromContext: excludeFromContext ?? false },
+      },
+    });
+    try {
+      const result = await this.handle.executeBash(command, (chunk) => {
+        output += chunk;
+        this.broadcast({
+          type: "agent_event",
+          event: {
+            type: "bash_execution_update",
+            time: new Date().toISOString(),
+            data: { type: "bash_execution_update", id, command, output, excludeFromContext: excludeFromContext ?? false },
+          },
+        });
+      }, excludeFromContext === undefined ? undefined : { excludeFromContext });
+      this.broadcast({
+        type: "agent_event",
+        event: {
+          type: "bash_execution_end",
+          time: new Date().toISOString(),
+          data: { type: "bash_execution_end", id, command, result, excludeFromContext: excludeFromContext ?? false },
+        },
+      });
+      await this.broadcastSettingsUpdate();
+    } catch (error) {
+      this.broadcast({
+        type: "agent_event",
+        event: {
+          type: "bash_execution_end",
+          time: new Date().toISOString(),
+          data: { type: "bash_execution_end", id, command, result: { output: error instanceof Error ? error.message : String(error), cancelled: false, truncated: false }, isError: true, excludeFromContext: excludeFromContext ?? false },
+        },
+      });
+      throw error;
+    }
+  }
+
   private scheduleDispose(): void {
     if (this.disposeTimer) return;
     this.disposeTimer = setTimeout(() => {
@@ -913,7 +963,9 @@ class SessionHub {
     }
 
     try {
-      if (parsed.data.type === "prompt") {
+      if (parsed.data.type === "bash") {
+        await this.runBashCommand(parsed.data.command, parsed.data.excludeFromContext);
+      } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
         if (nameCommand.matched) {
           const webSession = store.getSession(this.handle.id);

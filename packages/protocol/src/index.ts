@@ -372,6 +372,7 @@ export type ServerEnvelope = z.infer<typeof serverEnvelopeSchema>;
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hello_ack"), protocolVersion: z.literal(PROTOCOL_VERSION), clientId: z.string().optional() }),
   z.object({ type: z.literal("prompt"), text: z.string().min(1), images: z.array(z.string()).optional() }),
+  z.object({ type: z.literal("bash"), command: z.string().min(1), excludeFromContext: z.boolean().optional() }),
   z.object({ type: z.literal("steer"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("follow_up"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("cancel_queued_message"), queue: z.enum(["steering", "followUp"]), index: z.number().int().nonnegative(), text: z.string().min(1).optional() }),
