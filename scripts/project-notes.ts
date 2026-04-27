@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const projectLogPath = join(root, "PROJECT_LOG.md");
@@ -14,6 +15,30 @@ function section(text: string, heading: string): string {
   if (start < 0) return "";
   const next = text.indexOf("\n## ", start + 1);
   return text.slice(start, next >= 0 ? next : undefined).trim();
+}
+
+function lineNumberForIndex(text: string, index: number): number | undefined {
+  if (index < 0) return undefined;
+  return text.slice(0, index).split("\n").length;
+}
+
+function headingLine(text: string, heading: string): number | undefined {
+  return lineNumberForIndex(text, text.indexOf(`## ${heading}`));
+}
+
+function firstLineMatching(text: string, pattern: RegExp): { line: number; text: string } | undefined {
+  const lines = text.split("\n");
+  const index = lines.findIndex((line) => pattern.test(line.trim()));
+  return index >= 0 ? { line: index + 1, text: lines[index].trim() } : undefined;
+}
+
+function matchingLines(text: string, pattern: RegExp, limit: number): Array<{ line: number; text: string }> {
+  const matches: Array<{ line: number; text: string }> = [];
+  text.split("\n").forEach((line, index) => {
+    const trimmed = line.trim();
+    if (matches.length < limit && pattern.test(trimmed)) matches.push({ line: index + 1, text: trimmed });
+  });
+  return matches;
 }
 
 function truncate(value: string, maxChars: number): string {
@@ -58,6 +83,23 @@ function printList(items: string[], empty = "- none found"): void {
   items.forEach((item) => console.log(item));
 }
 
+function printLineReferences(items: Array<{ line: number; text: string }>, empty = "- none found"): void {
+  if (items.length === 0) {
+    console.log(empty);
+    return;
+  }
+  items.forEach((item) => console.log(`- L${item.line}: ${truncate(item.text, 240)}`));
+}
+
+function latestCommit(): string | undefined {
+  try {
+    return execFileSync("git", ["log", "-1", "--oneline"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+const handoffMode = Bun.argv.includes("--handoff");
 const projectLog = readText(projectLogPath);
 const design = readText(designPath);
 const currentStatus = section(projectLog, "Current status");
@@ -75,6 +117,44 @@ const latestSummary = latestLine ? latestLine.split(" Previous latest:")[0] : un
 const priorityLines = numberedLines(nextPriorities)
   .slice(0, 8)
   .map((line) => truncate(line, 260));
+
+if (handoffMode) {
+  console.log("# Project handoff edit targets");
+  console.log("Read-only guidance from PROJECT_LOG.md; use line numbers for targeted reads/edits instead of broad log dumps.\n");
+
+  console.log("## Files");
+  console.log(`- ${relative(root, projectLogPath)}`);
+  console.log(`- ${relative(root, designPath)} (design reference only; usually no handoff edit needed)`);
+
+  console.log("\n## PROJECT_LOG.md anchors");
+  const anchors = ["Current status", "Verification", "Next priorities", "Session handoff convention"].map((heading) => ({ heading, line: headingLine(projectLog, heading) }));
+  anchors.forEach(({ heading, line }) => console.log(line ? `- L${line}: ## ${heading}` : `- missing: ## ${heading}`));
+
+  console.log("\n## Latest verification target");
+  const latest = firstLineMatching(projectLog, /^Latest:/);
+  if (latest) console.log(`- L${latest.line}: ${truncate(latest.text, 700)}`);
+  else console.log("- no `Latest:` line found in PROJECT_LOG.md Verification section");
+
+  console.log("\n## Recent status bullets to consider extending");
+  const statusStart = headingLine(projectLog, "Current status") ?? 1;
+  const recentBullets = matchingLines(currentStatus, /^- /, 200).map((item) => ({ line: statusStart + item.line - 1, text: item.text })).slice(-5);
+  printLineReferences(recentBullets);
+
+  console.log("\n## Top next priorities");
+  const prioritiesStart = headingLine(projectLog, "Next priorities") ?? 1;
+  const topPriorities = matchingLines(nextPriorities, /^\d+\.\s+/, 5).map((item) => ({ line: prioritiesStart + item.line - 1, text: item.text }));
+  printLineReferences(topPriorities);
+
+  console.log("\n## Git context");
+  console.log(`- latest commit: ${latestCommit() ?? "unavailable"}`);
+
+  console.log("\n## End-of-session checklist");
+  console.log("- Run `bun run check` unless the operator asks otherwise.");
+  console.log("- Update PROJECT_LOG.md status/latest verification/next priorities with concise notes.");
+  console.log("- Tell the operator whether browser refresh or backend/dev-server restart is needed.");
+  console.log("- Commit with a concise Conventional Commit message unless asked not to commit.");
+  process.exit(0);
+}
 
 console.log("# Project notes summary");
 console.log("Generated from DESIGN.md and PROJECT_LOG.md with long history intentionally capped.\n");
