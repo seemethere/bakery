@@ -542,10 +542,11 @@ class PiTranscriptRow extends HTMLElement {
     this.canFork = options.canFork ?? false;
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
-    const defaultOpen = item.status === "running" || item.status === "error" || options.selected;
+    const completedDoneTool = item.kind === "tool" && item.status === "done";
+    const defaultOpen = item.status === "running" || item.status === "error" || (options.selected && !completedDoneTool);
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
     if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
-    if (options.selected && !wasSelected) this.collapsed = false;
+    if (options.selected && !wasSelected && !completedDoneTool) this.collapsed = false;
 
     this.dataset.transcriptId = item.id;
     this.className = this.classNames();

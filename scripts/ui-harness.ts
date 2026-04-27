@@ -38,17 +38,24 @@ function spawnLogged(name: string, command: string, args: string[], options: { c
   });
   const logPath = join(artifactDir, `${name}.log`);
   const log = createWriteStream(logPath, { flags: "a" });
+  let logClosed = false;
+  const writeLog = (entry: string): void => {
+    if (!logClosed && !log.destroyed && log.writable) log.write(entry);
+  };
   child.stdout.on("data", (chunk) => {
-    log.write(`[stdout] ${chunk}`);
+    writeLog(`[stdout] ${chunk}`);
     if (verboseChildLogs) process.stdout.write(`[${name}] ${chunk}`);
   });
   child.stderr.on("data", (chunk) => {
-    log.write(`[stderr] ${chunk}`);
+    writeLog(`[stderr] ${chunk}`);
     if (verboseChildLogs) process.stderr.write(`[${name}] ${chunk}`);
   });
   child.on("exit", (code, signal) => {
     const summary = code !== null ? `exited with code ${code}` : signal ? `exited with signal ${signal}` : "exited";
-    log.end(`[exit] ${summary}\n`);
+    if (!logClosed) {
+      logClosed = true;
+      log.end(`[exit] ${summary}\n`);
+    }
     const expectedTermination = signal === "SIGTERM" || code === 143;
     if (code !== null && code !== 0 && !expectedTermination) console.error(`[${name}] ${summary}; see ${logPath}`);
     else if (signal && !expectedTermination) console.error(`[${name}] ${summary}; see ${logPath}`);
