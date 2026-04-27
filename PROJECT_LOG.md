@@ -140,6 +140,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Extracted pure-ish composer draft/send helpers into `apps/web/src/composer-actions.ts`: session-scoped prompt draft and attachment warning storage keys, one-shot attachment-warning state, bash prompt parsing, prompt text fallback, WebSocket send payload construction, and queued-message payload shaping now have focused Bun tests while WebSocket sends/DOM binding stay in `main.ts`.
 - Completed the planned three-commit `main.ts` extraction burst: transcript DOM row binding/live patch helpers now live in `apps/web/src/transcript-dom.ts`, composer DOM/event wiring and image picker coordination in `apps/web/src/composer-controller.ts`, and agent/session event normalization in `apps/web/src/session-events.ts`. `main.ts` dropped to about 2.5k lines and remains the app-state/WebSocket/render coordinator.
 - Dogfooding bash command blocking showed the idle-only error appeared too far from the text input; composer-scoped send/attachment notices now render inline in the prompt shell instead of as top-of-main app notices.
+- Added focused unit coverage for `apps/web/src/session-events.ts`, including agent event type parsing, slash-command results, bash lifecycle normalization, message/tool transcript conversion, queue updates, and metadata update merging.
 
 ## How to run
 
@@ -178,7 +179,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: bash blocking UX fix used `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/styles/composer.css`; `bun run check`, `streaming-responsiveness`, and `slash-commands` passed. Full `bun run test:web-perf` was intentionally skipped per escalation-only guidance.
+Latest: `bun run report:iteration --recommend apps/web/src/session-events.ts apps/web/src/session-events.test.ts` selected static focused validation. `bun test apps/web/src/session-events.test.ts` and `bun run check` passed. Full `bun run test:web-perf` was skipped by default per the validation selector.
 
 ## Next priorities
 
