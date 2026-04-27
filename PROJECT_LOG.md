@@ -123,6 +123,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Reworked explicit title/summary suggestion UX into a shared editable model for desktop and mobile: ✨ suggestions now populate editable title/summary fields with per-field ✓ apply and × discard controls; desktop keeps the inline metadata panel while mobile shows the same controls in a trigger-adjacent top popover so generation progress/errors/actions remain visible even though saved summary chrome is hidden on narrow screens. Harness coverage now edits/applies the suggested title on desktop and asserts the mobile popover is visible near the ✨ button.
 - Tightened the regular dev-loop validation guidance from iteration telemetry: `bun run report:iteration --recommend ...` now prints a focused-first strategy, stop-on-first-failure copy, and explicit full-suite `RUN`/`ESCALATE ONLY`/`SKIP by default` guidance; `AGENTS.md` and the iteration-observability skill now treat full `bun run test:web-perf` as an escalation instead of the default for every UI-adjacent change.
 - Continued the iteration-speed/main-file refactor by extracting session-sidebar recency grouping, persisted group-collapse helpers, and session-card rendering from `apps/web/src/main.ts` into `apps/web/src/session-sidebar.ts`, reducing the main component surface without changing sidebar behavior.
+- Fixed a mobile transcript jump/flicker where browser viewport/layout resize scroll events could disable follow-latest without a user scroll gesture, leaving the top of the current chat card clipped with the Jump-to-latest button visible. Transcript auto-follow now only turns off after wheel/touch user intent, and visual viewport resizes keep following the bottom.
 
 ## How to run
 
@@ -152,7 +153,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/session-sidebar.ts` selected focused-first validation: `bun run check`, `streaming-responsiveness`, `slash-commands`, `question-answer`, `inspector-preview`, and `transcript-scroll-stability`; all passed. A first parallel `question-answer` attempt failed because another harness owned the dev-server port, then passed when rerun alone. Full `bun run test:web-perf` was intentionally skipped because the selector marked it escalation-only and the refactor was a small sidebar move-only extraction.
+Latest: `bun run report:iteration --recommend apps/web/src/main.ts` selected focused-first validation: `bun run check`, `streaming-responsiveness`, `slash-commands`, `question-answer`, `inspector-preview`, and `transcript-scroll-stability`; all passed, plus focused `mobile-layout` passed for the reported phone-sized flicker. Parallel harness attempts can conflict on the fixed fake-agent dev-server port; rerun scenarios sequentially when that happens. Full `bun run test:web-perf` was intentionally skipped because the selector marked it escalation-only and the change was limited to transcript scroll/follow-latest handling.
 
 ## Next priorities
 

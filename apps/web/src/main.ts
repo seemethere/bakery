@@ -133,6 +133,7 @@ class PiWebAgentApp extends HTMLElement {
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
   private transcriptPointerDown: { id: string; x: number; y: number } | null = null;
+  private transcriptUserScrollIntentUntil = 0;
   private pendingToolCallTitles: string[] = [];
   private transcriptScrollTop = 0;
   private preserveTranscriptScrollOnce = false;
@@ -169,6 +170,9 @@ class PiWebAgentApp extends HTMLElement {
   private readonly mobileLayoutHandler = () => {
     this.mobileLayout = this.mobileLayoutMedia.matches;
     this.render();
+  };
+  private readonly viewportResizeHandler = () => {
+    if (this.autoScroll) this.scheduleTranscriptFollow();
   };
   private readonly beforeUnloadHandler = () => {
     if (this.promptDraftSaveTimer) {
@@ -234,6 +238,8 @@ class PiWebAgentApp extends HTMLElement {
     window.addEventListener("focus", this.windowFocusHandler);
     window.addEventListener("keydown", this.questionKeyHandler);
     window.addEventListener("keydown", this.sidebarKeyHandler);
+    window.addEventListener("resize", this.viewportResizeHandler);
+    window.visualViewport?.addEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.addEventListener("change", this.mobileLayoutHandler);
     this.render();
@@ -246,6 +252,8 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("focus", this.windowFocusHandler);
     window.removeEventListener("keydown", this.questionKeyHandler);
     window.removeEventListener("keydown", this.sidebarKeyHandler);
+    window.removeEventListener("resize", this.viewportResizeHandler);
+    window.visualViewport?.removeEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
     this.persistAttachmentWarningIfNeeded();
@@ -1595,6 +1603,10 @@ class PiWebAgentApp extends HTMLElement {
     if (level && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_thinking", level }));
   }
 
+  private markTranscriptUserScrollIntent(): void {
+    this.transcriptUserScrollIntentUntil = Date.now() + 1500;
+  }
+
   private bindEvents(): void {
     this.querySelector<HTMLSelectElement>("#themePreference")?.addEventListener("change", (event) => {
       const value = (event.currentTarget as HTMLSelectElement).value;
@@ -1901,7 +1913,10 @@ class PiWebAgentApp extends HTMLElement {
       const action = button.dataset.rowAction as TranscriptRowAction | "menu";
       void this.handleTranscriptRowAction(action, button.dataset.transcriptId ?? "");
     });
-    this.querySelector<HTMLElement>(".transcript")?.addEventListener("scroll", (event) => {
+    const transcriptElement = this.querySelector<HTMLElement>(".transcript");
+    transcriptElement?.addEventListener("wheel", () => this.markTranscriptUserScrollIntent(), { passive: true });
+    transcriptElement?.addEventListener("touchmove", () => this.markTranscriptUserScrollIntent(), { passive: true });
+    transcriptElement?.addEventListener("scroll", (event) => {
       const transcript = event.currentTarget as HTMLElement;
       this.transcriptScrollTop = transcript.scrollTop;
       if (this.isTranscriptNearBottom(transcript)) {
@@ -1911,6 +1926,11 @@ class PiWebAgentApp extends HTMLElement {
           this.requestRender(80);
         }
       } else if (this.autoScroll) {
+        const userInitiatedScroll = Date.now() <= this.transcriptUserScrollIntentUntil || !event.isTrusted;
+        if (!userInitiatedScroll) {
+          this.scheduleTranscriptFollow();
+          return;
+        }
         this.autoScroll = false;
         this.requestRender(80);
       } else {
