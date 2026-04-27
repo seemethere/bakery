@@ -7,6 +7,7 @@ const root = resolve(import.meta.dir, "..");
 const defaultOutputPath = join(root, "test-results", "iteration", "iteration-report.json");
 const cliArgs = process.argv.slice(2);
 const recommendMode = cliArgs.includes("--recommend");
+const agentActionsMode = cliArgs.includes("--agent-actions");
 const helpMode = cliArgs.includes("--help") || cliArgs.includes("-h");
 const outputFlagIndex = cliArgs.findIndex((arg) => arg === "--output" || arg === "-o");
 const positionalOutput = !recommendMode && cliArgs[0] && !cliArgs[0].startsWith("-") ? cliArgs[0] : undefined;
@@ -40,6 +41,13 @@ type ValidationRecommendation = {
   optionalCommands: string[];
   scenarios: string[];
   reasons: string[];
+};
+
+type AgentActionInsight = {
+  area: string;
+  confidence: "high" | "medium" | "missing-telemetry";
+  evidence: string[];
+  optimizeAgentBy: string[];
 };
 
 type IterationReport = {
@@ -377,11 +385,91 @@ function printValidationRecommendation(recommendation: ValidationRecommendation)
   recommendation.reasons.forEach((reason) => console.log(`- ${reason}`));
 }
 
+function topEntries(record: Record<string, number>, limit: number): Array<[string, number]> {
+  return Object.entries(record).sort((a, b) => b[1] - a[1]).slice(0, limit);
+}
+
+function buildAgentActionInsights(report: IterationReport): AgentActionInsight[] {
+  const fullHarnessRuns = report.validation.harnessRuns.filter((run) => run.scenario === "all" || run.scenarioCount > 10).length;
+  const focusedRuns = report.validation.harnessRuns.length - fullHarnessRuns;
+  const commandMentions = report.validation.projectLogCommandMentions;
+  const topScenarios = topEntries(report.validation.scenarioFrequency, 6).map(([scenario, count]) => `${scenario} (${count})`);
+  const topFiles = report.git.topChangedFiles.slice(0, 6).map((file) => `${file.path} (${file.changes} changed lines)`);
+
+  return [
+    {
+      area: "Validation action selection",
+      confidence: "high",
+      evidence: [
+        `${fullHarnessRuns} recent full/all harness runs vs ${focusedRuns} focused harness runs in collected metrics.`,
+        `PROJECT_LOG command mentions: bun run check=${commandMentions["bun run check"] ?? 0}, bun scripts/ui-harness.ts=${commandMentions["bun scripts/ui-harness.ts"] ?? 0}, bun run test:web-perf=${commandMentions["bun run test:web-perf"] ?? 0}.`,
+      ],
+      optimizeAgentBy: [
+        "Run `bun run report:iteration --recommend <changed files>` before choosing validation commands.",
+        "Prefer focused harness scenarios first; escalate to `bun run test:web-perf` for protocol/shared WebSocket changes, broad UI interaction changes, lifecycle/restart changes, or unexpected focused failures.",
+        "Include the selector output in handoffs so future agents can tune bad recommendations.",
+      ],
+    },
+    {
+      area: "High-churn edit surfaces",
+      confidence: "high",
+      evidence: topFiles,
+      optimizeAgentBy: [
+        "Before editing high-churn files, search for the smallest existing function/CSS section and patch that island rather than rewriting broad regions.",
+        "When touching `apps/web/src/main.ts` or `apps/web/src/styles.css`, consider whether a small helper/module/style section extraction would reduce future edit blast radius.",
+        "Use focused harness scenarios tied to the touched surface instead of assuming the full suite is the first validation step.",
+      ],
+    },
+    {
+      area: "Recurring UX/harness loops",
+      confidence: "medium",
+      evidence: [`Most frequent focused scenarios: ${topScenarios.join(", ") || "none collected"}.`],
+      optimizeAgentBy: [
+        "Treat high-frequency scenarios as hot paths: keep scenario names in final handoffs and prefer extending existing scenarios over adding human-only validation.",
+        "When a change lands near one of these hot paths, run the specific scenario early to catch regressions before broad cleanup or polish.",
+      ],
+    },
+    {
+      area: "Missing per-tool action telemetry",
+      confidence: "missing-telemetry",
+      evidence: [
+        "Current local artifacts do not include structured counts for agent `read`, `bash`, `edit`, `ask_question`, failed edit attempts, or phase durations.",
+        "Available evidence comes from git churn, PROJECT_LOG command mentions, and UI harness artifacts, not raw agent tool-call traces.",
+      ],
+      optimizeAgentBy: [
+        "Add future session-level action summaries if we want to optimize specific tool calls, e.g. reads per file, bash commands, edit failures, validation reruns, and time by phase.",
+        "Until then, optimize the high-confidence behaviors visible in existing telemetry: validation selection, high-churn edit surfaces, and hot-path harness loops.",
+      ],
+    },
+  ];
+}
+
+function printAgentActionInsights(report: IterationReport, recommendation?: ValidationRecommendation): void {
+  console.log("\n## Agent action insights");
+  for (const insight of buildAgentActionInsights(report)) {
+    console.log(`\n### ${insight.area} (${insight.confidence})`);
+    console.log("Evidence:");
+    insight.evidence.forEach((item) => console.log(`- ${item}`));
+    console.log("Optimize agents by:");
+    insight.optimizeAgentBy.forEach((item) => console.log(`- ${item}`));
+  }
+  if (recommendation && recommendation.files.length > 0) {
+    console.log("\n### Immediate validation for current files");
+    recommendation.commands.forEach((command, index) => console.log(`${index + 1}. ${command}`));
+    if (recommendation.optionalCommands.length > 0) {
+      console.log("Optional / escalation:");
+      recommendation.optionalCommands.forEach((command) => console.log(`- ${command}`));
+    }
+  }
+  console.log("\nNext instrumentation if this is not enough: record per-session action summaries for tool-call counts, failed edit attempts, validation reruns, and phase timing.");
+}
+
 function printHelp(): void {
   console.log(`Usage:
   bun run report:iteration
   bun run report:iteration --output test-results/iteration/report.json
   bun run report:iteration --recommend <changed files...>
+  bun run report:iteration --agent-actions [--recommend <changed files...>]
 
 When --recommend is passed without files, changed files are read from git status.`);
 }
@@ -453,6 +541,12 @@ console.log(`Wrote ${relative(root, outputPath)}`);
 console.log(`Analyzed ${report.git.commitsAnalyzed} commits and ${report.validation.harnessRuns.length} harness metric artifacts.`);
 console.log(`Top candidate: ${report.candidates[0]?.area ?? "none"}`);
 
-if (recommendMode) {
-  printValidationRecommendation(buildValidationRecommendation(recommendationFilesFromArgs(cliArgs)));
+const recommendation = recommendMode ? buildValidationRecommendation(recommendationFilesFromArgs(cliArgs)) : undefined;
+
+if (recommendation) {
+  printValidationRecommendation(recommendation);
+}
+
+if (agentActionsMode) {
+  printAgentActionInsights(report, recommendation);
 }
