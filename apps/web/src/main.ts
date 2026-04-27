@@ -224,7 +224,6 @@ class PiWebAgentApp extends HTMLElement {
     if (event.defaultPrevented || event.key !== "Escape" || this.sessionSidebarCollapsed || this.sessionSidebarPinned) return;
     this.sessionSidebarCollapsed = true;
     localStorage.setItem("piWebSessionSidebarCollapsed", "true");
-    this.notice = "Session menu hidden.";
     this.render();
   };
 
@@ -1628,9 +1627,7 @@ class PiWebAgentApp extends HTMLElement {
         if (!this.mobileLayout && button.id === "toggleSessionSidebar") this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
         localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
         localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
-        this.notice = this.mobileLayout || !this.sessionSidebarPinned
-          ? (this.sessionSidebarCollapsed ? "Session menu hidden." : "Session menu open.")
-          : "Session sidebar pinned open for future sessions.";
+        if (!this.mobileLayout && this.sessionSidebarPinned) this.notice = "Session sidebar pinned open for future sessions.";
         this.render();
       });
     });
@@ -1645,7 +1642,6 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.addEventListener("click", () => {
       this.sessionSidebarCollapsed = true;
       localStorage.setItem("piWebSessionSidebarCollapsed", "true");
-      this.notice = "Session menu hidden.";
       this.render();
     });
     this.querySelectorAll<HTMLButtonElement>("[data-session-group-toggle]").forEach((button) => {
