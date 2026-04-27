@@ -167,6 +167,29 @@ export const fileRawQuerySchema = z.object({
 });
 export type FileRawQuery = z.infer<typeof fileRawQuerySchema>;
 
+export const artifactImageMimeTypeSchema = z.enum(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]);
+
+export const artifactUploadRequestSchema = z.object({
+  path: z.string().min(1).max(2000),
+  mimeType: artifactImageMimeTypeSchema,
+  data: z.string().min(1).max(30 * 1024 * 1024),
+});
+export type ArtifactUploadRequest = z.infer<typeof artifactUploadRequestSchema>;
+
+export const artifactRawQuerySchema = z.object({
+  path: z.string().min(1).max(2000),
+});
+export type ArtifactRawQuery = z.infer<typeof artifactRawQuerySchema>;
+
+export const artifactUploadResponseSchema = z.object({
+  artifactId: z.string(),
+  path: z.string(),
+  mimeType: artifactImageMimeTypeSchema,
+  size: z.number().int().nonnegative(),
+  url: z.string(),
+});
+export type ArtifactUploadResponse = z.infer<typeof artifactUploadResponseSchema>;
+
 export const commandSourceSchema = z.enum(["builtin", "extension", "prompt", "skill"]);
 export type CommandSource = z.infer<typeof commandSourceSchema>;
 

@@ -198,15 +198,15 @@ class PiWebAgentApp extends HTMLElement {
 
   private localImageUrl(path: string): string | null {
     if (!this.selectedSession) return null;
-    const workspacePath = this.workspaceRelativeImagePath(path);
-    if (!workspacePath) return null;
-    const url = new URL(`${this.apiBase}/api/sessions/${this.selectedSession.id}/files/raw`);
-    url.searchParams.set("path", workspacePath);
+    const imagePath = this.normalizeImageArtifactPath(path);
+    if (!imagePath) return null;
+    const url = new URL(`${this.apiBase}/api/sessions/${this.selectedSession.id}/${imagePath.workspacePath ? "files" : "artifacts"}/raw`);
+    url.searchParams.set("path", imagePath.workspacePath ?? imagePath.originalPath);
     if (this.token) url.searchParams.set("token", this.token);
     return url.toString();
   }
 
-  private workspaceRelativeImagePath(path: string): string | null {
+  private normalizeImageArtifactPath(path: string): { originalPath: string; workspacePath?: string } | null {
     const raw = path.trim();
     let decoded: string;
     try {
@@ -216,15 +216,15 @@ class PiWebAgentApp extends HTMLElement {
     }
     const normalizedCwd = this.selectedSession?.cwd.replace(/\\/g, "/").replace(/\/+$/, "");
     let normalized = decoded.replace(/\\/g, "/").replace(/^\.\//, "");
+    if (!/\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized) || normalized.includes("\0")) return null;
     if (normalized.startsWith("/") && normalizedCwd) {
       if (normalized === normalizedCwd) return null;
-      if (!normalized.startsWith(`${normalizedCwd}/`)) return null;
+      if (!normalized.startsWith(`${normalizedCwd}/`)) return { originalPath: normalized };
       normalized = normalized.slice(normalizedCwd.length + 1);
     }
     normalized = normalized.replace(/^\.\//, "");
-    if (normalized.startsWith("/") || normalized.includes("\0")) return null;
-    if (!/^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return null;
-    return normalized;
+    if (!normalized.startsWith("/") && /^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return { originalPath: decoded, workspacePath: normalized };
+    return { originalPath: normalized };
   }
 
   private async api<T>(path: string, init?: RequestInit): Promise<T> {

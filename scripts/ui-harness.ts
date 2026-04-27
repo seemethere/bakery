@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -138,7 +138,7 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
   });
 }
 
-async function prepareSession(page: Page): Promise<void> {
+async function prepareSession(page: Page): Promise<string> {
   await page.addInitScript(({ apiBase }) => {
     localStorage.setItem("piWebApiBase", apiBase);
     localStorage.setItem("piWebAuthToken", "");
@@ -153,9 +153,11 @@ async function prepareSession(page: Page): Promise<void> {
   await page.waitForFunction(() => document.querySelectorAll("#workspace option").length > 0, undefined, { timeout: 5_000 });
   const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
   await page.locator("#newSession").click();
-  await created;
+  const response = await created;
+  const session = await response.json() as { id: string };
   await page.locator("#prompt").waitFor({ state: "visible" });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  return session.id;
 }
 
 async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
@@ -855,6 +857,26 @@ async function runRemoteImageArtifactPaths(page: Page): Promise<Record<string, u
   return { artifactImages: await page.locator(".artifact-image img").count(), renderedImages: sources.length, sources, ...(await collectMetrics(page)) };
 }
 
+async function runRemoteImageArtifactUpload(page: Page): Promise<Record<string, unknown>> {
+  const sessionId = await prepareSession(page);
+  const remotePath = "/remote/agent/workspace/screenshots/uploaded.png";
+  const upload = await fetch(`${apiBase}/api/sessions/${sessionId}/artifacts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: remotePath, mimeType: "image/png", data: fixturePngBase64 }),
+  });
+  if (!upload.ok) throw new Error(`Remote artifact upload failed: ${upload.status} ${await upload.text()}`);
+  await sendPromptAndWaitIdle(page, "Please list uploaded remote screenshot artifact paths for rendering validation.");
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img, .markdown-body img"));
+    return images.length >= 2 && images.every((img) => img.complete && img.naturalWidth > 0);
+  }, null, { timeout: 5_000 });
+  const sources = await page.locator(".artifact-image img, .markdown-body img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
+  if (!sources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected uploaded remote screenshots to use artifact raw endpoint, saw ${sources.join(", ")}`);
+  await page.locator(".artifact-image figcaption", { hasText: "uploaded.png" }).waitFor({ timeout: 5_000 });
+  return { artifactImages: await page.locator(".artifact-image img").count(), renderedImages: sources.length, sources, ...(await collectMetrics(page)) };
+}
+
 async function runRepeatedImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const prompt = "Please list a local image artifact path for repeated screenshot path rendering validation.";
@@ -958,6 +980,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "repeated-image-artifact-paths") return runRepeatedImageArtifactPaths(page);
   if (name === "artifact-path-formats") return runArtifactPathFormats(page);
   if (name === "remote-image-artifact-paths") return runRemoteImageArtifactPaths(page);
+  if (name === "remote-image-artifact-upload") return runRemoteImageArtifactUpload(page);
   if (name === "model-thinking") return runModelThinking(page);
   if (name === "context-usage") return runContextUsage(page);
   if (name === "themes") return runThemes(page);

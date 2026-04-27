@@ -36,14 +36,17 @@ const fakePreviewPng = "iVBORw0KGgoAAAANSUhEUgAAAWgAAACgCAYAAAAhKfa4AAADUElEQVR4
 function responseFor(text: string, cwd = ""): string {
   const includesImage = /(?:image|screenshot|picture)/i.test(text);
   const includesArtifactPath = /(?:artifact path|screenshot path|local image path)/i.test(text);
+  const includesRemoteArtifactUpload = /(?:uploaded remote screenshot|remote screenshot upload|remote artifact upload)/i.test(text);
   const includesRemoteArtifactPath = /(?:remote screenshot|remote artifact|remote image artifact)/i.test(text);
   const includesArtifactFormatVariants = /(?:artifact format variants|inline fenced long artifact)/i.test(text);
   const requestedLength = /(?:long|stream|perf|performance)/i.test(text) ? 18000 : includesImage ? 3200 : 1400;
   const normalizedCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
   const remoteFixturePath = `${normalizedCwd}/screenshots/fixture.png`;
-  const imageBlock = includesRemoteArtifactPath
-    ? `\nRemote screenshot artifacts:\n\n- ${remoteFixturePath}\n- ![Remote Markdown screenshot](file://${remoteFixturePath})\n\nBoth references point inside the session workspace and should render through the safe raw-file endpoint, not directly as file:// browser URLs.\n`
-    : includesArtifactFormatVariants
+  const imageBlock = includesRemoteArtifactUpload
+    ? "\nUploaded remote screenshot artifacts:\n\n- /remote/agent/workspace/screenshots/uploaded.png\n- ![Uploaded remote Markdown screenshot](file:///remote/agent/workspace/screenshots/uploaded.png)\n\nBoth references require a pre-uploaded Bakery artifact because they are outside the local session workspace.\n"
+    : includesRemoteArtifactPath
+      ? `\nRemote screenshot artifacts:\n\n- ${remoteFixturePath}\n- ![Remote Markdown screenshot](file://${remoteFixturePath})\n\nBoth references point inside the session workspace and should render through the safe raw-file endpoint, not directly as file:// browser URLs.\n`
+      : includesArtifactFormatVariants
       ? "\nRelevant screenshot artifact format variants:\n\nInline code: `screenshots/inline.png`\n\nFenced code:\n\n```text\nscreenshots/fenced.png\n```\n\nLong generated path: `test-results/ui-harness/sample-run/final.png`\n\nAll three workspace-relative paths should render safe local image previews.\n"
       : includesArtifactPath
         ? "\nRelevant screenshot artifacts:\n\n- `screenshots/fixture.png`\n- screenshots/fixture.png\n\nThe UI should render a safe local image preview for that workspace-relative path.\n"
