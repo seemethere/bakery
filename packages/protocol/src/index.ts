@@ -278,12 +278,39 @@ export const sessionRuntimeSettingsSchema = z.object({
 });
 export type SessionRuntimeSettings = z.infer<typeof sessionRuntimeSettingsSchema>;
 
+export const questionOptionSchema = z.object({
+  label: z.string().min(1),
+  description: z.string().optional(),
+});
+export type QuestionOption = z.infer<typeof questionOptionSchema>;
+
+export const pendingQuestionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().optional(),
+  question: z.string().min(1),
+  recommendation: z.string().optional(),
+  options: z.array(questionOptionSchema),
+  allowCustomAnswer: z.boolean(),
+  createdAt: z.string(),
+});
+export type PendingQuestion = z.infer<typeof pendingQuestionSchema>;
+
+export const answerQuestionPayloadSchema = z.object({
+  questionId: z.string().min(1),
+  answer: z.string().optional(),
+  selectedIndex: z.number().int().nonnegative().nullable().optional(),
+  wasCustom: z.boolean().optional(),
+  cancelled: z.boolean().optional(),
+});
+export type AnswerQuestionPayload = z.infer<typeof answerQuestionPayloadSchema>;
+
 export const sessionSnapshotSchema = z.object({
   session: webSessionSchema,
   status: agentStatusSchema,
   messages: z.array(z.unknown()),
   controller: controllerInfoSchema.optional(),
   settings: sessionRuntimeSettingsSchema.optional(),
+  pendingQuestion: pendingQuestionSchema.nullable().optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 
@@ -306,6 +333,7 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("controller_update"), controller: controllerInfoSchema }),
   z.object({ type: z.literal("settings_update"), settings: sessionRuntimeSettingsSchema }),
   z.object({ type: z.literal("session_metadata_update"), session: webSessionSchema }),
+  z.object({ type: z.literal("question_update"), question: pendingQuestionSchema.nullable() }),
   z.object({ type: z.literal("error"), code: z.string(), message: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
@@ -323,6 +351,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("steer"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("follow_up"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("cancel_queued_message"), queue: z.enum(["steering", "followUp"]), index: z.number().int().nonnegative(), text: z.string().min(1).optional() }),
+  z.object({ type: z.literal("answer_question"), payload: answerQuestionPayloadSchema }),
   z.object({ type: z.literal("abort") }),
   z.object({ type: z.literal("take_control") }),
   z.object({ type: z.literal("approve_control"), requesterClientId: z.string().min(1) }),

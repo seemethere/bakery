@@ -626,6 +626,7 @@ class SessionHub {
   private takeoverTimer: ReturnType<typeof setTimeout> | undefined;
   private disposeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly unsubscribe: () => void;
+  private readonly unsubscribeQuestion: () => void;
 
   constructor(private readonly handle: Awaited<ReturnType<typeof runner.createSession>>) {
     this.unsubscribe = handle.subscribe((event, raw) => {
@@ -639,6 +640,9 @@ class SessionHub {
           if (snapshot.status === "idle") this.scheduleDispose();
         });
       }
+    });
+    this.unsubscribeQuestion = handle.subscribeQuestion((question) => {
+      this.broadcast({ type: "question_update", question });
     });
   }
 
@@ -692,6 +696,7 @@ class SessionHub {
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
     if (this.takeoverTimer) clearTimeout(this.takeoverTimer);
     this.unsubscribe();
+    this.unsubscribeQuestion();
     for (const client of this.clients.values()) client.socket.close(1001, "session disposed");
     this.clients.clear();
     await runner.disposeSession(this.handle.id);
@@ -906,7 +911,8 @@ class SessionHub {
             data: { type: "queue_update", ...queued },
           },
         });
-      } else if (parsed.data.type === "abort") await this.handle.abort();
+      } else if (parsed.data.type === "answer_question") this.handle.answerQuestion(parsed.data.payload);
+      else if (parsed.data.type === "abort") await this.handle.abort();
       else if (parsed.data.type === "set_model") {
         await this.handle.setModel(parsed.data.model);
         await this.broadcastSettingsUpdate();

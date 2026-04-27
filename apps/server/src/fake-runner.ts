@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import type { CommandInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
+import type { AnswerQuestionPayload, CommandInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -91,6 +91,9 @@ class FakeSessionHandle implements SessionHandle {
   private currentThinking: string;
   private steeringQueue: Array<{ text: string; images: ImageContent[] | undefined }> = [];
   private followUpQueue: Array<{ text: string; images: ImageContent[] | undefined }> = [];
+  private pendingQuestion: PendingQuestion | null = null;
+  private questionResolver: ((answer: Required<Pick<AnswerQuestionPayload, "cancelled">> & Omit<AnswerQuestionPayload, "cancelled">) => void) | null = null;
+  private readonly questionListeners = new Set<(question: PendingQuestion | null) => void>();
 
   constructor(
     readonly id: string,
@@ -117,12 +120,23 @@ class FakeSessionHandle implements SessionHandle {
     this.sessionManager.appendMessage({ role: "user", content: userContent } as never);
     this.emit({ type: "message_end", message: user });
 
-    const shouldRunTool = /tool/i.test(text);
+    const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
     this.session.isStreaming = true;
     this.emit({ type: "agent_start" });
+
+    if (shouldAskQuestion) {
+      await this.emitFakeQuestionRun(/cancel/i.test(text));
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
 
     const assistant: FakeMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: "" };
     this.messages.push(assistant);
@@ -179,6 +193,31 @@ class FakeSessionHandle implements SessionHandle {
 
   async abort(): Promise<void> {
     this.aborted = true;
+    this.cancelPendingQuestion();
+  }
+
+  getPendingQuestion(): PendingQuestion | null {
+    return this.pendingQuestion;
+  }
+
+  answerQuestion(payload: AnswerQuestionPayload): void {
+    if (!this.pendingQuestion || payload.questionId !== this.pendingQuestion.id || !this.questionResolver) throw new Error("No matching pending question.");
+    const resolver = this.questionResolver;
+    this.pendingQuestion = null;
+    this.questionResolver = null;
+    this.emitQuestionUpdate();
+    resolver({
+      questionId: payload.questionId,
+      answer: payload.cancelled ? undefined : payload.answer,
+      selectedIndex: payload.selectedIndex ?? null,
+      wasCustom: payload.wasCustom ?? false,
+      cancelled: payload.cancelled ?? false,
+    });
+  }
+
+  subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void {
+    this.questionListeners.add(listener);
+    return () => this.questionListeners.delete(listener);
   }
 
   async setModel(model: string): Promise<void> {
@@ -236,12 +275,15 @@ class FakeSessionHandle implements SessionHandle {
       status: this.session.isStreaming ? "running" : "idle",
       messages: this.messages,
       settings: await this.getSettings(),
+      pendingQuestion: this.pendingQuestion,
     };
   }
 
   dispose(): void {
     this.aborted = true;
+    this.cancelPendingQuestion();
     this.listeners.clear();
+    this.questionListeners.clear();
   }
 
   private emit(event: Record<string, unknown>): void {
@@ -251,6 +293,15 @@ class FakeSessionHandle implements SessionHandle {
 
   private emitQueueUpdate(): void {
     this.emit({ type: "queue_update", steering: this.steeringQueue.map((message) => message.text), followUp: this.followUpQueue.map((message) => message.text) });
+  }
+
+  private emitQuestionUpdate(): void {
+    for (const listener of this.questionListeners) listener(this.pendingQuestion);
+  }
+
+  private cancelPendingQuestion(): void {
+    if (!this.pendingQuestion || !this.questionResolver) return;
+    this.answerQuestion({ questionId: this.pendingQuestion.id, cancelled: true, selectedIndex: null, wasCustom: false });
   }
 
   private restoreMessagesFromSession(): void {
@@ -277,6 +328,35 @@ class FakeSessionHandle implements SessionHandle {
     const message = entry.type === "message" ? entry.message as unknown as Record<string, unknown> : null;
     const editorText = message?.role === "user" && typeof message.content === "string" ? String(message.content) : undefined;
     return editorText === undefined ? { cancelled: false } : { cancelled: false, editorText };
+  }
+
+  private async emitFakeQuestionRun(expectCancel = false): Promise<void> {
+    const toolCallId = crypto.randomUUID();
+    const args = {
+      title: expectCancel ? "Cancel path" : "Today's work",
+      question: expectCancel ? "Should this question be cancelled?" : "What are you working on today?",
+      recommendation: expectCancel ? "Cancel this prompt to verify the cancellation path." : "Start with the smallest vertical slice that proves the UI lifecycle.",
+      options: [
+        { label: "New feature", description: "Adding new functionality to the project" },
+        { label: "Bug fix", description: "Tracking down and fixing an issue" },
+        { label: "Refactoring", description: "Improving existing code structure" },
+      ],
+      allowCustomAnswer: true,
+    };
+    this.emit({ type: "tool_execution_start", toolCallId, toolName: "ask_question", args });
+    this.pendingQuestion = { id: crypto.randomUUID(), ...args, createdAt: new Date().toISOString() };
+    this.emitQuestionUpdate();
+    const answer = await new Promise<Required<Pick<AnswerQuestionPayload, "cancelled">> & Omit<AnswerQuestionPayload, "cancelled">>((resolve) => {
+      this.questionResolver = resolve;
+    });
+    const result = answer.cancelled
+      ? { content: [{ type: "text", text: "User cancelled the question." }], details: { questionId: answer.questionId, question: args.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } }
+      : { content: [{ type: "text", text: `${answer.wasCustom ? "User wrote" : `User selected option ${(answer.selectedIndex ?? 0) + 1}`}: ${answer.answer ?? ""}` }], details: { questionId: answer.questionId, question: args.question, answer: answer.answer ?? null, selectedIndex: answer.selectedIndex ?? null, wasCustom: answer.wasCustom ?? false, cancelled: false } };
+    this.emit({ type: "tool_execution_end", toolCallId, toolName: "ask_question", result, isError: false });
+    const assistant: FakeMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : `Thanks — I'll proceed with: ${answer.answer}.` };
+    this.messages.push(assistant);
+    this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
+    this.emit({ type: "message_end", message: assistant });
   }
 
   private async emitFakeToolRun(longOutput = false, runIndex = 1): Promise<void> {

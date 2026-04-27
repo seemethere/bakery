@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import { PROTOCOL_VERSION, type AppSettings, type CommandInfo, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppSettings, type CommandInfo, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileMatch, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -708,6 +708,7 @@ class PiWebAgentApp extends HTMLElement {
   private notice = "";
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
+  private pendingQuestion: PendingQuestion | null = null;
   private appSettings: AppSettings | null = null;
   private metadataSuggestion: SessionMetadataSuggestion | null = null;
   private metadataSuggestionError = "";
@@ -941,6 +942,7 @@ class PiWebAgentApp extends HTMLElement {
     localStorage.setItem("piWebAutoScroll", "true");
     this.controller = null;
     this.settings = null;
+    this.pendingQuestion = null;
     this.sessionTree = null;
     this.treeDrawerOpen = false;
     this.transcriptScrollTop = 0;
@@ -1030,6 +1032,7 @@ class PiWebAgentApp extends HTMLElement {
     this.sessions = this.sessions.map((candidate) => candidate.id === session.id ? session : candidate);
     this.controller = snapshot.controller ?? this.controller;
     this.settings = snapshot.settings ?? this.settings;
+    this.pendingQuestion = snapshot.pendingQuestion ?? null;
     this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
     this.runningQueue = { steering: [], followUp: [] };
     this.pendingToolCallTitles = [];
@@ -1065,6 +1068,9 @@ class PiWebAgentApp extends HTMLElement {
       this.controller = payload.controller;
     } else if (payload.type === "settings_update") {
       this.settings = payload.settings;
+    } else if (payload.type === "question_update") {
+      this.pendingQuestion = payload.question;
+      this.forceFullRender = true;
     } else if (payload.type === "session_metadata_update") {
       const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
       if (document.activeElement !== titleInput) this.editingTitleDraft = null;
@@ -1749,6 +1755,36 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
+  private answerPendingQuestion(payload: { answer?: string; selectedIndex?: number | null; wasCustom?: boolean; cancelled?: boolean }): void {
+    if (!this.pendingQuestion) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.notice = "Not connected. You can answer after reconnect.";
+      this.render();
+      return;
+    }
+    this.ws.send(JSON.stringify({
+      type: "answer_question",
+      payload: {
+        questionId: this.pendingQuestion.id,
+        selectedIndex: payload.selectedIndex ?? null,
+        wasCustom: payload.wasCustom ?? false,
+        cancelled: payload.cancelled ?? false,
+        ...(payload.answer ? { answer: payload.answer } : {}),
+      },
+    }));
+  }
+
+  private submitCustomQuestionAnswer(): void {
+    const input = this.querySelector<HTMLInputElement>("#questionCustomAnswer");
+    const answer = input?.value.trim() ?? "";
+    if (!answer) {
+      this.notice = "Type an answer before submitting, or choose Cancel.";
+      this.render();
+      return;
+    }
+    this.answerPendingQuestion({ answer, selectedIndex: null, wasCustom: true });
+  }
+
   private setModel(model: string): void {
     if (model && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_model", model }));
   }
@@ -1857,6 +1893,21 @@ class PiWebAgentApp extends HTMLElement {
         if (index >= 0 && text) this.cancelQueuedMessage(queue, index, text);
       });
     });
+    this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.questionOptionIndex ?? "-1");
+        const option = this.pendingQuestion?.options[index];
+        if (option && index >= 0) this.answerPendingQuestion({ answer: option.label, selectedIndex: index, wasCustom: false });
+      });
+    });
+    this.querySelector<HTMLButtonElement>("#questionCustomSubmit")?.addEventListener("click", () => this.submitCustomQuestionAnswer());
+    this.querySelector<HTMLInputElement>("#questionCustomAnswer")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        this.submitCustomQuestionAnswer();
+      }
+    });
+    this.querySelector<HTMLButtonElement>("#questionCancel")?.addEventListener("click", () => this.answerPendingQuestion({ cancelled: true, selectedIndex: null, wasCustom: false }));
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
     this.querySelector<HTMLButtonElement>("#attentionRefresh")?.addEventListener("click", () => void this.refresh());
@@ -2261,6 +2312,36 @@ class PiWebAgentApp extends HTMLElement {
             <button type="button" data-remove-image-id="${escapeHtml(image.id)}" aria-label="Remove ${escapeHtml(image.name)}">×</button>
           </figure>`).join("")}
       </div>`;
+  }
+
+  private renderQuestionPanel(isController: boolean): string {
+    const question = this.pendingQuestion;
+    if (!question) return "";
+    const disabled = !isController || this.connectionState !== "connected";
+    const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question.</p>` : this.connectionState !== "connected" ? `<p class="question-viewer-copy">Reconnect before answering.</p>` : "";
+    return `
+      <section class="question-panel" aria-label="Answer needed">
+        <div class="question-panel-heading">
+          <strong>Answer needed</strong>
+          ${question.title ? `<span>${escapeHtml(question.title)}</span>` : ""}
+        </div>
+        <p class="question-text">${escapeHtml(question.question)}</p>
+        ${question.recommendation ? `<p class="question-recommendation"><b>Recommended:</b> ${escapeHtml(question.recommendation)}</p>` : ""}
+        ${question.options.length ? `<div class="question-options">
+          ${question.options.map((option, index) => `<button type="button" data-question-option-index="${index}" ${disabled ? "disabled" : ""}>
+            <strong>${index + 1}. ${escapeHtml(option.label)}</strong>
+            ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
+          </button>`).join("")}
+        </div>` : ""}
+        ${question.allowCustomAnswer ? `<div class="question-custom">
+          <input id="questionCustomAnswer" type="text" ${disabled ? "disabled" : ""} placeholder="Type a custom answer…" />
+          <button id="questionCustomSubmit" type="button" ${disabled ? "disabled" : ""}>Answer</button>
+        </div>` : ""}
+        <div class="question-actions">
+          ${viewerCopy}
+          <button id="questionCancel" type="button" ${disabled ? "disabled" : ""}>Cancel question</button>
+        </div>
+      </section>`;
   }
 
   private renderRunningQueue(): string {
@@ -2865,6 +2946,7 @@ class PiWebAgentApp extends HTMLElement {
           ${this.renderJumpToLatest()}
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
+          ${this.renderQuestionPanel(isController)}
           <div class="prompt-shell">
             <div class="composer-mode ${isRunning ? "running" : "idle"}">
               <strong>${isRunning ? "Running input" : "Prompt"}</strong>

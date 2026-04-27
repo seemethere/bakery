@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -206,6 +206,38 @@ async function runThemes(page: Page): Promise<Record<string, unknown>> {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-light");
   return { darkBackground, lightBackground, ...(await collectMetrics(page)) };
+}
+
+async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+
+  await page.locator("#prompt").fill("Please trigger the question-answer scenario.");
+  await page.locator("#send").click();
+  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ timeout: 5_000 });
+  await page.locator("[data-question-option-index='1']").click();
+  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".message.tool", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+
+  await page.locator("#prompt").fill("Please trigger a cancel question-answer scenario.");
+  await page.locator("#send").click();
+  await page.locator(".question-panel", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
+  await page.locator("#questionCancel").click();
+  await page.locator(".message.tool", { hasText: "User cancelled the question" }).waitFor({ timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+
+  await page.locator("#prompt").fill("Please trigger question-answer and keep it pending through reload.");
+  await page.locator("#send").click();
+  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
+  await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");
+  await page.locator("#questionCustomSubmit").click();
+  await page.locator(".message.tool", { hasText: "Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+  await page.screenshot({ path: join(artifactDir, "question-answer.png"), fullPage: true });
+  return { ...(await collectMetrics(page)) };
 }
 
 async function runContextUsage(page: Page): Promise<Record<string, unknown>> {
@@ -727,6 +759,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "session-metadata") return runSessionMetadata(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);
+  if (name === "question-answer") return runQuestionAnswer(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);
   if (name === "reconnect-controller") return runReconnectController(page);
   if (name === "controller-handoff-edges") return runControllerHandoffEdges(page, browser);

@@ -3,11 +3,13 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   createAgentSession,
+  defineTool,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
+import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
+import { Type } from "typebox";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
 
@@ -37,6 +39,9 @@ export type SessionHandle = {
   setModel(model: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
   setSessionName(name: string): void;
+  getPendingQuestion(): PendingQuestion | null;
+  answerQuestion(payload: AnswerQuestionPayload): void;
+  subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void;
   getSettings(): Promise<SessionRuntimeSettings>;
   getCommands(): CommandInfo[];
   runBuiltinCommand(text: string): Promise<BuiltinCommandResult>;
@@ -125,6 +130,120 @@ function toModelInfo(model: { id: string; provider: string; name?: string; reaso
   };
 }
 
+type QuestionAnswer = Required<Pick<AnswerQuestionPayload, "cancelled">> & Omit<AnswerQuestionPayload, "cancelled">;
+
+class QuestionBroker {
+  private pending: PendingQuestion | null = null;
+  private resolver: ((answer: QuestionAnswer) => void) | null = null;
+  private readonly listeners = new Set<(question: PendingQuestion | null) => void>();
+
+  getPendingQuestion(): PendingQuestion | null {
+    return this.pending;
+  }
+
+  subscribe(listener: (question: PendingQuestion | null) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  answer(payload: AnswerQuestionPayload): void {
+    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) throw new Error("No matching pending question.");
+    const resolver = this.resolver;
+    this.pending = null;
+    this.resolver = null;
+    this.notify();
+    resolver({
+      questionId: payload.questionId,
+      answer: payload.cancelled ? undefined : payload.answer,
+      selectedIndex: payload.selectedIndex ?? null,
+      wasCustom: payload.wasCustom ?? false,
+      cancelled: payload.cancelled ?? false,
+    });
+  }
+
+  cancel(): void {
+    if (!this.pending || !this.resolver) return;
+    this.answer({ questionId: this.pending.id, cancelled: true, selectedIndex: null, wasCustom: false });
+  }
+
+  async ask(input: { title?: string; question: string; recommendation?: string; options?: Array<{ label: string; description?: string }>; allowCustomAnswer?: boolean }, signal?: AbortSignal): Promise<QuestionAnswer> {
+    if (this.pending) throw new Error("A question is already pending for this session.");
+    const question: PendingQuestion = {
+      id: crypto.randomUUID(),
+      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+      question: input.question,
+      ...(input.recommendation?.trim() ? { recommendation: input.recommendation.trim() } : {}),
+      options: input.options ?? [],
+      allowCustomAnswer: input.allowCustomAnswer ?? true,
+      createdAt: new Date().toISOString(),
+    };
+    this.pending = question;
+    this.notify();
+    return await new Promise<QuestionAnswer>((resolve) => {
+      this.resolver = resolve;
+      const onAbort = () => this.cancel();
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener(this.pending);
+  }
+}
+
+function createAskQuestionTool(broker: QuestionBroker) {
+  return defineTool({
+    name: "ask_question",
+    label: "Question",
+    description: "Ask the user one concise question in the web UI when you need clarification, confirmation, or a decision before continuing. Ask one question at a time. Include your recommended answer when useful.",
+    promptSnippet: "Ask the user one interactive question in the web UI and wait for their answer.",
+    promptGuidelines: [
+      "Use ask_question when you need clarification, confirmation, or a user decision before continuing instead of writing a plain-text question.",
+      "Ask one question at a time with ask_question. For design/planning interviews or when the user asks to be grilled, include a recommended answer.",
+    ],
+    parameters: Type.Object({
+      title: Type.Optional(Type.String({ description: "Short label for the question card." })),
+      question: Type.String({ description: "The single question to ask the user." }),
+      recommendation: Type.Optional(Type.String({ description: "Your recommended answer, shown display-only to the user." })),
+      options: Type.Optional(Type.Array(Type.Object({
+        label: Type.String({ description: "Option label." }),
+        description: Type.Optional(Type.String({ description: "Optional short explanation for this option." })),
+      }), { description: "Selectable answer options." })),
+      allowCustomAnswer: Type.Optional(Type.Boolean({ description: "Whether the user may type a custom answer. Defaults to true." })),
+    }),
+    async execute(_toolCallId, params, signal) {
+      try {
+        const answer = await broker.ask(params, signal);
+        if (answer.cancelled) {
+          return {
+            content: [{ type: "text" as const, text: "User cancelled the question." }],
+            details: { questionId: answer.questionId, question: params.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } as Record<string, unknown>,
+          };
+        }
+        const selected = typeof answer.selectedIndex === "number" ? params.options?.[answer.selectedIndex] : undefined;
+        const prefix = answer.wasCustom ? "User wrote" : selected ? `User selected option ${answer.selectedIndex! + 1}` : "User answered";
+        return {
+          content: [{ type: "text" as const, text: `${prefix}: ${answer.answer ?? ""}` }],
+          details: {
+            questionId: answer.questionId,
+            question: params.question,
+            answer: answer.answer ?? null,
+            selectedIndex: answer.selectedIndex ?? null,
+            optionLabel: selected?.label,
+            wasCustom: answer.wasCustom ?? false,
+            cancelled: false,
+          } as Record<string, unknown>,
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text" as const, text: `Question failed: ${error instanceof Error ? error.message : String(error)}` }],
+          details: { question: params.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } as Record<string, unknown>,
+        };
+      }
+    },
+  });
+}
+
 class InProcessSessionHandle implements SessionHandle {
   constructor(
     readonly id: string,
@@ -132,6 +251,7 @@ class InProcessSessionHandle implements SessionHandle {
     readonly sessionFile: string,
     readonly session: AgentSession,
     private readonly modelPolicy: ModelPolicy,
+    private readonly questionBroker: QuestionBroker,
   ) {}
 
   async prompt(text: string, images?: ImageContent[]): Promise<void> {
@@ -193,6 +313,18 @@ class InProcessSessionHandle implements SessionHandle {
 
   setSessionName(name: string): void {
     this.session.setSessionName(name);
+  }
+
+  getPendingQuestion(): PendingQuestion | null {
+    return this.questionBroker.getPendingQuestion();
+  }
+
+  answerQuestion(payload: AnswerQuestionPayload): void {
+    this.questionBroker.answer(payload);
+  }
+
+  subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void {
+    return this.questionBroker.subscribe(listener);
   }
 
   async getSettings(): Promise<SessionRuntimeSettings> {
@@ -287,10 +419,12 @@ class InProcessSessionHandle implements SessionHandle {
       status: getStatus(this.session),
       messages: this.session.state.messages,
       settings: await this.getSettings(),
+      pendingQuestion: this.getPendingQuestion(),
     };
   }
 
   dispose(): void {
+    this.questionBroker.cancel();
     this.session.dispose();
   }
 }
@@ -305,8 +439,9 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
     if (existing) return existing;
 
     const sessionManager = SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), options.cwd);
-    const { session } = await createAgentSession({ cwd: options.cwd, sessionManager, thinkingLevel: this.modelPolicy.defaultThinkingLevel as never });
-    const handle = new InProcessSessionHandle(options.id, options.cwd, options.piSessionFile, session, this.modelPolicy);
+    const questionBroker = new QuestionBroker();
+    const { session } = await createAgentSession({ cwd: options.cwd, sessionManager, thinkingLevel: this.modelPolicy.defaultThinkingLevel as never, customTools: [createAskQuestionTool(questionBroker)] });
+    const handle = new InProcessSessionHandle(options.id, options.cwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);
     return handle;
   }
