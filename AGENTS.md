@@ -21,10 +21,36 @@ Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verificati
 When the operator asks "what's next?" or asks to continue planning:
 
 1. Re-read `PROJECT_LOG.md`, especially `Current status`, `Verification`, and `Next priorities`.
-2. Summarize the top 1-3 candidate next slices in priority order, including why each is next.
-3. Recommend one small vertical slice as the default next action.
-4. If continuing into implementation, state the focused scope and validation plan before editing.
-5. Keep generated session summaries/title metadata explicit-only unless the operator asks to change that product policy.
+2. If the question involves iteration efficiency, agent behavior, validation choice, or action/tool-call optimization, run `bun run report:iteration --agent-actions --recommend` and use its output as evidence.
+3. Summarize the top 1-3 candidate next slices in priority order, including why each is next.
+4. Recommend one small vertical slice as the default next action.
+5. If continuing into implementation, state the focused scope and validation plan before editing.
+6. Keep generated session summaries/title metadata explicit-only unless the operator asks to change that product policy.
+
+## Agent iteration telemetry
+
+Use the local iteration telemetry report to keep future agent decisions evidence-based.
+
+When planning agent behavior improvements, analyzing speed of iteration, or choosing validation commands, run:
+
+```bash
+bun run report:iteration --agent-actions --recommend
+```
+
+Use the output to identify:
+
+- validation actions to run or skip;
+- high-churn files that need smaller, more targeted edits;
+- recurring hot-path harness scenarios;
+- missing telemetry that limits confidence, such as per-tool counts or phase timing.
+
+Before validating code changes, prefer:
+
+```bash
+bun run report:iteration --recommend <changed files>
+```
+
+Use the suggested focused scenarios first. Escalate to `bun run test:web-perf` when the report recommends it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly.
 
 ## UI validation expectations
 

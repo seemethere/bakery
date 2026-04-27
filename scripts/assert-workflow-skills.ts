@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { compactWorkflowLaunchText, getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "../apps/server/src/workflow-skills.js";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -35,5 +36,20 @@ assert(defaultPrompt.includes("Operator-provided focus: general project/codebase
 
 assert(compactWorkflowLaunchText(prompt) === "Launched /plan workflow · Focus: what should be next?", "expected compact /plan launch summary");
 assert(compactWorkflowLaunchText("ordinary prompt") === null, "expected non-workflow prompts to stay unchanged");
+
+const agentGuidance = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+const guidanceSnippets = [
+  "bun run report:iteration --agent-actions --recommend",
+  "bun run report:iteration --recommend <changed files>",
+  "validation actions to run or skip",
+  "high-churn files",
+  "recurring hot-path harness scenarios",
+  "missing telemetry",
+  "Escalate to `bun run test:web-perf`",
+];
+
+for (const snippet of guidanceSnippets) {
+  assert(agentGuidance.includes(snippet), `expected AGENTS.md to include iteration telemetry guidance: ${snippet}`);
+}
 
 console.log("workflow skill assertions passed");
