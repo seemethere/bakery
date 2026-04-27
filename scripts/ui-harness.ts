@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -416,6 +416,26 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
   }, null, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
   return { before, after, drift, ...(await collectMetrics(page)) };
+}
+
+async function runTranscriptTextSelection(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please produce a concise markdown response with several words that can be selected for regression coverage.");
+  const markdown = page.locator(".message.assistant .markdown-body").last();
+  await markdown.waitFor({ timeout: 5_000 });
+  const box = await markdown.boundingBox();
+  if (!box) throw new Error("Could not find assistant markdown bounds for text selection test.");
+
+  await page.mouse.move(box.x + 12, box.y + Math.min(28, box.height / 2));
+  await page.mouse.down();
+  await page.mouse.move(box.x + Math.min(box.width - 12, 260), box.y + Math.min(28, box.height / 2), { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+
+  const selectedText = await page.evaluate(() => window.getSelection()?.toString().trim() ?? "");
+  if (selectedText.length < 3) throw new Error(`Expected selected markdown text to survive row click handling; saw ${JSON.stringify(selectedText)}`);
+  await page.screenshot({ path: join(artifactDir, "transcript-text-selection.png"), fullPage: true });
+  return { selectedText, ...(await collectMetrics(page)) };
 }
 
 async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> {
@@ -819,6 +839,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
+  if (name === "transcript-text-selection") return runTranscriptTextSelection(page);
   if (name === "session-metadata") return runSessionMetadata(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);

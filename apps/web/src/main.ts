@@ -762,6 +762,7 @@ class PiWebAgentApp extends HTMLElement {
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
+  private transcriptPointerDown: { id: string; x: number; y: number } | null = null;
   private pendingToolCallTitles: string[] = [];
   private transcriptScrollTop = 0;
   private preserveTranscriptScrollOnce = false;
@@ -2857,12 +2858,32 @@ class PiWebAgentApp extends HTMLElement {
   private bindTranscriptElement(element: HTMLElement): void {
     if (element.dataset.transcriptBound === "true") return;
     element.dataset.transcriptBound = "true";
+    element.addEventListener("pointerdown", (event) => {
+      this.transcriptPointerDown = { id: element.dataset.transcriptId ?? "", x: event.clientX, y: event.clientY };
+    });
     element.addEventListener("click", (event) => {
       if ((event.target as HTMLElement | null)?.closest(".message-action-area")) return;
       if ((event.target as HTMLElement | null)?.closest(".message-header") && element.classList.contains("collapsible")) return;
+      if (this.shouldPreserveTextSelection(element, event)) return;
       this.openActionMenuId = "";
       this.selectTranscriptItem(element.dataset.transcriptId ?? "");
     });
+  }
+
+  private shouldPreserveTextSelection(element: HTMLElement, event: MouseEvent): boolean {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.toString().trim()) {
+      for (let index = 0; index < selection.rangeCount; index++) {
+        const range = selection.getRangeAt(index);
+        if (range.intersectsNode(element)) return true;
+      }
+    }
+
+    const pointerDown = this.transcriptPointerDown;
+    if (!pointerDown || pointerDown.id !== (element.dataset.transcriptId ?? "")) return false;
+    const movedX = Math.abs(event.clientX - pointerDown.x);
+    const movedY = Math.abs(event.clientY - pointerDown.y);
+    return movedX > 4 || movedY > 4;
   }
 
   private isGroupableToolItem(item: TranscriptItem): boolean {
