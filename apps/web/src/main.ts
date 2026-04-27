@@ -772,6 +772,7 @@ class PiWebAgentApp extends HTMLElement {
   private treeDrawerOpen = false;
   private treeActiveEntryId = "";
   private focusTreeOnNextRender = false;
+  private scrollTreeCurrentAfterRefresh = false;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
@@ -1025,6 +1026,7 @@ class PiWebAgentApp extends HTMLElement {
     this.treeDrawerOpen = false;
     this.treeActiveEntryId = "";
     this.focusTreeOnNextRender = false;
+    this.scrollTreeCurrentAfterRefresh = false;
     this.transcriptScrollTop = 0;
     this.unreadTranscriptIds.clear();
     this.selectedTranscriptId = "opened";
@@ -1425,6 +1427,11 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     try {
       this.sessionTree = await this.api<SessionTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree`);
+      if (this.focusTreeOnNextRender || this.scrollTreeCurrentAfterRefresh) {
+        this.treeActiveEntryId = this.currentTreeEntryId();
+        this.focusTreeOnNextRender = true;
+        this.scrollTreeCurrentAfterRefresh = false;
+      }
       this.ensureTreeActiveEntryId();
       this.requestRender(0);
     } catch (error) {
@@ -1473,6 +1480,7 @@ class PiWebAgentApp extends HTMLElement {
     this.treeDrawerOpen = true;
     this.rightPanelTab = "tree";
     this.focusTreeOnNextRender = true;
+    this.scrollTreeCurrentAfterRefresh = true;
     localStorage.setItem("piWebRightPanelTab", "tree");
     void this.refreshTree();
     this.render();
@@ -3366,11 +3374,20 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (this.focusTreeOnNextRender && this.rightPanelTab === "tree") {
       const tree = this.visibleTreeContainer();
-      const treeRow = tree?.querySelector<HTMLElement>("[tabindex='0']");
+      const currentId = this.currentTreeEntryId();
+      if (currentId) this.treeActiveEntryId = currentId;
+      const treeRow = tree?.querySelector<HTMLElement>(currentId ? `[data-tree-entry-id="${CSS.escape(currentId)}"]` : "[tabindex='0']");
       if (treeRow) {
         this.focusTreeOnNextRender = false;
+        this.setActiveTreeEntry(treeRow.dataset.treeEntryId ?? "", treeRow, false);
         treeRow.focus({ preventScroll: true });
-        treeRow.scrollIntoView({ block: "end" });
+        const panel = treeRow.closest<HTMLElement>(".tree-panel");
+        const scrollToBottom = () => {
+          if (panel) panel.scrollTop = panel.scrollHeight;
+          treeRow.scrollIntoView({ block: "end" });
+        };
+        scrollToBottom();
+        requestAnimationFrame(scrollToBottom);
       }
     }
     recordPerfSample("render", performance.now() - renderStart);

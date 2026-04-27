@@ -559,21 +559,34 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
 
 async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await sendPromptAndWaitIdle(page, "Create a short conversation branch for tree navigation.");
-  await page.locator('[data-right-tab="tree"]').click();
+  for (let index = 0; index < 12; index += 1) {
+    await sendPromptAndWaitIdle(page, `Create tree navigation row ${index + 1}.`);
+  }
+  await page.locator("#prompt").fill("/tree");
+  await page.locator("#prompt").press("Enter");
+  await page.locator(".tree-drawer").waitFor({ timeout: 5_000 });
   await page.locator(".tree-line").first().waitFor({ timeout: 5_000 });
-  await page.locator(".tree-current-path", { hasText: "Current path" }).waitFor({ timeout: 5_000 });
-  await page.locator(".tree-path-segment.leaf").waitFor({ timeout: 5_000 });
-  await page.locator(".tree-line.current").waitFor({ timeout: 5_000 });
-  await page.locator(".tree-line.current-path").first().waitFor({ timeout: 5_000 });
-  await page.locator('.tree-line[tabindex="0"]').waitFor({ timeout: 5_000 });
-  await page.locator(".tree-line").first().focus();
+  const drawer = page.locator(".tree-drawer");
+  await drawer.locator(".tree-current-path", { hasText: "Current path" }).waitFor({ timeout: 5_000 });
+  await drawer.locator(".tree-path-segment.leaf").waitFor({ timeout: 5_000 });
+  await drawer.locator(".tree-line.current").waitFor({ timeout: 5_000 });
+  await drawer.locator(".tree-line.current-path").first().waitFor({ timeout: 5_000 });
+  await drawer.locator('.tree-line[tabindex="0"]').waitFor({ timeout: 5_000 });
+  await page.locator(".tree-drawer .tree-panel").evaluate((element) => {
+    if (element.scrollTop <= 0) throw new Error(`Tree drawer did not open scrolled toward the current leaf; scrollTop=${element.scrollTop}`);
+  });
+  await page.locator(".tree-drawer .tree-line.current").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const panel = element.closest(".tree-panel")?.getBoundingClientRect();
+    if (!panel || rect.bottom < panel.top || rect.top > panel.bottom) throw new Error("Current leaf row is not visible after opening /tree");
+  });
+  await drawer.locator(".tree-line").first().focus();
   await page.keyboard.press("ArrowDown");
-  await page.locator(".tree-line").nth(1).evaluate((element) => {
+  await drawer.locator(".tree-line").nth(1).evaluate((element) => {
     if (document.activeElement !== element) throw new Error("ArrowDown did not move tree focus to the next row");
   });
   await page.keyboard.press("Home");
-  await page.locator(".tree-line").first().evaluate((element) => {
+  await drawer.locator(".tree-line").first().evaluate((element) => {
     if (document.activeElement !== element) throw new Error("Home did not move tree focus to the first row");
   });
   await page.screenshot({ path: join(artifactDir, "tree-current-path.png"), fullPage: true });
