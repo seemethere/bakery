@@ -620,7 +620,8 @@ class PiTranscriptRow extends HTMLElement {
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
     const completedDoneTool = item.kind === "tool" && item.status === "done";
-    const defaultOpen = item.status === "running" || item.status === "error" || (options.selected && !completedDoneTool);
+    const isQuestionTool = item.kind === "tool" && item.title === "Question";
+    const defaultOpen = (item.status === "running" && !isQuestionTool) || item.status === "error" || (options.selected && !completedDoneTool && !isQuestionTool);
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
     if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
     if (options.selected && !wasSelected && !completedDoneTool) this.collapsed = false;
