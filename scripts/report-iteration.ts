@@ -59,10 +59,15 @@ type SessionContextReport = {
   lines: number;
   toolCallsByName: Record<string, number>;
   toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
-  largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string }>;
+  toolInputsByName: Record<string, Array<{ input: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>>;
+  repeatedToolInputs: Array<{ toolName: string; input: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
+  readPaths: Array<{ path: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
+  bashCommands: Array<{ command: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
+  largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string; input?: string }>;
   assistantResponsesWithUsage: number;
   latestUsage?: Record<string, unknown>;
   maxReportedInputOrCacheRead?: number;
+  actionRecommendations: string[];
   notes: string[];
 };
 
@@ -198,6 +203,56 @@ function textFromContent(content: unknown): string {
     .join("\n");
 }
 
+function truncateOneLine(value: string, maxLength = 180): string {
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  return oneLine.length > maxLength ? `${oneLine.slice(0, maxLength - 1)}…` : oneLine;
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function toolInputLabel(toolName: string, args: Record<string, unknown>): string {
+  if (toolName === "read" && typeof args.path === "string") {
+    const suffix = [typeof args.offset === "number" ? `offset=${args.offset}` : undefined, typeof args.limit === "number" ? `limit=${args.limit}` : undefined]
+      .filter(Boolean)
+      .join(", ");
+    return suffix ? `${args.path} (${suffix})` : args.path;
+  }
+  if (toolName === "bash" && typeof args.command === "string") return truncateOneLine(args.command);
+  if ((toolName === "edit" || toolName === "write") && typeof args.path === "string") return args.path;
+  if (toolName === "ask_question") {
+    const title = typeof args.title === "string" ? args.title : undefined;
+    const question = typeof args.question === "string" ? args.question : undefined;
+    return truncateOneLine([title, question].filter(Boolean).join(" — ") || "question");
+  }
+  const entries = Object.entries(args)
+    .slice(0, 3)
+    .map(([key, value]) => `${key}=${typeof value === "string" ? truncateOneLine(value, 80) : JSON.stringify(value)}`);
+  return truncateOneLine(entries.join(", ") || "no arguments");
+}
+
+function incrementInputSummary(
+  record: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>,
+  key: string,
+  resultChars: number,
+): void {
+  record[key] ??= { calls: 0, resultChars: 0, estimatedTokens: 0, maxResultChars: 0 };
+  const summary = record[key];
+  summary.calls += 1;
+  summary.resultChars += resultChars;
+  summary.estimatedTokens = estimateTokensFromChars(summary.resultChars);
+  summary.maxResultChars = Math.max(summary.maxResultChars, resultChars);
+}
+
 function candidateSessionDirs(): string[] {
   const dirs = [process.env.PI_WEB_SESSION_DIR, join(homedir(), ".pi-web-agent", "sessions")].filter((dir): dir is string => Boolean(dir));
   return Array.from(new Set(dirs.map((dir) => resolve(expandHome(dir)))));
@@ -237,8 +292,13 @@ function buildSessionContextReport(): SessionContextReport {
     lines: 0,
     toolCallsByName: {},
     toolResultsByName: {},
+    toolInputsByName: {},
+    repeatedToolInputs: [],
+    readPaths: [],
+    bashCommands: [],
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
+    actionRecommendations: [],
     notes: ["No local pi session JSONL log found. Set PI_WEB_SESSION_DIR or pass --session <path> if the session lives elsewhere."],
   };
   if (!sessionPath || !existsSync(sessionPath)) return missingReport;
@@ -250,10 +310,19 @@ function buildSessionContextReport(): SessionContextReport {
     lines: lines.length,
     toolCallsByName: {},
     toolResultsByName: {},
+    toolInputsByName: {},
+    repeatedToolInputs: [],
+    readPaths: [],
+    bashCommands: [],
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
+    actionRecommendations: [],
     notes: ["Tool-result sizes are character counts with a rough chars/4 token estimate; content is intentionally not printed."],
   };
+  const toolCallsById: Record<string, { toolName: string; input: string; args: Record<string, unknown>; timestamp?: string }> = {};
+  const toolInputs: Record<string, Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>> = {};
+  const readPathSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
+  const bashCommandSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
 
   for (const line of lines) {
     let event: Record<string, unknown>;
@@ -271,7 +340,19 @@ function buildSessionContextReport(): SessionContextReport {
       for (const part of content) {
         if (!part || typeof part !== "object") continue;
         const record = part as Record<string, unknown>;
-        if (record.type === "toolCall" && typeof record.name === "string") increment(report.toolCallsByName, record.name);
+        if (record.type === "toolCall" && typeof record.name === "string") {
+          increment(report.toolCallsByName, record.name);
+          const id = typeof record.id === "string" ? record.id : undefined;
+          if (id) {
+            const args = parseToolArguments(record.arguments);
+            toolCallsById[id] = {
+              toolName: record.name,
+              input: toolInputLabel(record.name, args),
+              args,
+              timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
+            };
+          }
+        }
       }
       if (message.usage && typeof message.usage === "object") {
         report.assistantResponsesWithUsage += 1;
@@ -287,6 +368,9 @@ function buildSessionContextReport(): SessionContextReport {
 
     if (message.role === "toolResult") {
       const toolName = typeof message.toolName === "string" ? message.toolName : "unknown";
+      const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : undefined;
+      const toolCall = toolCallId ? toolCallsById[toolCallId] : undefined;
+      const input = toolCall?.input ?? "unknown input";
       const chars = textFromContent(message.content).length;
       report.toolResultsByName[toolName] ??= { calls: 0, chars: 0, estimatedTokens: 0, maxChars: 0 };
       const summary = report.toolResultsByName[toolName];
@@ -294,18 +378,73 @@ function buildSessionContextReport(): SessionContextReport {
       summary.chars += chars;
       summary.estimatedTokens = estimateTokensFromChars(summary.chars);
       summary.maxChars = Math.max(summary.maxChars, chars);
+
+      toolInputs[toolName] ??= {};
+      incrementInputSummary(toolInputs[toolName], input, chars);
+      if (toolName === "read" && typeof toolCall?.args.path === "string") {
+        incrementInputSummary(readPathSummaries, toolCall.args.path, chars);
+      }
+      if (toolName === "bash" && typeof toolCall?.args.command === "string") {
+        incrementInputSummary(bashCommandSummaries, truncateOneLine(toolCall.args.command), chars);
+      }
+
       report.largestToolResults.push({
         toolName,
         chars,
         estimatedTokens: estimateTokensFromChars(chars),
         timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
         messageId: typeof event.id === "string" ? event.id : undefined,
+        input,
       });
     }
   }
 
+  report.toolInputsByName = Object.fromEntries(
+    Object.entries(toolInputs).map(([toolName, inputs]) => [
+      toolName,
+      Object.entries(inputs)
+        .sort((a, b) => b[1].resultChars - a[1].resultChars)
+        .slice(0, 10)
+        .map(([input, summary]) => ({ input, ...summary })),
+    ]),
+  );
+  report.repeatedToolInputs = Object.entries(toolInputs)
+    .flatMap(([toolName, inputs]) => Object.entries(inputs).map(([input, summary]) => ({ toolName, input, ...summary })))
+    .filter((item) => item.calls > 1)
+    .sort((a, b) => b.resultChars - a.resultChars)
+    .slice(0, 8);
+  report.readPaths = Object.entries(readPathSummaries)
+    .map(([path, summary]) => ({ path, ...summary }))
+    .sort((a, b) => b.resultChars - a.resultChars)
+    .slice(0, 8);
+  report.bashCommands = Object.entries(bashCommandSummaries)
+    .map(([command, summary]) => ({ command, ...summary }))
+    .sort((a, b) => b.resultChars - a.resultChars)
+    .slice(0, 8);
   report.largestToolResults.sort((a, b) => b.chars - a.chars);
   report.largestToolResults = report.largestToolResults.slice(0, 8);
+
+  const repeatedReadPaths = report.readPaths.filter((item) => item.calls > 1);
+  if (repeatedReadPaths.length > 0) {
+    const top = repeatedReadPaths[0];
+    report.actionRecommendations.push(
+      `Repeated reads: ${top.path} was read ${top.calls} times for ${top.resultChars.toLocaleString()} result chars; prefer targeted offsets/limits or reuse earlier context when possible.`,
+    );
+  }
+  const largestResult = report.largestToolResults[0];
+  if (largestResult && largestResult.chars >= 20_000) {
+    report.actionRecommendations.push(
+      `Large result: ${largestResult.toolName}${largestResult.input ? ` (${largestResult.input})` : ""} returned ${largestResult.chars.toLocaleString()} chars; use narrower reads/commands before pulling broad artifacts into context.`,
+    );
+  }
+  const repeatedBash = report.bashCommands.filter((item) => item.calls > 1);
+  if (repeatedBash.length > 0) {
+    const top = repeatedBash[0];
+    report.actionRecommendations.push(`Repeated bash command: \`${top.command}\` ran ${top.calls} times; consider saving/using its previous result or narrowing validation reruns.`);
+  }
+  if (report.actionRecommendations.length === 0) {
+    report.actionRecommendations.push("No repeated high-cost tool pattern detected in this session; continue using targeted reads and focused validation selection.");
+  }
   return report;
 }
 
@@ -328,16 +467,33 @@ function printSessionContextReport(report: SessionContextReport): void {
   toolResults.forEach(([tool, summary]) => {
     console.log(`- ${tool}: ${summary.calls} calls, ${summary.chars.toLocaleString()} chars (~${summary.estimatedTokens.toLocaleString()} tokens), largest ${summary.maxChars.toLocaleString()} chars`);
   });
+  console.log("\nTop read paths:");
+  if (report.readPaths.length === 0) console.log("- none found");
+  report.readPaths.forEach((item) => {
+    console.log(`- ${item.path}: ${item.calls} reads, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens), largest ${item.maxResultChars.toLocaleString()} chars`);
+  });
+  console.log("\nTop bash commands:");
+  if (report.bashCommands.length === 0) console.log("- none found");
+  report.bashCommands.forEach((item) => {
+    console.log(`- ${item.command}: ${item.calls} runs, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens), largest ${item.maxResultChars.toLocaleString()} chars`);
+  });
+  console.log("\nRepeated tool inputs:");
+  if (report.repeatedToolInputs.length === 0) console.log("- none found");
+  report.repeatedToolInputs.forEach((item) => {
+    console.log(`- ${item.toolName} ${item.input}: ${item.calls} calls, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)`);
+  });
   console.log("\nLargest tool results:");
   if (report.largestToolResults.length === 0) console.log("- none found");
   report.largestToolResults.forEach((item) => {
-    const suffix = [item.timestamp, item.messageId].filter(Boolean).join(" · ");
+    const suffix = [item.input, item.timestamp, item.messageId].filter(Boolean).join(" · ");
     console.log(`- ${item.toolName}: ${item.chars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)${suffix ? ` · ${suffix}` : ""}`);
   });
   console.log("\nModel usage:");
   console.log(`- assistant responses with usage: ${report.assistantResponsesWithUsage}`);
   if (report.latestUsage) console.log(`- latest usage: ${JSON.stringify(report.latestUsage)}`);
   if (typeof report.maxReportedInputOrCacheRead === "number") console.log(`- max reported input/cacheRead: ${report.maxReportedInputOrCacheRead.toLocaleString()} tokens`);
+  console.log("\nAction recommendations:");
+  report.actionRecommendations.forEach((item) => console.log(`- ${item}`));
   console.log("\nNotes:");
   report.notes.forEach((note) => console.log(`- ${note}`));
 }
