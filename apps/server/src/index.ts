@@ -412,7 +412,7 @@ app.get<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) 
   const session = store.getSession(request.params.id);
   if (!session) return reply.code(404).send({ error: "session not found" });
   store.touchSession(session.id);
-  return session;
+  return store.getSession(session.id) ?? session;
 });
 
 app.patch<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
@@ -1010,11 +1010,13 @@ class SessionHub {
 const sessionHubs = new Map<string, SessionHub>();
 
 app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true }, async (socket, request) => {
-  const webSession = store.getSession(request.params.id);
-  if (!webSession) {
+  const existingSession = store.getSession(request.params.id);
+  if (!existingSession) {
     socket.close(1008, "session not found");
     return;
   }
+  store.touchSession(existingSession.id);
+  const webSession = store.getSession(existingSession.id) ?? existingSession;
 
   let hub = sessionHubs.get(webSession.id);
   if (!hub) {

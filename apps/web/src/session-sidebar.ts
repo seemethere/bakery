@@ -31,9 +31,18 @@ export function persistCollapsedSessionGroups(groups: Set<SessionRecencyGroupId>
   localStorage.setItem(collapsedSessionGroupsStorageKey, JSON.stringify([...groups]));
 }
 
-function sessionActivityTime(session: WebSession): number {
-  const time = new Date(session.lastActivityAt ?? session.lastOpenedAt).getTime();
+function timestamp(value: string | undefined): number {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
+}
+
+function sessionActivityTime(session: WebSession): number {
+  return Math.max(timestamp(session.lastActivityAt), timestamp(session.lastOpenedAt));
+}
+
+function sessionActivityValue(session: WebSession): string | undefined {
+  return timestamp(session.lastActivityAt) >= timestamp(session.lastOpenedAt) ? session.lastActivityAt : session.lastOpenedAt;
 }
 
 function startOfLocalDay(time = Date.now()): number {
@@ -90,7 +99,7 @@ function renderSessionCard(options: {
 }): string {
   const { session, selectedSessionId, status: currentStatus } = options;
   const title = sessionDisplayTitle(session);
-  const activity = session.lastActivityAt ?? session.lastOpenedAt;
+  const activity = sessionActivityValue(session);
   const snippet = sessionSnippet(session);
   const status = session.status ?? (session.id === selectedSessionId ? currentStatus === "connecting" || currentStatus === "disconnected" ? undefined : currentStatus : "idle");
   return `
