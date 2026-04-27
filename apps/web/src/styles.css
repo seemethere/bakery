@@ -1991,10 +1991,13 @@ pre {
 
 .markdown-body img {
   display: block;
+  width: min(100%, 960px);
   max-width: 100%;
+  aspect-ratio: 16 / 10;
   max-height: clamp(260px, 62vh, 640px);
   border: 1px solid var(--c-343b49);
   border-radius: 8px;
+  background: var(--c-0f1117);
   object-fit: contain;
 }
 
@@ -2041,7 +2044,9 @@ pre {
 
 .rendered-image img {
   display: block;
+  width: min(100%, 960px);
   max-width: 100%;
+  aspect-ratio: 16 / 10;
   max-height: clamp(260px, 62vh, 640px);
   border: 1px solid var(--c-343b49);
   border-radius: 8px;
@@ -2088,7 +2093,7 @@ pre {
 .artifact-image img {
   display: block;
   width: 100%;
-  max-height: clamp(180px, 28vh, 300px);
+  height: clamp(180px, 28vh, 300px);
   border: 1px solid var(--c-2a2f3a);
   border-radius: 6px;
   background: var(--c-0f1117);
@@ -2096,11 +2101,12 @@ pre {
 }
 
 .message.tool .artifact-image img {
-  max-height: clamp(150px, 22vh, 240px);
+  height: clamp(150px, 22vh, 240px);
 }
 
 .artifact-image.expanded img,
 .message.tool .artifact-image.expanded img {
+  height: auto;
   max-height: min(78vh, 1100px);
 }
 
