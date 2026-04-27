@@ -134,6 +134,10 @@ Before ending a work session, unless the user asks otherwise:
 ```bash
 bun install
 bun run check
-PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server
-bun run dev:web
+bun run dev
+bun run dev:server:restart
+bun run dev:server:logs
+bun run dev:server:down
 ```
+
+`bun run dev` is the default local bootstrap: it ensures a detached backend is running, then starts Vite in the foreground. During the dev loop, use `bun run dev:server:restart` to restart only the backend without killing Vite/browser state. The older foreground backend command still works when needed: `PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server`.
