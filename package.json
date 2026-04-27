@@ -11,7 +11,7 @@
     "dev:server:watch": "bun run --cwd apps/server dev:watch",
     "dev:web": "bun run --cwd apps/web dev",
     "start": "bun run --cwd apps/server start",
-    "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check",
+    "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check && bun scripts/assert-workflow-skills.ts",
     "ui:harness": "bun scripts/ui-harness.ts",
     "ui:manual": "bun scripts/ui-harness.ts --scenario manual --headed --keep",
     "test:web-perf": "bun scripts/ui-harness.ts --scenario all"

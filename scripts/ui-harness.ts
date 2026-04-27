@@ -521,11 +521,11 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".command-autocomplete").waitFor({ timeout: 5_000 });
   await page.locator(".command-autocomplete", { hasText: "/session" }).waitFor({ timeout: 5_000 });
   await page.locator(".command-autocomplete", { hasText: "/new" }).waitFor({ timeout: 5_000 });
-  await page.locator(".command-autocomplete", { hasText: "/grill-me" }).waitFor({ timeout: 5_000 });
+  await page.locator(".command-autocomplete", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
   await page.locator("#prompt").fill("/session");
   await page.locator("#send").click();
   await page.locator(".message.system", { hasText: "Fake session" }).waitFor({ timeout: 5_000 });
-  await page.locator("#prompt").fill("/grill-me choosing the next UX slice");
+  await page.locator("#prompt").fill("/plan choosing the next UX slice");
   await page.locator("#send").click();
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-options button").first().click();
