@@ -267,11 +267,16 @@ function localImageArtifacts(text: string, localImageUrl?: RenderContext["localI
 function renderLocalImageArtifacts(text: string, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths?: Set<string>): string {
   const artifacts = localImageArtifacts(text, localImageUrl, suppressedPaths);
   if (artifacts.length === 0) return "";
-  return `<div class="artifact-image-grid">${artifacts.map((artifact) => `
+  return `<div class="artifact-image-grid">${artifacts.map((artifact) => {
+    const fileName = pathBasename(artifact.path);
+    const parent = pathParent(artifact.path);
+    const showParent = parent && parent !== artifact.path && parent !== fileName;
+    return `
     <figure class="artifact-image">
       <img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.path)}" loading="lazy" onerror="this.closest('figure')?.remove()" />
-      <figcaption title="${escapeHtml(artifact.path)}">${escapeHtml(artifact.path)}</figcaption>
-    </figure>`).join("")}</div>`;
+      <figcaption title="${escapeHtml(artifact.path)}">${showParent ? `<small>${escapeHtml(parent)}/</small>` : ""}<strong>${escapeHtml(fileName)}</strong></figcaption>
+    </figure>`;
+  }).join("")}</div>`;
 }
 
 function looksLikeHtml(value: string): boolean {

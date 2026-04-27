@@ -47,6 +47,11 @@
   --color-tool-group-bg: rgba(12, 18, 30, 0.82);
   --color-tool-group-border: rgba(82, 97, 116, 0.46);
   --color-selected-ring: rgba(56, 189, 248, 0.70);
+  --color-image-card-bg: rgba(15, 23, 42, 0.62);
+  --color-image-card-border: rgba(82, 97, 116, 0.72);
+  --color-image-caption-bg: rgba(8, 13, 24, 0.66);
+  --color-image-caption-text: #cbd5e1;
+  --color-image-caption-muted: #94a3b8;
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.025), 0 14px 40px rgba(0, 0, 0, 0.18);
   --shadow-panel: 0 18px 60px rgba(0, 0, 0, 0.28);
 }
@@ -98,6 +103,11 @@
   --color-tool-group-bg: rgba(255, 255, 255, 0.84);
   --color-tool-group-border: rgba(142, 160, 184, 0.48);
   --color-selected-ring: rgba(2, 132, 199, 0.65);
+  --color-image-card-bg: #f8fafc;
+  --color-image-card-border: #cbd5e1;
+  --color-image-caption-bg: #eef2f7;
+  --color-image-caption-text: #334155;
+  --color-image-caption-muted: #64748b;
   --shadow-card: 0 1px 0 rgba(15, 23, 42, 0.04), 0 16px 42px rgba(15, 23, 42, 0.08);
   --shadow-panel: 0 18px 60px rgba(15, 23, 42, 0.12);
 }
@@ -1782,13 +1792,14 @@ pre {
 
 .artifact-image {
   display: grid;
-  gap: 6px;
+  gap: 7px;
   margin: 0;
   min-width: 0;
-  border: 1px solid var(--c-343b49);
-  border-radius: 8px;
-  background: rgba(15, 17, 23, 0.55);
+  border: 1px solid var(--color-image-card-border);
+  border-radius: 10px;
+  background: var(--color-image-card-bg);
   padding: 8px;
+  box-shadow: var(--shadow-card);
   cursor: zoom-in;
 }
 
@@ -1817,12 +1828,34 @@ pre {
 }
 
 .artifact-image figcaption {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
   overflow: hidden;
-  color: var(--c-9aa4b8);
+  border-radius: 7px;
+  background: var(--color-image-caption-bg);
+  color: var(--color-image-caption-text);
+  padding: 5px 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 11px;
+  line-height: 1.25;
+}
+
+.artifact-image figcaption strong,
+.artifact-image figcaption small {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.artifact-image figcaption strong {
+  font-weight: 700;
+}
+
+.artifact-image figcaption small {
+  color: var(--color-image-caption-muted);
+  font-size: 10px;
 }
 
 .right-panel {
