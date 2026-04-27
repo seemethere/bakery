@@ -750,6 +750,8 @@ async function runInspectorPreview(page: Page): Promise<Record<string, unknown>>
   await page.locator(".raw-detail").waitFor({ state: "visible" });
   const tool = page.locator(".message.tool").first();
   await tool.locator(".message-header").click();
+  await tool.locator(".message-body").waitFor({ state: "hidden", timeout: 5_000 });
+  await tool.locator('[data-row-action="toggle-output"]').click();
   await tool.locator(".message-body").click();
   await page.locator(".right-panel-heading", { hasText: "echo fake tool" }).waitFor({ timeout: 5_000 });
   return collectMetrics(page);

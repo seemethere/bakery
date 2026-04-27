@@ -1932,19 +1932,25 @@ textarea:disabled {
   border-bottom: 0;
 }
 
-.message.collapsible .message-header {
-  cursor: pointer;
-}
-
-.message.collapsible .message-header strong::before {
-  content: "▾";
-  display: inline-block;
-  margin-right: 8px;
+.message-expand-toggle {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
   color: var(--c-8b94a7);
+  font-size: 13px;
 }
 
-.message.collapsible.collapsed .message-header strong::before {
-  content: "▸";
+.message-expand-toggle:hover,
+.message-expand-toggle:focus-visible {
+  border-color: var(--c-4a5568);
+  background: var(--c-202635);
+  color: var(--c-eef2ff);
 }
 
 .message-status {
@@ -3065,6 +3071,17 @@ pre {
   .inline-tool-call,
   .inline-image {
     padding-inline: 10px;
+  }
+
+  .message.tool .message-header {
+    gap: 6px;
+  }
+
+  .message-expand-toggle,
+  .message-overflow {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
   }
 
   .markdown-body img,

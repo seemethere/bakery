@@ -19,7 +19,7 @@ declare global {
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type RightPanelTab = "details" | "preview" | "tree";
-type TranscriptRowAction = "copy" | "details" | "preview" | "fork";
+type TranscriptRowAction = "copy" | "details" | "preview" | "fork" | "toggle-output";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 type PromptImage = {
   id: string;
@@ -125,6 +125,8 @@ class PiWebAgentApp extends HTMLElement {
   private mobileLayout = window.matchMedia(mobileLayoutMediaQuery).matches;
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
+  private transcriptExpansion = new Map<string, boolean>();
+  private expandedToolGroupIds = new Set<string>();
   private transcriptPointerDown: { id: string; x: number; y: number } | null = null;
   private pendingToolCallTitles: string[] = [];
   private promptDraft = "";
@@ -883,6 +885,14 @@ class PiWebAgentApp extends HTMLElement {
   private async handleTranscriptRowAction(action: TranscriptRowAction | "menu", transcriptId: string): Promise<void> {
     const item = this.transcript.find((candidate) => candidate.id === transcriptId);
     if (!item) return;
+    if (action === "toggle-output") {
+      const currentExpanded = this.transcriptExpansion.get(transcriptId) ?? this.defaultTranscriptExpanded(item);
+      this.transcriptExpansion.set(transcriptId, !currentExpanded);
+      this.dirtyTranscriptIds.add(transcriptId);
+      this.transcriptFollow.preserveNextSync();
+      this.render();
+      return;
+    }
     if (action === "menu") {
       this.openActionMenuId = this.openActionMenuId === transcriptId ? "" : transcriptId;
       this.selectTranscriptItem(transcriptId, false);
@@ -2230,12 +2240,12 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderToolRunGroup(items: TranscriptItem[]): string {
     const groupId = items.map((item) => item.id).join("|");
-    const selectedInside = items.some((item) => item.id === this.selectedTranscriptId || item.id === this.openActionMenuId);
+    const expanded = this.expandedToolGroupIds.has(groupId);
     const labels = items
       .slice(0, 3)
       .map((item) => item.title.replace(/^\$\s*/, ""))
       .join(" · ");
-    return `<details class="tool-run-group" data-tool-run-group="${escapeHtml(groupId)}" ${selectedInside ? "open" : ""}>
+    return `<details class="tool-run-group" data-tool-run-group="${escapeHtml(groupId)}" ${expanded ? "open" : ""}>
       <summary>
         <strong>Ran ${items.length} tools</strong>
         ${labels ? `<span>${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
@@ -2456,10 +2466,16 @@ class PiWebAgentApp extends HTMLElement {
     return previous?.kind === "tool" && previous.status === "running";
   }
 
+  private defaultTranscriptExpanded(item: TranscriptItem): boolean {
+    const isQuestionTool = item.kind === "tool" && item.title === "Question";
+    return item.kind === "system" || (item.status === "running" && !isQuestionTool) || item.status === "error";
+  }
+
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
     row.setState(item, {
       showThinking: this.showThinking,
       selected: item.id === this.selectedTranscriptId,
+      expanded: this.transcriptExpansion.get(item.id),
       actionMenuOpen: item.id === this.openActionMenuId,
       canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
       afterRunningTool: this.isAfterRunningTool(item),
@@ -2475,6 +2491,20 @@ class PiWebAgentApp extends HTMLElement {
       this.bindTranscriptElement(row);
       const item = this.transcript.find((candidate) => candidate.id === row.dataset.transcriptId);
       if (item) this.updateTranscriptRow(row, item);
+    });
+    this.bindToolRunGroups();
+  }
+
+  private bindToolRunGroups(): void {
+    this.querySelectorAll<HTMLDetailsElement>(".tool-run-group[data-tool-run-group]").forEach((group) => {
+      if (group.dataset.toolRunBound === "true") return;
+      group.dataset.toolRunBound = "true";
+      group.addEventListener("toggle", () => {
+        const id = group.dataset.toolRunGroup ?? "";
+        if (!id) return;
+        if (group.open) this.expandedToolGroupIds.add(id);
+        else this.expandedToolGroupIds.delete(id);
+      });
     });
   }
 

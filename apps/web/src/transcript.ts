@@ -473,20 +473,12 @@ export class PiTranscriptRow extends HTMLElement {
         expandableImage.classList.toggle("expanded");
         return;
       }
-      if (target?.closest(".message-action-area")) return;
-      if (target?.closest(".message-header") && this.isCollapsible()) {
-        event.stopImmediatePropagation();
-        this.collapsed = !this.collapsed;
-        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork, hideInspectorActions: this.hideInspectorActions, afterRunningTool: this.afterRunningTool, toolGroupPosition: this.toolGroupPosition });
-        else this.classList.toggle("collapsed", this.collapsed);
-      }
+      if (target?.closest(".message-action-area, .message-expand-toggle")) return;
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; hideInspectorActions?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; expanded?: boolean | undefined; actionMenuOpen?: boolean; canFork?: boolean; hideInspectorActions?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
-    const previous = this.item;
-    const wasSelected = this.selected;
     this.item = item;
     this.showThinking = options.showThinking;
     this.selected = options.selected;
@@ -496,13 +488,11 @@ export class PiTranscriptRow extends HTMLElement {
     this.afterRunningTool = options.afterRunningTool ?? false;
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
-    const completedDoneTool = item.kind === "tool" && item.status === "done";
     const isQuestionTool = item.kind === "tool" && item.title === "Question";
     const hasVisualResult = itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
-    const defaultOpen = item.kind === "system" || (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done") || (options.selected && !completedDoneTool && !isQuestionTool);
-    const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
-    if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
-    if (options.selected && !wasSelected && !completedDoneTool) this.collapsed = false;
+    const defaultOpen = item.kind === "system" || (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done");
+    const expanded = isCollapsible ? (options.expanded ?? defaultOpen) : true;
+    this.collapsed = isCollapsible && !expanded;
 
     this.dataset.transcriptId = item.id;
     this.className = this.classNames();
@@ -520,6 +510,7 @@ export class PiTranscriptRow extends HTMLElement {
 
     this.innerHTML = `
       <div class="message-header">
+        ${isCollapsible ? `<button class="message-expand-toggle" type="button" data-row-action="toggle-output" data-transcript-id="${escapeHtml(item.id)}" aria-expanded="${this.collapsed ? "false" : "true"}" aria-label="${this.collapsed ? "Show output" : "Hide output"}" title="${this.collapsed ? "Show output" : "Hide output"}">${this.collapsed ? "▸" : "▾"}</button>` : ""}
         <strong>${escapeHtml(item.title)}</strong>
         ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
         <span class="message-header-spacer"></span>
