@@ -240,6 +240,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
   await page.locator("[data-question-option-index='1']").press("Enter");
   await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "Q: What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Bug fix" }).waitFor({ timeout: 5_000 });
@@ -251,6 +252,8 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.keyboard.press("c");
   await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.keyboard.press("Escape");
+  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "User cancelled the question" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "A: Cancelled" }).waitFor({ timeout: 5_000 });
@@ -284,6 +287,8 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");
   await page.keyboard.press("Enter");
+  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 10_000 });

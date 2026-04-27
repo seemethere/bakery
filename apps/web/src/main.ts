@@ -1834,6 +1834,7 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
+    this.focusPromptOnNextReadyRender = true;
     this.ws.send(JSON.stringify({
       type: "answer_question",
       payload: {
