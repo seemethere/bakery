@@ -857,6 +857,16 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
 
+    if (!isRenderableTranscriptItem(nextItem)) {
+      if (index !== -1) {
+        this.transcript.splice(index, 1);
+        if (this.selectedTranscriptId === nextItem.id) this.selectTranscriptItem(this.transcript[Math.max(0, index - 1)]?.id ?? "", false);
+      }
+      this.dirtyTranscriptIds.delete(nextItem.id);
+      this.forceFullRender = true;
+      return;
+    }
+
     if (index === -1) this.transcript.push(nextItem);
     else this.transcript[index] = { ...this.transcript[index], ...nextItem };
     const nextIndex = index === -1 ? this.transcript.length - 1 : index;
@@ -2878,8 +2888,11 @@ class PiWebAgentApp extends HTMLElement {
 
     for (const id of this.dirtyTranscriptIds) {
       const item = this.transcript.find((candidate) => candidate.id === id);
-      if (!item) continue;
       const existing = this.findTranscriptElement(id);
+      if (!item || !isRenderableTranscriptItem(item)) {
+        existing?.remove();
+        continue;
+      }
       if (existing) {
         this.updateTranscriptRow(existing, item);
       } else {
