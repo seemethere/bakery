@@ -6,6 +6,7 @@ import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPr
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { TranscriptFollowController } from "./transcript-follow";
 import { defaultTranscriptExpanded, isAfterRunningTool, renderTranscriptHtml, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
+import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
@@ -22,14 +23,6 @@ type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnect
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork" | "toggle-output";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
-type PromptImage = {
-  id: string;
-  name: string;
-  mimeType: string;
-  dataUrl: string;
-  size: number;
-};
-
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
 const mobileLayoutMediaQuery = "(max-width: 760px)";
@@ -56,9 +49,6 @@ function applyThemePreference(preference: ThemePreference): void {
 
 applyThemePreference(storedThemePreference());
 
-const supportedPromptImageTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]);
-const maxPromptImages = 4;
-const maxPromptImageBytes = 8 * 1024 * 1024;
 function formatTokenCount(value: number | null | undefined): string {
   if (value === null || value === undefined) return "unknown";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
@@ -1262,53 +1252,28 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private isSupportedImageFile(file: File): boolean {
-    return file.type.startsWith("image/") || /\.(?:png|jpe?g|gif|webp)$/i.test(file.name);
-  }
-
-  private imageMimeType(file: File): string {
-    if (file.type === "image/jpg") return "image/jpeg";
-    if (file.type.startsWith("image/")) return file.type;
-    const extension = file.name.toLowerCase().split(".").pop();
-    if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
-    if (extension === "png") return "image/png";
-    if (extension === "gif") return "image/gif";
-    if (extension === "webp") return "image/webp";
-    return file.type;
-  }
-
-  private artifactPathForFile(file: File): string {
-    const safeName = (file.name || "screenshot.png").replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "screenshot.png";
-    return `.bakery/artifacts/${new Date().toISOString().replace(/[:.]/g, "-")}-${safeName}`;
-  }
-
   private async uploadImageArtifacts(files: FileList | File[]): Promise<void> {
     if (!this.selectedSession) {
       this.notice = "Open a session before uploading transcript artifacts.";
       this.render();
       return;
     }
-    const incoming = Array.from(files).filter((file) => this.isSupportedImageFile(file));
+    const incoming = Array.from(files).filter((file) => isSupportedImageFile(file));
     if (incoming.length === 0) return;
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const uploadedPaths: string[] = [];
     for (const file of incoming) {
-      const mimeType = this.imageMimeType(file);
+      const mimeType = imageMimeType(file);
       if (!supportedPromptImageTypes.has(mimeType)) {
         this.notice = `Unsupported image type: ${file.type || file.name}`;
         continue;
       }
-      if (file.size > 20 * 1024 * 1024) {
+      if (file.size > maxArtifactImageBytes) {
         this.notice = `${file.name} is larger than 20 MB.`;
         continue;
       }
-      const path = this.artifactPathForFile(file);
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.addEventListener("load", () => resolve(String(reader.result ?? "").replace(/^data:[^,]+,/, "")));
-        reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image")));
-        reader.readAsDataURL(file);
-      });
+      const path = artifactPathForFile(file);
+      const data = await readFileAsBase64(file);
       await this.api(`/api/sessions/${this.selectedSession.id}/artifacts`, {
         method: "POST",
         body: JSON.stringify({ path, mimeType, data }),
@@ -1331,7 +1296,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<number> {
-    const incoming = Array.from(files).filter((file) => this.isSupportedImageFile(file));
+    const incoming = Array.from(files).filter((file) => isSupportedImageFile(file));
     if (incoming.length === 0) return 0;
     const added: PromptImage[] = [];
     for (const file of incoming) {
@@ -1339,7 +1304,7 @@ class PiWebAgentApp extends HTMLElement {
         this.notice = `Only ${maxPromptImages} images can be attached to one prompt.`;
         break;
       }
-      const mimeType = this.imageMimeType(file);
+      const mimeType = imageMimeType(file);
       if (!supportedPromptImageTypes.has(mimeType)) {
         this.notice = `Unsupported image type: ${file.type || file.name}`;
         continue;
@@ -1348,12 +1313,7 @@ class PiWebAgentApp extends HTMLElement {
         this.notice = `${file.name} is larger than 8 MB.`;
         continue;
       }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
-        reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image")));
-        reader.readAsDataURL(file);
-      });
+      const dataUrl = await readFileAsDataUrl(file);
       added.push({ id: browserId("image"), name: file.name || "pasted-image", mimeType, dataUrl, size: file.size });
     }
     if (added.length > 0) {
@@ -1901,7 +1861,7 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("paste", (event) => {
       const files = event.clipboardData?.files;
-      if (files && Array.from(files).some((file) => this.isSupportedImageFile(file))) void this.handleImageFiles(files);
+      if (files && Array.from(files).some((file) => isSupportedImageFile(file))) void this.handleImageFiles(files);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
       window.setTimeout(() => {
@@ -2162,18 +2122,6 @@ class PiWebAgentApp extends HTMLElement {
     this.syncAutocompleteScroll();
   }
 
-  private renderPromptImages(): string {
-    if (this.promptImages.length === 0) return "";
-    return `
-      <div class="prompt-images" aria-label="Attached prompt images">
-        ${this.promptImages.map((image) => `
-          <figure class="prompt-image">
-            <img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name)}" />
-            <figcaption title="${escapeHtml(image.name)}">${escapeHtml(image.name)}</figcaption>
-            <button type="button" data-remove-image-id="${escapeHtml(image.id)}" aria-label="Remove ${escapeHtml(image.name)}">×</button>
-          </figure>`).join("")}
-      </div>`;
-  }
 
   private renderQuestionPanel(isController: boolean): string {
     const question = this.pendingQuestion;
@@ -2802,7 +2750,7 @@ class PiWebAgentApp extends HTMLElement {
               ${this.renderComposerActivity()}
               ${this.renderContextUsageNotice()}
             </div>
-            ${this.renderPromptImages()}
+            ${renderPromptImages(this.promptImages)}
             <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
             ${renderCommandAutocomplete(this.commandAutocomplete)}
             ${renderFileAutocomplete(this.fileAutocomplete)}

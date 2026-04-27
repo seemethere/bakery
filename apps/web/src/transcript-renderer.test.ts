@@ -1,6 +1,23 @@
-import { describe, expect, test } from "bun:test";
-import { defaultTranscriptExpanded, isAfterRunningTool, renderTranscriptHtml, toolGroupPositionFor } from "./transcript-renderer";
+import { beforeAll, describe, expect, test } from "bun:test";
 import type { TranscriptItem } from "./transcript";
+
+let renderHelpers: typeof import("./transcript-renderer");
+
+beforeAll(async () => {
+  Object.defineProperty(globalThis, "HTMLElement", {
+    value: class HTMLElement {},
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, "customElements", {
+    value: { define: () => undefined },
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, "window", {
+    value: { location: { href: "http://127.0.0.1:5173/" } },
+    configurable: true,
+  });
+  renderHelpers = await import("./transcript-renderer");
+});
 
 function item(partial: Partial<TranscriptItem> & Pick<TranscriptItem, "id" | "kind" | "title">): TranscriptItem {
   return { body: "", status: "done", ...partial };
@@ -15,7 +32,7 @@ describe("transcript renderer", () => {
       item({ id: "a1", kind: "assistant", title: "Pi", body: "done" }),
     ];
 
-    const html = renderTranscriptHtml(transcript, new Set(["t1|t2"]));
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(["t1|t2"]));
 
     expect(html).toContain('data-transcript-id="u1"');
     expect(html).toContain('class="tool-run-group"');
@@ -33,10 +50,10 @@ describe("transcript renderer", () => {
       item({ id: "single", kind: "tool", title: "Read" }),
     ];
 
-    const html = renderTranscriptHtml(transcript, new Set());
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
 
     expect(html).not.toContain("tool-run-group");
-    expect(html.match(/pi-transcript-row/g)?.length).toBe(4);
+    expect(html.match(/data-transcript-id=/g)?.length).toBe(4);
   });
 
   test("calculates tool grouping positions and running adjacency", () => {
@@ -47,17 +64,17 @@ describe("transcript renderer", () => {
       item({ id: "user", kind: "user", title: "You" }),
     ];
 
-    expect(isAfterRunningTool(transcript, transcript[1]!)).toBe(true);
-    expect(toolGroupPositionFor(transcript, transcript[1]!)).toBe("start");
-    expect(toolGroupPositionFor(transcript, transcript[2]!)).toBe("end");
-    expect(toolGroupPositionFor(transcript, transcript[3]!)).toBe("single");
+    expect(renderHelpers.isAfterRunningTool(transcript, transcript[1]!)).toBe(true);
+    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[1]!)).toBe("start");
+    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[2]!)).toBe("end");
+    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[3]!)).toBe("single");
   });
 
   test("keeps explicit expansion defaults for system, bash, running, and error rows", () => {
-    expect(defaultTranscriptExpanded(item({ id: "system", kind: "system", title: "System" }))).toBe(true);
-    expect(defaultTranscriptExpanded(item({ id: "bash:1", kind: "tool", title: "$ test" }))).toBe(true);
-    expect(defaultTranscriptExpanded(item({ id: "running", kind: "tool", title: "Read", status: "running" }))).toBe(true);
-    expect(defaultTranscriptExpanded(item({ id: "question", kind: "tool", title: "Question", status: "running" }))).toBe(false);
-    expect(defaultTranscriptExpanded(item({ id: "error", kind: "assistant", title: "Pi", status: "error" }))).toBe(true);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "system", kind: "system", title: "System" }))).toBe(true);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "bash:1", kind: "tool", title: "$ test" }))).toBe(true);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "running", kind: "tool", title: "Read", status: "running" }))).toBe(true);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "question", kind: "tool", title: "Question", status: "running" }))).toBe(false);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "error", kind: "assistant", title: "Pi", status: "error" }))).toBe(true);
   });
 });
