@@ -18,7 +18,8 @@
     "ui:manual": "bun scripts/ui-harness.ts --scenario manual --headed --keep",
     "test:web-perf": "bun scripts/ui-harness.ts --scenario all",
     "report:iteration": "bun scripts/report-iteration.ts",
-    "project:notes": "bun scripts/project-notes.ts"
+    "project:notes": "bun scripts/project-notes.ts",
+    "artifact:upload": "bun scripts/upload-artifact.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

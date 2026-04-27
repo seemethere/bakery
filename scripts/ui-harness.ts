@@ -860,12 +860,17 @@ async function runRemoteImageArtifactPaths(page: Page): Promise<Record<string, u
 async function runRemoteImageArtifactUpload(page: Page): Promise<Record<string, unknown>> {
   const sessionId = await prepareSession(page);
   const remotePath = "/remote/agent/workspace/screenshots/uploaded.png";
-  const upload = await fetch(`${apiBase}/api/sessions/${sessionId}/artifacts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: remotePath, mimeType: "image/png", data: fixturePngBase64 }),
+  const uploadedFixturePath = join(artifactDir, "fixture.png");
+  const upload = spawn("bun", ["scripts/upload-artifact.ts", "--api", apiBase, "--session", sessionId, "--path", remotePath, uploadedFixturePath], {
+    cwd: root,
+    env: { ...process.env, PI_WEB_AUTH_TOKEN: "" },
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  if (!upload.ok) throw new Error(`Remote artifact upload failed: ${upload.status} ${await upload.text()}`);
+  let uploadOutput = "";
+  upload.stdout.on("data", (chunk) => { uploadOutput += String(chunk); });
+  upload.stderr.on("data", (chunk) => { uploadOutput += String(chunk); });
+  const uploadCode = await new Promise<number | null>((resolve) => upload.on("exit", resolve));
+  if (uploadCode !== 0) throw new Error(`Remote artifact upload CLI failed with code ${uploadCode}: ${uploadOutput}`);
   await sendPromptAndWaitIdle(page, "Please list uploaded remote screenshot artifact paths for rendering validation.");
   await page.waitForFunction(() => {
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img, .markdown-body img"));
