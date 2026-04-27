@@ -51,6 +51,20 @@
   --color-footer-running-bg: linear-gradient(180deg, rgba(30, 41, 59, 0.96), #111827 72%);
   --color-footer-running-border: #38bdf8;
   --shadow-footer: 0 -10px 30px rgba(0, 0, 0, 0.24);
+  --color-queue-bg: linear-gradient(135deg, rgba(42, 29, 10, 0.96), rgba(13, 18, 31, 0.96));
+  --color-queue-border: rgba(255, 209, 138, 0.36);
+  --color-queue-shadow: 0 12px 34px rgba(0, 0, 0, 0.42), inset 3px 0 0 rgba(255, 190, 92, 0.85);
+  --color-queue-text: #f59e0b;
+  --color-queue-muted: #94a3b8;
+  --color-queue-pill-bg: rgba(8, 10, 15, 0.88);
+  --color-queue-pill-border: #334155;
+  --color-queue-pill-text: #cbd5e1;
+  --color-queue-follow-bg: rgba(51, 36, 11, 0.82);
+  --color-queue-follow-border: rgba(245, 158, 11, 0.58);
+  --color-queue-follow-text: #fbbf24;
+  --color-queue-steer-bg: rgba(8, 47, 73, 0.74);
+  --color-queue-steer-border: rgba(56, 189, 248, 0.58);
+  --color-queue-steer-text: #7dd3fc;
   --color-image-card-bg: rgba(15, 23, 42, 0.62);
   --color-image-card-border: rgba(82, 97, 116, 0.72);
   --color-image-caption-bg: rgba(8, 13, 24, 0.66);
@@ -111,6 +125,20 @@
   --color-footer-running-bg: linear-gradient(180deg, rgba(239, 246, 255, 0.98), #ffffff 72%);
   --color-footer-running-border: #93c5fd;
   --shadow-footer: 0 -10px 28px rgba(15, 23, 42, 0.12);
+  --color-queue-bg: linear-gradient(135deg, rgba(255, 251, 235, 0.98), rgba(255, 255, 255, 0.98));
+  --color-queue-border: rgba(217, 119, 6, 0.42);
+  --color-queue-shadow: 0 12px 30px rgba(15, 23, 42, 0.14), inset 3px 0 0 rgba(245, 158, 11, 0.80);
+  --color-queue-text: #b45309;
+  --color-queue-muted: #64748b;
+  --color-queue-pill-bg: #ffffff;
+  --color-queue-pill-border: #d6dee9;
+  --color-queue-pill-text: #334155;
+  --color-queue-follow-bg: #fffbeb;
+  --color-queue-follow-border: rgba(217, 119, 6, 0.46);
+  --color-queue-follow-text: #92400e;
+  --color-queue-steer-bg: #eff6ff;
+  --color-queue-steer-border: rgba(37, 99, 235, 0.42);
+  --color-queue-steer-text: #1d4ed8;
   --color-image-card-bg: #f8fafc;
   --color-image-card-border: #cbd5e1;
   --color-image-caption-bg: #eef2f7;
@@ -1053,11 +1081,11 @@ textarea {
   gap: 8px;
   max-height: 78px;
   overflow-y: auto;
-  border: 1px solid rgba(255, 209, 138, 0.36);
+  border: 1px solid var(--color-queue-border);
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(42, 29, 10, 0.96), rgba(13, 18, 31, 0.96));
+  background: var(--color-queue-bg);
   padding: 7px 8px;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42), inset 3px 0 0 rgba(255, 190, 92, 0.85);
+  box-shadow: var(--color-queue-shadow);
   backdrop-filter: blur(10px);
 }
 
@@ -1065,7 +1093,7 @@ textarea {
   display: grid;
   gap: 1px;
   min-width: 132px;
-  color: var(--c-ffd18a);
+  color: var(--color-queue-text);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1076,7 +1104,7 @@ textarea {
 }
 
 .running-queue-heading span {
-  color: var(--c-9aa6bd);
+  color: var(--color-queue-muted);
   font-size: 10px;
   text-transform: none;
   letter-spacing: 0;
@@ -1092,9 +1120,9 @@ textarea {
 .queue-more {
   justify-self: start;
   width: fit-content;
-  border-color: rgba(255, 209, 138, 0.42);
-  background: rgba(255, 209, 138, 0.1);
-  color: var(--c-ffd18a);
+  border-color: var(--color-queue-border);
+  background: color-mix(in srgb, var(--color-queue-text) 10%, transparent);
+  color: var(--color-queue-text);
   padding: 2px 7px;
   min-height: 22px;
   border-radius: 999px;
@@ -1113,10 +1141,10 @@ textarea {
   align-items: center;
   gap: 6px;
   max-width: min(520px, 100%);
-  border: 1px solid var(--c-343b49);
+  border: 1px solid var(--color-queue-pill-border);
   border-radius: 8px;
-  background: rgba(8, 10, 15, 0.88);
-  color: var(--c-aab2c0);
+  background: var(--color-queue-pill-bg);
+  color: var(--color-queue-pill-text);
   padding: 5px 6px 5px 8px;
   font-size: 11px;
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.18);
@@ -1131,25 +1159,25 @@ textarea {
 }
 
 .queue-pill.follow-up {
-  border-color: rgba(255, 190, 92, 0.62);
-  color: var(--c-ffd18a);
-  background: rgba(52, 34, 12, 0.72);
+  border-color: var(--color-queue-follow-border);
+  color: var(--color-queue-follow-text);
+  background: var(--color-queue-follow-bg);
 }
 
 .queue-pill.follow-up strong {
-  background: rgba(255, 190, 92, 0.18);
-  color: var(--c-ffe1aa);
+  background: color-mix(in srgb, var(--color-queue-follow-text) 13%, transparent);
+  color: var(--color-queue-follow-text);
 }
 
 .queue-pill.steer {
-  border-color: rgba(91, 141, 239, 0.62);
-  color: var(--c-b7d4ff);
-  background: rgba(14, 28, 52, 0.72);
+  border-color: var(--color-queue-steer-border);
+  color: var(--color-queue-steer-text);
+  background: var(--color-queue-steer-bg);
 }
 
 .queue-pill.steer strong {
-  background: rgba(91, 141, 239, 0.2);
-  color: var(--c-d4e4ff);
+  background: color-mix(in srgb, var(--color-queue-steer-text) 12%, transparent);
+  color: var(--color-queue-steer-text);
 }
 
 .queue-pill span {
