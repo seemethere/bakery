@@ -2,8 +2,9 @@ import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextU
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
 import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
-import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionDisplayTitle, sessionMetadataLabel, sessionSnippet, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
-import { escapeHtml, isRecord, pathBasename, recordPerfSample, stringify } from "./utils";
+import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
+import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
 declare global {
@@ -18,13 +19,6 @@ type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnect
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
-type SessionRecencyGroupId = "today" | "yesterday" | "this-week" | "older";
-type SessionRecencyGroup = {
-  id: SessionRecencyGroupId;
-  label: string;
-  sessions: WebSession[];
-  defaultExpanded: boolean;
-};
 type PromptImage = {
   id: string;
   name: string;
@@ -43,7 +37,6 @@ type RunningQueueState = {
   followUp: RunningQueueItem[];
 };
 const themeStorageKey = "piWebThemePreference";
-const collapsedSessionGroupsStorageKey = "piWebCollapsedSessionGroups";
 const themeMediaQuery = "(prefers-color-scheme: light)";
 const mobileLayoutMediaQuery = "(max-width: 760px)";
 
@@ -54,24 +47,6 @@ function isThemePreference(value: string | null): value is ThemePreference {
 function storedThemePreference(): ThemePreference {
   const value = localStorage.getItem(themeStorageKey);
   return isThemePreference(value) ? value : "system";
-}
-
-function isSessionRecencyGroupId(value: string): value is SessionRecencyGroupId {
-  return value === "today" || value === "yesterday" || value === "this-week" || value === "older";
-}
-
-function storedCollapsedSessionGroups(): Set<SessionRecencyGroupId> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(collapsedSessionGroupsStorageKey) ?? "null");
-    if (!Array.isArray(parsed)) return new Set<SessionRecencyGroupId>(["this-week", "older"]);
-    return new Set(parsed.filter((value): value is SessionRecencyGroupId => typeof value === "string" && isSessionRecencyGroupId(value)));
-  } catch {
-    return new Set<SessionRecencyGroupId>(["this-week", "older"]);
-  }
-}
-
-function persistCollapsedSessionGroups(groups: Set<SessionRecencyGroupId>): void {
-  localStorage.setItem(collapsedSessionGroupsStorageKey, JSON.stringify([...groups]));
 }
 
 function resolveThemePreference(preference: ThemePreference): "workbench-dark" | "workbench-light" {
@@ -90,31 +65,6 @@ applyThemePreference(storedThemePreference());
 const supportedPromptImageTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]);
 const maxPromptImages = 4;
 const maxPromptImageBytes = 8 * 1024 * 1024;
-function sessionActivityTime(session: WebSession): number {
-  const time = new Date(session.lastActivityAt ?? session.lastOpenedAt).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
-function startOfLocalDay(time = Date.now()): number {
-  const date = new Date(time);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-}
-
-function relativeTime(value: string | undefined): string {
-  if (!value) return "never";
-  const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return value;
-  const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
-  if (seconds < 60) return "now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 14) return `${days}d ago`;
-  return new Date(value).toLocaleDateString();
-}
 function formatTokenCount(value: number | null | undefined): string {
   if (value === null || value === undefined) return "unknown";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
@@ -2018,66 +1968,6 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private sortedSessions(): WebSession[] {
-    return [...this.sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a));
-  }
-
-  private groupedSessions(): SessionRecencyGroup[] {
-    const todayStart = startOfLocalDay();
-    const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-    const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
-    const groups: SessionRecencyGroup[] = [
-      { id: "today", label: "Today", sessions: [], defaultExpanded: true },
-      { id: "yesterday", label: "Yesterday", sessions: [], defaultExpanded: true },
-      { id: "this-week", label: "Earlier this week", sessions: [], defaultExpanded: false },
-      { id: "older", label: "Older", sessions: [], defaultExpanded: false },
-    ];
-    for (const session of this.sortedSessions()) {
-      const activity = sessionActivityTime(session);
-      const group = (activity >= todayStart ? groups[0]
-        : activity >= yesterdayStart ? groups[1]
-        : activity >= weekStart ? groups[2]
-        : groups[3])!;
-      group.sessions.push(session);
-    }
-    return groups.filter((group) => group.sessions.length > 0);
-  }
-
-  private sessionGroupExpanded(group: SessionRecencyGroup): boolean {
-    if (group.sessions.some((session) => session.id === this.selectedSession?.id)) return true;
-    return group.defaultExpanded ? !this.collapsedSessionGroups.has(group.id) : !this.collapsedSessionGroups.has(group.id);
-  }
-
-  private renderSessionGroups(groups: SessionRecencyGroup[]): string {
-    if (!groups.length) return `<p class="empty-sidebar">No recent sessions. Create one from the selected workspace.</p>`;
-    return groups.map((group) => {
-      const expanded = this.sessionGroupExpanded(group);
-      return `<section class="session-group ${expanded ? "expanded" : "collapsed"}" data-session-group="${group.id}">
-        <button type="button" class="session-group-heading" data-session-group-toggle="${group.id}" aria-expanded="${expanded}">
-          <span>${expanded ? "▾" : "▸"} ${escapeHtml(group.label)}</span>
-          <small>${group.sessions.length}</small>
-        </button>
-        ${expanded ? `<div class="sessions">${group.sessions.map((session) => this.renderSessionCard(session)).join("")}</div>` : ""}
-      </section>`;
-    }).join("");
-  }
-
-  private renderSessionCard(session: WebSession): string {
-    const title = sessionDisplayTitle(session);
-    const activity = session.lastActivityAt ?? session.lastOpenedAt;
-    const snippet = sessionSnippet(session);
-    const status = session.status ?? (session.id === this.selectedSession?.id ? this.status === "connecting" || this.status === "disconnected" ? undefined : this.status : "idle");
-    return `
-      <button data-session-id="${escapeHtml(session.id)}" class="session-card ${session.id === this.selectedSession?.id ? "active" : ""}">
-        <span class="session-card-top">
-          <strong>${escapeHtml(title)}</strong>
-          ${status ? `<em class="session-indicator ${escapeHtml(status)}">${escapeHtml(status)}</em>` : ""}
-        </span>
-        <span class="session-snippet">${escapeHtml(snippet)}</span>
-        <small>${escapeHtml(relativeTime(activity))} · ${escapeHtml(pathBasename(session.cwd))}</small>
-      </button>`;
-  }
-
   private renderAppSettings(): string {
     const models = this.settings?.availableModels ?? [];
     const selected = this.appSettings?.sessionMetadataModel?.model ?? "";
@@ -2818,7 +2708,7 @@ class PiWebAgentApp extends HTMLElement {
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
       : "";
     const currentModelId = this.settings?.model?.id ?? "";
-    const sessionGroups = this.groupedSessions();
+    const sessionGroups = groupedSessions(this.sessions);
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
@@ -2848,7 +2738,7 @@ class PiWebAgentApp extends HTMLElement {
               <h2>Recent sessions</h2>
             </div>
             <div class="session-groups">
-              ${this.renderSessionGroups(sessionGroups)}
+              ${renderSessionGroups({ groups: sessionGroups, selectedSessionId: this.selectedSession?.id, collapsedGroups: this.collapsedSessionGroups, status: this.status })}
             </div>
           </div>
           <div class="sidebar-section sidebar-settings-section">
