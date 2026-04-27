@@ -142,7 +142,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/main.ts scripts/ui-harness.ts PROJECT_LOG.md`, `bun run check`, `bun scripts/ui-harness.ts --scenario image-attachments`, and `bun scripts/ui-harness.ts --scenario image-artifact-drop-upload` passed after adding a visible Image debug readout and extending the image attachment harness to assert the real file-chooser trace reaches the `change` event. Full `bun run test:web-perf` was intentionally skipped because this was a focused composer image intake diagnostics/reliability fix with targeted prompt/artifact harness coverage.
+Latest: `bun run report:iteration --recommend apps/web/src/main.ts scripts/ui-harness.ts PROJECT_LOG.md`, `bun run check`, `bun scripts/ui-harness.ts --scenario image-attachments`, and `bun scripts/ui-harness.ts --scenario image-artifact-drop-upload` passed after adding a visible Image debug readout and extending the image attachment harness to assert the real file-chooser trace reaches the `change` event. Real-browser diagnostics then identified `crypto.randomUUID is not a function` during prompt image creation, so the browser image ID path now uses a local fallback generator when `randomUUID` is unavailable. Full `bun run test:web-perf` was intentionally skipped because this was a focused composer image intake diagnostics/reliability fix with targeted prompt/artifact harness coverage.
 
 ## Next priorities
 

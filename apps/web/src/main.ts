@@ -96,6 +96,13 @@ function defaultApiBase(): string {
   return `${apiProtocol}//${hostname || "127.0.0.1"}:3141`;
 }
 
+function browserId(prefix = "id"): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const random = crypto.getRandomValues?.(new Uint32Array(2));
+  const suffix = random ? `${(random[0] ?? 0).toString(36)}${(random[1] ?? 0).toString(36)}` : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${suffix}`;
+}
+
 class PiWebAgentApp extends HTMLElement {
   private token = localStorage.getItem("piWebAuthToken") ?? "";
   private apiBase = localStorage.getItem("piWebApiBase") ?? defaultApiBase();
@@ -1241,7 +1248,7 @@ class PiWebAgentApp extends HTMLElement {
         reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image")));
         reader.readAsDataURL(file);
       });
-      added.push({ id: crypto.randomUUID(), name: file.name || "pasted-image", mimeType, dataUrl, size: file.size });
+      added.push({ id: browserId("image"), name: file.name || "pasted-image", mimeType, dataUrl, size: file.size });
       this.traceImageDebug(`read complete for ${file.name || "unnamed"}`);
     }
     if (added.length > 0) {
