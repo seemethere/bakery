@@ -63,7 +63,9 @@ type SessionContextReport = {
   repeatedToolInputs: Array<{ toolName: string; input: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
   readPaths: Array<{ path: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
   bashCommands: Array<{ command: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
-  largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string; input?: string }>;
+  validationCommands: Array<{ command: string; runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>;
+  editAttempts: Array<{ path: string; attempts: number; successes: number; failures: number; resultChars: number }>;
+  largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string; input?: string; durationMs?: number }>;
   assistantResponsesWithUsage: number;
   latestUsage?: Record<string, unknown>;
   maxReportedInputOrCacheRead?: number;
@@ -253,6 +255,54 @@ function incrementInputSummary(
   summary.maxResultChars = Math.max(summary.maxResultChars, resultChars);
 }
 
+function timestampMs(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+function validationLabelsFromCommand(command: string): string[] {
+  const labels: string[] = [];
+  if (/\bbun run check\b/.test(command)) labels.push("bun run check");
+  if (/\bbun run test:web-perf\b/.test(command) || /\bbun scripts\/ui-harness\.ts --scenario all\b/.test(command)) labels.push("bun run test:web-perf / all harness");
+  for (const match of command.matchAll(/\bbun scripts\/ui-harness\.ts --scenario\s+([^\s&;]+)/g)) {
+    const scenario = match[1];
+    if (scenario && scenario !== "all") labels.push(`ui-harness:${scenario}`);
+  }
+  if (/\bbun run report:iteration\b/.test(command) || /\bbun scripts\/report-iteration\.ts\b/.test(command)) labels.push("bun run report:iteration");
+  return Array.from(new Set(labels));
+}
+
+function incrementValidationSummary(
+  record: Record<string, { runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>,
+  command: string,
+  failed: boolean,
+  resultChars: number,
+  durationMs?: number,
+): void {
+  record[command] ??= { runs: 0, failures: 0, resultChars: 0, estimatedTokens: 0 };
+  const summary = record[command];
+  summary.runs += 1;
+  if (failed) summary.failures += 1;
+  summary.resultChars += resultChars;
+  summary.estimatedTokens = estimateTokensFromChars(summary.resultChars);
+  if (typeof durationMs === "number") summary.maxDurationMs = Math.max(summary.maxDurationMs ?? 0, durationMs);
+}
+
+function incrementEditAttempt(
+  record: Record<string, { attempts: number; successes: number; failures: number; resultChars: number }>,
+  path: string,
+  failed: boolean,
+  resultChars: number,
+): void {
+  record[path] ??= { attempts: 0, successes: 0, failures: 0, resultChars: 0 };
+  const summary = record[path];
+  summary.attempts += 1;
+  if (failed) summary.failures += 1;
+  else summary.successes += 1;
+  summary.resultChars += resultChars;
+}
+
 function candidateSessionDirs(): string[] {
   const dirs = [process.env.PI_WEB_SESSION_DIR, join(homedir(), ".pi-web-agent", "sessions")].filter((dir): dir is string => Boolean(dir));
   return Array.from(new Set(dirs.map((dir) => resolve(expandHome(dir)))));
@@ -296,6 +346,8 @@ function buildSessionContextReport(): SessionContextReport {
     repeatedToolInputs: [],
     readPaths: [],
     bashCommands: [],
+    validationCommands: [],
+    editAttempts: [],
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
     actionRecommendations: [],
@@ -314,15 +366,19 @@ function buildSessionContextReport(): SessionContextReport {
     repeatedToolInputs: [],
     readPaths: [],
     bashCommands: [],
+    validationCommands: [],
+    editAttempts: [],
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
     actionRecommendations: [],
     notes: ["Tool-result sizes are character counts with a rough chars/4 token estimate; content is intentionally not printed."],
   };
-  const toolCallsById: Record<string, { toolName: string; input: string; args: Record<string, unknown>; timestamp?: string }> = {};
+  const toolCallsById: Record<string, { toolName: string; input: string; args: Record<string, unknown>; timestamp?: string; startedAtMs?: number }> = {};
   const toolInputs: Record<string, Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>> = {};
   const readPathSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
   const bashCommandSummaries: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }> = {};
+  const validationCommandSummaries: Record<string, { runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }> = {};
+  const editAttemptSummaries: Record<string, { attempts: number; successes: number; failures: number; resultChars: number }> = {};
 
   for (const line of lines) {
     let event: Record<string, unknown>;
@@ -350,6 +406,7 @@ function buildSessionContextReport(): SessionContextReport {
               input: toolInputLabel(record.name, args),
               args,
               timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
+              startedAtMs: timestampMs(event.timestamp),
             };
           }
         }
@@ -372,6 +429,9 @@ function buildSessionContextReport(): SessionContextReport {
       const toolCall = toolCallId ? toolCallsById[toolCallId] : undefined;
       const input = toolCall?.input ?? "unknown input";
       const chars = textFromContent(message.content).length;
+      const failed = message.isError === true;
+      const endedAtMs = timestampMs(event.timestamp);
+      const durationMs = typeof endedAtMs === "number" && typeof toolCall?.startedAtMs === "number" ? Math.max(0, endedAtMs - toolCall.startedAtMs) : undefined;
       report.toolResultsByName[toolName] ??= { calls: 0, chars: 0, estimatedTokens: 0, maxChars: 0 };
       const summary = report.toolResultsByName[toolName];
       summary.calls += 1;
@@ -385,7 +445,14 @@ function buildSessionContextReport(): SessionContextReport {
         incrementInputSummary(readPathSummaries, toolCall.args.path, chars);
       }
       if (toolName === "bash" && typeof toolCall?.args.command === "string") {
-        incrementInputSummary(bashCommandSummaries, truncateOneLine(toolCall.args.command), chars);
+        const command = truncateOneLine(toolCall.args.command);
+        incrementInputSummary(bashCommandSummaries, command, chars);
+        for (const validationLabel of validationLabelsFromCommand(toolCall.args.command)) {
+          incrementValidationSummary(validationCommandSummaries, validationLabel, failed, chars, durationMs);
+        }
+      }
+      if ((toolName === "edit" || toolName === "write") && typeof toolCall?.args.path === "string") {
+        incrementEditAttempt(editAttemptSummaries, toolCall.args.path, failed, chars);
       }
 
       report.largestToolResults.push({
@@ -395,6 +462,7 @@ function buildSessionContextReport(): SessionContextReport {
         timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
         messageId: typeof event.id === "string" ? event.id : undefined,
         input,
+        durationMs,
       });
     }
   }
@@ -421,6 +489,14 @@ function buildSessionContextReport(): SessionContextReport {
     .map(([command, summary]) => ({ command, ...summary }))
     .sort((a, b) => b.resultChars - a.resultChars)
     .slice(0, 8);
+  report.validationCommands = Object.entries(validationCommandSummaries)
+    .map(([command, summary]) => ({ command, ...summary }))
+    .sort((a, b) => b.runs - a.runs || b.resultChars - a.resultChars)
+    .slice(0, 10);
+  report.editAttempts = Object.entries(editAttemptSummaries)
+    .map(([path, summary]) => ({ path, ...summary }))
+    .sort((a, b) => b.failures - a.failures || b.attempts - a.attempts || b.resultChars - a.resultChars)
+    .slice(0, 10);
   report.largestToolResults.sort((a, b) => b.chars - a.chars);
   report.largestToolResults = report.largestToolResults.slice(0, 8);
 
@@ -441,6 +517,20 @@ function buildSessionContextReport(): SessionContextReport {
   if (repeatedBash.length > 0) {
     const top = repeatedBash[0];
     report.actionRecommendations.push(`Repeated bash command: \`${top.command}\` ran ${top.calls} times; consider saving/using its previous result or narrowing validation reruns.`);
+  }
+  const repeatedValidation = report.validationCommands.find((item) => item.runs > 1);
+  if (repeatedValidation) {
+    report.actionRecommendations.push(
+      `Validation rerun: ${repeatedValidation.command} ran ${repeatedValidation.runs} times${repeatedValidation.failures ? ` with ${repeatedValidation.failures} failure(s)` : ""}; capture the reason in the handoff when reruns are intentional.`,
+    );
+  }
+  const failedEdit = report.editAttempts.find((item) => item.failures > 0);
+  if (failedEdit) {
+    report.actionRecommendations.push(`Edit retry loop: ${failedEdit.path} had ${failedEdit.failures}/${failedEdit.attempts} failed edit/write attempts; inspect nearby context and patch smaller unique blocks.`);
+  }
+  const mobileValidation = report.validationCommands.find((item) => item.command === "ui-harness:mobile-layout");
+  if (mobileValidation) {
+    report.actionRecommendations.push("Mobile workflow: include the latest `mobile-layout` artifact directory and key PNGs in handoffs when mobile UI behavior or harness screenshots changed.");
   }
   if (report.actionRecommendations.length === 0) {
     report.actionRecommendations.push("No repeated high-cost tool pattern detected in this session; continue using targeted reads and focused validation selection.");
@@ -477,6 +567,17 @@ function printSessionContextReport(report: SessionContextReport): void {
   report.bashCommands.forEach((item) => {
     console.log(`- ${item.command}: ${item.calls} runs, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens), largest ${item.maxResultChars.toLocaleString()} chars`);
   });
+  console.log("\nValidation command summary:");
+  if (report.validationCommands.length === 0) console.log("- none found");
+  report.validationCommands.forEach((item) => {
+    const duration = typeof item.maxDurationMs === "number" ? `, max ${(item.maxDurationMs / 1000).toFixed(1)}s` : "";
+    console.log(`- ${item.command}: ${item.runs} runs, ${item.failures} failures, ${item.resultChars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)${duration}`);
+  });
+  console.log("\nEdit/write attempts:");
+  if (report.editAttempts.length === 0) console.log("- none found");
+  report.editAttempts.forEach((item) => {
+    console.log(`- ${item.path}: ${item.attempts} attempts, ${item.successes} successes, ${item.failures} failures, ${item.resultChars.toLocaleString()} result chars`);
+  });
   console.log("\nRepeated tool inputs:");
   if (report.repeatedToolInputs.length === 0) console.log("- none found");
   report.repeatedToolInputs.forEach((item) => {
@@ -485,7 +586,8 @@ function printSessionContextReport(report: SessionContextReport): void {
   console.log("\nLargest tool results:");
   if (report.largestToolResults.length === 0) console.log("- none found");
   report.largestToolResults.forEach((item) => {
-    const suffix = [item.input, item.timestamp, item.messageId].filter(Boolean).join(" · ");
+    const duration = typeof item.durationMs === "number" ? `${(item.durationMs / 1000).toFixed(1)}s` : undefined;
+    const suffix = [item.input, duration, item.timestamp, item.messageId].filter(Boolean).join(" · ");
     console.log(`- ${item.toolName}: ${item.chars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)${suffix ? ` · ${suffix}` : ""}`);
   });
   console.log("\nModel usage:");
