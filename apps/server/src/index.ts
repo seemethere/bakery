@@ -32,6 +32,7 @@ import { MetadataStore } from "./metadata-store.js";
 import { completeFiles, searchFiles } from "./file-search.js";
 import { FakePiSessionRunner } from "./fake-runner.js";
 import { InProcessPiSessionRunner, type ImageContent } from "./pi-runner.js";
+import { compactWorkflowLaunchText } from "./workflow-skills.js";
 import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
 
 const config = loadConfig();
@@ -316,7 +317,8 @@ async function enrichSession(session: WebSession): Promise<WebSession> {
       const message = entry.message as { role?: string };
       return message.role === "user";
     });
-    const lastUserPrompt = lastUser?.type === "message" ? messageText((lastUser.message as { content?: unknown }).content).replace(/\s+/g, " ").trim().slice(0, 160) : undefined;
+    const lastUserText = lastUser?.type === "message" ? messageText((lastUser.message as { content?: unknown }).content) : "";
+    const lastUserPrompt = lastUserText ? (compactWorkflowLaunchText(lastUserText) ?? lastUserText.replace(/\s+/g, " ").trim().slice(0, 160)) : undefined;
     return {
       ...session,
       lastActivityAt: last?.timestamp ?? session.lastOpenedAt,
@@ -340,7 +342,8 @@ function entryTitle(entry: SessionEntry): { title: string; role?: string } {
       : Array.isArray(content)
         ? content.map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : "").join(" ")
         : "";
-    return { role, title: `${role}: ${text.replace(/\s+/g, " ").trim().slice(0, 80) || "(empty)"}` };
+    const titleText = compactWorkflowLaunchText(text, 80) ?? text.replace(/\s+/g, " ").trim().slice(0, 80);
+    return { role, title: `${role}: ${titleText || "(empty)"}` };
   }
   if (entry.type === "compaction") return { title: `compaction: ${entry.summary.slice(0, 80)}` };
   if (entry.type === "branch_summary") return { title: `branch summary: ${entry.summary.slice(0, 80)}` };

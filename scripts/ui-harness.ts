@@ -534,6 +534,12 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-options button").first().click();
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await page.locator(".message.assistant", { hasText: "Thanks" }).waitFor({ timeout: 5_000 });
+  await page.locator(".session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("/tree");
+  await page.locator("#send").click();
+  await page.locator(".tree-drawer", { hasText: "user: Launched /plan workflow" }).waitFor({ timeout: 5_000 });
+  await page.locator(".tree-drawer", { hasText: "Question discipline:" }).waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator("#closeTreeDrawer").click();
   const beforeNewSessions = await page.locator("[data-session-id]").count();
   await page.locator("#prompt").fill("/new with args");
   await page.locator("#send").click();

@@ -704,13 +704,19 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
   return timestamp ? `${role}:${String(timestamp)}` : fallback;
 }
 
-function compactWorkflowLaunch(text: string): { body: string; segments: TranscriptSegment[] } | null {
+function compactWorkflowLaunchSummary(text: string): string | null {
   const workflowMatch = /^Run the bundled `([^`]+)` workflow skill for this coding session\./m.exec(text);
   if (!workflowMatch) return null;
   const command = workflowMatch[1] ?? "workflow";
   const focusMatch = /^Operator-provided focus:\s*(.+)$/m.exec(text);
-  const focus = focusMatch?.[1]?.trim();
-  const body = [`Launched /${command} workflow.`, focus ? `Focus: ${focus}` : ""].filter(Boolean).join("\n");
+  const focus = focusMatch?.[1]?.replace(/\s+/g, " ").trim();
+  return [`Launched /${command} workflow`, focus ? `Focus: ${focus}` : ""].filter(Boolean).join(" · ");
+}
+
+function compactWorkflowLaunch(text: string): { body: string; segments: TranscriptSegment[] } | null {
+  const summary = compactWorkflowLaunchSummary(text);
+  if (!summary) return null;
+  const body = summary.replace(" · Focus:", ".\nFocus:");
   return { body, segments: [{ kind: "markdown", text: body }] };
 }
 
@@ -1506,7 +1512,8 @@ class PiWebAgentApp extends HTMLElement {
     if (type === "follow_up") this.runningQueue = { ...this.runningQueue, followUp: [...this.runningQueue.followUp, queuedItem] };
     if (type === "prompt" && this.selectedSession && !this.selectedSession.title) {
       const provisionalTitle = provisionalTitleFromPrompt(text);
-      const optimistic = { ...this.selectedSession, title: provisionalTitle, titleSource: provisionalTitle ? "first_prompt" as const : "unset" as const, lastUserPrompt: text.slice(0, 160), lastActivityAt: new Date().toISOString(), status: "running" as const };
+      const optimisticPrompt = compactWorkflowLaunchSummary(text) ?? text.slice(0, 160);
+      const optimistic = { ...this.selectedSession, title: provisionalTitle, titleSource: provisionalTitle ? "first_prompt" as const : "unset" as const, lastUserPrompt: optimisticPrompt, lastActivityAt: new Date().toISOString(), status: "running" as const };
       this.selectedSession = optimistic;
       this.sessions = this.sessions.map((session) => session.id === optimistic.id ? optimistic : session);
       window.setTimeout(() => void this.refresh(), 500);
@@ -2323,7 +2330,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderSessionCard(session: WebSession): string {
     const title = this.sessionDisplayTitle(session);
     const activity = session.lastActivityAt ?? session.lastOpenedAt;
-    const snippet = session.summary?.trim() || session.lastUserPrompt?.trim() || "No prompt yet";
+    const snippet = session.summary?.trim() || (session.lastUserPrompt ? compactWorkflowLaunchSummary(session.lastUserPrompt) ?? session.lastUserPrompt.trim() : "") || "No prompt yet";
     const status = session.status ?? (session.id === this.selectedSession?.id ? this.status === "connecting" || this.status === "disconnected" ? undefined : this.status : "idle");
     return `
       <button data-session-id="${escapeHtml(session.id)}" class="session-card ${session.id === this.selectedSession?.id ? "active" : ""}">

@@ -1,4 +1,4 @@
-import { getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "../apps/server/src/workflow-skills.js";
+import { compactWorkflowLaunchText, getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "../apps/server/src/workflow-skills.js";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -32,5 +32,8 @@ for (const snippet of requiredSnippets) {
 
 const defaultPrompt = plan.buildPrompt("   ");
 assert(defaultPrompt.includes("Operator-provided focus: general project/codebase review."), "expected default focus copy");
+
+assert(compactWorkflowLaunchText(prompt) === "Launched /plan workflow · Focus: what should be next?", "expected compact /plan launch summary");
+assert(compactWorkflowLaunchText("ordinary prompt") === null, "expected non-workflow prompts to stay unchanged");
 
 console.log("workflow skill assertions passed");

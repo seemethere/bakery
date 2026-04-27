@@ -38,6 +38,16 @@ function planPrompt(args: string): string {
   ].join("\n");
 }
 
+export function compactWorkflowLaunchText(text: string, maxLength = 160): string | null {
+  const workflowMatch = /^Run the bundled `([^`]+)` workflow skill for this coding session\./m.exec(text);
+  if (!workflowMatch) return null;
+  const command = workflowMatch[1] ?? "workflow";
+  const focusMatch = /^Operator-provided focus:\s*(.+)$/m.exec(text);
+  const focus = focusMatch?.[1]?.replace(/\s+/g, " ").trim();
+  const summary = [`Launched /${command} workflow`, focus ? `Focus: ${focus}` : ""].filter(Boolean).join(" · ");
+  return summary.slice(0, maxLength);
+}
+
 export const WORKFLOW_SKILLS: WorkflowSkill[] = [
   {
     name: "plan",
