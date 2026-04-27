@@ -109,6 +109,14 @@ type SessionContextReport = {
   notes: string[];
 };
 
+type FocusedHarnessInspection = {
+  command: string;
+  artifactDir: string;
+  inspectPaths: string[];
+  failureSummary?: string;
+  generatedAt?: string;
+};
+
 type SessionHistoryReport = {
   actionSummary: SessionHistoryActionSummary;
   sessionCount: number;
@@ -121,6 +129,7 @@ type SessionHistoryReport = {
   toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
   validationCommands: Array<{ command: string; runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>;
   rerunOpportunity: RerunOpportunity;
+  focusedHarnessInspections: FocusedHarnessInspection[];
   editAttempts: Array<{ path: string; attempts: number; successes: number; failures: number; resultChars: number }>;
   topReadPaths: Array<{ path: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
   topBashCommands: Array<{ command: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
@@ -742,6 +751,57 @@ function addToolResultSummary(
   existing.maxChars = Math.max(existing.maxChars, summary.maxChars);
 }
 
+function failedHarnessArtifacts(): HarnessRun[] {
+  const harnessRoot = join(root, "test-results", "ui-harness");
+  return walkFiles(harnessRoot, "failure.txt", maxHarnessRuns * 2)
+    .map((failurePath): HarnessRun => {
+      const artifactDir = dirname(failurePath);
+      const scenario = artifactDir.split(/[\\/]/).pop()?.replace(/-\d{4}-.*$/, "") ?? "unknown";
+      const failureSummary = readFileSync(failurePath, "utf8").split("\n").find((line) => line.trim())?.slice(0, 240);
+      return {
+        scenario,
+        artifactDir: relative(root, artifactDir),
+        scenarioCount: 1,
+        failed: true,
+        failureSummary,
+        generatedAtFromPath: pathTimestamp(artifactDir),
+      };
+    })
+    .sort((a, b) => (b.generatedAtFromPath ?? "").localeCompare(a.generatedAtFromPath ?? ""));
+}
+
+function buildFocusedHarnessInspections(validationCommands: SessionHistoryReport["validationCommands"]): FocusedHarnessInspection[] {
+  const failedArtifacts = failedHarnessArtifacts();
+  return validationCommands
+    .filter((item) => isFocusedHarnessValidation(item.command) && item.failures > 0)
+    .sort((a, b) => b.failures - a.failures || b.runs - a.runs)
+    .slice(0, 5)
+    .flatMap((item) => {
+      const scenario = item.command.replace(/^ui-harness:/, "");
+      const run = failedArtifacts.find((candidate) => candidate.scenario === scenario);
+      if (!run) return [];
+      const artifactRoot = join(root, run.artifactDir);
+      const knownFiles = ["failure.txt", "server.log", "web.log", "console.log", "final.png"];
+      const inspectPaths = knownFiles
+        .map((name) => join(run.artifactDir, name))
+        .filter((path) => existsSync(join(root, path)));
+      const screenshots = existsSync(artifactRoot)
+        ? readdirSync(artifactRoot)
+            .filter((entry) => entry.endsWith(".png") && entry !== "final.png" && entry !== "fixture.png")
+            .sort()
+            .slice(0, 4)
+            .map((entry) => join(run.artifactDir, entry))
+        : [];
+      return [{
+        command: item.command,
+        artifactDir: run.artifactDir,
+        inspectPaths: [...inspectPaths, ...screenshots],
+        failureSummary: run.failureSummary,
+        generatedAt: run.generatedAtFromPath,
+      }];
+    });
+}
+
 function buildSessionHistoryReport(): SessionHistoryReport {
   const paths = findSessionHistoryPaths();
   const cwdCounts: Record<string, number> = {};
@@ -836,6 +896,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     .map(([command, summary]) => ({ command, ...summary }))
     .sort((a, b) => b.runs - a.runs || b.failures - a.failures || b.resultChars - a.resultChars)
     .slice(0, 20);
+  const focusedHarnessInspections = buildFocusedHarnessInspections(validationCommands);
   const aggregateRerunOpportunity = buildRerunOpportunity(validationCommands);
   const rerunOpportunity: RerunOpportunity = { ...aggregateRerunOpportunity, repeatedValidationRuns: actionSummary.validationReruns };
   const editAttempts = Object.entries(editSummaries)
@@ -859,8 +920,9 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   const actionRecommendations: string[] = [];
   const focusedLoop = rerunOpportunity.topRepeatedFailedFocusedHarness;
   if (focusedLoop) {
+    const inspection = focusedHarnessInspections.find((item) => item.command === focusedLoop.command);
     actionRecommendations.push(
-      `Focused harness loops appear in history: ${focusedLoop.command} ran ${focusedLoop.runs} times with ${focusedLoop.failures} failure(s). Tune agents to inspect the latest artifact directory/server.log and patch one cause before rerunning the same scenario.`,
+      `Focused harness loops appear in history: ${focusedLoop.command} ran ${focusedLoop.runs} times with ${focusedLoop.failures} failure(s). Inspect ${inspection?.artifactDir ?? "the latest artifact directory"}/server.log and patch one cause before rerunning the same scenario.`,
     );
   }
   const topValidation = validationCommands.find((item) => item.runs > 1);
@@ -885,6 +947,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     toolResultsByName,
     validationCommands,
     rerunOpportunity,
+    focusedHarnessInspections,
     editAttempts,
     topReadPaths,
     topBashCommands,
@@ -995,6 +1058,15 @@ function printSessionHistoryReport(report: SessionHistoryReport): void {
     console.log(`- repeated validation runs: ${reruns.repeatedValidationRuns.toLocaleString()}`);
     console.log(`- repeated failed focused harness runs: ${reruns.repeatedFailedFocusedHarnessRuns.toLocaleString()}`);
     if (reruns.conservativeAvoidableReruns.max > 0) console.log(`- conservative target: avoid ${reruns.conservativeAvoidableReruns.min.toLocaleString()}-${reruns.conservativeAvoidableReruns.max.toLocaleString()} rerun(s) by inspecting artifacts before retrying`);
+  }
+  if (report.focusedHarnessInspections.length > 0) {
+    console.log("\nFocused harness artifacts to inspect before rerun:");
+    report.focusedHarnessInspections.forEach((item) => {
+      const suffix = item.generatedAt ? ` · ${item.generatedAt}` : "";
+      console.log(`- ${item.command}: ${item.artifactDir}${suffix}`);
+      if (item.failureSummary) console.log(`  failure: ${item.failureSummary}`);
+      item.inspectPaths.forEach((path) => console.log(`  inspect: ${path}`));
+    });
   }
   console.log("\nTop workspaces:");
   if (report.cwdFrequency.length === 0) console.log("- none found");
