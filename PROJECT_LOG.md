@@ -107,7 +107,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Reduced transcript image layout jitter by reserving stable image/card geometry for Markdown, rendered inline, and artifact images; artifact thumbnails keep a fixed thumbnail height until explicitly expanded.
 - Fixed the new/empty-session composer layout regression seen during dogfooding: the prompt textarea can no longer be vertically resized enough to squeeze the empty transcript, and the send/follow-up controls stay bottom-aligned instead of stretching to the textarea height.
 - Fixed the real empty-session layout regression behind that symptom: optional connection/attention banners now occupy explicit grid rows so the transcript remains the flexible row and the footer stays compact; hidden idle controls are truly hidden, prompt width no longer overlaps controls, and a focused `empty-session-layout` harness scenario guards the layout.
-- Added LAN dev entry points for `bakery.lot.local`: `dev:server:lan` binds the API on `0.0.0.0`, `dev:web:lan` binds Vite on `0.0.0.0` with `bakery.lot.local` allowed, the browser default API base now follows the page hostname, and `docs/local-network.md` documents token-protected LAN setup.
+- Added LAN dev entry points for `lot.local`/`bakery.lot.local`: `dev:server:lan` binds the API on `0.0.0.0`, `dev:web:lan` binds Vite on `0.0.0.0` with both hostnames allowed, the browser default API base now follows the page hostname, and `docs/local-network.md` documents token-protected LAN setup.
 
 ## How to run
 
@@ -125,7 +125,7 @@ bun run dev:web
 
 Open `http://127.0.0.1:5173/`. The API URL should be `http://127.0.0.1:3141`. Leave token blank unless `PI_WEB_AUTH_TOKEN` is set.
 
-For LAN access via `http://bakery.lot.local:5173/`, configure DNS/hosts for the hostname, then run `PI_WEB_AUTH_TOKEN=... PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan` and `bun run dev:web:lan`. See `docs/local-network.md`.
+For LAN access via `http://lot.local:5173/` or `http://bakery.lot.local:5173/`, configure DNS/hosts for the hostname, then run `PI_WEB_AUTH_TOKEN=... PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan` and `bun run dev:web:lan`. See `docs/local-network.md`.
 
 ## Verification
 
@@ -137,7 +137,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend package.json apps/web/package.json apps/web/vite.config.ts apps/web/src/main.ts docs/local-network.md`, `bun run check`, and a focused Vite LAN host-header smoke test on port 5174 passed after adding `bakery.lot.local` local-network support. Full UI harness intentionally skipped because the change is dev-server configuration plus API-base defaulting, not transcript/session interaction behavior.
+Latest: `bun run report:iteration --recommend apps/web/vite.config.ts docs/local-network.md PROJECT_LOG.md`, `bun run check`, and focused Vite LAN host-header smoke tests on port 5174 for `lot.local` and `bakery.lot.local` passed after adding the shorter LAN hostname. Full UI harness intentionally skipped because the change is dev-server host allowlisting/documentation, not transcript/session interaction behavior.
 
 ## Next priorities
 

@@ -1,14 +1,16 @@
-# Local network access: bakery.lot.local
+# Local network access: lot.local / bakery.lot.local
 
 The app is local-first. When you expose it beyond loopback, run the API with an auth token and bind both dev servers to the LAN interface.
 
 ## 1. Make the hostname resolve
 
-Point `bakery.lot.local` at this machine's LAN IP using your router/DNS, or add a hosts-file entry on each client device:
+Point `lot.local` at this machine's LAN IP using your router/DNS, or add a hosts-file entry on each client device:
 
 ```text
-192.168.1.123 bakery.lot.local
+192.168.1.123 lot.local
 ```
+
+`bakery.lot.local` is also accepted by the Vite dev server, so you can add/swap that DNS record later without changing the app config.
 
 Replace `192.168.1.123` with this machine's current LAN IP. On macOS you can usually find it with:
 
@@ -29,7 +31,7 @@ PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan
 
 `dev:server:lan` binds the Fastify API to `0.0.0.0:3141`. Without `PI_WEB_AUTH_TOKEN`, non-localhost requests are intentionally rejected.
 
-## 3. Start the web dev server for bakery.lot.local
+## 3. Start the web dev server for lot.local
 
 In a second terminal:
 
@@ -37,20 +39,20 @@ In a second terminal:
 bun run dev:web:lan
 ```
 
-`dev:web:lan` binds Vite to `0.0.0.0:5173` and allows the `bakery.lot.local` host header.
+`dev:web:lan` binds Vite to `0.0.0.0:5173` and allows the `lot.local` and `bakery.lot.local` host headers.
 
 ## 4. Open the app
 
 Open:
 
 ```text
-http://bakery.lot.local:5173
+http://lot.local:5173
 ```
 
-In the app settings, enter the same API token. On first load from `bakery.lot.local`, the browser defaults the API URL to:
+In the app settings, enter the same API token. On first load from `lot.local`, the browser defaults the API URL to:
 
 ```text
-http://bakery.lot.local:3141
+http://lot.local:3141
 ```
 
 If you previously saved a different API URL in settings, update it manually.
