@@ -502,6 +502,10 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   });
   await tool.locator(".message-header").click();
   await page.waitForFunction(() => document.querySelector(".message.tool")?.classList.contains("collapsed"));
+  await page.waitForFunction(() => {
+    const summary = document.querySelector<HTMLElement>(".message.tool .tool-summary")?.textContent ?? "";
+    return /\d+ lines ·/.test(summary) && !/running fake tool|stdout:|exit code:\s*0/i.test(summary);
+  });
   await page.locator("#prompt").waitFor({ state: "visible" });
 
   // Leave this scenario in a screenshot-friendly state: the narrow-width assertions

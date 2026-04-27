@@ -408,23 +408,35 @@ function compactSnapshotTranscript(items: TranscriptItem[]): TranscriptItem[] {
   return compacted;
 }
 
+function compactToolSummaryLine(part: string): string | null {
+  const withoutAnsi = part.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").trim();
+  if (!withoutAnsi) return null;
+  if (/^exit code:\s*0$/i.test(withoutAnsi)) return null;
+  if (/^(?:running|starting|completed?)\b.*\btool\b/i.test(withoutAnsi)) return null;
+  if (/^(?:command\s+)?completed successfully\.?$/i.test(withoutAnsi)) return null;
+  if (/^(?:stdout|stderr):\s*$/i.test(withoutAnsi)) return null;
+  const stderrMatch = /^stderr:\s*(.+)$/i.exec(withoutAnsi);
+  if (stderrMatch) return `stderr: ${stderrMatch[1]!.trim()}`;
+  return withoutAnsi.replace(/^stdout:\s*/i, "").replace(/\s+/g, " ").trim() || null;
+}
+
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
-  const lines = source
+  const rawLines = source
     .split(/\r?\n/)
     .map((part) => part.trim())
     .filter(Boolean);
-  const usefulLine = lines.find((part) => {
-    if (/^exit code:\s*0$/i.test(part)) return false;
-    if (/^(?:running|starting|completed?)\b.*\btool\b/i.test(part)) return false;
-    if (/^(?:stdout|stderr):\s*$/i.test(part)) return false;
-    return true;
-  });
-  const prefix = lines.length > 8 ? `${lines.length} lines: ` : "";
-  if (!usefulLine) return lines.length > 0 ? `${lines.length} line${lines.length === 1 ? "" : "s"} output` : "completed";
-  const normalized = usefulLine.replace(/^stdout:\s*/i, "").replace(/^stderr:\s*/i, "stderr: ").replace(/\s+/g, " ");
-  const summary = `${prefix}${normalized}`;
+  const usefulLines = rawLines
+    .map(compactToolSummaryLine)
+    .filter((line): line is string => Boolean(line));
+  if (usefulLines.length === 0) return rawLines.length > 0 ? `${rawLines.length} line${rawLines.length === 1 ? "" : "s"} output` : "completed";
+
+  const firstLine = usefulLines[0]!;
+  const lastLine = usefulLines.at(-1)!;
+  const prefix = usefulLines.length > 8 ? `${usefulLines.length} lines · ` : "";
+  const middle = usefulLines.length > 8 && lastLine !== firstLine ? `${firstLine} … ${lastLine}` : firstLine;
+  const summary = `${prefix}${middle}`;
   return summary.length > 140 ? `${summary.slice(0, 137)}…` : summary;
 }
 
@@ -530,7 +542,7 @@ class PiTranscriptRow extends HTMLElement {
     this.canFork = options.canFork ?? false;
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
-    const defaultOpen = item.status === "running" || item.status === "error" || options.selected || itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
+    const defaultOpen = item.status === "running" || item.status === "error" || options.selected;
     const completedSuccessfully = previous?.id === item.id && previous.status === "running" && item.status === "done";
     if (!previous || previous.id !== item.id || completedSuccessfully) this.collapsed = isCollapsible && !defaultOpen;
     if (options.selected && !wasSelected) this.collapsed = false;
