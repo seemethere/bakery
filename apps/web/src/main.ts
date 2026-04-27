@@ -5,6 +5,7 @@ import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunc
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
+import { bindComposerControls } from "./composer-controller";
 import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { defaultTranscriptExpanded, renderTranscriptHtml } from "./transcript-renderer";
@@ -186,28 +187,6 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.imagePickerActive) return;
     window.setTimeout(() => { this.imagePickerActive = false; }, 500);
   };
-  private openImagePicker(): void {
-    this.imagePickerActive = true;
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/png,image/jpeg,image/gif,image/webp";
-    input.multiple = true;
-    input.style.position = "fixed";
-    input.style.left = "-10000px";
-    input.style.top = "0";
-    input.addEventListener("change", () => {
-      this.imagePickerActive = false;
-      const files = Array.from(input.files ?? []);
-      this.notice = files.length > 0
-        ? `Selected ${files.length} image file${files.length === 1 ? "" : "s"}: ${files.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`
-        : "File picker returned no files.";
-      this.render();
-      void this.handleImageFiles(files);
-      input.remove();
-    }, { once: true });
-    document.body.append(input);
-    input.click();
-  }
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
@@ -1628,6 +1607,26 @@ class PiWebAgentApp extends HTMLElement {
     this.transcriptFollow.markUserScrollIntent();
   }
 
+  private bindComposerControls(): void {
+    bindComposerControls(this, {
+      commandAutocomplete: this.commandAutocomplete,
+      fileAutocomplete: this.fileAutocomplete,
+      imagePickerActive: () => this.imagePickerActive,
+      setImagePickerActive: (active) => { this.imagePickerActive = active; },
+      setNotice: (notice) => { this.notice = notice; },
+      render: () => this.render(),
+      sendFromInput: (followUp) => this.sendFromInput(followUp),
+      handleImageFiles: (files) => this.handleImageFiles(files),
+      updatePromptDraft: (input) => this.updatePromptDraft(input),
+      removePromptImage: (id) => this.removePromptImage(id),
+      closeFileAutocomplete: () => this.closeFileAutocomplete(),
+      closeCommandAutocomplete: () => this.closeCommandAutocomplete(),
+      patchAutocompleteSelection: (kind) => this.patchAutocompleteSelection(kind),
+      chooseCommandAutocomplete: () => this.chooseCommandAutocomplete(),
+      chooseFileAutocomplete: () => this.chooseFileAutocomplete(),
+    });
+  }
+
   private bindEvents(): void {
     this.querySelector<HTMLSelectElement>("#themePreference")?.addEventListener("change", (event) => {
       const value = (event.currentTarget as HTMLSelectElement).value;
@@ -1734,8 +1733,7 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelectorAll<HTMLButtonElement>("[data-accept-metadata]").forEach((button) => {
       button.addEventListener("click", () => void this.acceptMetadataSuggestion(button.dataset.acceptMetadata as MetadataAcceptKind));
     });
-    this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
-    this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
+    this.bindComposerControls();
     this.bindRunningQueueControls();
     this.querySelector<HTMLElement>(".question-panel")?.addEventListener("keydown", (event) => this.handleQuestionPanelKeydown(event));
     this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
@@ -1807,94 +1805,7 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
-    this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.openImagePicker());
-    this.querySelectorAll<HTMLButtonElement>("[data-remove-image-id]").forEach((button) => {
-      button.addEventListener("click", () => this.removePromptImage(button.dataset.removeImageId ?? ""));
-    });
-    this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("dragover", (event) => {
-      const items = Array.from(event.dataTransfer?.items ?? []);
-      const hasPotentialFileDrop = items.length === 0 || items.some((item) => item.kind === "file" || item.type.startsWith("image/"));
-      if (!hasPotentialFileDrop) return;
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-      (event.currentTarget as HTMLElement).classList.add("dragging-image");
-    });
-    this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("dragleave", (event) => {
-      (event.currentTarget as HTMLElement).classList.remove("dragging-image");
-    });
-    this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("drop", (event) => {
-      const files = event.dataTransfer?.files;
-      event.preventDefault();
-      (event.currentTarget as HTMLElement).classList.remove("dragging-image");
-      if (!files || files.length === 0) {
-        this.notice = "Drop image files here to attach them to the prompt.";
-        this.render();
-        return;
-      }
-      void this.handleImageFiles(files);
-    });
-    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
-    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("paste", (event) => {
-      const files = event.clipboardData?.files;
-      if (files && Array.from(files).some((file) => isSupportedImageFile(file))) void this.handleImageFiles(files);
-    });
-    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
-      window.setTimeout(() => {
-        const focused = this.querySelector(":focus");
-        if (this.imagePickerActive || focused?.id === "prompt" || focused?.closest(".file-autocomplete") || focused?.closest(".command-autocomplete")) return;
-        this.closeFileAutocomplete();
-        this.closeCommandAutocomplete();
-        this.render();
-      }, 120);
-    });
-    this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => {
-      if (this.commandAutocomplete.active) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault();
-          const direction = event.key === "ArrowDown" ? 1 : -1;
-          const count = Math.max(1, this.commandAutocomplete.commands.length);
-          this.commandAutocomplete.selectedIndex = (this.commandAutocomplete.selectedIndex + direction + count) % count;
-          this.patchAutocompleteSelection("command");
-          return;
-        }
-        if ((event.key === "Tab" || event.key === "Enter") && this.commandAutocomplete.commands.length > 0) {
-          event.preventDefault();
-          this.chooseCommandAutocomplete();
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          this.closeCommandAutocomplete();
-          this.render();
-          return;
-        }
-      }
-      if (this.fileAutocomplete.active) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault();
-          const direction = event.key === "ArrowDown" ? 1 : -1;
-          const count = Math.max(1, this.fileAutocomplete.files.length);
-          this.fileAutocomplete.selectedIndex = (this.fileAutocomplete.selectedIndex + direction + count) % count;
-          this.patchAutocompleteSelection("file");
-          return;
-        }
-        if ((event.key === "Tab" || event.key === "Enter") && this.fileAutocomplete.files.length > 0) {
-          event.preventDefault();
-          this.chooseFileAutocomplete();
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          this.closeFileAutocomplete();
-          this.render();
-          return;
-        }
-      }
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        this.sendFromInput(event.altKey);
-      }
-    });
+
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
       if (!button) {
