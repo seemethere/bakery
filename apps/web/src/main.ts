@@ -1060,9 +1060,30 @@ class PiWebAgentApp extends HTMLElement {
 
   private async handleImageFiles(files: FileList | File[]): Promise<void> {
     const stableFiles = Array.from(files);
-    await this.addPromptImageFiles(stableFiles, { render: false, quiet: this.imageDropMode === "artifact" });
-    if (this.imageDropMode === "artifact") await this.uploadImageArtifacts(stableFiles);
-    else this.render();
+    if (stableFiles.length === 0) {
+      this.notice = "No files were provided by the browser. Try the paperclip file picker or paste the image.";
+      this.render();
+      return;
+    }
+    try {
+      const attachedCount = await this.addPromptImageFiles(stableFiles, { quiet: this.imageDropMode === "artifact" });
+      if (attachedCount === 0) {
+        this.notice = `No supported image files found. Supported: PNG, JPEG, GIF, WebP. Saw: ${stableFiles.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`;
+        this.render();
+        return;
+      }
+      if (this.imageDropMode === "artifact") {
+        try {
+          await this.uploadImageArtifacts(stableFiles);
+        } catch (error) {
+          this.notice = `Attached image to prompt, but artifact preview upload failed: ${error instanceof Error ? error.message : String(error)}`;
+          this.render();
+        }
+      }
+    } catch (error) {
+      this.notice = `Could not attach image: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
   }
 
   private isSupportedImageFile(file: File): boolean {
@@ -1140,9 +1161,9 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<void> {
+  private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<number> {
     const incoming = Array.from(files).filter((file) => this.isSupportedImageFile(file));
-    if (incoming.length === 0) return;
+    if (incoming.length === 0) return 0;
     const added: PromptImage[] = [];
     for (const file of incoming) {
       if (this.promptImages.length + added.length >= maxPromptImages) {
@@ -1171,6 +1192,7 @@ class PiWebAgentApp extends HTMLElement {
       if (!options.quiet) this.notice = "Image attachments are ready for this prompt only and are not preserved across page refreshes.";
     }
     if (options.render !== false) this.render();
+    return added.length;
   }
 
   private removePromptImage(id: string): void {
