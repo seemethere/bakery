@@ -5,6 +5,7 @@ import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunc
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { TranscriptFollowController } from "./transcript-follow";
+import { addRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
@@ -28,15 +29,6 @@ type PromptImage = {
   size: number;
 };
 
-type RunningQueueItem = {
-  text: string;
-  imageCount: number | undefined;
-};
-
-type RunningQueueState = {
-  steering: RunningQueueItem[];
-  followUp: RunningQueueItem[];
-};
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
 const mobileLayoutMediaQuery = "(max-width: 760px)";
@@ -137,7 +129,7 @@ class PiWebAgentApp extends HTMLElement {
   private pendingToolCallTitles: string[] = [];
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
-  private runningQueue: RunningQueueState = { steering: [], followUp: [] };
+  private runningQueue: RunningQueueState = emptyRunningQueue();
   private runningQueueExpanded = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -459,7 +451,7 @@ class PiWebAgentApp extends HTMLElement {
     this.notice = hadLostAttachments ? "Image attachments are not restored after a refresh. Please attach them again before sending." : "";
     this.promptDraft = this.loadPromptDraft(session.id);
     this.promptImages = [];
-    this.runningQueue = { steering: [], followUp: [] };
+    this.runningQueue = emptyRunningQueue();
     this.autoScroll = true;
     this.controller = null;
     this.settings = null;
@@ -559,7 +551,7 @@ class PiWebAgentApp extends HTMLElement {
     this.pendingQuestion = snapshot.pendingQuestion ?? null;
     if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
     this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
-    this.runningQueue = { steering: [], followUp: [] };
+    this.runningQueue = emptyRunningQueue();
     this.pendingToolCallTitles = [];
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     this.transcriptFollow.clearUnread();
@@ -627,7 +619,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (type === "agent_end" || type === "turn_end") {
       this.status = "idle";
-      this.runningQueue = { steering: [], followUp: [] };
+      this.runningQueue = emptyRunningQueue();
       void this.refreshTree();
     }
 
@@ -697,19 +689,11 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     if (type === "queue_update") {
-      const preserveImageCounts = (queue: "steering" | "followUp", values: unknown[]): RunningQueueItem[] => {
-        const previous = [...this.runningQueue[queue]];
-        return values.map((value) => {
-          const text = String(value);
-          const matchIndex = previous.findIndex((item) => item.text === text);
-          const match = matchIndex >= 0 ? previous.splice(matchIndex, 1)[0] : undefined;
-          return { text, imageCount: match?.imageCount };
-        });
-      };
-      this.runningQueue = {
-        steering: preserveImageCounts("steering", Array.isArray(event.steering) ? event.steering : []),
-        followUp: preserveImageCounts("followUp", Array.isArray(event.followUp) ? event.followUp : []),
-      };
+      this.runningQueue = runningQueueFromUpdate(
+        this.runningQueue,
+        Array.isArray(event.steering) ? event.steering : [],
+        Array.isArray(event.followUp) ? event.followUp : [],
+      );
     }
   }
 
@@ -1050,8 +1034,8 @@ class PiWebAgentApp extends HTMLElement {
     const images = this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
     this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
     const queuedItem = { text, imageCount: images?.length };
-    if (type === "steer") this.runningQueue = { ...this.runningQueue, steering: [...this.runningQueue.steering, queuedItem] };
-    if (type === "follow_up") this.runningQueue = { ...this.runningQueue, followUp: [...this.runningQueue.followUp, queuedItem] };
+    if (type === "steer") this.runningQueue = addRunningQueueItem(this.runningQueue, "steering", queuedItem);
+    if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", queuedItem);
     if (type === "prompt" && this.selectedSession && !this.selectedSession.title) {
       const provisionalTitle = provisionalTitleFromPrompt(text);
       const optimisticPrompt = compactWorkflowLaunchSummary(text) ?? text.slice(0, 160);
@@ -1069,7 +1053,7 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private removeQueuedMessage(queue: "steering" | "followUp", index: number, text: string): boolean {
+  private removeQueuedMessage(queue: RunningQueueName, index: number, text: string): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       this.notice = "Not connected. Queued messages can be changed after reconnect.";
       this.render();
@@ -1081,19 +1065,16 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return false;
     }
-    this.runningQueue = {
-      ...this.runningQueue,
-      [queue]: current.filter((_, candidateIndex) => candidateIndex !== index),
-    };
+    this.runningQueue = removeRunningQueueItem(this.runningQueue, queue, index);
     this.ws.send(JSON.stringify({ type: "cancel_queued_message", queue, index, text }));
     return true;
   }
 
-  private cancelQueuedMessage(queue: "steering" | "followUp", index: number, text: string): void {
+  private cancelQueuedMessage(queue: RunningQueueName, index: number, text: string): void {
     if (this.removeQueuedMessage(queue, index, text)) this.render();
   }
 
-  private editQueuedMessage(queue: "steering" | "followUp", index: number, text: string): void {
+  private editQueuedMessage(queue: RunningQueueName, index: number, text: string): void {
     if (!this.removeQueuedMessage(queue, index, text)) return;
     this.promptDraft = text;
     this.savePromptDraft();
@@ -2120,39 +2101,11 @@ class PiWebAgentApp extends HTMLElement {
       </section>`;
   }
 
-  private renderRunningQueue(): string {
-    const steering = this.runningQueue.steering;
-    const followUp = this.runningQueue.followUp;
-    const allItems = [
-      ...steering.map((item, index) => ({ kind: "Steer" as const, queue: "steering" as const, item, index })),
-      ...followUp.map((item, index) => ({ kind: "Follow-up" as const, queue: "followUp" as const, item, index })),
-    ];
-    if (allItems.length === 0) {
-      this.runningQueueExpanded = false;
-      return "";
-    }
-    const visibleItems = this.runningQueueExpanded ? allItems : allItems.slice(0, 3);
-    const hiddenCount = Math.max(0, allItems.length - visibleItems.length);
-    const renderPill = (kind: "Steer" | "Follow-up", queue: "steering" | "followUp", item: RunningQueueItem, index: number) => `
-      <span class="queue-pill ${kind.toLowerCase()}" title="${escapeHtml(item.text)}">
-        <strong>${escapeHtml(kind)} ${index + 1}</strong>
-        <span>${escapeHtml(item.text)}</span>
-        ${item.imageCount ? `<em class="queue-image-badge" title="${item.imageCount} attached image${item.imageCount === 1 ? "" : "s"}">🖼 ${item.imageCount}</em>` : ""}
-        <button type="button" class="queue-edit" data-edit-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(item.text)}" aria-label="Edit ${escapeHtml(kind)} ${index + 1}">✎</button>
-        <button type="button" class="queue-cancel" data-cancel-queue="${queue}" data-queue-index="${index}" data-queue-text="${escapeHtml(item.text)}" aria-label="Cancel ${escapeHtml(kind)} ${index + 1}">×</button>
-      </span>`;
-    const total = allItems.length;
-    return `
-      <div class="running-queue ${this.runningQueueExpanded ? "expanded" : "compact"}" aria-label="Queued running controls">
-        <div class="running-queue-heading">
-          <strong>Queued for this run</strong>
-          <span>${total} pending</span>
-          ${hiddenCount > 0 ? `<button id="toggleRunningQueue" class="queue-more" type="button">+${hiddenCount} more</button>` : this.runningQueueExpanded && total > 3 ? `<button id="toggleRunningQueue" class="queue-more" type="button">Show less</button>` : ""}
-        </div>
-        <div class="running-queue-items">
-          ${visibleItems.map(({ kind, queue, item, index }) => renderPill(kind, queue, item, index)).join("")}
-        </div>
-      </div>`;
+
+  private renderRunningQueueHtml(): string {
+    const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded);
+    this.runningQueueExpanded = rendered.expanded;
+    return rendered.html;
   }
 
   private renderRightPanel(): string {
@@ -2288,7 +2241,7 @@ class PiWebAgentApp extends HTMLElement {
   private currentActivity(): { label: string; detail: string; queued: number } | null {
     if (this.status !== "running") return null;
     const runningTool = [...this.transcript].reverse().find((item) => item.kind === "tool" && item.status === "running");
-    const queued = this.runningQueue.steering.length + this.runningQueue.followUp.length;
+    const queued = runningQueueCount(this.runningQueue);
     if (runningTool) {
       const detail = runningTool.body
         .split(/\r?\n/)
@@ -2762,9 +2715,9 @@ class PiWebAgentApp extends HTMLElement {
         ${this.renderConnectionBanner()}
         ${this.renderAttentionNeeded()}
         ${this.notice ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
-        <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""}">
+        <div class="transcript-shell ${hasRunningQueueItems(this.runningQueue) ? "has-running-queue" : ""}">
           <section class="transcript">${this.renderTranscript()}</section>
-          ${this.renderRunningQueue()}
+          ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
