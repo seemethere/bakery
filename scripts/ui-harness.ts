@@ -491,7 +491,13 @@ async function runBackendRestart(page: Page, runtime: { restartServer: () => Pro
 async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 760, height: 900 });
   await prepareSession(page);
-  await sendPromptAndWaitIdle(page, "Run a tool and produce a long narrow-width streaming response for layout validation.");
+  await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
+  await page.locator("#send").click();
+  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await page.locator(".current-activity", { hasText: "Current action" }).waitFor({ timeout: 5_000 });
+  await page.locator(".current-activity", { hasText: /\$|Pi is/ }).waitFor({ timeout: 5_000 });
+  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await page.locator(".current-activity").waitFor({ state: "detached", timeout: 5_000 });
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator(".message-header").click();

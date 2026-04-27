@@ -2368,6 +2368,32 @@ class PiWebAgentApp extends HTMLElement {
     </details>`;
   }
 
+  private currentActivity(): { label: string; detail: string; queued: number } | null {
+    if (this.status !== "running") return null;
+    const runningTool = [...this.transcript].reverse().find((item) => item.kind === "tool" && item.status === "running");
+    const queued = this.runningQueue.steering.length + this.runningQueue.followUp.length;
+    if (runningTool) {
+      const detail = runningTool.body
+        .split(/\r?\n/)
+        .map(compactToolSummaryLine)
+        .filter((line): line is string => Boolean(line))
+        .at(-1) ?? "tool is running";
+      return { label: runningTool.title, detail, queued };
+    }
+    const runningAssistant = [...this.transcript].reverse().find((item) => item.kind === "assistant" && item.status === "running");
+    return { label: runningAssistant ? "Pi is responding" : "Pi is working", detail: queued > 0 ? "Queued input will be applied during this run." : "Waiting for the next agent update…", queued };
+  }
+
+  private renderCurrentActivity(): string {
+    const activity = this.currentActivity();
+    if (!activity) return "";
+    return `<div class="current-activity" role="status" aria-live="polite">
+      <span class="current-activity-pulse" aria-hidden="true"></span>
+      <span class="current-activity-copy"><strong>Current action</strong><b>${escapeHtml(activity.label)}</b><small>${escapeHtml(activity.detail)}</small></span>
+      ${activity.queued > 0 ? `<span class="current-activity-queued">${activity.queued} queued</span>` : ""}
+    </div>`;
+  }
+
   private renderTranscript(): string {
     const parts: string[] = [];
     for (let index = 0; index < this.transcript.length;) {
@@ -2517,6 +2543,23 @@ class PiWebAgentApp extends HTMLElement {
       ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
   }
 
+  private patchCurrentActivity(): void {
+    const shell = this.querySelector<HTMLElement>(".transcript-shell");
+    if (!shell) return;
+    const html = this.renderCurrentActivity();
+    shell.classList.toggle("has-current-activity", Boolean(html));
+    const existing = shell.querySelector<HTMLElement>(".current-activity");
+    if (!html) {
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      existing.outerHTML = html;
+      return;
+    }
+    shell.insertAdjacentHTML("afterbegin", html);
+  }
+
   private patchJumpToLatest(): void {
     const shell = this.querySelector<HTMLElement>(".transcript-shell");
     if (!shell) return;
@@ -2563,6 +2606,7 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
+    this.patchCurrentActivity();
     this.patchJumpToLatest();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
@@ -2689,7 +2733,8 @@ class PiWebAgentApp extends HTMLElement {
           ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
           ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
         </div>
-        <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""}">
+        <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""} ${this.currentActivity() ? "has-current-activity" : ""}">
+          ${this.renderCurrentActivity()}
           <section class="transcript">${this.renderTranscript()}</section>
           ${this.renderRunningQueue()}
           ${this.renderJumpToLatest()}
