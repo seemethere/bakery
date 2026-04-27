@@ -45,7 +45,7 @@ mkdirSync(config.artifactDir, { recursive: true });
 
 const store = new MetadataStore(config.metadataDbPath);
 const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(websocket);
 
