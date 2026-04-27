@@ -1454,9 +1454,23 @@ textarea {
   color: var(--color-queue-steer-text);
 }
 
+.queue-pill.pending-transcript {
+  border-style: dashed;
+}
+
 .queue-pill span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-state {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-queue-pill-text) 13%, transparent);
+  color: inherit;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-style: normal;
   white-space: nowrap;
 }
 

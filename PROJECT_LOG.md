@@ -128,6 +128,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Continued the main-file extraction dogfood slice by moving transcript follow/latest scroll state and Jump-to-latest patching into `apps/web/src/transcript-follow.ts`, keeping `main.ts` as the DOM/event coordinator while preserving the existing scroll behavior.
 - Continued the small main-file extraction pass by moving running queue types, queue update/add/remove helpers, count predicates, and queued-chip rendering into `apps/web/src/running-queue.ts`; `main.ts` now keeps only WebSocket/composer coordination for queued steers/follow-ups.
 - Added `bun run project:notes --handoff`, a read-only line-numbered handoff helper that points agents at the relevant `PROJECT_LOG.md` anchors, latest verification line, recent status bullets, top priorities, and end-of-session checklist without broad log reads.
+- Fixed queued follow-up consistency during active runs: follow-up chips that leave the backend/pi queue now remain as dashed `Sending…` pending-transcript chips until the matching user transcript row appears, then the queue DOM is patched away immediately without requiring a full app render. The queued-follow-up fake-agent harness now simulates queue removal before transcript confirmation while also asserting the composer clears immediately, pending UI remains during the gap, and edit/cancel/overflow flows still work.
 
 ## How to run
 
@@ -157,7 +158,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend scripts/project-notes.ts PROJECT_LOG.md` selected script-focused validation: `bun run check`, `bun run report:iteration`, and `bun run project:notes`; all passed, and `bun run project:notes --handoff` was also manually checked. Full `bun run test:web-perf` was skipped by default because this was CLI/documentation tooling only.
+Latest: `bun run report:iteration --recommend apps/web/src/running-queue.ts apps/web/src/main.ts apps/web/src/styles.css apps/server/src/fake-runner.ts scripts/ui-harness.ts` selected focused-first UI validation (`bun run check` plus several focused scenarios, full suite escalation only). `bun run check`, `bun scripts/ui-harness.ts --scenario queued-follow-up`, and `bun scripts/ui-harness.ts --scenario streaming-responsiveness` passed; full `bun run test:web-perf` was skipped because the focused queue regression and a hot streaming path passed.
 
 ## Next priorities
 

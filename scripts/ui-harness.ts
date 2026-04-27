@@ -532,9 +532,19 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
 
 async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator("#prompt").fill("Please produce a long streaming response so queued follow-up cancellation and editing can be tested.");
+  await page.locator("#prompt").fill("Please produce a long streaming response and consume queued follow-up before transcript so queued follow-up cancellation and editing can be tested.");
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
+
+  await page.locator("#prompt").fill("queued follow-up consumed before transcript row");
+  await page.locator("#followUp").click();
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "", null, { timeout: 5_000 });
+  const consumedPill = page.locator(".queue-pill.follow-up", { hasText: "queued follow-up consumed before transcript row" });
+  await consumedPill.waitFor({ timeout: 5_000 });
+  await page.locator(".queue-pill.pending-transcript", { hasText: "queued follow-up consumed before transcript row" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "queued-follow-up-pending-transcript.png"), fullPage: true });
+  await page.locator(".message.user", { hasText: "queued follow-up consumed before transcript row" }).waitFor({ timeout: 5_000 });
+  await consumedPill.waitFor({ state: "detached", timeout: 5_000 });
 
   const imagePath = join(artifactDir, "fixture.png");
   await page.locator("#prompt").fill("queued steer mixed with follow-ups");

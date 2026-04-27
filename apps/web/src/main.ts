@@ -5,7 +5,7 @@ import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunc
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { TranscriptFollowController } from "./transcript-follow";
-import { addRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
+import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
@@ -619,7 +619,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (type === "agent_end" || type === "turn_end") {
       this.status = "idle";
-      this.runningQueue = emptyRunningQueue();
+      this.runningQueue = runningQueueFromUpdate(this.runningQueue, [], []);
       void this.refreshTree();
     }
 
@@ -639,6 +639,7 @@ class PiWebAgentApp extends HTMLElement {
       const item = messageToTranscriptItem(event.message, fallback);
       item.status = type === "message_update" ? "running" : "done";
       this.upsertTranscript(item);
+      if (item.kind === "user") this.runningQueue = clearConfirmedRunningQueueItem(this.runningQueue, item.body);
       return;
     }
 
@@ -1702,28 +1703,7 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
-    this.querySelector<HTMLButtonElement>("#toggleRunningQueue")?.addEventListener("click", () => {
-      this.runningQueueExpanded = !this.runningQueueExpanded;
-      this.render();
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-edit-queue]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        const queue = button.dataset.editQueue === "followUp" ? "followUp" : "steering";
-        const index = Number(button.dataset.queueIndex ?? "-1");
-        const text = button.dataset.queueText ?? "";
-        if (index >= 0 && text) this.editQueuedMessage(queue, index, text);
-      });
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-cancel-queue]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        const queue = button.dataset.cancelQueue === "followUp" ? "followUp" : "steering";
-        const index = Number(button.dataset.queueIndex ?? "-1");
-        const text = button.dataset.queueText ?? "";
-        if (index >= 0 && text) this.cancelQueuedMessage(queue, index, text);
-      });
-    });
+    this.bindRunningQueueControls();
     this.querySelector<HTMLElement>(".question-panel")?.addEventListener("keydown", (event) => this.handleQuestionPanelKeydown(event));
     this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1997,6 +1977,31 @@ class PiWebAgentApp extends HTMLElement {
         variant: "sheet",
       })}
     </div>`;
+  }
+
+  private bindRunningQueueControls(): void {
+    this.querySelector<HTMLButtonElement>("#toggleRunningQueue")?.addEventListener("click", () => {
+      this.runningQueueExpanded = !this.runningQueueExpanded;
+      this.render();
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-edit-queue]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        const queue = button.dataset.editQueue === "followUp" ? "followUp" : "steering";
+        const index = Number(button.dataset.queueIndex ?? "-1");
+        const text = button.dataset.queueText ?? "";
+        if (index >= 0 && text) this.editQueuedMessage(queue, index, text);
+      });
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-cancel-queue]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        const queue = button.dataset.cancelQueue === "followUp" ? "followUp" : "steering";
+        const index = Number(button.dataset.queueIndex ?? "-1");
+        const text = button.dataset.queueText ?? "";
+        if (index >= 0 && text) this.cancelQueuedMessage(queue, index, text);
+      });
+    });
   }
 
   private patchAutocompleteSelection(kind: "command" | "file"): void {
@@ -2529,6 +2534,28 @@ class PiWebAgentApp extends HTMLElement {
     this.transcriptFollow.patchJumpToLatest(this, () => this.jumpToLatest());
   }
 
+  private patchRunningQueue(): void {
+    const shell = this.querySelector<HTMLElement>(".transcript-shell");
+    if (!shell) return;
+    shell.classList.toggle("has-running-queue", hasRunningQueueItems(this.runningQueue));
+    const existing = shell.querySelector<HTMLElement>(".running-queue");
+    const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded);
+    this.runningQueueExpanded = rendered.expanded;
+    if (!rendered.html) {
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      existing.outerHTML = rendered.html;
+      this.bindRunningQueueControls();
+      return;
+    }
+    const jump = shell.querySelector<HTMLElement>(".jump-to-latest");
+    if (jump) jump.insertAdjacentHTML("beforebegin", rendered.html);
+    else shell.insertAdjacentHTML("beforeend", rendered.html);
+    this.bindRunningQueueControls();
+  }
+
   private patchTranscriptStructure(transcript: HTMLElement): void {
     transcript.innerHTML = this.renderTranscript();
     this.hydrateTranscriptRows();
@@ -2547,6 +2574,7 @@ class PiWebAgentApp extends HTMLElement {
       this.patchHeaderStatus();
       this.patchConnectionBanner();
       this.patchComposerActivity();
+      this.patchRunningQueue();
       this.patchJumpToLatest();
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
@@ -2575,6 +2603,7 @@ class PiWebAgentApp extends HTMLElement {
     this.patchHeaderStatus();
     this.patchConnectionBanner();
     this.patchComposerActivity();
+    this.patchRunningQueue();
     this.patchJumpToLatest();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();

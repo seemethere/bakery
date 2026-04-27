@@ -167,7 +167,9 @@ class FakeSessionHandle implements SessionHandle {
 
     const full = responseFor(text, this.cwd);
     const toolAtOffset = shouldRunTool ? Math.min(Math.max(450, Math.floor(full.length * 0.22)), full.length - 1) : Infinity;
+    const shouldConsumeFollowUpBeforeTranscript = /consume queued follow-?up before transcript/i.test(text);
     let emittedTool = false;
+    let emittedConsumedFollowUp = false;
     for (let offset = 0, chunkIndex = 0; offset < full.length && !this.aborted; chunkIndex++) {
       const nextOffset = Math.min(full.length, offset + streamChunkSize(chunkIndex));
       assistant.content = full.slice(0, nextOffset);
@@ -179,6 +181,14 @@ class FakeSessionHandle implements SessionHandle {
         for (let toolIndex = 0; toolIndex < toolRunCount; toolIndex++) {
           await this.emitFakeToolRun(/(?:long|narrow)/i.test(text), toolIndex + 1);
         }
+      }
+
+      if (shouldConsumeFollowUpBeforeTranscript && !emittedConsumedFollowUp && offset >= 700 && this.followUpQueue.length > 0) {
+        emittedConsumedFollowUp = true;
+        const [followUp] = this.followUpQueue.splice(0, 1);
+        this.emitQueueUpdate();
+        await sleep(350);
+        if (followUp && !this.aborted) this.emitQueuedUserMessage(followUp.text, followUp.images);
       }
 
       const delay = streamDelayMs(chunkIndex);
@@ -323,6 +333,14 @@ class FakeSessionHandle implements SessionHandle {
   private emit(event: Record<string, unknown>): void {
     const normalized = normalize(event);
     for (const listener of this.listeners) listener(normalized, event as AgentSessionEvent);
+  }
+
+  private emitQueuedUserMessage(text: string, images?: ImageContent[]): void {
+    const content = images?.length ? [{ type: "text" as const, text }, ...images] : text;
+    const user: FakeMessage = { id: crypto.randomUUID(), role: "user", timestamp: new Date().toISOString(), content };
+    this.messages.push(user);
+    this.sessionManager.appendMessage({ role: "user", content } as never);
+    this.emit({ type: "message_end", message: user });
   }
 
   private emitQueueUpdate(): void {
