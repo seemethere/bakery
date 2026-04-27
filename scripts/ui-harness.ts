@@ -432,19 +432,21 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
 
   await sendPromptAndWaitIdle(page, "Improve mobile title and summary generation controls.");
   await page.locator("#generateMetadata").click();
-  await page.locator(".metadata-mobile-sheet #metadataSuggestionTitle").waitFor({ timeout: 5_000 });
+  await page.locator(".metadata-mobile-popover #metadataSuggestionTitle").waitFor({ timeout: 5_000 });
   const sheet = await page.evaluate(() => {
-    const element = document.querySelector(".metadata-mobile-sheet");
-    if (!element) return null;
+    const element = document.querySelector(".metadata-mobile-popover");
+    const trigger = document.querySelector("#generateMetadata");
+    if (!element || !trigger) return null;
     const rect = element.getBoundingClientRect();
-    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportHeight: window.innerHeight };
+    const triggerRect = trigger.getBoundingClientRect();
+    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportHeight: window.innerHeight, triggerBottom: Math.round(triggerRect.bottom) };
   });
-  if (!sheet || sheet.bottom > sheet.viewportHeight + 1 || sheet.width < 300) throw new Error(`Mobile metadata sheet should be visible and contained: ${JSON.stringify(sheet)}`);
-  await page.locator(".metadata-mobile-sheet #metadataSuggestionTitle").fill("Mobile metadata smoke");
-  await page.locator('.metadata-mobile-sheet [data-accept-metadata="title"]', { hasText: "✓" }).click();
+  if (!sheet || sheet.bottom > sheet.viewportHeight + 1 || sheet.width < 300 || sheet.top > sheet.triggerBottom + 70) throw new Error(`Mobile metadata popover should be visible near the trigger: ${JSON.stringify(sheet)}`);
+  await page.locator(".metadata-mobile-popover #metadataSuggestionTitle").fill("Mobile metadata smoke");
+  await page.locator('.metadata-mobile-popover [data-accept-metadata="title"]', { hasText: "✓" }).click();
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Mobile metadata smoke", null, { timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "mobile-metadata-sheet.png"), fullPage: true });
-  return { ...(await collectMetrics(page)), layout, metadataSheet: sheet };
+  await page.screenshot({ path: join(artifactDir, "mobile-metadata-popover.png"), fullPage: true });
+  return { ...(await collectMetrics(page)), layout, metadataPopover: sheet };
 }
 
 async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {

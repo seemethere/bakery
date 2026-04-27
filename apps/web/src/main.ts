@@ -2011,7 +2011,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderMobileMetadataSuggestion(): string {
     if (!this.mobileLayout || !this.selectedSession || (!this.metadataSuggestion && !this.metadataSuggestionError && !this.metadataGenerating)) return "";
-    return `<div class="metadata-mobile-sheet" role="dialog" aria-label="Session title and summary suggestion">
+    return `<div class="metadata-mobile-popover" role="dialog" aria-label="Session title and summary suggestion">
       ${renderMetadataSuggestionHtml({
         suggestion: this.metadataSuggestion,
         draft: this.metadataSuggestionDraft,

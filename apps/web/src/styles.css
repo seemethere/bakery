@@ -2735,19 +2735,33 @@ pre {
   font-size: 12px;
 }
 
-.metadata-mobile-sheet {
+.metadata-mobile-popover {
   position: fixed;
+  top: calc(76px + env(safe-area-inset-top, 0px));
   right: max(10px, env(safe-area-inset-right, 0px));
-  bottom: max(10px, env(safe-area-inset-bottom, 0px));
   left: max(10px, env(safe-area-inset-left, 0px));
   z-index: 45;
-  max-height: min(72dvh, 460px);
+  max-height: min(66dvh, 520px);
   overflow: auto;
   border-radius: 16px;
-  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.58);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.42);
+}
+
+.metadata-mobile-popover::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  right: 22px;
+  width: 16px;
+  height: 16px;
+  transform: rotate(45deg);
+  border-left: 1px solid var(--color-panel-overlay-border);
+  border-top: 1px solid var(--color-panel-overlay-border);
+  background: var(--color-panel-overlay-bg);
 }
 
 .metadata-suggestion-sheet-card {
+  position: relative;
   border-radius: 16px;
 }
 
@@ -2884,15 +2898,15 @@ pre {
     height: 24px;
   }
 
-  .metadata-mobile-sheet .metadata-suggestion {
+  .metadata-mobile-popover .metadata-suggestion {
     max-height: none;
   }
 
-  .metadata-mobile-sheet .metadata-field-row {
+  .metadata-mobile-popover .metadata-field-row {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
-  .metadata-mobile-sheet .metadata-suggestion-actions {
+  .metadata-mobile-popover .metadata-suggestion-actions {
     justify-content: flex-end;
   }
 
