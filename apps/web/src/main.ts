@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isDeveloperBashItem, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { TranscriptFollowController } from "./transcript-follow";
@@ -2535,6 +2535,7 @@ class PiWebAgentApp extends HTMLElement {
   private isGroupableToolItem(item: TranscriptItem): boolean {
     return item.kind === "tool"
       && item.status === "done"
+      && !isDeveloperBashItem(item)
       && !itemHasRenderedImage(item);
   }
 
@@ -2558,7 +2559,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private defaultTranscriptExpanded(item: TranscriptItem): boolean {
     const isQuestionTool = item.kind === "tool" && item.title === "Question";
-    return item.kind === "system" || (item.status === "running" && !isQuestionTool) || item.status === "error";
+    return item.kind === "system" || isDeveloperBashItem(item) || (item.status === "running" && !isQuestionTool) || item.status === "error";
   }
 
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {

@@ -27,6 +27,13 @@ export type RenderContext = {
 
 export type ToolGroupPosition = "single" | "start" | "middle" | "end";
 
+export function isDeveloperBashItem(item: TranscriptItem): boolean {
+  if (item.kind !== "tool") return false;
+  if (item.id.startsWith("bash:")) return true;
+  if (!isRecord(item.raw)) return false;
+  return item.raw.role === "bashExecution" || String(item.raw.type ?? "").startsWith("bash_execution_");
+}
+
 const imageFailureHandlerAttr = ` onerror="window.__piWebImageFailed?.(this.currentSrc||this.src);this.closest('figure')?.remove();this.remove()"`;
 
 function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) {
@@ -490,7 +497,8 @@ export class PiTranscriptRow extends HTMLElement {
     const isCollapsible = this.isCollapsible();
     const isQuestionTool = item.kind === "tool" && item.title === "Question";
     const hasVisualResult = itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
-    const defaultOpen = item.kind === "system" || (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done");
+    const isDeveloperBash = isDeveloperBashItem(item);
+    const defaultOpen = item.kind === "system" || isDeveloperBash || (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done");
     const expanded = isCollapsible ? (options.expanded ?? defaultOpen) : true;
     this.collapsed = isCollapsible && !expanded;
 
@@ -553,7 +561,8 @@ export class PiTranscriptRow extends HTMLElement {
     if (!this.item) return "message";
     const groupClass = this.item.kind === "tool" && this.item.status === "done" ? `tool-group-${this.toolGroupPosition}` : "";
     const afterRunningClass = this.item.kind === "tool" && this.item.status === "done" && this.afterRunningTool ? "after-running-tool" : "";
-    return ["message", this.item.kind, this.item.status ?? "", groupClass, afterRunningClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    const developerBashClass = isDeveloperBashItem(this.item) ? "developer-bash" : "";
+    return ["message", this.item.kind, this.item.status ?? "", groupClass, afterRunningClass, developerBashClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {

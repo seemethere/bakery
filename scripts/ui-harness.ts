@@ -805,17 +805,17 @@ async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("!echo bakery bash");
   await page.locator("#send").click();
-  const bashRow = page.locator(".message.tool", { hasText: "$ echo bakery bash" }).last();
+  const bashRow = page.locator(".message.tool.developer-bash:not(.collapsed)", { hasText: "$ echo bakery bash" }).last();
   await bashRow.waitFor({ timeout: 5_000 });
-  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery bash")), null, { timeout: 5_000 });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row.developer-bash:not(.collapsed)")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery bash")), null, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "", null, { timeout: 5_000 });
 
   await page.locator("#prompt").fill("!!echo bakery hidden");
   await page.locator("#send").click();
-  const hiddenRow = page.locator(".message.tool", { hasText: "$ echo bakery hidden (no context)" }).last();
+  const hiddenRow = page.locator(".message.tool.developer-bash:not(.collapsed)", { hasText: "$ echo bakery hidden (no context)" }).last();
   await hiddenRow.waitFor({ timeout: 5_000 });
-  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery hidden")), null, { timeout: 5_000 });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row.developer-bash:not(.collapsed)")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery hidden")), null, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
 
   await page.locator("#prompt").fill("Please produce a long streaming performance response while bash is blocked.");

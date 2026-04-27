@@ -42,6 +42,9 @@
   --color-user-border: #2563eb;
   --color-tool-bg: #121827;
   --color-tool-border: #3a4658;
+  --color-developer-bash-bg: #182111;
+  --color-developer-bash-border: #65a30d;
+  --color-developer-bash-body-bg: rgba(10, 26, 12, 0.56);
   --color-tool-done-bg: rgba(17, 24, 39, 0.72);
   --color-tool-done-border: rgba(82, 97, 116, 0.42);
   --color-tool-group-bg: rgba(12, 18, 30, 0.82);
@@ -124,6 +127,9 @@
   --color-user-border: #2563eb;
   --color-tool-bg: #f7f9fc;
   --color-tool-border: #c5d0df;
+  --color-developer-bash-bg: #f5fee7;
+  --color-developer-bash-border: #84cc16;
+  --color-developer-bash-body-bg: rgba(236, 252, 203, 0.72);
   --color-tool-done-bg: rgba(248, 251, 255, 0.92);
   --color-tool-done-border: rgba(142, 160, 184, 0.52);
   --color-tool-group-bg: rgba(255, 255, 255, 0.84);
@@ -1686,6 +1692,38 @@ textarea:disabled {
 .message.tool.running {
   border-color: var(--color-info);
   background: var(--color-info-bg);
+}
+
+.message.tool.developer-bash {
+  border-color: color-mix(in srgb, var(--color-developer-bash-border) 72%, var(--color-tool-border));
+  background: var(--color-developer-bash-bg);
+  box-shadow: 0 8px 24px rgba(77, 124, 15, 0.14);
+}
+
+.message.tool.developer-bash .message-header {
+  border-bottom-color: color-mix(in srgb, var(--color-developer-bash-border) 34%, transparent);
+  color: var(--color-text);
+}
+
+.message.tool.developer-bash .message-header strong::before {
+  content: "local bash";
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-developer-bash-border) 54%, transparent);
+  background: color-mix(in srgb, var(--color-developer-bash-border) 16%, transparent);
+  color: var(--color-developer-bash-border);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.message.tool.developer-bash .message-body {
+  background: var(--color-developer-bash-body-bg);
 }
 
 .message.error,
