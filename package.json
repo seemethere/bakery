@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "bun run dev:server:up && bun run dev:web",
+    "dev:lan": "PI_WEB_HOST=0.0.0.0 bun run dev:server:restart && bun run dev:web:lan",
     "dev:server": "bun run --cwd apps/server dev",
     "dev:server:up": "bun scripts/dev-server-manager.ts up",
     "dev:server:restart": "bun scripts/dev-server-manager.ts restart",
