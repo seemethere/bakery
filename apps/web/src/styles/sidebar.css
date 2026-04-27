@@ -1,0 +1,255 @@
+
+.sidebar-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.sidebar-titlebar h1 {
+  margin: 0;
+}
+
+.sidebar-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pin-sidebar {
+  height: 32px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.collapse-sidebar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.session-sidebar.collapsed {
+  display: none;
+}
+
+.session-sidebar.overlay {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 35;
+  width: min(92vw, 380px);
+  max-width: calc(100vw - 32px);
+  border-right: 1px solid var(--c-2a2f3a);
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.52);
+}
+
+.session-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 34;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.38);
+  cursor: default;
+}
+
+.collapsed-sidebar-label,
+.collapsed-sidebar-session {
+  display: none;
+}
+
+.sidebar-section {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-menu-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  border-radius: 10px;
+}
+
+pi-web-agent:not(.session-sidebar-collapsed) .mobile-menu-button,
+pi-web-agent:not(.session-sidebar-collapsed).mobile-layout .mobile-menu-button {
+  display: none;
+}
+
+pi-web-agent.mobile-layout .mobile-menu-button {
+  display: inline-grid;
+}
+
+h2 {
+  font-size: 14px;
+  margin-top: 20px;
+  color: var(--c-aab2c0);
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--c-aab2c0);
+}
+
+input,
+select,
+textarea,
+button {
+  border: 1px solid var(--c-343b49);
+  border-radius: 8px;
+  background: var(--c-0f1117);
+  color: var(--c-e8eaf0);
+  padding: 9px 10px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: var(--c-202637);
+}
+
+button:hover,
+button.active {
+  border-color: var(--c-668cff);
+  background: var(--c-27345f);
+}
+
+.sessions-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.sessions-heading h2 {
+  margin: 0;
+}
+
+.sessions-heading button {
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.session-groups {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.session-group {
+  display: grid;
+  gap: 8px;
+}
+
+.session-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-aab2c0);
+  font-size: 12px;
+  text-align: left;
+}
+
+.session-group-heading:hover {
+  border-color: var(--c-343b49);
+  background: var(--c-202637);
+}
+
+.session-group-heading small {
+  color: var(--c-8b94a7);
+}
+
+.sessions {
+  display: grid;
+  gap: 8px;
+}
+
+.session-card {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+}
+
+.session-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-card strong,
+.session-snippet,
+.session-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card strong {
+  min-width: 0;
+  color: var(--c-e8eaf0);
+}
+
+.session-snippet {
+  display: block;
+  color: var(--c-aab2c0);
+  font-size: 12px;
+}
+
+.session-card small {
+  display: block;
+  color: var(--c-8b94a7);
+  font-size: 11px;
+}
+
+.session-indicator {
+  flex: 0 0 auto;
+  border: 1px solid var(--c-343b49);
+  border-radius: 999px;
+  color: var(--c-aab2c0);
+  font-size: 10px;
+  font-style: normal;
+  padding: 1px 6px;
+  text-transform: uppercase;
+}
+
+.session-indicator.running {
+  border-color: var(--c-315e9d);
+  background: var(--c-162c4f);
+  color: var(--c-b7d4ff);
+}
+
+.session-indicator.error,
+.session-indicator.aborting {
+  border-color: var(--c-8b3d3d);
+  background: var(--c-3a1717);
+  color: var(--c-ffb5b5);
+}
+
+.empty-sidebar,
+.sidebar-mode {
+  color: var(--c-8b94a7);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sidebar-mode {
+  margin: 8px 0 0;
+}
+

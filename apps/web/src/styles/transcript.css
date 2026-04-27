@@ -1,0 +1,752 @@
+.transcript-shell {
+  grid-row: 4;
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.transcript {
+  box-sizing: border-box;
+  background: var(--color-transcript-bg);
+  height: 100%;
+  min-height: 0;
+  padding: 18px 16px 22px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+.transcript-shell.has-running-queue .transcript {
+  padding-bottom: 22px;
+}
+
+.jump-to-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 5;
+  transform: translateX(-50%);
+  border-color: var(--c-668cff);
+  background: var(--color-bg-selected);
+  box-shadow: var(--shadow-panel);
+  color: var(--c-dbe4ff);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.message {
+  position: relative;
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--color-message-border);
+  border-radius: 12px;
+  background: var(--color-message-bg);
+  box-shadow: var(--shadow-card);
+  overflow: visible;
+  cursor: pointer;
+}
+
+.message-body {
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+}
+
+.message.selected {
+  outline: 2px solid var(--color-selected-ring);
+  outline-offset: 2px;
+}
+
+.message + .message,
+.message + .tool-run-group,
+.tool-run-group + .message,
+.tool-run-group + .tool-run-group {
+  margin-top: 18px;
+}
+
+.message.user {
+  border-color: var(--color-user-border);
+  background: var(--color-user-bg);
+}
+
+.message.assistant {
+  border-color: var(--color-assistant-border);
+  background: var(--color-assistant-bg);
+}
+
+.message.question {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 7%, var(--color-bg-surface));
+  box-shadow: none;
+}
+
+.message.question .message-header {
+  color: var(--color-text-secondary);
+  padding: 9px 12px 6px;
+}
+
+.message.question .message-header strong::before {
+  content: "✓";
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent-soft) 22%, transparent);
+  color: var(--color-accent-soft);
+  font-size: 11px;
+}
+
+.message.question.error .message-header strong::before {
+  content: "×";
+  background: color-mix(in srgb, var(--color-error) 18%, transparent);
+  color: var(--color-error);
+}
+
+.message.question .message-body {
+  padding: 0 12px 10px 36px;
+}
+
+.message.question pre {
+  margin: 0;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.message.tool {
+  border-color: var(--color-tool-border);
+  background: var(--color-tool-bg);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.message.tool.running {
+  border-color: var(--color-info);
+  background: var(--color-info-bg);
+}
+
+.message.tool.developer-bash {
+  border-color: color-mix(in srgb, var(--color-developer-bash-border) 72%, var(--color-tool-border));
+  background: var(--color-developer-bash-bg);
+  box-shadow: 0 8px 24px rgba(77, 124, 15, 0.14);
+}
+
+.message.tool.developer-bash .message-header {
+  border-bottom-color: color-mix(in srgb, var(--color-developer-bash-border) 34%, transparent);
+  color: var(--color-text);
+}
+
+.message.tool.developer-bash .message-header strong::before {
+  content: "local bash";
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-developer-bash-border) 54%, transparent);
+  background: color-mix(in srgb, var(--color-developer-bash-border) 16%, transparent);
+  color: var(--color-developer-bash-border);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.message.tool.developer-bash .message-body {
+  background: var(--color-developer-bash-body-bg);
+}
+
+.message.error,
+.message.tool.error {
+  border-color: var(--c-6e3438);
+  background: var(--c-3a2023);
+}
+
+.message.tool .message-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  padding: 9px 10px;
+}
+
+.message.tool .message-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message.tool.done .message-status {
+  color: var(--color-success);
+}
+
+.message.tool.running .message-status {
+  color: var(--c-9fc7e8);
+}
+
+.message.tool.error .message-status {
+  color: var(--c-ffb1b1);
+}
+
+.message.tool .message-body {
+  max-height: clamp(220px, 42vh, 560px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.message.tool.running .message-body {
+  max-height: clamp(260px, 50vh, 680px);
+}
+
+.message.tool pre {
+  color: var(--color-text-secondary);
+  padding: 10px;
+  background: transparent;
+}
+
+.message.tool .terminal-output {
+  line-height: 1.42;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.message.tool.done.collapsed {
+  border-color: var(--color-tool-done-border);
+  background: var(--color-tool-done-bg);
+  box-shadow: none;
+  opacity: 0.82;
+}
+
+.message.tool.done.collapsed + .message.tool.done.collapsed {
+  margin-top: 5px;
+}
+
+.message.tool.done.collapsed.after-running-tool {
+  margin-top: 4px;
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.message.tool.done.collapsed.after-running-tool .message-header::before {
+  content: "also ran";
+  flex: 0 0 auto;
+  border: 1px solid var(--color-tool-done-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tool-run-group {
+  border: 1px solid var(--color-tool-group-border);
+  border-radius: 8px;
+  background: var(--color-tool-group-bg);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-info) 26%, transparent), var(--shadow-card);
+  overflow: hidden;
+}
+
+.tool-run-group summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--c-aab7cf);
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.tool-run-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-run-group summary::before {
+  content: "▸";
+  color: var(--c-7e8fad);
+}
+
+.tool-run-group[open] summary::before {
+  content: "▾";
+}
+
+.tool-run-group summary strong {
+  flex: 0 0 auto;
+  color: var(--c-d3dcf0);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-weight: 700;
+}
+
+.tool-run-group summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--c-8794ad);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-run-items {
+  display: grid;
+  gap: 7px;
+  padding: 9px 9px 9px 24px;
+  border-top: 1px solid rgba(91, 111, 146, 0.22);
+}
+
+.tool-run-items .message.tool.done.collapsed {
+  margin: 0;
+  border-color: var(--color-tool-done-border);
+  background: var(--color-tool-done-bg);
+  box-shadow: none;
+  opacity: 0.9;
+}
+
+.tool-run-items .message.tool.done.collapsed .message-header {
+  min-height: 31px;
+  padding: 6px 8px;
+}
+
+.tool-run-items .message.tool.done.collapsed .message-header strong {
+  color: var(--c-c0c9dc);
+}
+
+.tool-run-items .message-header .tool-summary {
+  color: var(--c-768198);
+}
+
+.message.tool.done.collapsed.tool-group-start,
+.message.tool.done.collapsed.tool-group-middle,
+.message.tool.done.collapsed.tool-group-end {
+  border-left-color: var(--color-tool-done-border);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-border-strong) 30%, transparent);
+}
+
+.message.tool.done.collapsed.tool-group-start {
+  border-bottom-left-radius: 3px;
+  border-bottom-right-radius: 3px;
+}
+
+.message.tool.done.collapsed.tool-group-middle {
+  border-radius: 3px;
+}
+
+.message.tool.done.collapsed.tool-group-end {
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
+
+.message.tool.done.collapsed.tool-group-middle,
+.message.tool.done.collapsed.tool-group-end {
+  margin-top: 2px;
+}
+
+.message.tool.done.collapsed.tool-group-middle .message-status,
+.message.tool.done.collapsed.tool-group-end .message-status {
+  visibility: hidden;
+}
+
+.message.tool.done.collapsed .message-header {
+  min-height: 27px;
+  padding: 4px 8px;
+  gap: 8px;
+}
+
+.message.tool.done.collapsed .message-header strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.message.tool.done.collapsed .message-status {
+  color: var(--c-789174);
+  font-size: 11px;
+}
+
+.message.tool.done.collapsed .message-status::before {
+  content: "✓ ";
+}
+
+.message-header .tool-summary {
+  flex: 1 1 auto;
+  min-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.message.collapsible.collapsed .message-body {
+  display: none;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--c-2a2f3a);
+  color: var(--c-c8ced8);
+}
+
+.message.collapsible.collapsed .message-header {
+  border-bottom: 0;
+}
+
+.message-expand-toggle {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-8b94a7);
+  font-size: 13px;
+}
+
+.message-expand-toggle:hover,
+.message-expand-toggle:focus-visible {
+  border-color: var(--c-4a5568);
+  background: var(--c-202635);
+  color: var(--c-eef2ff);
+}
+
+.message-status {
+  flex: 0 0 auto;
+}
+
+.message-header-spacer {
+  flex: 1 1 auto;
+}
+
+.message-action-area {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.message-overflow {
+  width: 26px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-8b94a7);
+  opacity: 0.62;
+}
+
+.message:hover .message-overflow,
+.message:focus-within .message-overflow,
+.message.selected .message-overflow,
+.message-overflow[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.message-overflow:hover,
+.message-overflow[aria-expanded="true"] {
+  border-color: var(--c-4a5568);
+  background: var(--c-202635);
+  color: var(--c-eef2ff);
+}
+
+.message-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--c-3a4152);
+  border-radius: 10px;
+  background: var(--c-111722);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+
+.message-action-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 7px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-d5dbea);
+  font-size: 13px;
+  text-align: left;
+}
+
+.message-action-menu button:hover,
+.message-action-menu button:focus-visible {
+  border-color: var(--c-3d4963);
+  background: var(--c-1f2a3d);
+}
+
+.message-header span {
+  color: var(--c-8b94a7);
+  font-size: 12px;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+.markdown-body {
+  padding: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: var(--c-f0d28a);
+  line-height: 1.25;
+  margin: 18px 0 8px;
+}
+
+.markdown-body h1 {
+  font-size: 20px;
+}
+
+.markdown-body h2 {
+  font-size: 17px;
+}
+
+.markdown-body h3 {
+  font-size: 15px;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre {
+  margin: 0 0 12px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 24px;
+}
+
+.markdown-body li + li {
+  margin-top: 4px;
+}
+
+.markdown-body code {
+  border: 1px solid var(--c-343b49);
+  border-radius: 5px;
+  background: var(--c-0f1117);
+  color: var(--c-e8eaf0);
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.markdown-body pre {
+  border: 1px solid var(--c-2a2f3a);
+  border-radius: 8px;
+  background: var(--c-0f1117);
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.markdown-body pre code {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid var(--c-668cff);
+  color: var(--c-c8ced8);
+  padding-left: 12px;
+}
+
+.markdown-body a {
+  color: var(--c-8fb3ff);
+}
+
+.markdown-body img {
+  display: block;
+  width: min(100%, 960px);
+  max-width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: clamp(260px, 62vh, 640px);
+  border: 1px solid var(--c-343b49);
+  border-radius: 8px;
+  background: var(--c-0f1117);
+  object-fit: contain;
+}
+
+.markdown-body.streaming-plain pre {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  overflow-x: visible;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.thinking-trace {
+  color: var(--c-8b94a7);
+  font-style: italic;
+}
+
+.thinking-trace + .markdown-body,
+.markdown-body + .thinking-trace,
+.inline-tool-call + .markdown-body,
+.markdown-body + .inline-tool-call {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.inline-tool-call,
+.inline-image {
+  padding: 8px 12px;
+  color: var(--color-inline-chip-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  background: var(--color-inline-chip-bg);
+}
+
+.rendered-image {
+  margin: 0;
+  cursor: zoom-in;
+}
+
+.rendered-image.expanded {
+  cursor: zoom-out;
+}
+
+.rendered-image img {
+  display: block;
+  width: min(100%, 960px);
+  max-width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: clamp(260px, 62vh, 640px);
+  border: 1px solid var(--c-343b49);
+  border-radius: 8px;
+  background: var(--c-0f1117);
+  object-fit: contain;
+}
+
+.rendered-image.expanded img {
+  width: 100%;
+  max-height: min(78vh, 1100px);
+}
+
+.rendered-image figcaption {
+  margin-top: 6px;
+  color: var(--c-8b94a7);
+  font-size: 12px;
+}
+
+.artifact-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.artifact-image {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  min-width: 0;
+  border: 1px solid var(--color-image-card-border);
+  border-radius: 10px;
+  background: var(--color-image-card-bg);
+  padding: 8px;
+  box-shadow: var(--shadow-card);
+  cursor: zoom-in;
+}
+
+.artifact-image.expanded {
+  grid-column: 1 / -1;
+  cursor: zoom-out;
+}
+
+.artifact-image img {
+  display: block;
+  width: 100%;
+  height: clamp(180px, 28vh, 300px);
+  border: 1px solid var(--c-2a2f3a);
+  border-radius: 6px;
+  background: var(--c-0f1117);
+  object-fit: contain;
+}
+
+.message.tool .artifact-image img {
+  height: clamp(150px, 22vh, 240px);
+}
+
+.artifact-image.expanded img,
+.message.tool .artifact-image.expanded img {
+  height: auto;
+  max-height: min(78vh, 1100px);
+}
+
+.artifact-image figcaption {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--color-image-caption-bg);
+  color: var(--color-image-caption-text);
+  padding: 5px 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.artifact-image figcaption strong,
+.artifact-image figcaption small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-image figcaption strong {
+  font-weight: 700;
+}
+
+.artifact-image figcaption small {
+  color: var(--color-image-caption-muted);
+  font-size: 10px;
+}
+
