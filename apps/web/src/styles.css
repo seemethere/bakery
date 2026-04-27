@@ -1802,13 +1802,27 @@ pre {
   color: #768197;
 }
 
+.metadata-suggestion-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-bottom: 3px;
+}
+
+.metadata-suggestion-header span {
+  color: #7f8ba3;
+  font-size: 11px;
+}
+
 .metadata-suggestion p {
   margin: 4px 0;
 }
 
-.metadata-suggestion.error {
+.metadata-error {
   color: #ffb4b4;
   border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(44, 18, 24, 0.55);
 }
 
 .metadata-suggestion-actions {
@@ -1816,6 +1830,11 @@ pre {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
+}
+
+.metadata-suggestion-actions button {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .app-settings {

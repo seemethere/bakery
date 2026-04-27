@@ -309,10 +309,11 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
 
   await sendPromptAndWaitIdle(page, "Improve session summaries and title generation with dedicated harness coverage.");
   await page.locator("#generateMetadata").click();
-  await page.locator(".metadata-suggestion", { hasText: "Suggested metadata" }).waitFor({ timeout: 5_000 });
+  await page.locator(".metadata-suggestion", { hasText: "Suggested title" }).waitFor({ timeout: 5_000 });
   await page.locator(".metadata-suggestion", { hasText: "Title:" }).waitFor({ timeout: 5_000 });
+  await page.locator("#regenerateMetadata", { hasText: "Regenerate" }).waitFor({ timeout: 5_000 });
   if (await page.locator(".metadata-suggestion", { hasText: "Summary:" }).count()) throw new Error("Heuristic metadata should not present fake summaries.");
-  await page.locator('[data-accept-metadata="title"]').click();
+  await page.locator('[data-accept-metadata="title"]', { hasText: "Apply title" }).click();
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value.includes("summaries"), null, { timeout: 5_000 });
 
   const sessionId = await page.locator(".session-card.active").getAttribute("data-session-id");

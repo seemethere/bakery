@@ -1291,15 +1291,26 @@ class PiWebAgentApp extends HTMLElement {
         body: JSON.stringify({ mode: "suggest" }),
       });
       if (suggestion.deferred) this.metadataSuggestionError = suggestion.reason ?? "Not enough session context yet.";
-      else {
-        this.metadataSuggestion = suggestion;
-        this.metadataSuggestionError = suggestion.reason && !suggestion.summary ? suggestion.reason : "";
-      }
+      else this.metadataSuggestion = suggestion;
     } catch (error) {
-      this.metadataSuggestionError = `Metadata generation failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.metadataSuggestionError = this.formatMetadataError(error);
     }
     this.metadataGenerating = false;
     this.render();
+  }
+
+  private formatMetadataError(error: unknown): string {
+    const raw = error instanceof Error ? error.message : String(error);
+    const match = /^(\d+):\s*([\s\S]*)$/.exec(raw);
+    if (!match) return `Could not generate metadata. ${raw}`;
+    let detail = match[2]?.trim() || raw;
+    try {
+      const parsed = JSON.parse(detail) as { error?: unknown; message?: unknown };
+      detail = typeof parsed.error === "string" ? parsed.error : typeof parsed.message === "string" ? parsed.message : detail;
+    } catch {
+      // Keep provider text as-is when it is not JSON.
+    }
+    return `Could not generate metadata (${match[1]}). ${detail}`;
   }
 
   private async acceptMetadataSuggestion(kind: "both" | "title" | "summary"): Promise<void> {
@@ -1738,6 +1749,7 @@ class PiWebAgentApp extends HTMLElement {
       void this.updateSessionTitle((event.currentTarget as HTMLInputElement).value);
     });
     this.querySelector<HTMLButtonElement>("#generateMetadata")?.addEventListener("click", () => void this.generateMetadataSuggestion());
+    this.querySelector<HTMLButtonElement>("#regenerateMetadata")?.addEventListener("click", () => void this.generateMetadataSuggestion());
     this.querySelector<HTMLButtonElement>("#toggleSessionSummary")?.addEventListener("click", () => this.setSummaryExpanded(!this.summaryExpanded()));
     this.querySelector<HTMLButtonElement>("#dismissMetadataSuggestion")?.addEventListener("click", () => {
       this.metadataSuggestion = null;
@@ -2043,17 +2055,21 @@ class PiWebAgentApp extends HTMLElement {
     ` : `<span class="session-summary-empty" title="${escapeHtml(sourceHint)}">No summary yet.</span>`;
     const suggestionBlock = suggestion ? `
       <div class="metadata-suggestion">
-        <strong>Suggested metadata</strong>
+        <div class="metadata-suggestion-header">
+          <strong>Suggested title${suggestion.summary ? " & summary" : ""}</strong>
+          ${suggestion.reason ? `<span>${escapeHtml(suggestion.reason)}</span>` : ""}
+        </div>
         ${suggestion.title ? `<p><b>Title:</b> ${escapeHtml(suggestion.title)}</p>` : ""}
         ${suggestion.summary ? `<p><b>Summary:</b> ${escapeHtml(suggestion.summary)}</p>` : ""}
         <div class="metadata-suggestion-actions">
-          <button data-accept-metadata="both">Use both</button>
-          ${suggestion.title ? `<button data-accept-metadata="title">Use title</button>` : ""}
-          ${suggestion.summary ? `<button data-accept-metadata="summary">Use summary</button>` : ""}
-          <button id="dismissMetadataSuggestion">Dismiss</button>
+          ${suggestion.title && suggestion.summary ? `<button data-accept-metadata="both">Apply title & summary</button>` : ""}
+          ${suggestion.title ? `<button data-accept-metadata="title">Apply title</button>` : ""}
+          ${suggestion.summary ? `<button data-accept-metadata="summary">Apply summary</button>` : ""}
+          <button id="regenerateMetadata" type="button" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>Regenerate</button>
+          <button id="dismissMetadataSuggestion" type="button">Dismiss</button>
         </div>
       </div>` : "";
-    const errorBlock = this.metadataSuggestionError ? `<p class="metadata-suggestion error">${escapeHtml(this.metadataSuggestionError)}</p>` : "";
+    const errorBlock = this.metadataSuggestionError ? `<p class="metadata-suggestion metadata-error">${escapeHtml(this.metadataSuggestionError)}</p>` : "";
     return `<div class="session-summary">${summaryBlock}${suggestionBlock}${errorBlock}</div>`;
   }
 
