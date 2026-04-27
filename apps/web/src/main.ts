@@ -2829,7 +2829,7 @@ class PiWebAgentApp extends HTMLElement {
         <div class="sidebar-titlebar">
           <h1>Pi Web Agent</h1>
           <div class="sidebar-titlebar-actions">
-            ${sidebarOverlayOpen ? `<button id="pinSessionSidebar" class="pin-sidebar" type="button" title="Pin sessions as a left column">Pin</button>` : ""}
+            ${sidebarOverlayOpen && !this.mobileLayout ? `<button id="pinSessionSidebar" class="pin-sidebar" type="button" title="Pin sessions as a left column">Pin</button>` : ""}
             <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : this.sessionSidebarPinned ? "Hide sessions and unpin auto-collapse" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
           </div>
         </div>

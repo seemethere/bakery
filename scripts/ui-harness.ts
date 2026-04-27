@@ -382,6 +382,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
     localStorage.setItem("piWebSessionSidebarCollapsed", "true");
     localStorage.setItem("piWebRightPanelCollapsed", "true");
     localStorage.setItem("piWebSessionSidebarPinned", "false");
+    localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
   await prepareSession(page);
   await page.locator(".message", { hasText: "No messages yet." }).waitFor({ timeout: 5_000 });
@@ -393,14 +394,57 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("Mobile layout regression draft");
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
+  await page.evaluate(() => {
+    const app = document.querySelector("pi-web-agent") as unknown as { sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
+    const current = app?.sessions?.[0];
+    if (!app?.sessions || !current) return;
+    (window as unknown as { __mobileOriginalSessions?: Array<Record<string, unknown>> }).__mobileOriginalSessions = app.sessions;
+    const clone = (suffix: string, daysAgo: number, title: string) => {
+      const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+      return { ...current, id: `${current.id}-${suffix}`, title, lastActivityAt: date, lastOpenedAt: date, status: "idle" };
+    };
+    app.sessions = [current, clone("yesterday", 1, "Yesterday mobile smoke"), clone("week", 3, "Earlier week mobile smoke"), clone("older", 12, "Older mobile smoke")];
+    app.render?.();
+  });
+  await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   const drawerOrder = await page.evaluate(() => {
     const drawerElements = Array.from(document.querySelectorAll(".session-sidebar:not(.collapsed) *"));
+    const group = (id: string) => {
+      const heading = document.querySelector(`[data-session-group='${id}'] .session-group-heading`);
+      return {
+        expanded: heading?.getAttribute("aria-expanded"),
+        cards: document.querySelectorAll(`[data-session-group='${id}'] [data-session-id]`).length,
+      };
+    };
     return {
       newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
+      firstGroupIndex: drawerElements.findIndex((element) => element.classList.contains("session-group-heading")),
       apiBaseIndex: drawerElements.findIndex((element) => element.id === "apiBase"),
+      pinButtonCount: document.querySelectorAll("#pinSessionSidebar").length,
+      backdropVisible: !!document.querySelector("#sessionSidebarBackdrop"),
+      groups: {
+        today: group("today"),
+        yesterday: group("yesterday"),
+        thisWeek: group("this-week"),
+        older: group("older"),
+      },
     };
   });
-  await page.locator("#toggleSessionSidebar").click();
+  if (!drawerOrder.backdropVisible) throw new Error("Mobile drawer should render a backdrop while open.");
+  if (drawerOrder.pinButtonCount !== 0) throw new Error("Mobile drawer should not show the desktop Pin affordance.");
+  if (drawerOrder.groups.today.expanded !== "true" || drawerOrder.groups.today.cards < 1) throw new Error(`Mobile Today group should be expanded with sessions: ${JSON.stringify(drawerOrder.groups.today)}`);
+  if (drawerOrder.groups.yesterday.expanded !== "true" || drawerOrder.groups.yesterday.cards < 1) throw new Error(`Mobile Yesterday group should be expanded with sessions: ${JSON.stringify(drawerOrder.groups.yesterday)}`);
+  if (drawerOrder.groups.thisWeek.expanded !== "false" || drawerOrder.groups.older.expanded !== "false") throw new Error(`Mobile older groups should default collapsed: ${JSON.stringify(drawerOrder.groups)}`);
+  await page.evaluate(() => {
+    const app = document.querySelector("pi-web-agent") as unknown as { sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
+    const original = (window as unknown as { __mobileOriginalSessions?: Array<Record<string, unknown>> }).__mobileOriginalSessions;
+    if (app?.sessions && original) {
+      app.sessions = original;
+      app.render?.();
+    }
+  });
+  await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
+  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "mobile-layout.png"), fullPage: true });
 
   const layout = await page.evaluate((drawerOrder) => {
@@ -434,7 +478,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
   if (layout.rightPanel !== null) throw new Error(`Mobile inspector should be detached, saw ${JSON.stringify(layout.rightPanel)}`);
   if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
-  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put sessions before settings: new=${layout.drawerOrder.newSessionIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
+  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.firstGroupIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.firstGroupIndex || layout.drawerOrder.firstGroupIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put session creation/groups before settings: new=${layout.drawerOrder.newSessionIndex}, group=${layout.drawerOrder.firstGroupIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
   if ((layout.header?.height ?? 999) > 140) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
