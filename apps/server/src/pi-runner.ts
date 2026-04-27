@@ -24,6 +24,7 @@ export type BuiltinCommandResult = {
   title?: string;
   body?: string;
   isError?: boolean;
+  launchPrompt?: string;
 };
 
 export type SessionHandle = {
@@ -89,6 +90,7 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "login", description: "Configure provider authentication", source: "builtin", unsupported: true },
   { name: "logout", description: "Remove provider authentication", source: "builtin", unsupported: true },
   { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
+  { name: "grill-me", description: "Start a one-question-at-a-time codebase interview using ask_question", source: "skill", argumentHint: "[topic or goal]" },
   { name: "compact", description: "Manually compact the session context", source: "builtin" },
   { name: "resume", description: "Resume a different session", source: "builtin", unsupported: true },
   { name: "reload", description: "Reload extensions, skills, prompts, and other resources", source: "builtin" },
@@ -98,9 +100,28 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
 const BUILTIN_COMMAND_NAMES = new Set(BUILTIN_COMMANDS.map((command) => command.name));
 
 function parseSlashCommand(text: string): { name: string; args: string } | null {
-  const match = /^\/([\w:-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  const match = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(text.trim());
   if (!match) return null;
   return { name: match[1] ?? "", args: match[2]?.trim() ?? "" };
+}
+
+function grillMePrompt(topic: string): string {
+  const focus = topic.trim();
+  return [
+    "Run the bundled `grill-me` skill for this coding session.",
+    "",
+    "Goal: interview the operator to clarify the next useful implementation slice, architecture decision, or codebase understanding gap.",
+    focus ? `Operator-provided focus: ${focus}` : "Operator-provided focus: general project/codebase review.",
+    "",
+    "Instructions:",
+    "- Inspect the codebase and current project notes when that would make your questions more concrete.",
+    "- Use the `ask_question` tool for each question instead of writing plain-text questions in the transcript.",
+    "- Ask exactly one concise question at a time, then wait for the answer before asking another.",
+    "- Include a recommended answer whenever it helps the operator decide quickly.",
+    "- When useful, offer 2-4 short selectable options plus custom-answer support.",
+    "- Keep the interview practical and tied to the current repository; avoid broad generic coaching.",
+    "- After enough answers, summarize the recommendation and propose the smallest next vertical slice with a validation plan.",
+  ].join("\n");
 }
 
 function formatSessionStats(stats: ReturnType<AgentSession["getSessionStats"]>): string {
@@ -382,6 +403,9 @@ class InProcessSessionHandle implements SessionHandle {
     if (parsed.name === "reload") {
       await this.session.reload();
       return { handled: true, title: "/reload", body: "Reloaded extensions, skills, prompt templates, and context resources." };
+    }
+    if (parsed.name === "grill-me") {
+      return { handled: true, title: "/grill-me", launchPrompt: grillMePrompt(parsed.args) };
     }
     if (parsed.name === "compact") {
       const result = await this.session.compact(parsed.args || undefined);

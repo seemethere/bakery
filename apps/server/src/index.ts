@@ -872,6 +872,16 @@ class SessionHub {
         }
         const builtinResult = await this.handle.runBuiltinCommand(parsed.data.text);
         if (builtinResult.handled) {
+          if (builtinResult.launchPrompt) {
+            const webSession = store.getSession(this.handle.id);
+            if (webSession && !webSession.title) {
+              const updated = store.updateSession(webSession.id, { title: "Grill me", titleSource: "first_prompt" });
+              if (updated) this.broadcastMetadataUpdate(updated);
+            }
+            await this.handle.prompt(builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
+            await this.broadcastSettingsUpdate();
+            return;
+          }
           this.broadcast({
             type: "agent_event",
             event: {

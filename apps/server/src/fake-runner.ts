@@ -252,15 +252,29 @@ class FakeSessionHandle implements SessionHandle {
     return [
       { name: "tree", description: "Open the web session tree", source: "builtin" },
       { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
+      { name: "grill-me", description: "Start a one-question-at-a-time codebase interview using ask_question", source: "skill", argumentHint: "[topic or goal]" },
       { name: "session", description: "Show session info", source: "builtin" },
       { name: "reload", description: "Reload fake resources", source: "builtin" },
     ];
   }
 
   async runBuiltinCommand(text: string): Promise<BuiltinCommandResult> {
-    if (text.trim() === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
-    if (text.trim() === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
-    if (text.trim() === "/tree") return { handled: true, title: "/tree", body: "Open the Tree tab or wide tree drawer." };
+    const trimmed = text.trim();
+    if (trimmed === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
+    if (trimmed === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
+    if (trimmed === "/tree") return { handled: true, title: "/tree", body: "Open the Tree tab or wide tree drawer." };
+    if (/^\/grill-me(?:\s|$)/.test(trimmed)) {
+      const focus = trimmed.replace(/^\/grill-me(?:\s+)?/, "").trim();
+      return {
+        handled: true,
+        title: "/grill-me",
+        launchPrompt: [
+          "Run the bundled `grill-me` skill for this coding session.",
+          focus ? `Operator-provided focus: ${focus}` : "Operator-provided focus: general project/codebase review.",
+          "Use the ask_question tool for each question. Ask exactly one concise question at a time and include a recommendation.",
+        ].join("\n"),
+      };
+    }
     return { handled: false };
   }
 
