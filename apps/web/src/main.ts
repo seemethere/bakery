@@ -1285,6 +1285,44 @@ class PiWebAgentApp extends HTMLElement {
     return nodes.flatMap((node) => [node, ...this.treeNodes(node.children)]);
   }
 
+  private treeNodeDisplayTitle(node: SessionTreeNode): string {
+    return node.title.replace(/^\w+:\s*/, "");
+  }
+
+  private currentTreePath(): SessionTreeNode[] {
+    const nodes = this.treeNodes();
+    if (!nodes.length) return [];
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    let node = byId.get(this.sessionTree?.leafId ?? "") ?? nodes.find((candidate) => candidate.current) ?? null;
+    const path: SessionTreeNode[] = [];
+    const seen = new Set<string>();
+    while (node && !seen.has(node.id)) {
+      path.push(node);
+      seen.add(node.id);
+      node = node.parentId ? byId.get(node.parentId) ?? null : null;
+    }
+    return path.reverse();
+  }
+
+  private renderCurrentTreePath(path: SessionTreeNode[]): string {
+    if (!this.sessionTree?.tree.length) return "";
+    if (!path.length) return `<div class="tree-current-path empty"><strong>Current path</strong><span>No current leaf yet.</span></div>`;
+    const visiblePath: SessionTreeNode[] = path.length > 4 ? [path[0]!, ...path.slice(-3)] : path;
+    const skippedCount = path.length - visiblePath.length;
+    const segments = visiblePath.map((node, index) => {
+      const isLeaf = index === visiblePath.length - 1;
+      const title = this.treeNodeDisplayTitle(node);
+      return `<span class="tree-path-segment ${isLeaf ? "leaf" : ""}" title="${escapeHtml(node.title)}">${escapeHtml(title || node.type)}</span>`;
+    }).join(`<span class="tree-path-separator">›</span>`);
+    const skipped = skippedCount > 0 ? `<span class="tree-path-skipped">… ${skippedCount} earlier</span><span class="tree-path-separator">›</span>` : "";
+    return `
+      <div class="tree-current-path" aria-label="Current session tree path">
+        <strong>Current path</strong>
+        <div class="tree-path-line">${skipped}${segments}</div>
+        <span class="tree-path-meta">${path.length} ${path.length === 1 ? "entry" : "entries"}</span>
+      </div>`;
+  }
+
   private forkEntryIdForTranscriptItem(item: TranscriptItem): string | null {
     if (item.kind !== "user") return null;
     const rawTimestamp = isRecord(item.raw) ? String(item.raw.timestamp ?? "") : "";
@@ -2598,27 +2636,31 @@ class PiWebAgentApp extends HTMLElement {
       </aside>`;
   }
 
-  private renderTreeNodes(nodes: SessionTreeNode[], prefix = ""): string {
+  private renderTreeNodes(nodes: SessionTreeNode[], prefix = "", currentPathIds = new Set<string>()): string {
     return nodes.map((node, index) => {
       const isLast = index === nodes.length - 1;
       const connector = prefix ? (isLast ? "└─" : "├─") : "•";
       const childPrefix = `${prefix}${prefix ? (isLast ? "  " : "│ ") : ""}`;
       const canFork = node.type === "message" && node.role === "user";
       const kind = node.role ?? node.type;
+      const isPath = currentPathIds.has(node.id);
+      const classes = ["tree-line", node.current ? "current" : "", isPath ? "current-path" : "", canFork ? "forkable" : ""].filter(Boolean).join(" ");
       return `
-        <div class="tree-line ${node.current ? "current" : ""}" data-tree-entry-id="${escapeHtml(node.id)}" title="Navigate to this point">
+        <div class="${classes}" data-tree-entry-id="${escapeHtml(node.id)}" title="${node.current ? "Current leaf" : isPath ? "On the current path" : "Navigate to this point"}">
           <span class="tree-prefix">${escapeHtml(prefix)}${connector}</span>
           <span class="tree-kind ${escapeHtml(kind)}">${escapeHtml(kind)}:</span>
-          <span class="tree-title">${escapeHtml(node.title.replace(/^\w+:\s*/, ""))}</span>
-          ${node.current ? `<span class="tree-current">current</span>` : `<span class="tree-current">go</span>`}
+          <span class="tree-title">${escapeHtml(this.treeNodeDisplayTitle(node))}</span>
+          ${node.current ? `<span class="tree-current">current leaf</span>` : isPath ? `<span class="tree-current path">path</span>` : `<span class="tree-current go">go</span>`}
           ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message">fork</button>` : ""}
         </div>
-        ${node.children.length ? this.renderTreeNodes(node.children, childPrefix) : ""}`;
+        ${node.children.length ? this.renderTreeNodes(node.children, childPrefix, currentPathIds) : ""}`;
     }).join("");
   }
 
   private renderTreePanel(options: { drawer?: boolean } = {}): string {
     if (!this.selectedSession) return `<p class="empty-panel">Open a session to inspect its tree.</p>`;
+    const currentPath = this.currentTreePath();
+    const currentPathIds = new Set(currentPath.map((node) => node.id));
     return `
       <div class="tree-panel tui-tree ${options.drawer ? "drawer-tree" : ""}">
         <div class="tree-toolbar">
@@ -2630,8 +2672,9 @@ class PiWebAgentApp extends HTMLElement {
           </div>
         </div>
         <div class="tree-hints">TUI-style view · current path highlighted · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
+        ${this.renderCurrentTreePath(currentPath)}
         ${this.sessionTree?.tree.length
-          ? `<div class="session-tree">${this.renderTreeNodes(this.sessionTree.tree)}</div>`
+          ? `<div class="session-tree">${this.renderTreeNodes(this.sessionTree.tree, "", currentPathIds)}</div>`
           : `<p class="empty-panel">No tree entries yet. Send a prompt first.</p>`}
       </div>`;
   }

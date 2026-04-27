@@ -2299,6 +2299,62 @@ pre {
   background: var(--c-30323b);
 }
 
+.tree-current-path {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(102, 140, 255, 0.28);
+  background: color-mix(in srgb, var(--c-30323b) 84%, var(--c-668cff) 16%);
+}
+
+.tree-current-path.empty {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.tree-current-path strong {
+  color: var(--c-fff1bd);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tree-current-path.empty span,
+.tree-path-meta,
+.tree-path-skipped,
+.tree-path-separator {
+  color: var(--c-9ca0a0);
+}
+
+.tree-path-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tree-path-segment {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 22ch;
+  border: 1px solid rgba(102, 140, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(102, 140, 255, 0.12);
+  padding: 2px 7px;
+  color: var(--c-e8dfbd);
+  text-overflow: ellipsis;
+}
+
+.tree-path-segment.leaf {
+  border-color: rgba(255, 241, 189, 0.46);
+  background: rgba(255, 241, 189, 0.12);
+  color: var(--c-fff4c8);
+  font-weight: 700;
+}
+
 .session-tree {
   min-width: max-content;
   padding: 12px 10px 18px;
@@ -2316,10 +2372,24 @@ pre {
   cursor: pointer;
 }
 
-.tree-line:hover,
-.tree-line.current {
+.tree-line.current-path {
+  background: rgba(102, 140, 255, 0.08);
+  box-shadow: inset 2px 0 0 rgba(102, 140, 255, 0.72);
+}
+
+.tree-line:hover {
   background: var(--c-3a3d4d);
   color: var(--c-fff4c8);
+}
+
+.tree-line.current {
+  background: color-mix(in srgb, var(--c-3a3d4d) 72%, var(--c-fff1bd) 28%);
+  color: var(--c-fff4c8);
+  box-shadow: inset 2px 0 0 var(--c-fff1bd), 0 0 0 1px rgba(255, 241, 189, 0.2);
+}
+
+.tree-line.forkable:not(.current):not(:hover) .tree-current.go {
+  color: var(--c-8b94a7);
 }
 
 .tree-prefix {
@@ -2355,6 +2425,19 @@ pre {
 .tree-current {
   color: var(--c-c6d4ff);
   font-size: 11px;
+}
+
+.tree-current.path {
+  color: var(--c-86d7d0);
+}
+
+.tree-current.go {
+  opacity: 0.7;
+}
+
+.tree-line.current .tree-current {
+  color: var(--c-fff1bd);
+  font-weight: 700;
 }
 
 .tree-line button {

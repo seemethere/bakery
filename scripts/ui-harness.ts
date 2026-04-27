@@ -562,6 +562,11 @@ async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown
   await sendPromptAndWaitIdle(page, "Create a short conversation branch for tree navigation.");
   await page.locator('[data-right-tab="tree"]').click();
   await page.locator(".tree-line").first().waitFor({ timeout: 5_000 });
+  await page.locator(".tree-current-path", { hasText: "Current path" }).waitFor({ timeout: 5_000 });
+  await page.locator(".tree-path-segment.leaf").waitFor({ timeout: 5_000 });
+  await page.locator(".tree-line.current").waitFor({ timeout: 5_000 });
+  await page.locator(".tree-line.current-path").first().waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "tree-current-path.png"), fullPage: true });
   await page.locator(".tree-line").first().click();
   await page.locator(".notice", { hasText: /Navigated|Tree navigation failed/ }).waitFor({ timeout: 5_000 }).catch(() => undefined);
   const forkButton = page.locator("[data-fork-entry-id]").first();
