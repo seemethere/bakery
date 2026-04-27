@@ -217,9 +217,11 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
-  await page.keyboard.press("Enter");
+  await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
+  await page.locator("[data-question-option-index='1']").press("Enter");
   await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "Q: What are you working on today?" }).waitFor({ timeout: 5_000 });

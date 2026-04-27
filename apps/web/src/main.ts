@@ -304,6 +304,7 @@ function formatToolTitle(name: unknown, args: unknown): string {
   const toolName = String(name ?? "tool");
   const toolArgs = isRecord(args) ? args : {};
   if (toolName === "bash" && toolArgs.command) return `$ ${String(toolArgs.command)}`;
+  if (toolName === "ask_question") return "Question";
   if (toolName === "read" && toolArgs.path) return `read ${String(toolArgs.path)}${toolArgs.offset ? `:${String(toolArgs.offset)}` : ""}${toolArgs.limit ? `-${String(toolArgs.limit)}` : ""}`;
   if ((toolName === "edit" || toolName === "write") && toolArgs.path) return `${toolName} ${String(toolArgs.path)}`;
   if (toolName === "grep" && toolArgs.pattern) return `grep ${String(toolArgs.pattern)}`;
@@ -384,6 +385,12 @@ function questionSummaryFromTool(item: TranscriptItem): TranscriptItem | null {
 
 function toolArgsToText(args: unknown): string {
   if (!isRecord(args)) return stringify(args);
+  if (typeof args.question === "string") {
+    const lines = [`Q: ${args.question}`];
+    if (typeof args.recommendation === "string" && args.recommendation.trim()) lines.push(`Recommended: ${args.recommendation}`);
+    if (Array.isArray(args.options) && args.options.length > 0) lines.push(`${args.options.length} option${args.options.length === 1 ? "" : "s"}`);
+    return lines.join("\n");
+  }
   if (Object.keys(args).length === 0) return "";
   return stringify(args);
 }

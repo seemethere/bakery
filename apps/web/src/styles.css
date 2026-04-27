@@ -673,9 +673,9 @@ footer.running-footer {
 }
 
 .question-options button.recommended-option {
-  border-color: color-mix(in srgb, var(--color-warning) 70%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-bg-surface));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c-f3d96b) 38%, transparent) inset;
+  border-color: color-mix(in srgb, var(--color-warning) 82%, var(--color-border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-warning) 18%, var(--color-bg-surface)), var(--color-bg-surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning) 34%, transparent) inset, 0 8px 24px color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 
 .question-options .option-title {
