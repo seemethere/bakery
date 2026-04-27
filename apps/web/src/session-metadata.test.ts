@@ -47,12 +47,12 @@ describe("session metadata helpers", () => {
     expect(formatMetadataError("network down")).toBe("Could not generate metadata. network down");
   });
 
-  test("builds patch bodies for suggestion accept actions", () => {
-    const suggestion = { title: "New title", summary: "New summary", confidence: "high" as const };
-    expect(metadataPatchForSuggestion("both", suggestion)).toEqual({ title: "New title", summary: "New summary" });
-    expect(metadataPatchForSuggestion("title", suggestion)).toEqual({ title: "New title" });
-    expect(metadataPatchForSuggestion("summary", suggestion)).toEqual({ summary: "New summary" });
-    expect(metadataPatchForSuggestion("both", { confidence: "low" })).toEqual({});
+  test("builds patch bodies for edited suggestion accept actions", () => {
+    const draft = { title: "New title", summary: "New summary" };
+    expect(metadataPatchForSuggestion("both", draft)).toEqual({ title: "New title", summary: "New summary" });
+    expect(metadataPatchForSuggestion("title", draft)).toEqual({ title: "New title" });
+    expect(metadataPatchForSuggestion("summary", draft)).toEqual({ summary: "New summary" });
+    expect(metadataPatchForSuggestion("both", { title: "", summary: "" })).toEqual({});
   });
 
   test("renders summary, suggestion actions, running disabled state, and escaped content", () => {
@@ -60,9 +60,11 @@ describe("session metadata helpers", () => {
       session: session({ titleSource: "manual", summary: "Summary with <tags>", summarySource: "agent" }),
       expanded: false,
       suggestion: { title: "Better <title>", summary: "Better summary", confidence: "medium", reason: "Enough context" },
+      draft: { title: "Better <title>", summary: "Better summary" },
       error: "",
       metadataGenerating: false,
       status: "running",
+      showSuggestion: true,
     });
     expect(html).toContain("Summary — Summary with &lt;tags&gt;");
     expect(html).toContain('title="Title: manual; summary: agent"');

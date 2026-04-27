@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextU
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
 import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
-import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderSessionSummary as renderSessionSummaryHtml, sessionDisplayTitle, sessionMetadataLabel, sessionSnippet, sessionTitlePlaceholder, type MetadataAcceptKind } from "./session-metadata";
+import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionDisplayTitle, sessionMetadataLabel, sessionSnippet, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { escapeHtml, isRecord, pathBasename, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
@@ -124,6 +124,7 @@ class PiWebAgentApp extends HTMLElement {
   private pendingQuestion: PendingQuestion | null = null;
   private appSettings: AppSettings | null = null;
   private metadataSuggestion: SessionMetadataSuggestion | null = null;
+  private metadataSuggestionDraft: MetadataSuggestionDraft = { title: "", summary: "" };
   private metadataSuggestionError = "";
   private metadataGenerating = false;
   private editingTitleDraft: string | null = null;
@@ -962,6 +963,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession || this.metadataGenerating) return;
     this.metadataGenerating = true;
     this.metadataSuggestion = null;
+    this.metadataSuggestionDraft = { title: "", summary: "" };
     this.metadataSuggestionError = "";
     this.render();
     try {
@@ -970,7 +972,10 @@ class PiWebAgentApp extends HTMLElement {
         body: JSON.stringify({ mode: "suggest" }),
       });
       if (suggestion.deferred) this.metadataSuggestionError = suggestion.reason ?? "Not enough session context yet.";
-      else this.metadataSuggestion = suggestion;
+      else {
+        this.metadataSuggestion = suggestion;
+        this.metadataSuggestionDraft = { title: suggestion.title ?? "", summary: suggestion.summary ?? "" };
+      }
     } catch (error) {
       this.metadataSuggestionError = formatMetadataError(error);
     }
@@ -980,18 +985,41 @@ class PiWebAgentApp extends HTMLElement {
 
   private async acceptMetadataSuggestion(kind: MetadataAcceptKind): Promise<void> {
     if (!this.selectedSession || !this.metadataSuggestion) return;
-    const body = metadataPatchForSuggestion(kind, this.metadataSuggestion);
+    const body = metadataPatchForSuggestion(kind, this.metadataSuggestionDraft);
     if (Object.keys(body).length === 0) return;
     try {
       const updated = await this.api<WebSession>(`/api/sessions/${this.selectedSession.id}`, { method: "PATCH", body: JSON.stringify(body) });
       this.selectedSession = updated;
       this.sessions = this.sessions.map((session) => session.id === updated.id ? updated : session);
-      this.metadataSuggestion = null;
+      this.dismissMetadataSuggestionField(kind);
       this.metadataSuggestionError = "";
     } catch (error) {
       this.metadataSuggestionError = `Could not apply suggestion: ${error instanceof Error ? error.message : String(error)}`;
     }
     this.render();
+  }
+
+  private updateMetadataSuggestionDraft(field: "title" | "summary", value: string): void {
+    this.metadataSuggestionDraft = { ...this.metadataSuggestionDraft, [field]: value };
+  }
+
+  private dismissMetadataSuggestionField(kind: MetadataAcceptKind): void {
+    if (kind === "both") {
+      this.metadataSuggestion = null;
+      this.metadataSuggestionDraft = { title: "", summary: "" };
+      return;
+    }
+    this.metadataSuggestionDraft = { ...this.metadataSuggestionDraft, [kind]: "" };
+    if (!this.metadataSuggestion) return;
+    const next: SessionMetadataSuggestion = {
+      ...(kind === "title" ? {} : this.metadataSuggestion.title ? { title: this.metadataSuggestion.title } : {}),
+      ...(kind === "summary" ? {} : this.metadataSuggestion.summary ? { summary: this.metadataSuggestion.summary } : {}),
+      confidence: this.metadataSuggestion.confidence,
+      ...(this.metadataSuggestion.reason ? { reason: this.metadataSuggestion.reason } : {}),
+      ...(this.metadataSuggestion.deferred !== undefined ? { deferred: this.metadataSuggestion.deferred } : {}),
+    };
+    if (!next.title && !next.summary) this.metadataSuggestion = null;
+    else this.metadataSuggestion = next;
   }
 
   private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
@@ -1641,12 +1669,22 @@ class PiWebAgentApp extends HTMLElement {
       void this.updateSessionTitle((event.currentTarget as HTMLInputElement).value);
     });
     this.querySelector<HTMLButtonElement>("#generateMetadata")?.addEventListener("click", () => void this.generateMetadataSuggestion());
-    this.querySelector<HTMLButtonElement>("#regenerateMetadata")?.addEventListener("click", () => void this.generateMetadataSuggestion());
+    this.querySelectorAll<HTMLButtonElement>("#regenerateMetadata").forEach((button) => button.addEventListener("click", () => void this.generateMetadataSuggestion()));
     this.querySelector<HTMLButtonElement>("#toggleSessionSummary")?.addEventListener("click", () => this.setSummaryExpanded(!this.summaryExpanded()));
-    this.querySelector<HTMLButtonElement>("#dismissMetadataSuggestion")?.addEventListener("click", () => {
+    this.querySelector<HTMLInputElement>("#metadataSuggestionTitle")?.addEventListener("input", (event) => this.updateMetadataSuggestionDraft("title", (event.currentTarget as HTMLInputElement).value));
+    this.querySelector<HTMLTextAreaElement>("#metadataSuggestionSummary")?.addEventListener("input", (event) => this.updateMetadataSuggestionDraft("summary", (event.currentTarget as HTMLTextAreaElement).value));
+    this.querySelectorAll<HTMLButtonElement>("#dismissMetadataSuggestion").forEach((button) => button.addEventListener("click", () => {
       this.metadataSuggestion = null;
+      this.metadataSuggestionDraft = { title: "", summary: "" };
       this.metadataSuggestionError = "";
       this.render();
+    }));
+    this.querySelectorAll<HTMLButtonElement>("[data-dismiss-metadata]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const kind = button.dataset.dismissMetadata === "summary" ? "summary" : "title";
+        this.dismissMetadataSuggestionField(kind);
+        this.render();
+      });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-accept-metadata]").forEach((button) => {
       button.addEventListener("click", () => void this.acceptMetadataSuggestion(button.dataset.acceptMetadata as MetadataAcceptKind));
@@ -1963,10 +2001,26 @@ class PiWebAgentApp extends HTMLElement {
       session: this.selectedSession,
       expanded,
       suggestion: this.metadataSuggestion,
+      draft: this.metadataSuggestionDraft,
       error: this.metadataSuggestionError,
       metadataGenerating: this.metadataGenerating,
       status: this.status,
+      showSuggestion: !this.mobileLayout,
     });
+  }
+
+  private renderMobileMetadataSuggestion(): string {
+    if (!this.mobileLayout || !this.selectedSession || (!this.metadataSuggestion && !this.metadataSuggestionError && !this.metadataGenerating)) return "";
+    return `<div class="metadata-mobile-sheet" role="dialog" aria-label="Session title and summary suggestion">
+      ${renderMetadataSuggestionHtml({
+        suggestion: this.metadataSuggestion,
+        draft: this.metadataSuggestionDraft,
+        error: this.metadataSuggestionError,
+        metadataGenerating: this.metadataGenerating,
+        status: this.status,
+        variant: "sheet",
+      })}
+    </div>`;
   }
 
   private patchAutocompleteSelection(kind: "command" | "file"): void {
@@ -2771,6 +2825,7 @@ class PiWebAgentApp extends HTMLElement {
         </footer>
       </main>
       ${this.mobileLayout ? "" : this.renderRightPanel()}
+      ${this.renderMobileMetadataSuggestion()}
       ${this.renderTreeDrawer()}
     `;
     this.forceFullRender = false;

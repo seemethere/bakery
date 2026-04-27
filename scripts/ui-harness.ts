@@ -429,7 +429,22 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.prompt && layout.controls && layout.prompt.bottom > layout.controls.top) {
     throw new Error(`Mobile controls overlap prompt: prompt bottom ${layout.prompt.bottom}px, controls top ${layout.controls.top}px`);
   }
-  return { ...(await collectMetrics(page)), layout };
+
+  await sendPromptAndWaitIdle(page, "Improve mobile title and summary generation controls.");
+  await page.locator("#generateMetadata").click();
+  await page.locator(".metadata-mobile-sheet #metadataSuggestionTitle").waitFor({ timeout: 5_000 });
+  const sheet = await page.evaluate(() => {
+    const element = document.querySelector(".metadata-mobile-sheet");
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportHeight: window.innerHeight };
+  });
+  if (!sheet || sheet.bottom > sheet.viewportHeight + 1 || sheet.width < 300) throw new Error(`Mobile metadata sheet should be visible and contained: ${JSON.stringify(sheet)}`);
+  await page.locator(".metadata-mobile-sheet #metadataSuggestionTitle").fill("Mobile metadata smoke");
+  await page.locator('.metadata-mobile-sheet [data-accept-metadata="title"]', { hasText: "✓" }).click();
+  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Mobile metadata smoke", null, { timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "mobile-metadata-sheet.png"), fullPage: true });
+  return { ...(await collectMetrics(page)), layout, metadataSheet: sheet };
 }
 
 async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
@@ -592,10 +607,11 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
   await sendPromptAndWaitIdle(page, "Improve session summaries and title generation with dedicated harness coverage.");
   await page.locator("#generateMetadata").click();
   await page.locator(".metadata-suggestion", { hasText: "Suggested title" }).waitFor({ timeout: 5_000 });
-  await page.locator(".metadata-suggestion", { hasText: "Title:" }).waitFor({ timeout: 5_000 });
+  await page.locator("#metadataSuggestionTitle").waitFor({ timeout: 5_000 });
   await page.locator("#regenerateMetadata", { hasText: "Regenerate" }).waitFor({ timeout: 5_000 });
-  if (await page.locator(".metadata-suggestion", { hasText: "Summary:" }).count()) throw new Error("Heuristic metadata should not present fake summaries.");
-  await page.locator('[data-accept-metadata="title"]', { hasText: "Apply title" }).click();
+  if (await page.locator("#metadataSuggestionSummary").count()) throw new Error("Heuristic metadata should not present fake summaries.");
+  await page.locator("#metadataSuggestionTitle").fill("Improve summaries metadata smoke");
+  await page.locator('[data-accept-metadata="title"]', { hasText: "✓" }).click();
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value.includes("summaries"), null, { timeout: 5_000 });
 
   const sessionId = await page.locator(".session-card.active").getAttribute("data-session-id");

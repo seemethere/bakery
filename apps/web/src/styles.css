@@ -2657,6 +2657,66 @@ pre {
   margin: 4px 0;
 }
 
+.metadata-suggestion-muted {
+  color: var(--color-text-secondary);
+}
+
+.metadata-field {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.metadata-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.metadata-field-row textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.metadata-field-row input,
+.metadata-field-row textarea {
+  width: 100%;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.metadata-field-actions {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 6px;
+}
+
+.metadata-field-action {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.metadata-field-action.accept {
+  color: var(--c-b7f7c7);
+}
+
+.metadata-field-action.dismiss {
+  color: var(--c-ffb4b4);
+}
+
 .metadata-error {
   color: var(--c-ffb4b4);
   border-color: rgba(248, 113, 113, 0.35);
@@ -2673,6 +2733,22 @@ pre {
 .metadata-suggestion-actions button {
   padding: 4px 8px;
   font-size: 12px;
+}
+
+.metadata-mobile-sheet {
+  position: fixed;
+  right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  left: max(10px, env(safe-area-inset-left, 0px));
+  z-index: 45;
+  max-height: min(72dvh, 460px);
+  overflow: auto;
+  border-radius: 16px;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.58);
+}
+
+.metadata-suggestion-sheet-card {
+  border-radius: 16px;
 }
 
 .app-settings {
@@ -2701,7 +2777,7 @@ pre {
 
   .session-summary-body,
   .metadata-suggestion {
-    max-height: 120px;
+    max-height: 160px;
     overflow: auto;
   }
 }
@@ -2806,6 +2882,18 @@ pre {
   .metadata-generate-button {
     width: 24px;
     height: 24px;
+  }
+
+  .metadata-mobile-sheet .metadata-suggestion {
+    max-height: none;
+  }
+
+  .metadata-mobile-sheet .metadata-field-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .metadata-mobile-sheet .metadata-suggestion-actions {
+    justify-content: flex-end;
   }
 
   .header-status {

@@ -3,6 +3,11 @@ import { escapeHtml, pathBasename, pathParent } from "./utils";
 
 export type MetadataAcceptKind = "both" | "title" | "summary";
 
+export type MetadataSuggestionDraft = {
+  title: string;
+  summary: string;
+};
+
 export function cleanTitleInput(value: string): string {
   return value.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 }
@@ -64,44 +69,80 @@ export function sessionSnippet(session: WebSession): string {
   return session.summary?.trim() || (session.lastUserPrompt ? compactWorkflowLaunchSummary(session.lastUserPrompt) ?? session.lastUserPrompt.trim() : "") || "No prompt yet";
 }
 
-export function metadataPatchForSuggestion(kind: MetadataAcceptKind, suggestion: SessionMetadataSuggestion): Record<string, string> {
+export function metadataPatchForSuggestion(kind: MetadataAcceptKind, draft: MetadataSuggestionDraft): Record<string, string> {
   const body: Record<string, string> = {};
-  if ((kind === "both" || kind === "title") && suggestion.title) body.title = suggestion.title;
-  if ((kind === "both" || kind === "summary") && suggestion.summary) body.summary = suggestion.summary;
+  const title = cleanTitleInput(draft.title);
+  const summary = draft.summary.replace(/\s+/g, " ").trim().slice(0, 600);
+  if ((kind === "both" || kind === "title") && title) body.title = title;
+  if ((kind === "both" || kind === "summary") && summary) body.summary = summary;
   return body;
+}
+
+export function renderMetadataSuggestion(options: {
+  suggestion: SessionMetadataSuggestion | null;
+  draft: MetadataSuggestionDraft;
+  error: string;
+  metadataGenerating: boolean;
+  status: string;
+  variant?: "inline" | "sheet";
+}): string {
+  const { suggestion, draft, error, metadataGenerating, status, variant = "inline" } = options;
+  if (!suggestion && !error && !metadataGenerating) return "";
+  const titleValue = draft.title || suggestion?.title || "";
+  const summaryValue = draft.summary || suggestion?.summary || "";
+  const disabled = metadataGenerating || status === "running";
+  const card = suggestion || metadataGenerating ? `
+      <div class="metadata-suggestion ${variant === "sheet" ? "metadata-suggestion-sheet-card" : ""}">
+        <div class="metadata-suggestion-header">
+          <strong>${metadataGenerating ? "Generating title & summary…" : "Suggested title & summary"}</strong>
+          ${suggestion?.reason ? `<span>${escapeHtml(suggestion.reason)}</span>` : ""}
+        </div>
+        ${metadataGenerating ? `<p class="metadata-suggestion-muted">Asking the configured metadata model. This stays outside the transcript.</p>` : ""}
+        ${suggestion?.title ? `
+          <label class="metadata-field">Title
+            <span class="metadata-field-row">
+              <input id="metadataSuggestionTitle" value="${escapeHtml(titleValue)}" maxlength="120" />
+              <button data-accept-metadata="title" class="metadata-field-action accept" title="Apply title" aria-label="Apply suggested title" ${disabled || !titleValue.trim() ? "disabled" : ""}>✓</button>
+              <button data-dismiss-metadata="title" class="metadata-field-action dismiss" title="Discard title suggestion" aria-label="Discard title suggestion">×</button>
+            </span>
+          </label>` : ""}
+        ${suggestion?.summary ? `
+          <label class="metadata-field">Summary
+            <span class="metadata-field-row">
+              <textarea id="metadataSuggestionSummary" rows="3" maxlength="600">${escapeHtml(summaryValue)}</textarea>
+              <span class="metadata-field-actions">
+                <button data-accept-metadata="summary" class="metadata-field-action accept" title="Apply summary" aria-label="Apply suggested summary" ${disabled || !summaryValue.trim() ? "disabled" : ""}>✓</button>
+                <button data-dismiss-metadata="summary" class="metadata-field-action dismiss" title="Discard summary suggestion" aria-label="Discard summary suggestion">×</button>
+              </span>
+            </span>
+          </label>` : ""}
+        <div class="metadata-suggestion-actions">
+          ${suggestion?.title && suggestion?.summary ? `<button data-accept-metadata="both" ${disabled || (!titleValue.trim() && !summaryValue.trim()) ? "disabled" : ""}>Apply both</button>` : ""}
+          <button id="regenerateMetadata" type="button" ${disabled ? "disabled" : ""}>Regenerate</button>
+          <button id="dismissMetadataSuggestion" type="button">Dismiss</button>
+        </div>
+      </div>` : "";
+  const errorBlock = error ? `<p class="metadata-suggestion metadata-error">${escapeHtml(error)}</p>` : "";
+  return `${card}${errorBlock}`;
 }
 
 export function renderSessionSummary(options: {
   session: WebSession;
   expanded: boolean;
   suggestion: SessionMetadataSuggestion | null;
+  draft: MetadataSuggestionDraft;
   error: string;
   metadataGenerating: boolean;
   status: string;
+  showSuggestion: boolean;
 }): string {
-  const { session, expanded, suggestion, error, metadataGenerating, status } = options;
+  const { session, expanded, suggestion, draft, error, metadataGenerating, status, showSuggestion } = options;
   const summary = session.summary?.trim();
   const sourceHint = `Title: ${session.titleSource}; summary: ${session.summarySource}`;
   const summaryBlock = summary ? `
       <button id="toggleSessionSummary" class="session-summary-toggle" type="button" title="${escapeHtml(sourceHint)}">${expanded ? "▾" : "▸"} Summary${expanded ? "" : ` — ${escapeHtml(summary.slice(0, 120))}${summary.length > 120 ? "…" : ""}`}</button>
       ${expanded ? `<p class="session-summary-body">${escapeHtml(summary)}</p>` : ""}
     ` : `<span class="session-summary-empty" title="${escapeHtml(sourceHint)}">No summary yet.</span>`;
-  const suggestionBlock = suggestion ? `
-      <div class="metadata-suggestion">
-        <div class="metadata-suggestion-header">
-          <strong>Suggested title${suggestion.summary ? " & summary" : ""}</strong>
-          ${suggestion.reason ? `<span>${escapeHtml(suggestion.reason)}</span>` : ""}
-        </div>
-        ${suggestion.title ? `<p><b>Title:</b> ${escapeHtml(suggestion.title)}</p>` : ""}
-        ${suggestion.summary ? `<p><b>Summary:</b> ${escapeHtml(suggestion.summary)}</p>` : ""}
-        <div class="metadata-suggestion-actions">
-          ${suggestion.title && suggestion.summary ? `<button data-accept-metadata="both">Apply title & summary</button>` : ""}
-          ${suggestion.title ? `<button data-accept-metadata="title">Apply title</button>` : ""}
-          ${suggestion.summary ? `<button data-accept-metadata="summary">Apply summary</button>` : ""}
-          <button id="regenerateMetadata" type="button" ${metadataGenerating || status === "running" ? "disabled" : ""}>Regenerate</button>
-          <button id="dismissMetadataSuggestion" type="button">Dismiss</button>
-        </div>
-      </div>` : "";
-  const errorBlock = error ? `<p class="metadata-suggestion metadata-error">${escapeHtml(error)}</p>` : "";
-  return `<div class="session-summary">${summaryBlock}${suggestionBlock}${errorBlock}</div>`;
+  const suggestionBlock = showSuggestion ? renderMetadataSuggestion({ suggestion, draft, error, metadataGenerating, status }) : "";
+  return `<div class="session-summary">${summaryBlock}${suggestionBlock}</div>`;
 }
