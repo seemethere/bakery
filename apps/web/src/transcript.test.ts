@@ -56,6 +56,29 @@ describe("transcript image rendering", () => {
     expect(html).toContain('src="raw:test-results/ui-harness/run/final.png"');
   });
 
+  test("does not duplicate prompt attachment previews with generated artifact cards", () => {
+    const item: TranscriptItem = {
+      id: "user-image",
+      kind: "user",
+      title: "You",
+      body: "Screenshot artifact: .bakery/artifacts/2026-04-27T21-27-49-984Z-image.png",
+      segments: [
+        { kind: "markdown", text: "Screenshot artifact: .bakery/artifacts/2026-04-27T21-27-49-984Z-image.png" },
+        { kind: "image", label: "[image: image/png]", src: "data:image/png;base64,abc=" },
+      ],
+      status: "done",
+    };
+
+    const html = renderTranscriptSegments(item, false, {
+      localImageUrl: (path) => `raw:${path}`,
+    });
+
+    expect(html).toContain('class="inline-image rendered-image"');
+    expect(html).toContain('src="data:image/png;base64,abc="');
+    expect(html).not.toContain("artifact-image-grid");
+    expect(html).not.toContain('src="raw:.bakery/artifacts/2026-04-27T21-27-49-984Z-image.png"');
+  });
+
   test("rewrites file URL markdown images through the local image resolver", () => {
     const item: TranscriptItem = {
       id: "assistant-file-image",

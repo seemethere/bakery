@@ -119,6 +119,17 @@ function markdownLocalImagePaths(text: string, localImageUrl?: RenderContext["lo
   return paths;
 }
 
+function promptAttachmentArtifactPaths(text: string, localImageUrl?: RenderContext["localImageUrl"]): Set<string> {
+  const paths = new Set<string>();
+  if (!localImageUrl) return paths;
+  for (const match of text.matchAll(/^\s*Screenshot artifact:\s*(\S+\.(?:png|jpe?g|gif|webp|svg))\s*$/gim)) {
+    const path = match[1]?.replace(/^\.\//, "");
+    if (!path || !localImageUrl(path)) continue;
+    paths.add(path);
+  }
+  return paths;
+}
+
 function mergeSuppressedPaths(...sets: Array<Set<string> | undefined>): Set<string> | undefined {
   const merged = new Set<string>();
   for (const set of sets) for (const value of set ?? []) merged.add(value);
@@ -416,7 +427,8 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
       if (segment.kind === "markdown") {
         if (usePlainStreamingText) return `<div class="markdown-body streaming-plain"><pre>${escapeHtml(segment.text)}</pre></div>`;
         const markdownImagePaths = markdownLocalImagePaths(segment.text, context.localImageUrl);
-        const suppressedPaths = mergeSuppressedPaths(context.suppressLocalImageArtifactPaths, markdownImagePaths);
+        const attachedImageArtifactPaths = item.kind === "user" && itemHasRenderedImage(item) ? promptAttachmentArtifactPaths(segment.text, context.localImageUrl) : undefined;
+        const suppressedPaths = mergeSuppressedPaths(context.suppressLocalImageArtifactPaths, markdownImagePaths, attachedImageArtifactPaths);
         return `<div class="markdown-body">${renderMarkdown(segment.text, context.localImageUrl)}${renderLocalImageArtifacts(segment.text, context.localImageUrl, suppressedPaths)}</div>`;
       }
       if (segment.kind === "thinking") {

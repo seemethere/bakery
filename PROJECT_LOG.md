@@ -131,6 +131,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed queued follow-up consistency during active runs: follow-up chips that leave the backend/pi queue now remain as dashed `Sending…` pending-transcript chips until the matching user transcript row appears, then the queue DOM is patched away immediately without requiring a full app render. The queued-follow-up fake-agent harness now simulates queue removal before transcript confirmation while also asserting the composer clears immediately, pending UI remains during the gap, and edit/cancel/overflow flows still work. Follow-ups removed the redundant `Session menu hidden/open` notice banner when toggling the hamburger/sidebar; the control itself communicates the state, and made the queued-message section an inline non-overlay panel that defaults collapsed on mobile so it no longer covers chat content.
 - Tuned iteration telemetry for the latest 5-session review: `bun run report:iteration --session-context` and `--session-history` now print a `Rerun opportunity` block with repeated validation counts, repeated failed focused-harness counts, and a conservative avoidable-rerun target. Focused failed `ui-harness:*` loops now get stronger guidance to inspect the latest artifact directory/logs, patch one cause, and rerun only that scenario; the iteration-observability skill mirrors that stop/inspect/patch/rerun discipline.
 - Fixed sidebar recency ordering when a session is reopened after its last transcript activity: WebSocket/session opens now touch `lastOpenedAt`, the sidebar sorts by the newer of `lastOpenedAt` and `lastActivityAt`, and cards display the same newest recency value so recently accessed sessions jump above older active sessions.
+- Fixed duplicate pasted/attached screenshot previews in user transcript rows: the prompt image data URL still renders as the primary inline preview, while the generated `Screenshot artifact: .bakery/artifacts/...` helper path no longer adds a second artifact-card preview for the same prompt attachment.
 
 ## How to run
 
@@ -160,7 +161,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/session-sidebar.ts apps/web/src/session-sidebar.test.ts apps/server/src/index.ts` selected focused-first validation (`bun run check`, `bun scripts/ui-harness.ts --scenario reconnect-controller`, `controller-handoff-edges`, `backend-restart`, `slash-commands`) with full `bun run test:web-perf` skipped by default. `bun run check`, `bun test apps/web/src/session-sidebar.test.ts`, and all four focused harness scenarios passed for the sidebar recency/touch-on-open fix.
+Latest: `bun run report:iteration --recommend apps/web/src/transcript.ts apps/web/src/transcript.test.ts` selected focused-first validation (`bun run check`) with full `bun run test:web-perf` skipped by default. `bun test apps/web/src/transcript.test.ts` and `bun run check` passed for the duplicate prompt screenshot preview fix.
 
 ## Next priorities
 
