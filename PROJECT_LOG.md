@@ -107,17 +107,18 @@ Latest: `bun run check`, focused `bun scripts/ui-harness.ts --scenario question-
 
 ## Next priorities
 
-1. Dogfood the new `ask_question` tool in real model sessions and tune the prompt guidance/schema if the model underuses it or asks multi-part questions; then add a thin `/grill-me` web slash command/prompt wrapper that instructs the agent to use `ask_question` one question at a time with recommendations.
-2. Add follow-up Q&A edge coverage: multi-tab viewer/controller disabled-answer behavior, pending-question abort/dispose copy, keyboard navigation/focus polish, and possibly highlighted recommended options.
-3. Continue the theme/color pass from real-use feedback using `theme-gallery` first: inspect the gallery screenshots for remaining light/dark inconsistencies, then tune selected-row emphasis, tool/activity grouping, tree drawer, and lower-frequency overlays with contrast checks rather than trying to mimic GitHub directly.
-4. Consider adding a lightweight contrast/token audit for core foreground/background pairs now that the visual gallery exists.
-5. Tune session identity/sidebar details: adjust status labels, snippets, auto-collapse behavior, pin-mode copy, and summary preview density if they feel noisy in ongoing use.
-3. Continue attention hierarchy from new real-use feedback: current-action strip, user-input-needed states, selected-row emphasis, and completed activity grouping now have a first pass but may need tuning during real dogfooding.
-4. Fix any real-session lifecycle issues that surface: duplicate snapshots, stale controller state, scroll edge cases, reconnect copy, or retry behavior.
-5. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
-6. Add sanitized real-event playback to complement the deterministic fake runner if real SDK/provider event patterns diverge from fake-agent coverage.
-7. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
-8. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Add a bundled/default-installed skills layer for bakery-owned workflow prompts, starting with `grill-me`: keep `ask_question` as the web-native interaction primitive, define `grill-me` as editable/content-like skill instructions that tell the agent to inspect the codebase when possible and otherwise use `ask_question` one question at a time with recommendations, expose bundled skills through slash-command autocomplete, and implement `/grill-me` as a thin launcher rather than hard-coded bespoke behavior.
+2. Dogfood the new `ask_question` tool in real model sessions and tune the prompt guidance/schema if the model underuses it, asks multi-part questions, or needs stronger linkage from bundled skills to the tool.
+3. Add follow-up Q&A edge coverage: multi-tab viewer/controller disabled-answer behavior, pending-question abort/dispose copy, keyboard navigation/focus polish, and possibly highlighted recommended options.
+4. Continue the theme/color pass from real-use feedback using `theme-gallery` first: inspect the gallery screenshots for remaining light/dark inconsistencies, then tune selected-row emphasis, tool/activity grouping, tree drawer, and lower-frequency overlays with contrast checks rather than trying to mimic GitHub directly.
+5. Consider adding a lightweight contrast/token audit for core foreground/background pairs now that the visual gallery exists.
+6. Tune session identity/sidebar details: adjust status labels, snippets, auto-collapse behavior, pin-mode copy, and summary preview density if they feel noisy in ongoing use.
+7. Continue attention hierarchy from new real-use feedback: current-action strip, user-input-needed states, selected-row emphasis, and completed activity grouping now have a first pass but may need tuning during real dogfooding.
+8. Fix any real-session lifecycle issues that surface: duplicate snapshots, stale controller state, scroll edge cases, reconnect copy, or retry behavior.
+9. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
+10. Add sanitized real-event playback to complement the deterministic fake runner if real SDK/provider event patterns diverge from fake-agent coverage.
+11. Expand branch/tree support beyond basic navigation: add summarize-before-navigation flow, label/bookmark editing, filter/search modes, keyboard navigation, and clearer current-path rendering.
+12. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 
