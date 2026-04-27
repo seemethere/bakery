@@ -395,6 +395,17 @@ function isToolCallOnlyAssistant(item: TranscriptItem): boolean {
   return item.kind === "assistant" && segments !== undefined && segments.length > 0 && segments.every((segment) => segment.kind === "toolCall" || segment.kind === "thinking");
 }
 
+function isRenderableTranscriptItem(item: TranscriptItem): boolean {
+  if (item.kind !== "assistant") return true;
+  if (item.body.trim()) return true;
+  const segments = item.segments ?? [];
+  return segments.some((segment) => {
+    if (segment.kind === "toolCall" || segment.kind === "thinking") return false;
+    if ("text" in segment) return segment.text.trim().length > 0;
+    return Boolean(segment.src || segment.label.trim());
+  });
+}
+
 function toolCallTitlesForItem(item: TranscriptItem): string[] {
   return (item.segments ?? [])
     .filter((segment): segment is Extract<TranscriptSegment, { kind: "toolCall" }> => segment.kind === "toolCall")
@@ -2491,13 +2502,17 @@ class PiWebAgentApp extends HTMLElement {
     const parts: string[] = [];
     for (let index = 0; index < this.transcript.length;) {
       const item = this.transcript[index]!;
+      if (!isRenderableTranscriptItem(item)) {
+        index++;
+        continue;
+      }
       if (!this.isGroupableToolItem(item)) {
         parts.push(this.renderTranscriptItemShell(item));
         index++;
         continue;
       }
       const group: TranscriptItem[] = [];
-      while (index < this.transcript.length && this.isGroupableToolItem(this.transcript[index]!)) {
+      while (index < this.transcript.length && isRenderableTranscriptItem(this.transcript[index]!) && this.isGroupableToolItem(this.transcript[index]!)) {
         group.push(this.transcript[index]!);
         index++;
       }
