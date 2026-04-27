@@ -694,6 +694,17 @@ async function runBackendRestart(page: Page, runtime: { restartServer: () => Pro
   return collectMetrics(page);
 }
 
+async function runConnectionDisconnected(page: Page, runtime: { stopServer: () => Promise<void> }): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const draft = `draft while backend is down ${Date.now()}`;
+  await page.locator("#prompt").fill(draft);
+  await runtime.stopServer();
+  await page.locator(".connection-banner").filter({ hasText: /reconnecting|disconnected|retry/i }).waitFor({ timeout: 8_000 });
+  await page.waitForFunction((expected) => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === expected, draft);
+  await page.screenshot({ path: join(artifactDir, "connection-disconnected.png"), fullPage: true });
+  return collectMetrics(page);
+}
+
 async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 760, height: 900 });
   await prepareSession(page);
@@ -875,7 +886,7 @@ function assertPerfThresholds(name: string, metrics: Record<string, unknown>): v
   if (failures.length > 0) throw new Error(`Performance thresholds exceeded in ${name}: ${failures.join("; ")}`);
 }
 
-async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void> }): Promise<Record<string, unknown>> {
+async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void>; stopServer: () => Promise<void> }): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
@@ -890,6 +901,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "controller-handoff-edges") return runControllerHandoffEdges(page, browser);
   if (name === "reconnect-draft") return runReconnectDraft(page);
   if (name === "backend-restart") return runBackendRestart(page, runtime);
+  if (name === "connection-disconnected") return runConnectionDisconnected(page, runtime);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
   if (name === "tool-grouping") return runToolGrouping(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
@@ -951,6 +963,10 @@ async function main(): Promise<void> {
       await delay(900);
       server = startServer();
       await waitForUrl(`${apiBase}/healthz`, "restarted server", 20_000);
+    },
+    stopServer: async () => {
+      stopProcessTree(server);
+      await delay(900);
     },
   };
 
