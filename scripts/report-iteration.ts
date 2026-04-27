@@ -589,9 +589,9 @@ const validationRules: ValidationRule[] = [
   },
   {
     name: "iteration-reporting",
-    matches: ["scripts/report-iteration.ts"],
-    commands: ["bun run report:iteration", "bun run check"],
-    reason: "Iteration-reporting changes are script-only and can usually avoid browser harness runs.",
+    matches: ["scripts/report-iteration.ts", "scripts/project-notes.ts"],
+    commands: ["bun run report:iteration", "bun run project:notes", "bun run check"],
+    reason: "Iteration/project-notes reporting changes are script-only and can usually avoid browser harness runs.",
   },
   {
     name: "project-notes",

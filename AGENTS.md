@@ -5,8 +5,14 @@ Before making changes in this repository, read:
 1. `DESIGN.md`
 2. `PROJECT_LOG.md`
 
+Prefer the compact notes command first to avoid pulling long verification history into context:
+
+```bash
+bun run project:notes
+```
+
 Use `DESIGN.md` for the target architecture, scope, and feature checklist.
-Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verification commands, and next priorities.
+Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verification commands, and next priorities. When more detail is needed, use `rg -n` and targeted `read` offsets instead of broad reads of the long log.
 
 ## During implementation
 
@@ -20,7 +26,7 @@ Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verificati
 
 When the operator asks "what's next?" or asks to continue planning:
 
-1. Re-read `PROJECT_LOG.md`, especially `Current status`, `Verification`, and `Next priorities`.
+1. Run `bun run project:notes` first, then re-read targeted `PROJECT_LOG.md` ranges only if the compact summary is insufficient, especially around `Current status`, `Verification`, and `Next priorities`.
 2. If the question involves iteration efficiency, agent behavior, validation choice, or action/tool-call optimization, run `bun run report:iteration --agent-actions --recommend` and use its output as evidence.
 3. Summarize the top 1-3 candidate next slices in priority order, including why each is next.
 4. Recommend one small vertical slice as the default next action.
