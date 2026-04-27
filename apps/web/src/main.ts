@@ -2282,9 +2282,16 @@ class PiWebAgentApp extends HTMLElement {
     const banner = this.querySelector<HTMLElement>(".connection-banner");
     if (!banner) return;
     banner.className = `connection-banner ${this.connectionState}`;
-    banner.innerHTML = `
-      <strong>${escapeHtml(this.connectionState.replace("_", " "))}</strong>
-      <span>${escapeHtml(this.connectionMessage)}</span>
+    banner.innerHTML = this.renderConnectionBannerContent();
+  }
+
+  private renderConnectionBannerContent(): string {
+    const stateLabel = this.connectionState.replace("_", " ");
+    const message = this.connectionMessage.trim();
+    const showMessage = message.length > 0 && message.toLowerCase() !== `${stateLabel}.`;
+    return `
+      <strong>${escapeHtml(stateLabel)}</strong>
+      ${showMessage ? `<span>${escapeHtml(message)}</span>` : ""}
       ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
       ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
   }
@@ -2477,12 +2484,7 @@ class PiWebAgentApp extends HTMLElement {
             <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
           </div>
         </header>
-        <div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">
-          <strong>${escapeHtml(this.connectionState.replace("_", " "))}</strong>
-          <span>${escapeHtml(this.connectionMessage)}</span>
-          ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
-          ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}
-        </div>
+        <div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">${this.renderConnectionBannerContent()}</div>
         ${this.renderAttentionNeeded()}
         <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""}">
           <section class="transcript">${this.renderTranscript()}</section>
