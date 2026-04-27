@@ -31,6 +31,7 @@ type RenderContext = {
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork";
 type ToolGroupPosition = "single" | "start" | "middle" | "end";
+type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 
 type FileAutocompleteState = {
   active: boolean;
@@ -84,6 +85,31 @@ declare global {
     __piWebPerf?: BrowserPerfMetrics;
   }
 }
+
+const themeStorageKey = "piWebThemePreference";
+const themeMediaQuery = "(prefers-color-scheme: light)";
+
+function isThemePreference(value: string | null): value is ThemePreference {
+  return value === "system" || value === "workbench-dark" || value === "workbench-light";
+}
+
+function storedThemePreference(): ThemePreference {
+  const value = localStorage.getItem(themeStorageKey);
+  return isThemePreference(value) ? value : "system";
+}
+
+function resolveThemePreference(preference: ThemePreference): "workbench-dark" | "workbench-light" {
+  if (preference === "system") return window.matchMedia(themeMediaQuery).matches ? "workbench-light" : "workbench-dark";
+  return preference;
+}
+
+function applyThemePreference(preference: ThemePreference): void {
+  const resolved = resolveThemePreference(preference);
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.style.colorScheme = resolved === "workbench-light" ? "light" : "dark";
+}
+
+applyThemePreference(storedThemePreference());
 
 function recordPerfSample(kind: "render" | "patch" | "rowUpdate", ms: number): void {
   const perf = window.__piWebPerf ??= { renderCount: 0, renderMs: [], patchCount: 0, patchMs: [], rowUpdateCount: 0, rowUpdateMs: [] };
@@ -673,6 +699,7 @@ class PiWebAgentApp extends HTMLElement {
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
+  private themePreference: ThemePreference = storedThemePreference();
   private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
   private sessionSidebarPinned = localStorage.getItem("piWebSessionSidebarPinned") === "true";
   private showOlderSessions = localStorage.getItem("piWebShowOlderSessions") === "true";
@@ -704,6 +731,10 @@ class PiWebAgentApp extends HTMLElement {
   private dirtyTranscriptIds = new Set<string>();
   private focusPromptOnNextReadyRender = false;
   private renderedSegmentCache = new Map<string, string>();
+  private readonly themeMedia = window.matchMedia(themeMediaQuery);
+  private readonly themeMediaHandler = () => {
+    if (this.themePreference === "system") applyThemePreference(this.themePreference);
+  };
   private readonly beforeUnloadHandler = () => {
     if (this.promptDraftSaveTimer) {
       clearTimeout(this.promptDraftSaveTimer);
@@ -714,13 +745,16 @@ class PiWebAgentApp extends HTMLElement {
   };
 
   connectedCallback(): void {
+    applyThemePreference(this.themePreference);
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.render();
     void this.refresh();
   }
 
   disconnectedCallback(): void {
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.persistAttachmentWarningIfNeeded();
     if (this.renderTimer) clearTimeout(this.renderTimer);
     if (this.promptDraftSaveTimer) clearTimeout(this.promptDraftSaveTimer);
@@ -1705,6 +1739,13 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private bindEvents(): void {
+    this.querySelector<HTMLSelectElement>("#themePreference")?.addEventListener("change", (event) => {
+      const value = (event.currentTarget as HTMLSelectElement).value;
+      this.themePreference = isThemePreference(value) ? value : "system";
+      localStorage.setItem(themeStorageKey, this.themePreference);
+      applyThemePreference(this.themePreference);
+      this.render();
+    });
     this.querySelector<HTMLButtonElement>("#saveSettings")?.addEventListener("click", () => {
       const apiBase = this.querySelector<HTMLInputElement>("#apiBase")?.value.trim();
       const token = this.querySelector<HTMLInputElement>("#token")?.value.trim() ?? "";
@@ -2726,6 +2767,13 @@ class PiWebAgentApp extends HTMLElement {
         ` : `
           <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
           <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
+          <label>Theme
+            <select id="themePreference">
+              <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
+              <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
+              <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
+            </select>
+          </label>
           <button id="saveSettings">Save / Refresh</button>
           ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
           ${this.renderAppSettings()}

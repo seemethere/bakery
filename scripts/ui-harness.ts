@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
+  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -163,6 +163,23 @@ async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+}
+
+async function runThemes(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please produce a short themed transcript with a tool for visual validation.");
+  await page.locator("#themePreference").selectOption("workbench-dark");
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-dark");
+  const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.screenshot({ path: join(artifactDir, "theme-workbench-dark.png"), fullPage: true });
+  await page.locator("#themePreference").selectOption("workbench-light");
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-light");
+  const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  if (darkBackground === lightBackground) throw new Error(`Theme background did not change; saw ${darkBackground}`);
+  await page.screenshot({ path: join(artifactDir, "theme-workbench-light.png"), fullPage: true });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-light");
+  return { darkBackground, lightBackground, ...(await collectMetrics(page)) };
 }
 
 async function runContextUsage(page: Page): Promise<Record<string, unknown>> {
@@ -698,6 +715,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "artifact-path-formats") return runArtifactPathFormats(page);
   if (name === "model-thinking") return runModelThinking(page);
   if (name === "context-usage") return runContextUsage(page);
+  if (name === "themes") return runThemes(page);
   throw new Error(`Unknown scenario: ${name}`);
 }
 
