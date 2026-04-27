@@ -1068,6 +1068,31 @@ textarea {
   font-size: 12px;
 }
 
+.image-debug {
+  border: 1px solid var(--c-343b49);
+  border-radius: 8px;
+  background: var(--c-10131a);
+  color: var(--c-aab2c0);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.image-debug summary {
+  cursor: pointer;
+  color: var(--c-d7dcea);
+  font-weight: 600;
+}
+
+.image-debug pre {
+  margin: 8px 0 0;
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
 .connection-banner {
   grid-row: 2;
   display: flex;

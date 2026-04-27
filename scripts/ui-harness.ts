@@ -827,6 +827,8 @@ async function runImageAttachments(page: Page): Promise<Record<string, unknown>>
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
   await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
+  await page.locator(".image-debug", { hasText: "paperclip click received" }).waitFor({ timeout: 5_000 });
+  await page.locator(".image-debug", { hasText: "transient input change fired" }).waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });

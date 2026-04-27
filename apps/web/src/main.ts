@@ -140,6 +140,7 @@ class PiWebAgentApp extends HTMLElement {
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private imageDropMode: ImageDropMode = (localStorage.getItem("piWebImageDropMode") === "artifact" ? "artifact" : "prompt");
+  private imageDebugLog: string[] = [];
   private runningQueue: RunningQueueState = { steering: [], followUp: [] };
   private runningQueueExpanded = false;
   private reconnectAttempt = 0;
@@ -184,7 +185,20 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.imagePickerActive) return;
     window.setTimeout(() => { this.imagePickerActive = false; }, 500);
   };
+  private traceImageDebug(message: string, render = false): void {
+    const line = `${new Date().toLocaleTimeString()} ${message}`;
+    this.imageDebugLog = [...this.imageDebugLog.slice(-11), line];
+    console.debug("[bakery image]", message);
+    if (render) this.render();
+  }
+
+  private describeFiles(files: File[]): string {
+    if (files.length === 0) return "no files";
+    return files.map((file) => `${file.name || "unnamed"} ${file.type || "unknown-type"} ${file.size} bytes`).join("; ");
+  }
+
   private openImagePicker(): void {
+    this.traceImageDebug("paperclip click received; creating transient file input");
     this.imagePickerActive = true;
     const input = document.createElement("input");
     input.type = "file";
@@ -196,6 +210,7 @@ class PiWebAgentApp extends HTMLElement {
     input.addEventListener("change", () => {
       this.imagePickerActive = false;
       const files = Array.from(input.files ?? []);
+      this.traceImageDebug(`transient input change fired: ${this.describeFiles(files)}`);
       this.notice = files.length > 0
         ? `Selected ${files.length} image file${files.length === 1 ? "" : "s"}: ${files.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`
         : "File picker returned no files.";
@@ -204,7 +219,9 @@ class PiWebAgentApp extends HTMLElement {
       input.remove();
     }, { once: true });
     document.body.append(input);
+    this.traceImageDebug("transient input appended; calling input.click()");
     input.click();
+    this.render();
   }
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
@@ -1089,6 +1106,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private async handleImageFiles(files: FileList | File[]): Promise<void> {
     const stableFiles = Array.from(files);
+    this.traceImageDebug(`handleImageFiles started: ${this.describeFiles(stableFiles)}`);
     this.notice = `Processing ${stableFiles.length} selected file${stableFiles.length === 1 ? "" : "s"}…`;
     this.render();
     if (stableFiles.length === 0) {
@@ -1098,6 +1116,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     try {
       const attachedCount = await this.addPromptImageFiles(stableFiles, { quiet: this.imageDropMode === "artifact" });
+      this.traceImageDebug(`prompt attachment step finished: added ${attachedCount}`);
       if (attachedCount === 0) {
         this.notice = `No supported image files found. Supported: PNG, JPEG, GIF, WebP. Saw: ${stableFiles.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`;
         this.render();
@@ -1105,13 +1124,17 @@ class PiWebAgentApp extends HTMLElement {
       }
       if (this.imageDropMode === "artifact") {
         try {
+          this.traceImageDebug("artifact upload step starting");
           await this.uploadImageArtifacts(stableFiles);
+          this.traceImageDebug("artifact upload step finished");
         } catch (error) {
+          this.traceImageDebug(`artifact upload failed: ${error instanceof Error ? error.message : String(error)}`);
           this.notice = `Attached image to prompt, but artifact preview upload failed: ${error instanceof Error ? error.message : String(error)}`;
           this.render();
         }
       }
     } catch (error) {
+      this.traceImageDebug(`handleImageFiles failed: ${error instanceof Error ? error.message : String(error)}`);
       this.notice = `Could not attach image: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
     }
@@ -1194,6 +1217,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<number> {
     const incoming = Array.from(files).filter((file) => this.isSupportedImageFile(file));
+    this.traceImageDebug(`supported image filter: ${incoming.length}/${Array.from(files).length}`);
     if (incoming.length === 0) return 0;
     const added: PromptImage[] = [];
     for (const file of incoming) {
@@ -1210,6 +1234,7 @@ class PiWebAgentApp extends HTMLElement {
         this.notice = `${file.name} is larger than 8 MB.`;
         continue;
       }
+      this.traceImageDebug(`reading ${file.name || "unnamed"} as data URL`);
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
@@ -1217,9 +1242,11 @@ class PiWebAgentApp extends HTMLElement {
         reader.readAsDataURL(file);
       });
       added.push({ id: crypto.randomUUID(), name: file.name || "pasted-image", mimeType, dataUrl, size: file.size });
+      this.traceImageDebug(`read complete for ${file.name || "unnamed"}`);
     }
     if (added.length > 0) {
       this.promptImages = [...this.promptImages, ...added];
+      this.traceImageDebug(`promptImages now ${this.promptImages.length}`);
       if (!options.quiet) this.notice = "Image attachments are ready for this prompt only and are not preserved across page refreshes.";
     }
     if (options.render !== false) this.render();
@@ -1724,7 +1751,9 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLInputElement>("#imageInput")?.addEventListener("change", (event) => {
       const input = event.currentTarget as HTMLInputElement;
-      void this.handleImageFiles(Array.from(input.files ?? []));
+      const files = Array.from(input.files ?? []);
+      this.traceImageDebug(`template input change fired: ${this.describeFiles(files)}`, true);
+      void this.handleImageFiles(files);
       input.value = "";
     });
     this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.openImagePicker());
@@ -1748,6 +1777,7 @@ class PiWebAgentApp extends HTMLElement {
       const files = event.dataTransfer?.files;
       event.preventDefault();
       (event.currentTarget as HTMLElement).classList.remove("dragging-image");
+      this.traceImageDebug(`drop event: ${files ? this.describeFiles(Array.from(files)) : "no dataTransfer files"}`);
       if (!files || files.length === 0) {
         this.notice = "Drop image files here to attach them to the prompt.";
         this.render();
@@ -1758,6 +1788,7 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("paste", (event) => {
       const files = event.clipboardData?.files;
+      this.traceImageDebug(`paste event: ${files ? this.describeFiles(Array.from(files)) : "no clipboard files"}`);
       if (files && Array.from(files).some((file) => file.type.startsWith("image/"))) void this.handleImageFiles(files);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
@@ -2599,6 +2630,14 @@ class PiWebAgentApp extends HTMLElement {
     }, delayMs);
   }
 
+  private renderImageDebug(): string {
+    if (this.imageDebugLog.length === 0) return "";
+    return `<details class="image-debug" open>
+      <summary>Image debug — copy this if attachments fail</summary>
+      <pre>${escapeHtml(this.imageDebugLog.join("\n"))}</pre>
+    </details>`;
+  }
+
   private renderContextUsageNotice(): string {
     const usage = this.settings?.contextUsage;
     if (!this.selectedSession || !usage) return "";
@@ -2724,6 +2763,7 @@ class PiWebAgentApp extends HTMLElement {
               ${this.renderImageDropMode()}
             </div>
             ${this.renderPromptImages()}
+            ${this.renderImageDebug()}
             <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
             <input id="imageInput" class="hidden-file-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple />
             ${renderCommandAutocomplete(this.commandAutocomplete)}
