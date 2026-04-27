@@ -4,7 +4,7 @@ import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
-type TranscriptKind = "user" | "assistant" | "tool" | "system" | "error";
+type TranscriptKind = "user" | "assistant" | "tool" | "question" | "system" | "error";
 type TranscriptSegment =
   | { kind: "markdown"; text: string }
   | { kind: "thinking"; text: string }
@@ -358,6 +358,30 @@ function toolResultToSegments(result: unknown): TranscriptSegment[] {
   });
 }
 
+function questionSummaryFromTool(item: TranscriptItem): TranscriptItem | null {
+  if (item.kind !== "tool" || item.status !== "done") return null;
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const toolName = String(raw.toolName ?? raw.name ?? "");
+  const result = isRecord(raw.result) ? raw.result : raw;
+  const details = isRecord(result.details) ? result.details : isRecord(raw.details) ? raw.details : null;
+  if (toolName !== "ask_question" && !details?.questionId && !details?.question) return null;
+  if (!details || typeof details.question !== "string") return null;
+  const cancelled = details.cancelled === true;
+  const answer = cancelled ? "Cancelled" : String(details.answer ?? details.optionLabel ?? "").trim();
+  const wasCustom = details.wasCustom === true;
+  const selected = typeof details.selectedIndex === "number" ? `Option ${details.selectedIndex + 1}` : wasCustom ? "Custom answer" : "Answer";
+  const body = [`Q: ${details.question}`, `A: ${answer || "—"}`].join("\n");
+  return {
+    id: `question:${item.id}`,
+    kind: "question",
+    title: cancelled ? "Question cancelled" : `Answered question · ${selected}`,
+    body,
+    segments: [{ kind: "pre", text: body }],
+    status: cancelled ? "error" : "done",
+    raw: { sourceToolId: item.id, details },
+  };
+}
+
 function toolArgsToText(args: unknown): string {
   if (!isRecord(args)) return stringify(args);
   if (Object.keys(args).length === 0) return "";
@@ -446,6 +470,8 @@ function compactSnapshotTranscript(items: TranscriptItem[]): TranscriptItem[] {
     const previous = compacted.at(-1);
     if (previous && mergeDuplicateToolResult(previous, nextItem)) continue;
     compacted.push(nextItem);
+    const questionSummary = questionSummaryFromTool(nextItem);
+    if (questionSummary) compacted.push(questionSummary);
   }
   return compacted;
 }
@@ -1159,7 +1185,7 @@ class PiWebAgentApp extends HTMLElement {
       const id = `tool:${String(event.toolCallId ?? Date.now())}`;
       const existing = this.transcript.find((item) => item.id === id);
       const result = event.result ?? {};
-      this.upsertTranscript({
+      const toolItem: TranscriptItem = {
         id,
         kind: "tool",
         title: existing?.title ?? formatToolTitle(event.toolName, {}),
@@ -1167,7 +1193,10 @@ class PiWebAgentApp extends HTMLElement {
         segments: toolResultToSegments(result),
         status: event.isError ? "error" : "done",
         raw: event,
-      });
+      };
+      this.upsertTranscript(toolItem);
+      const questionSummary = questionSummaryFromTool(toolItem);
+      if (questionSummary) this.upsertTranscript(questionSummary);
       return;
     }
 
