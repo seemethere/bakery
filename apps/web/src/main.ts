@@ -4,6 +4,7 @@ import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, 
 import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { TranscriptFollowController } from "./transcript-follow";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
@@ -121,7 +122,7 @@ class PiWebAgentApp extends HTMLElement {
   private focusTreeOnNextRender = false;
   private scrollTreeCurrentAfterRefresh = false;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
-  private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
+  private readonly transcriptFollow = new TranscriptFollowController();
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private themePreference: ThemePreference = storedThemePreference();
   private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
@@ -133,11 +134,7 @@ class PiWebAgentApp extends HTMLElement {
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
   private transcriptPointerDown: { id: string; x: number; y: number } | null = null;
-  private transcriptUserScrollIntentUntil = 0;
   private pendingToolCallTitles: string[] = [];
-  private transcriptScrollTop = 0;
-  private preserveTranscriptScrollOnce = false;
-  private unreadTranscriptIds = new Set<string>();
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private runningQueue: RunningQueueState = { steering: [], followUp: [] };
@@ -174,6 +171,14 @@ class PiWebAgentApp extends HTMLElement {
   private readonly viewportResizeHandler = () => {
     if (this.autoScroll) this.scheduleTranscriptFollow();
   };
+  private get autoScroll(): boolean {
+    return this.transcriptFollow.autoScroll;
+  }
+
+  private set autoScroll(value: boolean) {
+    this.transcriptFollow.autoScroll = value;
+  }
+
   private readonly beforeUnloadHandler = () => {
     if (this.promptDraftSaveTimer) {
       clearTimeout(this.promptDraftSaveTimer);
@@ -356,7 +361,7 @@ class PiWebAgentApp extends HTMLElement {
     if (previous?.kind === "tool") this.dirtyTranscriptIds.add(previous.id);
     if (next?.kind === "tool") this.dirtyTranscriptIds.add(next.id);
     if (nextItem.kind === "tool" && nextItem.status === "done") this.transcriptStructureDirty = true;
-    if (!this.autoScroll) this.unreadTranscriptIds.add(nextItem.id);
+    this.transcriptFollow.markUnread(nextItem.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(nextItem.id, false);
   }
 
@@ -456,7 +461,6 @@ class PiWebAgentApp extends HTMLElement {
     this.promptImages = [];
     this.runningQueue = { steering: [], followUp: [] };
     this.autoScroll = true;
-    localStorage.setItem("piWebAutoScroll", "true");
     this.controller = null;
     this.settings = null;
     this.pendingQuestion = null;
@@ -465,8 +469,7 @@ class PiWebAgentApp extends HTMLElement {
     this.treeActiveEntryId = "";
     this.focusTreeOnNextRender = false;
     this.scrollTreeCurrentAfterRefresh = false;
-    this.transcriptScrollTop = 0;
-    this.unreadTranscriptIds.clear();
+    this.transcriptFollow.resetToLatest();
     this.selectedTranscriptId = "opened";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
     this.socketGeneration++;
@@ -559,7 +562,7 @@ class PiWebAgentApp extends HTMLElement {
     this.runningQueue = { steering: [], followUp: [] };
     this.pendingToolCallTitles = [];
     if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
-    this.unreadTranscriptIds.clear();
+    this.transcriptFollow.clearUnread();
     this.forceFullRender = true;
     this.dirtyTranscriptIds.clear();
     if (!this.transcript.some((item) => item.id === this.selectedTranscriptId)) this.selectTranscriptItem(this.transcript[this.transcript.length - 1]?.id ?? "", false);
@@ -617,7 +620,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!isRecord(event)) return;
     const type = String(event.type ?? "event");
     const transcript = this.querySelector<HTMLElement>(".transcript");
-    if (this.autoScroll && transcript && !this.isTranscriptNearBottom(transcript)) this.autoScroll = false;
+    this.transcriptFollow.disableFollowIfDetached(transcript);
 
     if (type === "agent_start" || type === "turn_start") {
       this.status = "running";
@@ -712,11 +715,11 @@ class PiWebAgentApp extends HTMLElement {
 
   private selectTranscriptItem(id: string, shouldRender = true): void {
     const transcript = this.querySelector<HTMLElement>(".transcript");
-    if (transcript) this.transcriptScrollTop = transcript.scrollTop;
+    this.transcriptFollow.captureScrollTop(transcript);
     this.selectedTranscriptId = id;
     localStorage.setItem("piWebSelectedTranscriptId", id);
     if (shouldRender) {
-      this.preserveTranscriptScrollOnce = true;
+      this.transcriptFollow.preserveNextSync();
       this.render();
     }
   }
@@ -920,7 +923,7 @@ class PiWebAgentApp extends HTMLElement {
       this.rightPanelCollapsed = false;
       localStorage.setItem("piWebRightPanelTab", action);
       localStorage.setItem("piWebRightPanelCollapsed", "false");
-      this.preserveTranscriptScrollOnce = true;
+      this.transcriptFollow.preserveNextSync();
       this.render();
       return;
     }
@@ -1604,7 +1607,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private markTranscriptUserScrollIntent(): void {
-    this.transcriptUserScrollIntentUntil = Date.now() + 1500;
+    this.transcriptFollow.markUserScrollIntent();
   }
 
   private bindEvents(): void {
@@ -1775,7 +1778,6 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLInputElement>("#autoScroll")?.addEventListener("change", (event) => {
       this.autoScroll = (event.currentTarget as HTMLInputElement).checked;
-      localStorage.setItem("piWebAutoScroll", String(this.autoScroll));
       if (this.autoScroll) this.jumpToLatest();
       else this.render();
     });
@@ -1917,25 +1919,11 @@ class PiWebAgentApp extends HTMLElement {
     transcriptElement?.addEventListener("wheel", () => this.markTranscriptUserScrollIntent(), { passive: true });
     transcriptElement?.addEventListener("touchmove", () => this.markTranscriptUserScrollIntent(), { passive: true });
     transcriptElement?.addEventListener("scroll", (event) => {
-      const transcript = event.currentTarget as HTMLElement;
-      this.transcriptScrollTop = transcript.scrollTop;
-      if (this.isTranscriptNearBottom(transcript)) {
-        if (!this.autoScroll || this.unreadTranscriptIds.size > 0) {
-          this.autoScroll = true;
-          this.unreadTranscriptIds.clear();
-          this.requestRender(80);
-        }
-      } else if (this.autoScroll) {
-        const userInitiatedScroll = Date.now() <= this.transcriptUserScrollIntentUntil || !event.isTrusted;
-        if (!userInitiatedScroll) {
-          this.scheduleTranscriptFollow();
-          return;
-        }
-        this.autoScroll = false;
-        this.requestRender(80);
-      } else {
-        this.patchJumpToLatest();
-      }
+      this.transcriptFollow.handleScroll(event, {
+        requestRender: () => this.requestRender(80),
+        patchJumpToLatest: () => this.patchJumpToLatest(),
+        scheduleFollow: () => this.scheduleTranscriptFollow(),
+      });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -2390,45 +2378,28 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderJumpToLatest(): string {
-    if (this.autoScroll) return "";
-    const count = this.unreadTranscriptIds.size;
-    return `<button id="jumpToLatest" class="jump-to-latest" type="button">Jump to latest${count > 0 ? ` · ${count} update${count === 1 ? "" : "s"}` : ""}</button>`;
+    return this.transcriptFollow.renderJumpToLatest();
   }
 
   private isTranscriptNearBottom(transcript = this.querySelector<HTMLElement>(".transcript")): boolean {
-    if (!transcript) return true;
-    return transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 48;
+    return this.transcriptFollow.isNearBottom(transcript);
   }
 
   private scrollTranscriptToBottom(): void {
-    const transcript = this.querySelector<HTMLElement>(".transcript");
-    if (!transcript) return;
-    transcript.scrollTop = Math.max(0, transcript.scrollHeight - transcript.clientHeight);
-    this.transcriptScrollTop = transcript.scrollTop;
+    this.transcriptFollow.scrollToBottom(this);
   }
 
   private jumpToLatest(): void {
-    this.autoScroll = true;
-    localStorage.setItem("piWebAutoScroll", "true");
-    this.unreadTranscriptIds.clear();
-    this.scrollTranscriptToBottom();
+    this.transcriptFollow.jumpToLatest(this);
     this.render();
   }
 
   private scheduleTranscriptFollow(): void {
-    requestAnimationFrame(() => this.scrollTranscriptToBottom());
+    this.transcriptFollow.scheduleFollow(this);
   }
 
   private syncTranscriptScroll(): void {
-    const transcript = this.querySelector<HTMLElement>(".transcript");
-    if (!transcript) return;
-    if (!this.autoScroll || this.preserveTranscriptScrollOnce) {
-      transcript.scrollTop = Math.min(this.transcriptScrollTop, Math.max(0, transcript.scrollHeight - transcript.clientHeight));
-      this.preserveTranscriptScrollOnce = false;
-      return;
-    }
-
-    this.scheduleTranscriptFollow();
+    this.transcriptFollow.syncScroll(this);
   }
 
   private syncAutocompleteScroll(): void {
@@ -2602,26 +2573,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private patchJumpToLatest(): void {
-    const shell = this.querySelector<HTMLElement>(".transcript-shell");
-    if (!shell) return;
-    const existing = shell.querySelector<HTMLButtonElement>("#jumpToLatest");
-    if (this.autoScroll) {
-      existing?.remove();
-      return;
-    }
-    const count = this.unreadTranscriptIds.size;
-    const label = `Jump to latest${count > 0 ? ` · ${count} update${count === 1 ? "" : "s"}` : ""}`;
-    if (existing) {
-      existing.textContent = label;
-      return;
-    }
-    const button = document.createElement("button");
-    button.id = "jumpToLatest";
-    button.className = "jump-to-latest";
-    button.type = "button";
-    button.textContent = label;
-    button.addEventListener("click", () => this.jumpToLatest());
-    shell.append(button);
+    this.transcriptFollow.patchJumpToLatest(this, () => this.jumpToLatest());
   }
 
   private patchTranscriptStructure(transcript: HTMLElement): void {
@@ -2635,7 +2587,7 @@ class PiWebAgentApp extends HTMLElement {
     const start = performance.now();
     const transcript = this.querySelector<HTMLElement>(".transcript");
     if (!transcript || this.forceFullRender) return false;
-    if (this.autoScroll && !this.isTranscriptNearBottom(transcript)) this.autoScroll = false;
+    this.transcriptFollow.disableFollowIfDetached(transcript);
 
     if (this.transcriptStructureDirty) {
       this.patchTranscriptStructure(transcript);
@@ -2705,7 +2657,7 @@ class PiWebAgentApp extends HTMLElement {
   private render(): void {
     const renderStart = performance.now();
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
-    if (existingTranscript) this.transcriptScrollTop = existingTranscript.scrollTop;
+    this.transcriptFollow.captureScrollTop(existingTranscript);
     const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
     const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
     const restorePromptFocus = document.activeElement === prompt;
