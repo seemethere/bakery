@@ -133,7 +133,7 @@ bun run dev:web
 
 Open `http://127.0.0.1:5173/`. The API URL should be `http://127.0.0.1:3141`. Leave token blank unless `PI_WEB_AUTH_TOKEN` is set.
 
-For LAN access via `http://lot.local:5173/` or `http://bakery.lot.local:5173/`, configure DNS/hosts for the hostname, then run `PI_WEB_AUTH_TOKEN=... PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan` and `bun run dev:web:lan`. See `docs/local-network.md`.
+For LAN/Tailscale access via `http://lot.local:5173/`, `http://bakery.lot.local:5173/`, or `http://lot.tail976fc0.ts.net:5173/`, configure DNS/hosts for the hostname when needed, then run `PI_WEB_AUTH_TOKEN=... PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan` and `bun run dev:web:lan`. See `docs/local-network.md`.
 
 ## Verification
 
@@ -145,7 +145,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/transcript.ts PROJECT_LOG.md`, `bun run check`, `bun scripts/ui-harness.ts --scenario slash-commands`, `bun scripts/ui-harness.ts --scenario streaming-responsiveness`, `bun scripts/ui-harness.ts --scenario question-answer`, `bun scripts/ui-harness.ts --scenario inspector-preview`, `bun scripts/ui-harness.ts --scenario transcript-scroll-stability`, `bun scripts/ui-harness.ts --scenario tool-image-heavy-transcript`, and `bun scripts/ui-harness.ts --scenario tool-grouping` passed after the transcript-structure patching slice and slash-command visibility fix. Full `bun run test:web-perf` was intentionally skipped because focused main-shell/transcript scenarios passed and there were no protocol/session-lifecycle changes.
+Latest: `bun run report:iteration --recommend apps/web/vite.config.ts` recommended `bun run check`; `bun run check` passed after adding `lot.tail976fc0.ts.net` to the Vite dev-server allowed host list. Full `bun run test:web-perf` was intentionally skipped because this was a Vite config host allowlist change, and the selector did not recommend UI harness coverage.
 
 ## Next priorities
 

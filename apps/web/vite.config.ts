@@ -3,8 +3,12 @@ import { defineConfig } from "vite";
 const enableHmr = process.env.PI_WEB_VITE_HMR === "true";
 const allowedHosts = Array.from(
   new Set(
-    ["lot.local", "bakery.lot.local", ...(process.env.PI_WEB_VITE_ALLOWED_HOSTS ?? "").split(",")]
-      .map((host) => host.trim())
+    [
+      "lot.local",
+      "bakery.lot.local",
+      "lot.tail976fc0.ts.net",
+      ...(process.env.PI_WEB_VITE_ALLOWED_HOSTS ?? "").split(","),
+    ].map((host) => host.trim())
       .filter(Boolean),
   ),
 );
