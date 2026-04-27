@@ -2280,9 +2280,26 @@ class PiWebAgentApp extends HTMLElement {
 
   private patchConnectionBanner(): void {
     const banner = this.querySelector<HTMLElement>(".connection-banner");
-    if (!banner) return;
-    banner.className = `connection-banner ${this.connectionState}`;
-    banner.innerHTML = this.renderConnectionBannerContent();
+    if (!this.shouldRenderConnectionBanner()) {
+      banner?.remove();
+      return;
+    }
+    const html = this.renderConnectionBanner();
+    if (banner) {
+      banner.outerHTML = html;
+      return;
+    }
+    this.querySelector("main > header")?.insertAdjacentHTML("afterend", html);
+  }
+
+  private shouldRenderConnectionBanner(): boolean {
+    if (!this.selectedSession) return false;
+    return this.connectionState !== "connected" || Boolean(this.promptDraft) || this.promptImages.length > 0;
+  }
+
+  private renderConnectionBanner(): string {
+    if (!this.shouldRenderConnectionBanner()) return "";
+    return `<div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">${this.renderConnectionBannerContent()}</div>`;
   }
 
   private renderConnectionBannerContent(): string {
@@ -2484,7 +2501,7 @@ class PiWebAgentApp extends HTMLElement {
             <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
           </div>
         </header>
-        <div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">${this.renderConnectionBannerContent()}</div>
+        ${this.renderConnectionBanner()}
         ${this.renderAttentionNeeded()}
         <div class="transcript-shell ${this.runningQueue.steering.length + this.runningQueue.followUp.length > 0 ? "has-running-queue" : ""}">
           <section class="transcript">${this.renderTranscript()}</section>
