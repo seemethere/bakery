@@ -184,6 +184,28 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.imagePickerActive) return;
     window.setTimeout(() => { this.imagePickerActive = false; }, 500);
   };
+  private openImagePicker(): void {
+    this.imagePickerActive = true;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/gif,image/webp";
+    input.multiple = true;
+    input.style.position = "fixed";
+    input.style.left = "-10000px";
+    input.style.top = "0";
+    input.addEventListener("change", () => {
+      this.imagePickerActive = false;
+      const files = Array.from(input.files ?? []);
+      this.notice = files.length > 0
+        ? `Selected ${files.length} image file${files.length === 1 ? "" : "s"}: ${files.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`
+        : "File picker returned no files.";
+      this.render();
+      void this.handleImageFiles(files);
+      input.remove();
+    }, { once: true });
+    document.body.append(input);
+    input.click();
+  }
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
@@ -1701,20 +1723,11 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLInputElement>("#imageInput")?.addEventListener("change", (event) => {
-      this.imagePickerActive = false;
       const input = event.currentTarget as HTMLInputElement;
-      const files = Array.from(input.files ?? []);
-      this.notice = files.length > 0
-        ? `Selected ${files.length} image file${files.length === 1 ? "" : "s"}: ${files.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`
-        : "File picker returned no files.";
-      this.render();
-      void this.handleImageFiles(files);
+      void this.handleImageFiles(Array.from(input.files ?? []));
       input.value = "";
     });
-    this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => {
-      this.imagePickerActive = true;
-      this.querySelector<HTMLInputElement>("#imageInput")?.click();
-    });
+    this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.openImagePicker());
     this.querySelector<HTMLButtonElement>("#imageModePrompt")?.addEventListener("click", () => this.setImageDropMode("prompt"));
     this.querySelector<HTMLButtonElement>("#imageModeArtifact")?.addEventListener("click", () => this.setImageDropMode("artifact"));
     this.querySelectorAll<HTMLButtonElement>("[data-remove-image-id]").forEach((button) => {

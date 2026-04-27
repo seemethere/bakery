@@ -809,13 +809,16 @@ async function runFileAutocomplete(page: Page): Promise<Record<string, unknown>>
   return collectMetrics(page);
 }
 
-async function chooseImageWithPaperclip(page: Page, imagePath: string): Promise<void> {
+async function chooseImageWithPaperclip(page: Page, imagePath: string, options: { forceRenderWhileOpen?: boolean } = {}): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
   await page.locator("#prompt").focus();
   await page.locator("#attachImages").click();
   const fileChooser = await chooser;
-  // Real native file pickers often stay open long enough for prompt blur handlers
-  // to fire. Keep this delay so the harness catches input replacement races.
+  // Real native file pickers often stay open long enough for unrelated app renders
+  // to happen. Force one here so the harness catches input replacement races.
+  if (options.forceRenderWhileOpen) {
+    await page.evaluate(() => (document.querySelector("pi-web-agent") as unknown as { render?: () => void } | null)?.render?.());
+  }
   await page.waitForTimeout(250);
   await fileChooser.setFiles(imagePath);
 }
@@ -823,7 +826,7 @@ async function chooseImageWithPaperclip(page: Page, imagePath: string): Promise<
 async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
-  await chooseImageWithPaperclip(page, imagePath);
+  await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
