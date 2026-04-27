@@ -573,9 +573,12 @@ async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown
   await drawer.locator(".tree-line.current-path").first().waitFor({ timeout: 5_000 });
   await drawer.locator('.tree-line[tabindex="0"]').waitFor({ timeout: 5_000 });
   await page.locator(".tree-drawer .tree-panel").evaluate((element) => {
-    if (element.scrollTop <= 0) throw new Error(`Tree drawer did not open scrolled toward the current leaf; scrollTop=${element.scrollTop}`);
+    const maxScroll = element.scrollHeight - element.clientHeight;
+    if (maxScroll <= 0) throw new Error("Tree drawer is not tall enough to validate scroll behavior");
+    if (element.scrollTop > maxScroll / 2) throw new Error(`Newest-first tree opened too far from the current leaf; scrollTop=${element.scrollTop}, max=${maxScroll}`);
   });
-  await page.locator(".tree-drawer .tree-line.current").evaluate((element) => {
+  await drawer.locator(".tree-line").first().evaluate((element) => {
+    if (!element.classList.contains("current")) throw new Error("Newest-first tree did not render the current leaf first");
     const rect = element.getBoundingClientRect();
     const panel = element.closest(".tree-panel")?.getBoundingClientRect();
     if (!panel || rect.bottom < panel.top || rect.top > panel.bottom) throw new Error("Current leaf row is not visible after opening /tree");

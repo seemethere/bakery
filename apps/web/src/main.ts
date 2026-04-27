@@ -1387,7 +1387,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!currentId) return;
     this.setActiveTreeEntry(currentId, source, true);
     const tree = this.visibleTreeContainer(source);
-    tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(currentId)}"]`)?.scrollIntoView({ block: "end" });
+    tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(currentId)}"]`)?.scrollIntoView({ block: "start" });
   }
 
   private renderCurrentTreePath(path: SessionTreeNode[]): string {
@@ -2739,8 +2739,8 @@ class PiWebAgentApp extends HTMLElement {
       </aside>`;
   }
 
-  private renderTreeNodes(nodes: SessionTreeNode[], prefix = "", currentPathIds = new Set<string>(), activeEntryId = this.ensureTreeActiveEntryId()): string {
-    return nodes.map((node, index) => {
+  private renderTreeNodeLines(nodes: SessionTreeNode[], prefix = "", currentPathIds = new Set<string>(), activeEntryId = this.ensureTreeActiveEntryId()): string[] {
+    return nodes.flatMap((node, index) => {
       const isLast = index === nodes.length - 1;
       const connector = prefix ? (isLast ? "└─" : "├─") : "•";
       const childPrefix = `${prefix}${prefix ? (isLast ? "  " : "│ ") : ""}`;
@@ -2749,16 +2749,20 @@ class PiWebAgentApp extends HTMLElement {
       const isPath = currentPathIds.has(node.id);
       const isKeyboardActive = node.id === activeEntryId;
       const classes = ["tree-line", node.current ? "current" : "", isPath ? "current-path" : "", canFork ? "forkable" : "", isKeyboardActive ? "keyboard-active" : ""].filter(Boolean).join(" ");
-      return `
+      const line = `
         <div class="${classes}" data-tree-entry-id="${escapeHtml(node.id)}" data-tree-forkable="${canFork ? "true" : "false"}" role="treeitem" tabindex="${isKeyboardActive ? "0" : "-1"}" aria-current="${node.current ? "true" : "false"}" title="${node.current ? "Current leaf" : isPath ? "On the current path" : "Navigate to this point"}">
           <span class="tree-prefix">${escapeHtml(prefix)}${connector}</span>
           <span class="tree-kind ${escapeHtml(kind)}">${escapeHtml(kind)}:</span>
           <span class="tree-title">${escapeHtml(this.treeNodeDisplayTitle(node))}</span>
           ${node.current ? `<span class="tree-current">current leaf</span>` : isPath ? `<span class="tree-current path">path</span>` : `<span class="tree-current go">go</span>`}
           ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message" tabindex="-1">fork</button>` : ""}
-        </div>
-        ${node.children.length ? this.renderTreeNodes(node.children, childPrefix, currentPathIds, activeEntryId) : ""}`;
-    }).join("");
+        </div>`;
+      return [line, ...this.renderTreeNodeLines(node.children, childPrefix, currentPathIds, activeEntryId)];
+    });
+  }
+
+  private renderTreeNodes(nodes: SessionTreeNode[], prefix = "", currentPathIds = new Set<string>(), activeEntryId = this.ensureTreeActiveEntryId()): string {
+    return this.renderTreeNodeLines(nodes, prefix, currentPathIds, activeEntryId).reverse().join("");
   }
 
   private renderTreePanel(options: { drawer?: boolean } = {}): string {
@@ -2777,7 +2781,7 @@ class PiWebAgentApp extends HTMLElement {
             <button data-tree-refresh>Refresh</button>
           </div>
         </div>
-        <div class="tree-hints">Opens at current leaf · arrows move up/down · Enter navigates · F forks · C jumps current · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
+        <div class="tree-hints">Newest first · arrows move up/down · Enter navigates · F forks · C jumps current · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
         ${this.renderCurrentTreePath(currentPath)}
         ${this.sessionTree?.tree.length
           ? `<div class="session-tree" role="tree" aria-label="Session tree entries">${this.renderTreeNodes(this.sessionTree.tree, "", currentPathIds, activeEntryId)}</div>`
@@ -3382,12 +3386,11 @@ class PiWebAgentApp extends HTMLElement {
         this.setActiveTreeEntry(treeRow.dataset.treeEntryId ?? "", treeRow, false);
         treeRow.focus({ preventScroll: true });
         const panel = treeRow.closest<HTMLElement>(".tree-panel");
-        const scrollToBottom = () => {
-          if (panel) panel.scrollTop = panel.scrollHeight;
-          treeRow.scrollIntoView({ block: "end" });
+        const scrollToCurrent = () => {
+          if (panel) panel.scrollTop = 0;
         };
-        scrollToBottom();
-        requestAnimationFrame(scrollToBottom);
+        scrollToCurrent();
+        requestAnimationFrame(scrollToCurrent);
       }
     }
     recordPerfSample("render", performance.now() - renderStart);
