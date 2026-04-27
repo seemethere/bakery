@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(import.meta.dir, "..");
@@ -8,8 +9,10 @@ const defaultOutputPath = join(root, "test-results", "iteration", "iteration-rep
 const cliArgs = process.argv.slice(2);
 const recommendMode = cliArgs.includes("--recommend");
 const agentActionsMode = cliArgs.includes("--agent-actions");
+const sessionContextMode = cliArgs.includes("--session-context");
 const helpMode = cliArgs.includes("--help") || cliArgs.includes("-h");
 const outputFlagIndex = cliArgs.findIndex((arg) => arg === "--output" || arg === "-o");
+const sessionFlagIndex = cliArgs.findIndex((arg) => arg === "--session");
 const positionalOutput = !recommendMode && cliArgs[0] && !cliArgs[0].startsWith("-") ? cliArgs[0] : undefined;
 const outputPath = resolve(root, outputFlagIndex >= 0 ? cliArgs[outputFlagIndex + 1] ?? defaultOutputPath : positionalOutput ?? defaultOutputPath);
 const maxCommits = Number(process.env.PI_WEB_ITERATION_COMMITS ?? 40);
@@ -50,6 +53,19 @@ type AgentActionInsight = {
   optimizeAgentBy: string[];
 };
 
+type SessionContextReport = {
+  sessionPath?: string;
+  sessionCwd?: string;
+  lines: number;
+  toolCallsByName: Record<string, number>;
+  toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
+  largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string }>;
+  assistantResponsesWithUsage: number;
+  latestUsage?: Record<string, unknown>;
+  maxReportedInputOrCacheRead?: number;
+  notes: string[];
+};
+
 type IterationReport = {
   generatedAt: string;
   source: {
@@ -76,6 +92,7 @@ type IterationReport = {
     evidence: string[];
     suggestedAction: string;
   }>;
+  sessionContext?: SessionContextReport;
 };
 
 function run(command: string, args: string[]): string {
@@ -153,6 +170,176 @@ function readJson(path: string): unknown {
   } catch {
     return null;
   }
+}
+
+function expandHome(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return resolve(homedir(), path.slice(2));
+  return path;
+}
+
+function estimateTokensFromChars(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+function textFromContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      const record = part as Record<string, unknown>;
+      if (typeof record.text === "string") return record.text;
+      if (typeof record.content === "string") return record.content;
+      if (typeof record.output === "string") return record.output;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function candidateSessionDirs(): string[] {
+  const dirs = [process.env.PI_WEB_SESSION_DIR, join(homedir(), ".pi-web-agent", "sessions")].filter((dir): dir is string => Boolean(dir));
+  return Array.from(new Set(dirs.map((dir) => resolve(expandHome(dir)))));
+}
+
+function readSessionCwd(path: string): string | undefined {
+  try {
+    const firstLine = readFileSync(path, "utf8").split("\n", 1)[0];
+    if (!firstLine) return undefined;
+    const event = JSON.parse(firstLine) as { cwd?: unknown };
+    return typeof event.cwd === "string" ? event.cwd : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function findSessionLogPath(): string | undefined {
+  const explicit = sessionFlagIndex >= 0 ? cliArgs[sessionFlagIndex + 1] : undefined;
+  if (explicit) return resolve(expandHome(explicit));
+
+  const candidates = candidateSessionDirs().flatMap((dir) => {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((entry) => entry.endsWith(".jsonl"))
+      .map((entry) => {
+        const path = join(dir, entry);
+        return { path, mtimeMs: statSync(path).mtimeMs, cwd: readSessionCwd(path) };
+      });
+  });
+  const sorted = candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return sorted.find((candidate) => candidate.cwd === root)?.path ?? sorted[0]?.path;
+}
+
+function buildSessionContextReport(): SessionContextReport {
+  const sessionPath = findSessionLogPath();
+  const missingReport: SessionContextReport = {
+    lines: 0,
+    toolCallsByName: {},
+    toolResultsByName: {},
+    largestToolResults: [],
+    assistantResponsesWithUsage: 0,
+    notes: ["No local pi session JSONL log found. Set PI_WEB_SESSION_DIR or pass --session <path> if the session lives elsewhere."],
+  };
+  if (!sessionPath || !existsSync(sessionPath)) return missingReport;
+
+  const lines = readFileSync(sessionPath, "utf8").split("\n").filter(Boolean);
+  const report: SessionContextReport = {
+    sessionPath: relative(root, sessionPath).startsWith("..") ? sessionPath : relative(root, sessionPath),
+    sessionCwd: undefined,
+    lines: lines.length,
+    toolCallsByName: {},
+    toolResultsByName: {},
+    largestToolResults: [],
+    assistantResponsesWithUsage: 0,
+    notes: ["Tool-result sizes are character counts with a rough chars/4 token estimate; content is intentionally not printed."],
+  };
+
+  for (const line of lines) {
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (event.type === "session" && typeof event.cwd === "string") report.sessionCwd = event.cwd;
+    if (event.type !== "message" || !event.message || typeof event.message !== "object") continue;
+
+    const message = event.message as Record<string, unknown>;
+    const content = Array.isArray(message.content) ? message.content : [];
+    if (message.role === "assistant") {
+      for (const part of content) {
+        if (!part || typeof part !== "object") continue;
+        const record = part as Record<string, unknown>;
+        if (record.type === "toolCall" && typeof record.name === "string") increment(report.toolCallsByName, record.name);
+      }
+      if (message.usage && typeof message.usage === "object") {
+        report.assistantResponsesWithUsage += 1;
+        report.latestUsage = message.usage as Record<string, unknown>;
+        const usage = message.usage as Record<string, unknown>;
+        for (const key of ["input", "cacheRead"] as const) {
+          const value = usage[key];
+          if (typeof value === "number") report.maxReportedInputOrCacheRead = Math.max(report.maxReportedInputOrCacheRead ?? 0, value);
+        }
+      }
+      continue;
+    }
+
+    if (message.role === "toolResult") {
+      const toolName = typeof message.toolName === "string" ? message.toolName : "unknown";
+      const chars = textFromContent(message.content).length;
+      report.toolResultsByName[toolName] ??= { calls: 0, chars: 0, estimatedTokens: 0, maxChars: 0 };
+      const summary = report.toolResultsByName[toolName];
+      summary.calls += 1;
+      summary.chars += chars;
+      summary.estimatedTokens = estimateTokensFromChars(summary.chars);
+      summary.maxChars = Math.max(summary.maxChars, chars);
+      report.largestToolResults.push({
+        toolName,
+        chars,
+        estimatedTokens: estimateTokensFromChars(chars),
+        timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
+        messageId: typeof event.id === "string" ? event.id : undefined,
+      });
+    }
+  }
+
+  report.largestToolResults.sort((a, b) => b.chars - a.chars);
+  report.largestToolResults = report.largestToolResults.slice(0, 8);
+  return report;
+}
+
+function printSessionContextReport(report: SessionContextReport): void {
+  console.log("\n## Session context estimate");
+  if (!report.sessionPath) {
+    report.notes.forEach((note) => console.log(`- ${note}`));
+    return;
+  }
+  console.log(`Session log: ${report.sessionPath}`);
+  if (report.sessionCwd) console.log(`Session cwd: ${report.sessionCwd}`);
+  console.log(`JSONL lines: ${report.lines}`);
+  console.log("\nTool calls requested:");
+  const toolCalls = Object.entries(report.toolCallsByName).sort((a, b) => b[1] - a[1]);
+  if (toolCalls.length === 0) console.log("- none found");
+  toolCalls.forEach(([tool, count]) => console.log(`- ${tool}: ${count}`));
+  console.log("\nTool result payloads:");
+  const toolResults = Object.entries(report.toolResultsByName).sort((a, b) => b[1].chars - a[1].chars);
+  if (toolResults.length === 0) console.log("- none found");
+  toolResults.forEach(([tool, summary]) => {
+    console.log(`- ${tool}: ${summary.calls} calls, ${summary.chars.toLocaleString()} chars (~${summary.estimatedTokens.toLocaleString()} tokens), largest ${summary.maxChars.toLocaleString()} chars`);
+  });
+  console.log("\nLargest tool results:");
+  if (report.largestToolResults.length === 0) console.log("- none found");
+  report.largestToolResults.forEach((item) => {
+    const suffix = [item.timestamp, item.messageId].filter(Boolean).join(" · ");
+    console.log(`- ${item.toolName}: ${item.chars.toLocaleString()} chars (~${item.estimatedTokens.toLocaleString()} tokens)${suffix ? ` · ${suffix}` : ""}`);
+  });
+  console.log("\nModel usage:");
+  console.log(`- assistant responses with usage: ${report.assistantResponsesWithUsage}`);
+  if (report.latestUsage) console.log(`- latest usage: ${JSON.stringify(report.latestUsage)}`);
+  if (typeof report.maxReportedInputOrCacheRead === "number") console.log(`- max reported input/cacheRead: ${report.maxReportedInputOrCacheRead.toLocaleString()} tokens`);
+  console.log("\nNotes:");
+  report.notes.forEach((note) => console.log(`- ${note}`));
 }
 
 function pathTimestamp(path: string): string | undefined {
@@ -499,8 +686,9 @@ function printHelp(): void {
   bun run report:iteration --output test-results/iteration/report.json
   bun run report:iteration --recommend <changed files...>
   bun run report:iteration --agent-actions [--recommend <changed files...>]
+  bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
 
-When --recommend is passed without files, changed files are read from git status.`);
+When --recommend is passed without files, changed files are read from git status. Session-context mode reads local pi JSONL logs and reports counts/sizes without printing tool content.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {
@@ -562,7 +750,8 @@ const baseReport = {
   },
 } satisfies Omit<IterationReport, "candidates">;
 
-const report: IterationReport = { ...baseReport, candidates: buildCandidates(baseReport) };
+const sessionContext = sessionContextMode ? buildSessionContextReport() : undefined;
+const report: IterationReport = { ...baseReport, candidates: buildCandidates(baseReport), ...(sessionContext ? { sessionContext } : {}) };
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
 
@@ -578,4 +767,8 @@ if (recommendation) {
 
 if (agentActionsMode) {
   printAgentActionInsights(report, recommendation);
+}
+
+if (sessionContext) {
+  printSessionContextReport(sessionContext);
 }

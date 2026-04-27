@@ -48,6 +48,8 @@ const guidanceSnippets = [
   "Escalate to `bun run test:web-perf`",
   "## Validation decision",
   "full suite was run or intentionally skipped",
+  "bun run report:iteration --session-context",
+  "per-tool result payload size",
 ];
 
 for (const snippet of guidanceSnippets) {

@@ -44,6 +44,14 @@ Use the output to identify:
 - recurring hot-path harness scenarios;
 - missing telemetry that limits confidence, such as per-tool counts or phase timing.
 
+When a session may be context-heavy, inspect local pi JSONL session logs without dumping tool contents:
+
+```bash
+bun run report:iteration --session-context
+```
+
+Use this to estimate per-tool result payload size, largest context contributors, and latest model usage before deciding to read large artifacts or rerun verbose commands.
+
 Before validating code changes, prefer:
 
 ```bash
