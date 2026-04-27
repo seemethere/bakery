@@ -191,15 +191,18 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
   return { ...(await collectMetrics(page)) };
 }
 
+async function setWorkbenchTheme(page: Page, theme: "workbench-dark" | "workbench-light"): Promise<void> {
+  await page.locator("#themePreference").selectOption(theme);
+  await page.waitForFunction((expected) => document.documentElement.dataset.theme === expected, theme);
+}
+
 async function runThemes(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please produce a short themed transcript with a tool for visual validation.");
-  await page.locator("#themePreference").selectOption("workbench-dark");
-  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-dark");
+  await setWorkbenchTheme(page, "workbench-dark");
   const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   await page.screenshot({ path: join(artifactDir, "theme-workbench-dark.png"), fullPage: true });
-  await page.locator("#themePreference").selectOption("workbench-light");
-  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-light");
+  await setWorkbenchTheme(page, "workbench-light");
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   if (darkBackground === lightBackground) throw new Error(`Theme background did not change; saw ${darkBackground}`);
   await page.screenshot({ path: join(artifactDir, "theme-workbench-light.png"), fullPage: true });
@@ -221,6 +224,17 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-custom-field", { hasText: "Custom" }).waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });
+  await setWorkbenchTheme(page, "workbench-dark");
+  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "question-answer-dark.png"), fullPage: true });
+  await setWorkbenchTheme(page, "workbench-light");
+  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "question-answer-light.png"), fullPage: true });
+  await page.locator("[data-question-option-index='0']").focus();
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
@@ -255,6 +269,10 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await viewerPage.locator(".controller.viewer", { hasText: "viewer" }).waitFor({ timeout: 10_000 });
   await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
   await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
+  await viewerPage.screenshot({ path: join(artifactDir, "question-answer-viewer-disabled-light.png"), fullPage: true });
+  await setWorkbenchTheme(viewerPage, "workbench-dark");
+  await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
+  await viewerPage.screenshot({ path: join(artifactDir, "question-answer-viewer-disabled-dark.png"), fullPage: true });
   await viewerPage.keyboard.press("1");
   await viewerPage.keyboard.press("Escape");
   await viewerPage.waitForTimeout(300);
