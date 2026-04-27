@@ -656,14 +656,14 @@ footer.running-footer {
 
 .question-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: 1fr;
   gap: 7px;
 }
 
 .question-options button {
   display: grid;
-  gap: 3px;
-  justify-items: start;
+  gap: 4px;
+  justify-items: stretch;
   text-align: left;
 }
 
@@ -683,6 +683,10 @@ footer.running-footer {
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
+}
+
+.question-options .option-title strong {
+  flex: 1 1 auto;
 }
 
 .question-options kbd,
@@ -712,6 +716,7 @@ footer.running-footer {
 
 .question-options small {
   color: var(--c-8b94a7);
+  padding-left: 34px;
 }
 
 .question-custom-field {

@@ -2471,7 +2471,7 @@ class PiWebAgentApp extends HTMLElement {
         </div>` : ""}
         <div class="question-actions">
           ${viewerCopy}
-          <span class="question-key-hint"><kbd>↑↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom</span>
+          <span class="question-key-hint"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom</span>
           <button id="questionCancel" type="button" ${disabled ? "disabled" : ""}>Cancel question</button>
         </div>
       </section>`;
