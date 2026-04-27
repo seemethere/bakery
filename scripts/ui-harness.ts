@@ -217,6 +217,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "1-9" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-custom-field", { hasText: "Custom" }).waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });
@@ -235,7 +236,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-panel", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
   await page.keyboard.press("c");
   await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
-  await page.locator("#questionCancel").click();
+  await page.keyboard.press("Escape");
   await page.locator(".message.tool", { hasText: "User cancelled the question" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "A: Cancelled" }).waitFor({ timeout: 5_000 });
@@ -246,6 +247,21 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
+  const viewerPage = await page.context().newPage();
+  await viewerPage.goto(webBase, { waitUntil: "domcontentloaded" });
+  await viewerPage.locator(".controller.viewer", { hasText: "viewer" }).waitFor({ timeout: 10_000 });
+  await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
+  await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
+  await viewerPage.keyboard.press("1");
+  await viewerPage.keyboard.press("Escape");
+  await viewerPage.waitForTimeout(300);
+  await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await viewerPage.close();
+  await page.bringToFront();
   await page.keyboard.press("c");
   await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");

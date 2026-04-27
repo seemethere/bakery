@@ -803,7 +803,7 @@ class PiWebAgentApp extends HTMLElement {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest(".question-panel")) return;
-    if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
+    if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End", "Escape"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
       this.handleQuestionPanelKeydown(event);
     }
   };
@@ -1818,9 +1818,18 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
+  private canAnswerPendingQuestion(): boolean {
+    return Boolean(this.pendingQuestion && (this.controller?.isController ?? true) && this.connectionState === "connected");
+  }
+
   private answerPendingQuestion(payload: { answer?: string; selectedIndex?: number | null; wasCustom?: boolean; cancelled?: boolean }): void {
     if (!this.pendingQuestion) return;
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    if (!(this.controller?.isController ?? true)) {
+      this.notice = "Take control before answering this question.";
+      this.render();
+      return;
+    }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.connectionState !== "connected") {
       this.notice = "Not connected. You can answer after reconnect.";
       this.render();
       return;
@@ -1870,24 +1879,36 @@ class PiWebAgentApp extends HTMLElement {
       (target ?? buttons[0])?.focus();
       return;
     }
-    this.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)")?.focus();
+    const customInput = this.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)");
+    if (customInput) {
+      customInput.focus();
+      return;
+    }
+    this.querySelector<HTMLElement>(".question-panel")?.focus();
   }
 
   private handleQuestionPanelKeydown(event: KeyboardEvent): void {
     if (!this.pendingQuestion) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (this.canAnswerPendingQuestion()) this.answerPendingQuestion({ cancelled: true, selectedIndex: null, wasCustom: false });
+      return;
+    }
     const active = document.activeElement as HTMLElement | null;
     if (active?.id === "questionCustomAnswer") return;
     const buttons = Array.from(this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]:not(:disabled)"));
     if (buttons.length === 0) return;
     const focusedIndex = buttons.findIndex((button) => button === active);
-    const currentIndex = focusedIndex >= 0 ? focusedIndex : this.recommendedQuestionOptionIndex() >= 0 ? this.recommendedQuestionOptionIndex() : 0;
+    const recommendedIndex = this.recommendedQuestionOptionIndex();
+    const currentIndex = focusedIndex >= 0 ? focusedIndex : recommendedIndex >= 0 ? buttons.findIndex((button) => Number(button.dataset.questionOptionIndex ?? "-1") === recommendedIndex) : 0;
+    const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
     const focusButton = (index: number) => buttons[(index + buttons.length) % buttons.length]?.focus();
     if (event.key === "ArrowDown" || event.key === "ArrowRight") {
       event.preventDefault();
-      focusButton(focusedIndex >= 0 ? currentIndex + 1 : currentIndex);
+      focusButton(focusedIndex >= 0 ? safeCurrentIndex + 1 : safeCurrentIndex);
     } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
       event.preventDefault();
-      focusButton(focusedIndex >= 0 ? currentIndex - 1 : currentIndex);
+      focusButton(focusedIndex >= 0 ? safeCurrentIndex - 1 : safeCurrentIndex);
     } else if (event.key === "Home") {
       event.preventDefault();
       buttons[0]?.focus();
@@ -1907,9 +1928,6 @@ class PiWebAgentApp extends HTMLElement {
         event.preventDefault();
         customInput.focus();
       }
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      this.querySelector<HTMLTextAreaElement>("#prompt")?.focus();
     }
   }
 
@@ -2447,10 +2465,10 @@ class PiWebAgentApp extends HTMLElement {
     const question = this.pendingQuestion;
     if (!question) return "";
     const disabled = !isController || this.connectionState !== "connected";
-    const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question.</p>` : this.connectionState !== "connected" ? `<p class="question-viewer-copy">Reconnect before answering.</p>` : "";
+    const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question. Keyboard answer shortcuts are disabled in viewer mode.</p>` : this.connectionState !== "connected" ? `<p class="question-viewer-copy">Reconnect before answering. Keyboard answer shortcuts are disabled while disconnected.</p>` : "";
     const recommendedOptionIndex = this.recommendedQuestionOptionIndex();
     return `
-      <section class="question-panel" aria-label="Answer needed">
+      <section class="question-panel" aria-label="Answer needed" tabindex="-1">
         <div class="question-panel-heading">
           <strong>Answer needed</strong>
           ${question.title ? `<span>${escapeHtml(question.title)}</span>` : ""}
@@ -2472,8 +2490,8 @@ class PiWebAgentApp extends HTMLElement {
         </div>` : ""}
         <div class="question-actions">
           ${viewerCopy}
-          <span class="question-key-hint"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom</span>
-          <button id="questionCancel" type="button" ${disabled ? "disabled" : ""}>Cancel question</button>
+          <span class="question-key-hint"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom · <kbd>Esc</kbd> cancel</span>
+          <button id="questionCancel" type="button" aria-keyshortcuts="Escape" ${disabled ? "disabled" : ""}>Cancel question</button>
         </div>
       </section>`;
   }
