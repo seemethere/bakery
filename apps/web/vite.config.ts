@@ -1,6 +1,13 @@
 import { defineConfig } from "vite";
 
 const enableHmr = process.env.PI_WEB_VITE_HMR === "true";
+const allowedHosts = Array.from(
+  new Set(
+    ["bakery.lot.local", ...(process.env.PI_WEB_VITE_ALLOWED_HOSTS ?? "").split(",")]
+      .map((host) => host.trim())
+      .filter(Boolean),
+  ),
+);
 
 // This app often points at, and edits, the same workspace that Vite is serving.
 // Disable browser HMR/reload by default so an in-browser agent run is not killed
@@ -9,5 +16,6 @@ const enableHmr = process.env.PI_WEB_VITE_HMR === "true";
 export default defineConfig({
   server: {
     hmr: enableHmr ? undefined : false,
+    allowedHosts,
   },
 });

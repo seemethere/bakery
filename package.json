@@ -8,8 +8,10 @@
   ],
   "scripts": {
     "dev:server": "bun run --cwd apps/server dev",
+    "dev:server:lan": "PI_WEB_HOST=0.0.0.0 bun run --cwd apps/server dev",
     "dev:server:watch": "bun run --cwd apps/server dev:watch",
     "dev:web": "bun run --cwd apps/web dev",
+    "dev:web:lan": "bun run --cwd apps/web dev:lan",
     "start": "bun run --cwd apps/server start",
     "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check && bun scripts/assert-workflow-skills.ts",
     "ui:harness": "bun scripts/ui-harness.ts",

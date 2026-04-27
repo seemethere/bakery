@@ -81,9 +81,16 @@ function contextUsageLabel(usage: ContextUsage): string {
   const percent = usage.percent === null ? "unknown" : `${usage.percent.toFixed(usage.percent >= 10 ? 0 : 1)}%`;
   return `${formatTokenCount(usage.tokens)} / ${formatTokenCount(usage.contextWindow)} (${percent})`;
 }
+
+function defaultApiBase(): string {
+  const { protocol, hostname } = window.location;
+  const apiProtocol = protocol === "https:" ? "https:" : "http:";
+  return `${apiProtocol}//${hostname || "127.0.0.1"}:3141`;
+}
+
 class PiWebAgentApp extends HTMLElement {
   private token = localStorage.getItem("piWebAuthToken") ?? "";
-  private apiBase = localStorage.getItem("piWebApiBase") ?? "http://127.0.0.1:3141";
+  private apiBase = localStorage.getItem("piWebApiBase") ?? defaultApiBase();
   private sessions: WebSession[] = [];
   private workspaces: Workspace[] = [];
   private selectedSession: WebSession | null = null;
