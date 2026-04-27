@@ -704,6 +704,16 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
   return timestamp ? `${role}:${String(timestamp)}` : fallback;
 }
 
+function compactWorkflowLaunch(text: string): { body: string; segments: TranscriptSegment[] } | null {
+  const workflowMatch = /^Run the bundled `([^`]+)` workflow skill for this coding session\./m.exec(text);
+  if (!workflowMatch) return null;
+  const command = workflowMatch[1] ?? "workflow";
+  const focusMatch = /^Operator-provided focus:\s*(.+)$/m.exec(text);
+  const focus = focusMatch?.[1]?.trim();
+  const body = [`Launched /${command} workflow.`, focus ? `Focus: ${focus}` : ""].filter(Boolean).join("\n");
+  return { body, segments: [{ kind: "markdown", text: body }] };
+}
+
 function messageToTranscriptItem(message: unknown, fallbackId: string): TranscriptItem {
   if (!isRecord(message)) {
     return { id: fallbackId, kind: "system", title: "Event", body: stringify(message), raw: message };
@@ -712,7 +722,10 @@ function messageToTranscriptItem(message: unknown, fallbackId: string): Transcri
   const role = String(message.role ?? "message");
   const segments = contentToSegments(message.content);
   const body = contentToText(message.content);
-  if (role === "user") return { id: messageKey(message, fallbackId), kind: "user", title: "You", body, segments, raw: message };
+  if (role === "user") {
+    const compact = compactWorkflowLaunch(body);
+    return { id: messageKey(message, fallbackId), kind: "user", title: "You", body: compact?.body ?? body, segments: compact?.segments ?? segments, raw: message };
+  }
   if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, raw: message };
   if (role === "toolResult") {
     const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";

@@ -527,6 +527,9 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".message.system", { hasText: "Fake session" }).waitFor({ timeout: 5_000 });
   await page.locator("#prompt").fill("/plan choosing the next UX slice");
   await page.locator("#send").click();
+  await page.locator(".message.user", { hasText: "Launched /plan workflow." }).waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "Focus: choosing the next UX slice" }).waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "Question discipline:" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-options button").first().click();
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
