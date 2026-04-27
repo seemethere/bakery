@@ -138,6 +138,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Split the monolithic `apps/web/src/styles.css` into ordered CSS modules under `apps/web/src/styles/` (`base`, `sidebar`, `layout`, `composer`, `transcript`, `right-panel`, `metadata`, and `mobile`) while preserving the exact existing cascade; `styles.css` is now only the ordered import list so UI styling changes have smaller edit surfaces.
 - Continued composer/UI extraction by moving prompt image attachment helpers, MIME/path normalization, FileReader wrappers, prompt-image rendering, and focused helper tests into `apps/web/src/prompt-images.ts`; `main.ts` now keeps the upload/send coordination while image rules are separately testable.
 - Extracted pure-ish composer draft/send helpers into `apps/web/src/composer-actions.ts`: session-scoped prompt draft and attachment warning storage keys, one-shot attachment-warning state, bash prompt parsing, prompt text fallback, WebSocket send payload construction, and queued-message payload shaping now have focused Bun tests while WebSocket sends/DOM binding stay in `main.ts`.
+- Completed the planned three-commit `main.ts` extraction burst: transcript DOM row binding/live patch helpers now live in `apps/web/src/transcript-dom.ts`, composer DOM/event wiring and image picker coordination in `apps/web/src/composer-controller.ts`, and agent/session event normalization in `apps/web/src/session-events.ts`. `main.ts` dropped to about 2.5k lines and remains the app-state/WebSocket/render coordinator.
 
 ## How to run
 
@@ -176,7 +177,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/composer-actions.ts apps/web/src/composer-actions.test.ts` selected focused-first validation. `bun test apps/web/src/composer-actions.test.ts`, `bun run check`, and focused UI harness scenarios `streaming-responsiveness`, `slash-commands`, `question-answer`, `inspector-preview`, and `transcript-scroll-stability` passed. Full `bun run test:web-perf` was intentionally skipped per the report's escalation-only guidance.
+Latest: three incremental extraction commits ran focused-first validation. Transcript DOM extraction: `bun run check` plus `streaming-responsiveness`, `inspector-preview`, and `transcript-scroll-stability` passed. Composer controller extraction: `bun run check` plus `slash-commands`, `image-attachments`, `question-answer`, and `streaming-responsiveness` passed. Session event helper extraction: `bun run check` plus `streaming-responsiveness`, `slash-commands`, `question-answer`, `inspector-preview`, and `transcript-scroll-stability` passed. Full `bun run test:web-perf` was intentionally skipped per escalation-only guidance.
 
 ## Next priorities
 
