@@ -502,7 +502,35 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.screenshot({ path: join(artifactDir, "mobile-metadata-popover.png"), fullPage: true });
   await page.locator('.metadata-mobile-popover [data-accept-metadata="title"]', { hasText: "✓" }).click();
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Mobile metadata smoke", null, { timeout: 5_000 });
-  return { ...(await collectMetrics(page)), layout, metadataPopover: sheet };
+
+  await page.locator("#prompt").fill("Please produce a very long streaming performance response for mobile queued section collapse smoke.");
+  await page.locator("#send").click();
+  await page.locator("#followUp:not(.hidden)").waitFor({ timeout: 5_000 });
+  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("mobile queued steer should start collapsed");
+  await page.locator("#send").click();
+  const collapsedQueue = page.locator(".running-queue.collapsed", { hasText: "1 pending" });
+  await collapsedQueue.waitFor({ timeout: 5_000 });
+  await page.locator(".queue-pill", { hasText: "mobile queued steer should start collapsed" }).waitFor({ state: "detached", timeout: 2_000 });
+  const collapsedQueueLayout = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height), position: style.position };
+    };
+    return { transcript: rectOf(".transcript"), queue: rectOf(".running-queue"), footer: rectOf("footer") };
+  });
+  if (collapsedQueueLayout.queue?.position === "absolute") throw new Error(`Mobile queued section should be inline, not overlayed: ${JSON.stringify(collapsedQueueLayout)}`);
+  if (collapsedQueueLayout.transcript && collapsedQueueLayout.queue && collapsedQueueLayout.transcript.bottom > collapsedQueueLayout.queue.top + 1) throw new Error(`Mobile queue overlaps transcript: ${JSON.stringify(collapsedQueueLayout)}`);
+  if (collapsedQueueLayout.queue && collapsedQueueLayout.footer && collapsedQueueLayout.queue.bottom > collapsedQueueLayout.footer.top + 1) throw new Error(`Mobile queue overlaps footer: ${JSON.stringify(collapsedQueueLayout)}`);
+  await page.locator("#toggleRunningQueueSection").click();
+  const mobileQueuedPill = page.locator(".running-queue:not(.collapsed) .queue-pill", { hasText: "mobile queued steer should start collapsed" });
+  await mobileQueuedPill.waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "mobile-queued-expanded.png"), fullPage: true });
+
+  return { ...(await collectMetrics(page)), layout, metadataPopover: sheet, collapsedQueueLayout };
 }
 
 async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {

@@ -158,7 +158,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/running-queue.ts apps/web/src/styles.css` selected focused-first UI validation (`bun run check` plus focused scenarios, full suite escalation only). `bun run check`, `bun scripts/ui-harness.ts --scenario queued-follow-up`, and `bun scripts/ui-harness.ts --scenario mobile-layout` passed for the queued-message collapse/non-overlay pass; full `bun run test:web-perf` was skipped because focused queue/mobile coverage passed.
+Latest: `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/running-queue.ts apps/web/src/styles.css` selected focused-first UI validation (`bun run check` plus focused scenarios, full suite escalation only). `bun run check`, `bun scripts/ui-harness.ts --scenario mobile-layout`, and `bun scripts/ui-harness.ts --scenario queued-follow-up` passed for the queued-message collapse/non-overlay pass, including explicit mobile assertions for default collapse, expand-to-show queued pills, and non-overlay positioning; full `bun run test:web-perf` was skipped because focused queue/mobile coverage passed.
 
 ## Next priorities
 
