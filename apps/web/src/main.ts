@@ -1059,8 +1059,10 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private async handleImageFiles(files: FileList | File[]): Promise<void> {
-    if (this.imageDropMode === "artifact") await this.uploadImageArtifacts(files);
-    else await this.addPromptImageFiles(files);
+    const stableFiles = Array.from(files);
+    await this.addPromptImageFiles(stableFiles, { render: false, quiet: this.imageDropMode === "artifact" });
+    if (this.imageDropMode === "artifact") await this.uploadImageArtifacts(stableFiles);
+    else this.render();
   }
 
   private artifactPathForFile(file: File): string {
@@ -1110,7 +1112,7 @@ class PiWebAgentApp extends HTMLElement {
         this.promptDraft = `${this.promptDraft.trimEnd()}${this.promptDraft.trim() ? "\n" : ""}${insertion}`;
         this.schedulePromptDraftSave();
       }
-      this.notice = `Uploaded ${uploadedPaths.length} transcript artifact${uploadedPaths.length === 1 ? "" : "s"}; send or mention the inserted path to render it.`;
+      this.notice = `Attached ${uploadedPaths.length} image${uploadedPaths.length === 1 ? "" : "s"} to the prompt and uploaded transcript artifact preview path${uploadedPaths.length === 1 ? "" : "s"}.`;
     }
     this.render();
   }
@@ -1122,7 +1124,7 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private async addPromptImageFiles(files: FileList | File[]): Promise<void> {
+  private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<void> {
     const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
     if (incoming.length === 0) return;
     const added: PromptImage[] = [];
@@ -1149,9 +1151,9 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (added.length > 0) {
       this.promptImages = [...this.promptImages, ...added];
-      this.notice = "Image attachments are ready for this prompt only and are not preserved across page refreshes.";
+      if (!options.quiet) this.notice = "Image attachments are ready for this prompt only and are not preserved across page refreshes.";
     }
-    this.render();
+    if (options.render !== false) this.render();
   }
 
   private removePromptImage(id: string): void {

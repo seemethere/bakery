@@ -829,7 +829,8 @@ async function runImageAttachments(page: Page): Promise<Record<string, unknown>>
 async function runImageArtifactDropUpload(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
-  await page.locator("#imageModeArtifact").click();
+  if (await page.locator("#imageModeArtifact").getAttribute("aria-pressed") !== "true") await page.locator("#imageModeArtifact").click();
+  await page.waitForFunction(() => document.querySelector("#imageModeArtifact")?.getAttribute("aria-pressed") === "true");
   await page.locator("#imageInput").setInputFiles(imagePath);
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/artifacts/"), null, { timeout: 5_000 });
   const artifactPrompt = "Please echo this uploaded screenshot artifact path exactly: " + await page.locator("#prompt").inputValue();
@@ -840,7 +841,8 @@ async function runImageArtifactDropUpload(page: Page): Promise<Record<string, un
   }, null, { timeout: 5_000 });
   const sources = await page.locator(".artifact-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
   if (!sources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected dropped artifact screenshots to use artifact raw endpoint, saw ${sources.join(", ")}`);
-  return { artifactImages: await page.locator(".artifact-image img").count(), sources, ...(await collectMetrics(page)) };
+  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
+  return { artifactImages: await page.locator(".artifact-image img").count(), userImages: await page.locator(".message.user img").count(), sources, ...(await collectMetrics(page)) };
 }
 
 async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
