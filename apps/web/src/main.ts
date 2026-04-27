@@ -601,7 +601,7 @@ class PiTranscriptRow extends HTMLElement {
       if (target?.closest(".message-header") && this.isCollapsible()) {
         event.stopImmediatePropagation();
         this.collapsed = !this.collapsed;
-        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork, afterRunningTool: this.afterRunningTool });
+        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork, afterRunningTool: this.afterRunningTool, toolGroupPosition: this.toolGroupPosition });
         else this.classList.toggle("collapsed", this.collapsed);
       }
     });
@@ -2822,9 +2822,26 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private findTranscriptElement(id: string): PiTranscriptRow | null {
-    const transcript = this.querySelector<HTMLElement>(".transcript");
-    if (!transcript) return null;
-    return Array.from(transcript.children).find((element) => (element as HTMLElement).dataset.transcriptId === id) as PiTranscriptRow | undefined ?? null;
+    return this.querySelector<PiTranscriptRow>(`.transcript pi-transcript-row[data-transcript-id="${CSS.escape(id)}"]`);
+  }
+
+  private transcriptElementOrderIndex(element: Element): number {
+    if (element instanceof PiTranscriptRow) {
+      return this.transcript.findIndex((item) => item.id === element.dataset.transcriptId);
+    }
+    const groupIds = (element as HTMLElement).dataset.toolRunGroup?.split("|") ?? [];
+    const indexes = groupIds.map((id) => this.transcript.findIndex((item) => item.id === id)).filter((index) => index >= 0);
+    return indexes.length ? Math.min(...indexes) : Number.POSITIVE_INFINITY;
+  }
+
+  private insertTranscriptRowInOrder(transcript: HTMLElement, row: PiTranscriptRow, item: TranscriptItem): void {
+    const itemIndex = this.transcript.findIndex((candidate) => candidate.id === item.id);
+    if (itemIndex < 0) {
+      transcript.append(row);
+      return;
+    }
+    const nextSibling = Array.from(transcript.children).find((child) => this.transcriptElementOrderIndex(child) > itemIndex);
+    transcript.insertBefore(row, nextSibling ?? null);
   }
 
   private bindTranscriptElement(element: HTMLElement): void {
@@ -2957,7 +2974,7 @@ class PiWebAgentApp extends HTMLElement {
         next.dataset.transcriptId = item.id;
         this.bindTranscriptElement(next);
         this.updateTranscriptRow(next, item);
-        transcript.append(next);
+        this.insertTranscriptRowInOrder(transcript, next, item);
       }
     }
     this.dirtyTranscriptIds.clear();
