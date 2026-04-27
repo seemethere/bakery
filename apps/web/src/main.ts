@@ -1,10 +1,11 @@
 import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isDeveloperBashItem, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { TranscriptFollowController } from "./transcript-follow";
+import { defaultTranscriptExpanded, isAfterRunningTool, renderTranscriptHtml, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
@@ -949,7 +950,7 @@ class PiWebAgentApp extends HTMLElement {
     const item = this.transcript.find((candidate) => candidate.id === transcriptId);
     if (!item) return;
     if (action === "toggle-output") {
-      const currentExpanded = this.transcriptExpansion.get(transcriptId) ?? this.defaultTranscriptExpanded(item);
+      const currentExpanded = this.transcriptExpansion.get(transcriptId) ?? defaultTranscriptExpanded(item);
       this.transcriptExpansion.set(transcriptId, !currentExpanded);
       this.dirtyTranscriptIds.add(transcriptId);
       this.transcriptFollow.preserveNextSync();
@@ -2324,28 +2325,6 @@ class PiWebAgentApp extends HTMLElement {
     return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
   }
 
-  private renderTranscriptItemShell(item: TranscriptItem): string {
-    return `<pi-transcript-row data-transcript-id="${escapeHtml(item.id)}"></pi-transcript-row>`;
-  }
-
-  private renderToolRunGroup(items: TranscriptItem[]): string {
-    const groupId = items.map((item) => item.id).join("|");
-    const expanded = this.expandedToolGroupIds.has(groupId);
-    const labels = items
-      .slice(0, 3)
-      .map((item) => item.title.replace(/^\$\s*/, ""))
-      .join(" · ");
-    return `<details class="tool-run-group" data-tool-run-group="${escapeHtml(groupId)}" ${expanded ? "open" : ""}>
-      <summary>
-        <strong>Ran ${items.length} tools</strong>
-        ${labels ? `<span>${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
-      </summary>
-      <div class="tool-run-items">
-        ${items.map((item) => this.renderTranscriptItemShell(item)).join("")}
-      </div>
-    </details>`;
-  }
-
   private currentActivity(): { label: string; detail: string; queued: number } | null {
     if (this.status !== "running") return null;
     const runningTool = [...this.transcript].reverse().find((item) => item.kind === "tool" && item.status === "running");
@@ -2415,27 +2394,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderTranscript(): string {
-    const parts: string[] = [];
-    for (let index = 0; index < this.transcript.length;) {
-      const item = this.transcript[index]!;
-      if (!isRenderableTranscriptItem(item)) {
-        index++;
-        continue;
-      }
-      if (!this.isGroupableToolItem(item)) {
-        parts.push(this.renderTranscriptItemShell(item));
-        index++;
-        continue;
-      }
-      const group: TranscriptItem[] = [];
-      while (index < this.transcript.length && isRenderableTranscriptItem(this.transcript[index]!) && this.isGroupableToolItem(this.transcript[index]!)) {
-        group.push(this.transcript[index]!);
-        index++;
-      }
-      if (group.length >= 2) parts.push(this.renderToolRunGroup(group));
-      else parts.push(this.renderTranscriptItemShell(group[0]!));
-    }
-    return parts.join("");
+    return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds);
   }
 
   private renderJumpToLatest(): string {
@@ -2482,22 +2441,13 @@ class PiWebAgentApp extends HTMLElement {
     return this.querySelector<PiTranscriptRow>(`.transcript pi-transcript-row[data-transcript-id="${CSS.escape(id)}"]`);
   }
 
-  private transcriptElementOrderIndex(element: Element): number {
-    if (element instanceof PiTranscriptRow) {
-      return this.transcript.findIndex((item) => item.id === element.dataset.transcriptId);
-    }
-    const groupIds = (element as HTMLElement).dataset.toolRunGroup?.split("|") ?? [];
-    const indexes = groupIds.map((id) => this.transcript.findIndex((item) => item.id === id)).filter((index) => index >= 0);
-    return indexes.length ? Math.min(...indexes) : Number.POSITIVE_INFINITY;
-  }
-
   private insertTranscriptRowInOrder(transcript: HTMLElement, row: PiTranscriptRow, item: TranscriptItem): void {
     const itemIndex = this.transcript.findIndex((candidate) => candidate.id === item.id);
     if (itemIndex < 0) {
       transcript.append(row);
       return;
     }
-    const nextSibling = Array.from(transcript.children).find((child) => this.transcriptElementOrderIndex(child) > itemIndex);
+    const nextSibling = Array.from(transcript.children).find((child) => transcriptElementOrderIndex(this.transcript, child) > itemIndex);
     transcript.insertBefore(row, nextSibling ?? null);
   }
 
@@ -2532,36 +2482,6 @@ class PiWebAgentApp extends HTMLElement {
     return movedX > 4 || movedY > 4;
   }
 
-  private isGroupableToolItem(item: TranscriptItem): boolean {
-    return item.kind === "tool"
-      && item.status === "done"
-      && !isDeveloperBashItem(item)
-      && !itemHasRenderedImage(item);
-  }
-
-  private toolGroupPositionFor(item: TranscriptItem): ToolGroupPosition {
-    const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
-    if (index === -1 || !this.isGroupableToolItem(item)) return "single";
-    const previousGrouped = index > 0 && this.isGroupableToolItem(this.transcript[index - 1]!);
-    const nextGrouped = index < this.transcript.length - 1 && this.isGroupableToolItem(this.transcript[index + 1]!);
-    if (previousGrouped && nextGrouped) return "middle";
-    if (nextGrouped) return "start";
-    if (previousGrouped) return "end";
-    return "single";
-  }
-
-  private isAfterRunningTool(item: TranscriptItem): boolean {
-    const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
-    if (index <= 0 || item.kind !== "tool" || item.status !== "done") return false;
-    const previous = this.transcript[index - 1];
-    return previous?.kind === "tool" && previous.status === "running";
-  }
-
-  private defaultTranscriptExpanded(item: TranscriptItem): boolean {
-    const isQuestionTool = item.kind === "tool" && item.title === "Question";
-    return item.kind === "system" || isDeveloperBashItem(item) || (item.status === "running" && !isQuestionTool) || item.status === "error";
-  }
-
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
     row.setState(item, {
       showThinking: this.showThinking,
@@ -2569,8 +2489,8 @@ class PiWebAgentApp extends HTMLElement {
       expanded: this.transcriptExpansion.get(item.id),
       actionMenuOpen: item.id === this.openActionMenuId,
       canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
-      afterRunningTool: this.isAfterRunningTool(item),
-      toolGroupPosition: this.toolGroupPositionFor(item),
+      afterRunningTool: isAfterRunningTool(this.transcript, item),
+      toolGroupPosition: toolGroupPositionFor(this.transcript, item),
       cache: this.renderedSegmentCache,
       hideInspectorActions: this.mobileLayout,
       localImageUrl: (path) => this.localImageUrl(path),
