@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
+  ? ["streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "session-metadata", "inspector-preview", "slash-commands", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -520,6 +520,22 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   return collectMetrics(page);
 }
 
+async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please run multiple tools for compact grouping validation.");
+  const group = page.locator(".tool-run-group").first();
+  await group.waitFor({ timeout: 5_000 });
+  await page.locator(".tool-run-group summary", { hasText: "Ran 4 tools" }).waitFor({ timeout: 5_000 });
+  const visibleToolRowsBefore = await page.locator(".tool-run-group .message.tool:visible").count();
+  if (visibleToolRowsBefore !== 0) throw new Error(`Expected grouped tool rows to be hidden before expansion, saw ${visibleToolRowsBefore}`);
+  await group.locator("summary").click();
+  await page.waitForFunction(() => document.querySelectorAll(".tool-run-group[open] .message.tool").length >= 4);
+  await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
+  await group.locator("summary").click();
+  await page.waitForFunction(() => !document.querySelector(".tool-run-group")?.hasAttribute("open"));
+  return { groups: await page.locator(".tool-run-group").count(), ...(await collectMetrics(page)) };
+}
+
 async function runFileAutocomplete(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("Please inspect @Button");
@@ -661,6 +677,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "reconnect-draft") return runReconnectDraft(page);
   if (name === "backend-restart") return runBackendRestart(page, runtime);
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
+  if (name === "tool-grouping") return runToolGrouping(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
   if (name === "image-artifact-paths") return runImageArtifactPaths(page);

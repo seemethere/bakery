@@ -783,6 +783,7 @@ class PiWebAgentApp extends HTMLElement {
     const next = this.transcript[nextIndex + 1];
     if (previous?.kind === "tool") this.dirtyTranscriptIds.add(previous.id);
     if (next?.kind === "tool") this.dirtyTranscriptIds.add(next.id);
+    if (nextItem.kind === "tool" && nextItem.status === "done") this.forceFullRender = true;
     if (!this.autoScroll) this.unreadTranscriptIds.add(nextItem.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(nextItem.id, false);
   }
@@ -2349,8 +2350,42 @@ class PiWebAgentApp extends HTMLElement {
     return `<pi-transcript-row data-transcript-id="${escapeHtml(item.id)}"></pi-transcript-row>`;
   }
 
+  private renderToolRunGroup(items: TranscriptItem[]): string {
+    const groupId = items.map((item) => item.id).join("|");
+    const selectedInside = items.some((item) => item.id === this.selectedTranscriptId || item.id === this.openActionMenuId);
+    const labels = items
+      .slice(0, 3)
+      .map((item) => item.title.replace(/^\$\s*/, ""))
+      .join(" · ");
+    return `<details class="tool-run-group" data-tool-run-group="${escapeHtml(groupId)}" ${selectedInside ? "open" : ""}>
+      <summary>
+        <strong>Ran ${items.length} tools</strong>
+        ${labels ? `<span>${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
+      </summary>
+      <div class="tool-run-items">
+        ${items.map((item) => this.renderTranscriptItemShell(item)).join("")}
+      </div>
+    </details>`;
+  }
+
   private renderTranscript(): string {
-    return this.transcript.map((item) => this.renderTranscriptItemShell(item)).join("");
+    const parts: string[] = [];
+    for (let index = 0; index < this.transcript.length;) {
+      const item = this.transcript[index]!;
+      if (!this.isGroupableToolItem(item)) {
+        parts.push(this.renderTranscriptItemShell(item));
+        index++;
+        continue;
+      }
+      const group: TranscriptItem[] = [];
+      while (index < this.transcript.length && this.isGroupableToolItem(this.transcript[index]!)) {
+        group.push(this.transcript[index]!);
+        index++;
+      }
+      if (group.length >= 2) parts.push(this.renderToolRunGroup(group));
+      else parts.push(this.renderTranscriptItemShell(group[0]!));
+    }
+    return parts.join("");
   }
 
   private renderJumpToLatest(): string {
@@ -2430,8 +2465,7 @@ class PiWebAgentApp extends HTMLElement {
   private isGroupableToolItem(item: TranscriptItem): boolean {
     return item.kind === "tool"
       && item.status === "done"
-      && !itemHasRenderedImage(item)
-      && !itemHasLocalImageArtifacts(item, (path) => this.localImageUrl(path));
+      && !itemHasRenderedImage(item);
   }
 
   private toolGroupPositionFor(item: TranscriptItem): ToolGroupPosition {

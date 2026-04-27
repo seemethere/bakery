@@ -1046,6 +1046,66 @@ textarea:disabled {
   margin-top: 5px;
 }
 
+.tool-run-group {
+  border: 1px solid rgba(86, 121, 88, 0.34);
+  border-radius: 6px;
+  background: rgba(24, 42, 30, 0.42);
+  overflow: hidden;
+}
+
+.tool-run-group summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 29px;
+  padding: 5px 8px;
+  color: #9eb99a;
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.tool-run-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-run-group summary::before {
+  content: "▸";
+  color: #789174;
+}
+
+.tool-run-group[open] summary::before {
+  content: "▾";
+}
+
+.tool-run-group summary strong {
+  flex: 0 0 auto;
+  color: #b7cdb2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-weight: 700;
+}
+
+.tool-run-group summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: #7f927d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-run-items {
+  display: grid;
+  gap: 2px;
+  padding: 0 6px 6px 18px;
+}
+
+.tool-run-items .message.tool.done.collapsed {
+  margin: 0;
+  border-color: rgba(86, 121, 88, 0.22);
+  background: rgba(18, 31, 22, 0.62);
+  opacity: 0.86;
+}
+
 .message.tool.done.collapsed.tool-group-start,
 .message.tool.done.collapsed.tool-group-middle,
 .message.tool.done.collapsed.tool-group-end {

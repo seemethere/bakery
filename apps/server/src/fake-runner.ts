@@ -118,6 +118,7 @@ class FakeSessionHandle implements SessionHandle {
     this.emit({ type: "message_end", message: user });
 
     const shouldRunTool = /tool/i.test(text);
+    const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
     this.session.isStreaming = true;
@@ -138,7 +139,9 @@ class FakeSessionHandle implements SessionHandle {
 
       if (!emittedTool && offset >= toolAtOffset) {
         emittedTool = true;
-        await this.emitFakeToolRun(/(?:long|narrow)/i.test(text));
+        for (let toolIndex = 0; toolIndex < toolRunCount; toolIndex++) {
+          await this.emitFakeToolRun(/(?:long|narrow)/i.test(text), toolIndex + 1);
+        }
       }
 
       const delay = streamDelayMs(chunkIndex);
@@ -276,12 +279,12 @@ class FakeSessionHandle implements SessionHandle {
     return editorText === undefined ? { cancelled: false } : { cancelled: false, editorText };
   }
 
-  private async emitFakeToolRun(longOutput = false): Promise<void> {
+  private async emitFakeToolRun(longOutput = false, runIndex = 1): Promise<void> {
     const toolCallId = crypto.randomUUID();
-    const args = { command: longOutput ? "for i in {1..80}; do echo fake tool line $i; done" : "echo fake tool" };
+    const args = { command: longOutput ? "for i in {1..80}; do echo fake tool line $i; done" : `echo fake tool ${runIndex}` };
     const outputLines = longOutput
       ? Array.from({ length: 80 }, (_, index) => `[server] fake tool line ${String(index + 1).padStart(2, "0")} {\"level\":30,\"msg\":\"synthetic streaming terminal output\"}`).join("\n")
-      : "fake tool output\nstdout: first line\nstderr: delayed diagnostic";
+      : `fake tool ${runIndex} output\nstdout: first line\nstderr: delayed diagnostic`;
     this.emit({ type: "tool_execution_start", toolCallId, toolName: "bash", args });
     await sleep(35);
     this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: "running fake tool...\n" }] } });
