@@ -1320,8 +1320,15 @@ class PiWebAgentApp extends HTMLElement {
       return "";
     }
     if (this.treeActiveEntryId && nodes.some((node) => node.id === this.treeActiveEntryId)) return this.treeActiveEntryId;
-    this.treeActiveEntryId = nodes[0]?.id ?? "";
+    this.treeActiveEntryId = this.currentTreeEntryId() || nodes[nodes.length - 1]?.id || nodes[0]?.id || "";
     return this.treeActiveEntryId;
+  }
+
+  private visibleTreeContainer(source?: HTMLElement | null): HTMLElement | null {
+    return source?.closest<HTMLElement>(".session-tree")
+      ?? (this.treeDrawerOpen ? this.querySelector<HTMLElement>(".tree-drawer .session-tree") : null)
+      ?? this.querySelector<HTMLElement>(".right-panel .session-tree")
+      ?? this.querySelector<HTMLElement>(".session-tree");
   }
 
   private setActiveTreeEntry(entryId: string, sourceRow?: HTMLElement | null, focus = true): void {
@@ -1333,7 +1340,7 @@ class PiWebAgentApp extends HTMLElement {
       row.classList.toggle("keyboard-active", active);
     });
     if (!focus) return;
-    const tree = sourceRow?.closest(".session-tree") ?? this.querySelector(".session-tree");
+    const tree = this.visibleTreeContainer(sourceRow);
     const target = tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(entryId)}"]`) ?? this.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(entryId)}"]`);
     target?.focus({ preventScroll: true });
   }
@@ -1377,8 +1384,8 @@ class PiWebAgentApp extends HTMLElement {
     const currentId = this.currentTreeEntryId();
     if (!currentId) return;
     this.setActiveTreeEntry(currentId, source, true);
-    const tree = source?.closest(".session-tree") ?? this.querySelector(".session-tree");
-    tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(currentId)}"]`)?.scrollIntoView({ block: "center" });
+    const tree = this.visibleTreeContainer(source);
+    tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(currentId)}"]`)?.scrollIntoView({ block: "end" });
   }
 
   private renderCurrentTreePath(path: SessionTreeNode[]): string {
@@ -2762,7 +2769,7 @@ class PiWebAgentApp extends HTMLElement {
             <button data-tree-refresh>Refresh</button>
           </div>
         </div>
-        <div class="tree-hints">Tab into rows · arrows move · Enter navigates · F forks · C jumps current · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
+        <div class="tree-hints">Opens at current leaf · arrows move up/down · Enter navigates · F forks · C jumps current · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
         ${this.renderCurrentTreePath(currentPath)}
         ${this.sessionTree?.tree.length
           ? `<div class="session-tree" role="tree" aria-label="Session tree entries">${this.renderTreeNodes(this.sessionTree.tree, "", currentPathIds, activeEntryId)}</div>`
@@ -3358,10 +3365,12 @@ class PiWebAgentApp extends HTMLElement {
       this.focusQuestionPanel();
     }
     if (this.focusTreeOnNextRender && this.rightPanelTab === "tree") {
-      const treeRow = this.querySelector<HTMLElement>(".session-tree [tabindex='0']");
+      const tree = this.visibleTreeContainer();
+      const treeRow = tree?.querySelector<HTMLElement>("[tabindex='0']");
       if (treeRow) {
         this.focusTreeOnNextRender = false;
         treeRow.focus({ preventScroll: true });
+        treeRow.scrollIntoView({ block: "end" });
       }
     }
     recordPerfSample("render", performance.now() - renderStart);
