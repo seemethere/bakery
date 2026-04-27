@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
+import { getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "./workflow-skills.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -252,7 +253,7 @@ class FakeSessionHandle implements SessionHandle {
     return [
       { name: "tree", description: "Open the web session tree", source: "builtin" },
       { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
-      { name: "grill-me", description: "Start a one-question-at-a-time codebase interview using ask_question", source: "skill", argumentHint: "[topic or goal]" },
+      ...WORKFLOW_SKILL_COMMANDS,
       { name: "session", description: "Show session info", source: "builtin" },
       { name: "reload", description: "Reload fake resources", source: "builtin" },
     ];
@@ -263,16 +264,13 @@ class FakeSessionHandle implements SessionHandle {
     if (trimmed === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
     if (trimmed === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
     if (trimmed === "/tree") return { handled: true, title: "/tree", body: "Open the Tree tab or wide tree drawer." };
-    if (/^\/grill-me(?:\s|$)/.test(trimmed)) {
-      const focus = trimmed.replace(/^\/grill-me(?:\s+)?/, "").trim();
+    const workflowMatch = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(trimmed);
+    const workflowSkill = workflowMatch ? getWorkflowSkill(workflowMatch[1] ?? "") : undefined;
+    if (workflowSkill) {
       return {
         handled: true,
-        title: "/grill-me",
-        launchPrompt: [
-          "Run the bundled `grill-me` skill for this coding session.",
-          focus ? `Operator-provided focus: ${focus}` : "Operator-provided focus: general project/codebase review.",
-          "Use the ask_question tool for each question. Ask exactly one concise question at a time and include a recommendation.",
-        ].join("\n"),
+        title: `/${workflowSkill.name}`,
+        launchPrompt: workflowSkill.buildPrompt(workflowMatch?.[2]?.trim() ?? ""),
       };
     }
     return { handled: false };
