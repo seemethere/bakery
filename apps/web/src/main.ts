@@ -2,7 +2,8 @@ import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextU
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
 import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, itemHasRenderedImage, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type ToolGroupPosition, type TranscriptItem } from "./transcript";
-import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
+import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderSessionSummary as renderSessionSummaryHtml, sessionDisplayTitle, sessionMetadataLabel, sessionSnippet, sessionTitlePlaceholder, type MetadataAcceptKind } from "./session-metadata";
+import { escapeHtml, isRecord, pathBasename, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
@@ -51,23 +52,6 @@ function applyThemePreference(preference: ThemePreference): void {
 }
 
 applyThemePreference(storedThemePreference());
-
-function cleanTitleInput(value: string): string {
-  return value.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-}
-
-function isGenericSessionPrompt(value: string): boolean {
-  const normalized = value.toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
-  if (/^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|next|next up|next thing)(?: please)?$/.test(normalized)) return true;
-  if (/^(?:give me (?:a )?sense of )?(?:what'?s|what is|what) next\??$/.test(normalized)) return true;
-  if (/^(?:nice|okay|alright|ok) (?:what'?s|what is|what) next\??$/.test(normalized)) return true;
-  return false;
-}
-
-function provisionalTitleFromPrompt(value: string): string | null {
-  const cleaned = cleanTitleInput(value);
-  return cleaned && !isGenericSessionPrompt(cleaned) && cleaned.length >= 8 ? cleaned : null;
-}
 
 const supportedPromptImageTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]);
 const maxPromptImages = 4;
@@ -883,31 +867,15 @@ class PiWebAgentApp extends HTMLElement {
       if (suggestion.deferred) this.metadataSuggestionError = suggestion.reason ?? "Not enough session context yet.";
       else this.metadataSuggestion = suggestion;
     } catch (error) {
-      this.metadataSuggestionError = this.formatMetadataError(error);
+      this.metadataSuggestionError = formatMetadataError(error);
     }
     this.metadataGenerating = false;
     this.render();
   }
 
-  private formatMetadataError(error: unknown): string {
-    const raw = error instanceof Error ? error.message : String(error);
-    const match = /^(\d+):\s*([\s\S]*)$/.exec(raw);
-    if (!match) return `Could not generate metadata. ${raw}`;
-    let detail = match[2]?.trim() || raw;
-    try {
-      const parsed = JSON.parse(detail) as { error?: unknown; message?: unknown };
-      detail = typeof parsed.error === "string" ? parsed.error : typeof parsed.message === "string" ? parsed.message : detail;
-    } catch {
-      // Keep provider text as-is when it is not JSON.
-    }
-    return `Could not generate metadata (${match[1]}). ${detail}`;
-  }
-
-  private async acceptMetadataSuggestion(kind: "both" | "title" | "summary"): Promise<void> {
+  private async acceptMetadataSuggestion(kind: MetadataAcceptKind): Promise<void> {
     if (!this.selectedSession || !this.metadataSuggestion) return;
-    const body: Record<string, string> = {};
-    if ((kind === "both" || kind === "title") && this.metadataSuggestion.title) body.title = this.metadataSuggestion.title;
-    if ((kind === "both" || kind === "summary") && this.metadataSuggestion.summary) body.summary = this.metadataSuggestion.summary;
+    const body = metadataPatchForSuggestion(kind, this.metadataSuggestion);
     if (Object.keys(body).length === 0) return;
     try {
       const updated = await this.api<WebSession>(`/api/sessions/${this.selectedSession.id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -1469,7 +1437,7 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
     });
     this.querySelectorAll<HTMLButtonElement>("[data-accept-metadata]").forEach((button) => {
-      button.addEventListener("click", () => void this.acceptMetadataSuggestion(button.dataset.acceptMetadata as "both" | "title" | "summary"));
+      button.addEventListener("click", () => void this.acceptMetadataSuggestion(button.dataset.acceptMetadata as MetadataAcceptKind));
     });
     this.querySelector<HTMLButtonElement>("#send")?.addEventListener("click", () => this.sendFromInput(false));
     this.querySelector<HTMLButtonElement>("#followUp")?.addEventListener("click", () => this.sendFromInput(true));
@@ -1724,14 +1692,6 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
-  private sessionDisplayTitle(session: WebSession): string {
-    return session.title?.trim() || (session.lastUserPrompt && isGenericSessionPrompt(session.lastUserPrompt) ? "New session" : session.lastUserPrompt?.trim().slice(0, 60)) || pathBasename(session.cwd) || "Untitled session";
-  }
-
-  private sessionTitlePlaceholder(session: WebSession): string {
-    return session.title ? "Session title" : this.sessionDisplayTitle(session);
-  }
-
   private summaryExpanded(sessionId = this.selectedSession?.id): boolean {
     return sessionId ? localStorage.getItem(`piWebSessionSummaryExpanded:${sessionId}`) === "true" : false;
   }
@@ -1740,12 +1700,6 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     localStorage.setItem(`piWebSessionSummaryExpanded:${this.selectedSession.id}`, String(expanded));
     this.render();
-  }
-
-  private sessionMetadata(session: WebSession): string {
-    const repo = pathBasename(session.cwd);
-    const parent = pathParent(session.cwd);
-    return `${repo}${parent && parent !== repo ? ` · ${parent}` : ""}`;
   }
 
   private sortedSessions(): WebSession[] {
@@ -1761,9 +1715,9 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderSessionCard(session: WebSession): string {
-    const title = this.sessionDisplayTitle(session);
+    const title = sessionDisplayTitle(session);
     const activity = session.lastActivityAt ?? session.lastOpenedAt;
-    const snippet = session.summary?.trim() || (session.lastUserPrompt ? compactWorkflowLaunchSummary(session.lastUserPrompt) ?? session.lastUserPrompt.trim() : "") || "No prompt yet";
+    const snippet = sessionSnippet(session);
     const status = session.status ?? (session.id === this.selectedSession?.id ? this.status === "connecting" || this.status === "disconnected" ? undefined : this.status : "idle");
     return `
       <button data-session-id="${escapeHtml(session.id)}" class="session-card ${session.id === this.selectedSession?.id ? "active" : ""}">
@@ -1792,31 +1746,14 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderSessionSummary(expanded: boolean): string {
     if (!this.selectedSession) return "";
-    const summary = this.selectedSession.summary?.trim();
-    const suggestion = this.metadataSuggestion;
-    const sourceHint = `Title: ${this.selectedSession.titleSource}; summary: ${this.selectedSession.summarySource}`;
-    const summaryBlock = summary ? `
-      <button id="toggleSessionSummary" class="session-summary-toggle" type="button" title="${escapeHtml(sourceHint)}">${expanded ? "▾" : "▸"} Summary${expanded ? "" : ` — ${escapeHtml(summary.slice(0, 120))}${summary.length > 120 ? "…" : ""}`}</button>
-      ${expanded ? `<p class="session-summary-body">${escapeHtml(summary)}</p>` : ""}
-    ` : `<span class="session-summary-empty" title="${escapeHtml(sourceHint)}">No summary yet.</span>`;
-    const suggestionBlock = suggestion ? `
-      <div class="metadata-suggestion">
-        <div class="metadata-suggestion-header">
-          <strong>Suggested title${suggestion.summary ? " & summary" : ""}</strong>
-          ${suggestion.reason ? `<span>${escapeHtml(suggestion.reason)}</span>` : ""}
-        </div>
-        ${suggestion.title ? `<p><b>Title:</b> ${escapeHtml(suggestion.title)}</p>` : ""}
-        ${suggestion.summary ? `<p><b>Summary:</b> ${escapeHtml(suggestion.summary)}</p>` : ""}
-        <div class="metadata-suggestion-actions">
-          ${suggestion.title && suggestion.summary ? `<button data-accept-metadata="both">Apply title & summary</button>` : ""}
-          ${suggestion.title ? `<button data-accept-metadata="title">Apply title</button>` : ""}
-          ${suggestion.summary ? `<button data-accept-metadata="summary">Apply summary</button>` : ""}
-          <button id="regenerateMetadata" type="button" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>Regenerate</button>
-          <button id="dismissMetadataSuggestion" type="button">Dismiss</button>
-        </div>
-      </div>` : "";
-    const errorBlock = this.metadataSuggestionError ? `<p class="metadata-suggestion metadata-error">${escapeHtml(this.metadataSuggestionError)}</p>` : "";
-    return `<div class="session-summary">${summaryBlock}${suggestionBlock}${errorBlock}</div>`;
+    return renderSessionSummaryHtml({
+      session: this.selectedSession,
+      expanded,
+      suggestion: this.metadataSuggestion,
+      error: this.metadataSuggestionError,
+      metadataGenerating: this.metadataGenerating,
+      status: this.status,
+    });
   }
 
   private patchAutocompleteSelection(kind: "command" | "file"): void {
@@ -2471,8 +2408,8 @@ class PiWebAgentApp extends HTMLElement {
     const currentModelId = this.settings?.model?.id ?? "";
     const sessionGroups = this.recentSessions();
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
-    const selectedTitlePlaceholder = this.selectedSession ? this.sessionTitlePlaceholder(this.selectedSession) : "";
-    const selectedMeta = this.selectedSession ? this.sessionMetadata(this.selectedSession) : "";
+    const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
+    const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
     const summaryExpanded = this.selectedSession ? this.summaryExpanded(this.selectedSession.id) : false;
     this.innerHTML = `
       <aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""}">
