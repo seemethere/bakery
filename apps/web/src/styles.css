@@ -868,6 +868,30 @@ footer.running-footer {
   white-space: nowrap;
 }
 
+.image-drop-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.image-drop-mode button {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  background: var(--color-bg-muted);
+  color: var(--color-text-muted);
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.image-drop-mode button.active {
+  border-color: var(--color-accent-soft);
+  background: var(--color-accent-bg);
+  color: var(--color-text);
+}
+
 .prompt-shell.dragging-image textarea {
   border-color: var(--c-8fb3ff);
   box-shadow: 0 0 0 2px rgba(102, 140, 255, 0.35);

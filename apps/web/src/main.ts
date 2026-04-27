@@ -25,6 +25,7 @@ type PromptImage = {
   dataUrl: string;
   size: number;
 };
+type ImageDropMode = "prompt" | "artifact";
 
 type RunningQueueItem = {
   text: string;
@@ -138,6 +139,7 @@ class PiWebAgentApp extends HTMLElement {
   private unreadTranscriptIds = new Set<string>();
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
+  private imageDropMode: ImageDropMode = (localStorage.getItem("piWebImageDropMode") === "artifact" ? "artifact" : "prompt");
   private runningQueue: RunningQueueState = { steering: [], followUp: [] };
   private runningQueueExpanded = false;
   private reconnectAttempt = 0;
@@ -238,6 +240,7 @@ class PiWebAgentApp extends HTMLElement {
     const normalizedCwd = this.selectedSession?.cwd.replace(/\\/g, "/").replace(/\/+$/, "");
     let normalized = decoded.replace(/\\/g, "/").replace(/^\.\//, "");
     if (!/\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized) || normalized.includes("\0")) return null;
+    if (normalized.startsWith(".bakery/artifacts/")) return { originalPath: normalized };
     if (normalized.startsWith("/") && normalizedCwd) {
       if (normalized === normalizedCwd) return null;
       if (!normalized.startsWith(`${normalizedCwd}/`)) return { originalPath: normalized };
@@ -1055,6 +1058,70 @@ class PiWebAgentApp extends HTMLElement {
     this.requestRender(0);
   }
 
+  private async handleImageFiles(files: FileList | File[]): Promise<void> {
+    if (this.imageDropMode === "artifact") await this.uploadImageArtifacts(files);
+    else await this.addPromptImageFiles(files);
+  }
+
+  private artifactPathForFile(file: File): string {
+    const safeName = (file.name || "screenshot.png").replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "screenshot.png";
+    return `.bakery/artifacts/${new Date().toISOString().replace(/[:.]/g, "-")}-${safeName}`;
+  }
+
+  private async uploadImageArtifacts(files: FileList | File[]): Promise<void> {
+    if (!this.selectedSession) {
+      this.notice = "Open a session before uploading transcript artifacts.";
+      this.render();
+      return;
+    }
+    const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    if (incoming.length === 0) return;
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const uploadedPaths: string[] = [];
+    for (const file of incoming) {
+      if (!supportedPromptImageTypes.has(file.type)) {
+        this.notice = `Unsupported image type: ${file.type || file.name}`;
+        continue;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        this.notice = `${file.name} is larger than 20 MB.`;
+        continue;
+      }
+      const path = this.artifactPathForFile(file);
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener("load", () => resolve(String(reader.result ?? "").replace(/^data:[^,]+,/, "")));
+        reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image")));
+        reader.readAsDataURL(file);
+      });
+      await this.api(`/api/sessions/${this.selectedSession.id}/artifacts`, {
+        method: "POST",
+        body: JSON.stringify({ path, mimeType: file.type === "image/jpg" ? "image/jpeg" : file.type, data }),
+      });
+      uploadedPaths.push(path);
+    }
+    if (uploadedPaths.length > 0) {
+      const insertion = uploadedPaths.map((path) => `Screenshot artifact: ${path}`).join("\n");
+      if (input) {
+        const prefix = input.value.trimEnd();
+        input.value = `${prefix}${prefix ? "\n" : ""}${insertion}`;
+        this.updatePromptDraft(input);
+      } else {
+        this.promptDraft = `${this.promptDraft.trimEnd()}${this.promptDraft.trim() ? "\n" : ""}${insertion}`;
+        this.schedulePromptDraftSave();
+      }
+      this.notice = `Uploaded ${uploadedPaths.length} transcript artifact${uploadedPaths.length === 1 ? "" : "s"}; send or mention the inserted path to render it.`;
+    }
+    this.render();
+  }
+
+  private setImageDropMode(mode: ImageDropMode): void {
+    this.imageDropMode = mode;
+    localStorage.setItem("piWebImageDropMode", mode);
+    this.notice = mode === "artifact" ? "Image drops now upload transcript artifacts instead of prompt attachments." : "Image drops now attach images to prompts.";
+    this.render();
+  }
+
   private async addPromptImageFiles(files: FileList | File[]): Promise<void> {
     const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
     if (incoming.length === 0) return;
@@ -1585,10 +1652,12 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLInputElement>("#imageInput")?.addEventListener("change", (event) => {
       const input = event.currentTarget as HTMLInputElement;
-      void this.addPromptImageFiles(input.files ?? []);
+      void this.handleImageFiles(input.files ?? []);
       input.value = "";
     });
     this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.querySelector<HTMLInputElement>("#imageInput")?.click());
+    this.querySelector<HTMLButtonElement>("#imageModePrompt")?.addEventListener("click", () => this.setImageDropMode("prompt"));
+    this.querySelector<HTMLButtonElement>("#imageModeArtifact")?.addEventListener("click", () => this.setImageDropMode("artifact"));
     this.querySelectorAll<HTMLButtonElement>("[data-remove-image-id]").forEach((button) => {
       button.addEventListener("click", () => this.removePromptImage(button.dataset.removeImageId ?? ""));
     });
@@ -1606,12 +1675,12 @@ class PiWebAgentApp extends HTMLElement {
       if (!files || !Array.from(files).some((file) => file.type.startsWith("image/"))) return;
       event.preventDefault();
       (event.currentTarget as HTMLElement).classList.remove("dragging-image");
-      void this.addPromptImageFiles(files);
+      void this.handleImageFiles(files);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("paste", (event) => {
       const files = event.clipboardData?.files;
-      if (files && Array.from(files).some((file) => file.type.startsWith("image/"))) void this.addPromptImageFiles(files);
+      if (files && Array.from(files).some((file) => file.type.startsWith("image/"))) void this.handleImageFiles(files);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
       window.setTimeout(() => {
@@ -1857,6 +1926,15 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("click", () => this.chooseFileAutocomplete(Number(button.dataset.fileIndex ?? "0")));
     });
     this.syncAutocompleteScroll();
+  }
+
+  private renderImageDropMode(): string {
+    return `
+      <div class="image-drop-mode" role="group" aria-label="Image drop mode">
+        <span>Images:</span>
+        <button id="imageModePrompt" type="button" class="${this.imageDropMode === "prompt" ? "active" : ""}" aria-pressed="${this.imageDropMode === "prompt"}">Prompt</button>
+        <button id="imageModeArtifact" type="button" class="${this.imageDropMode === "artifact" ? "active" : ""}" aria-pressed="${this.imageDropMode === "artifact"}">Artifact</button>
+      </div>`;
   }
 
   private renderPromptImages(): string {
@@ -2565,6 +2643,7 @@ class PiWebAgentApp extends HTMLElement {
               <span class="composer-hint">${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
               ${this.renderComposerActivity()}
               ${this.renderContextUsageNotice()}
+              ${this.renderImageDropMode()}
             </div>
             ${this.renderPromptImages()}
             <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
@@ -2573,7 +2652,7 @@ class PiWebAgentApp extends HTMLElement {
             ${renderFileAutocomplete(this.fileAutocomplete)}
           </div>
           <div class="controls ${isRunning ? "running" : ""}">
-            <button id="attachImages" class="icon-button" title="Attach images" aria-label="Attach images" ${isController ? "" : "disabled"}>📎</button>
+            <button id="attachImages" class="icon-button" title="${this.imageDropMode === "artifact" ? "Upload image artifacts" : "Attach images"}" aria-label="${this.imageDropMode === "artifact" ? "Upload image artifacts" : "Attach images"}" ${isController ? "" : "disabled"}>📎</button>
             <button id="send" class="primary-action" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}<small>Enter</small></button>
             <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
             <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>

@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -826,6 +826,23 @@ async function runImageAttachments(page: Page): Promise<Record<string, unknown>>
   return collectMetrics(page);
 }
 
+async function runImageArtifactDropUpload(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const imagePath = join(artifactDir, "fixture.png");
+  await page.locator("#imageModeArtifact").click();
+  await page.locator("#imageInput").setInputFiles(imagePath);
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/artifacts/"), null, { timeout: 5_000 });
+  const artifactPrompt = "Please echo this uploaded screenshot artifact path exactly: " + await page.locator("#prompt").inputValue();
+  await sendPromptAndWaitIdle(page, artifactPrompt);
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
+    return images.length >= 1 && images.every((img) => img.complete && img.naturalWidth > 0);
+  }, null, { timeout: 5_000 });
+  const sources = await page.locator(".artifact-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
+  if (!sources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected dropped artifact screenshots to use artifact raw endpoint, saw ${sources.join(", ")}`);
+  return { artifactImages: await page.locator(".artifact-image img").count(), sources, ...(await collectMetrics(page)) };
+}
+
 async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please list a local image artifact path for screenshot path rendering validation.");
@@ -995,6 +1012,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "tool-grouping") return runToolGrouping(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
+  if (name === "image-artifact-drop-upload") return runImageArtifactDropUpload(page);
   if (name === "image-artifact-paths") return runImageArtifactPaths(page);
   if (name === "repeated-image-artifact-paths") return runRepeatedImageArtifactPaths(page);
   if (name === "artifact-path-formats") return runArtifactPathFormats(page);
