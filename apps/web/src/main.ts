@@ -798,10 +798,19 @@ class PiWebAgentApp extends HTMLElement {
     this.savePromptDraft();
     this.persistAttachmentWarningIfNeeded();
   };
+  private readonly questionKeyHandler = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(".question-panel")) return;
+    if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
+      this.handleQuestionPanelKeydown(event);
+    }
+  };
 
   connectedCallback(): void {
     applyThemePreference(this.themePreference);
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    window.addEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.render();
     void this.refresh();
@@ -809,6 +818,7 @@ class PiWebAgentApp extends HTMLElement {
 
   disconnectedCallback(): void {
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    window.removeEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.persistAttachmentWarningIfNeeded();
     if (this.renderTimer) clearTimeout(this.renderTimer);
@@ -1868,20 +1878,34 @@ class PiWebAgentApp extends HTMLElement {
     if (active?.id === "questionCustomAnswer") return;
     const buttons = Array.from(this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]:not(:disabled)"));
     if (buttons.length === 0) return;
-    const currentIndex = Math.max(0, buttons.findIndex((button) => button === active));
+    const focusedIndex = buttons.findIndex((button) => button === active);
+    const currentIndex = focusedIndex >= 0 ? focusedIndex : this.recommendedQuestionOptionIndex() >= 0 ? this.recommendedQuestionOptionIndex() : 0;
     const focusButton = (index: number) => buttons[(index + buttons.length) % buttons.length]?.focus();
     if (event.key === "ArrowDown" || event.key === "ArrowRight") {
       event.preventDefault();
-      focusButton(currentIndex + 1);
+      focusButton(focusedIndex >= 0 ? currentIndex + 1 : currentIndex);
     } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
       event.preventDefault();
-      focusButton(currentIndex - 1);
+      focusButton(focusedIndex >= 0 ? currentIndex - 1 : currentIndex);
     } else if (event.key === "Home") {
       event.preventDefault();
       buttons[0]?.focus();
     } else if (event.key === "End") {
       event.preventDefault();
       buttons[buttons.length - 1]?.focus();
+    } else if (/^[1-9]$/.test(event.key)) {
+      const index = Number(event.key) - 1;
+      const option = this.pendingQuestion.options[index];
+      if (option) {
+        event.preventDefault();
+        this.answerPendingQuestion({ answer: option.label, selectedIndex: index, wasCustom: false });
+      }
+    } else if (event.key.toLowerCase() === "c" && this.pendingQuestion.allowCustomAnswer) {
+      const customInput = this.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)");
+      if (customInput) {
+        event.preventDefault();
+        customInput.focus();
+      }
     } else if (event.key === "Escape") {
       event.preventDefault();
       this.querySelector<HTMLTextAreaElement>("#prompt")?.focus();
@@ -2435,7 +2459,7 @@ class PiWebAgentApp extends HTMLElement {
         ${question.options.length ? `<div class="question-options" role="listbox" aria-label="Answer options. Use arrow keys to choose, then Enter.">
           ${question.options.map((option, index) => {
             const recommended = index === recommendedOptionIndex;
-            return `<button type="button" data-question-option-index="${index}" class="${recommended ? "recommended-option" : ""}" aria-label="${recommended ? "Recommended option: " : ""}${index + 1}. ${escapeHtml(option.label)}" ${disabled ? "disabled" : ""}>
+            return `<button type="button" data-question-option-index="${index}" class="${recommended ? "recommended-option" : ""}" aria-keyshortcuts="${index + 1}" aria-label="${recommended ? "Recommended option: " : ""}${index + 1}. ${escapeHtml(option.label)}" ${disabled ? "disabled" : ""}>
               <span class="option-title"><strong>${index + 1}. ${escapeHtml(option.label)}</strong>${recommended ? `<em>Recommended</em>` : ""}</span>
               ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
             </button>`;

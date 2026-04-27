@@ -231,6 +231,8 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("Please trigger a cancel question-answer scenario.");
   await page.locator("#send").click();
   await page.locator(".question-panel", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
+  await page.keyboard.press("c");
+  await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.locator("#questionCancel").click();
   await page.locator(".message.tool", { hasText: "User cancelled the question" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
@@ -242,8 +244,10 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
+  await page.keyboard.press("c");
+  await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");
-  await page.locator("#questionCustomSubmit").click();
+  await page.keyboard.press("Enter");
   await page.locator(".message.tool", { hasText: "Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 10_000 });
