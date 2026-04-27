@@ -38,6 +38,7 @@ assert(compactWorkflowLaunchText(prompt) === "Launched /plan workflow · Focus: 
 assert(compactWorkflowLaunchText("ordinary prompt") === null, "expected non-workflow prompts to stay unchanged");
 
 const agentGuidance = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+const localSkill = readFileSync(new URL("../.pi/skills/iteration-observability/SKILL.md", import.meta.url), "utf8");
 const guidanceSnippets = [
   "bun run report:iteration --agent-actions --recommend",
   "bun run report:iteration --recommend <changed files>",
@@ -49,11 +50,27 @@ const guidanceSnippets = [
   "## Validation decision",
   "full suite was run or intentionally skipped",
   "bun run report:iteration --session-context",
+  "bun run report:iteration --session-history",
+  ".pi/skills/iteration-observability/SKILL.md",
   "per-tool result payload size",
 ];
 
 for (const snippet of guidanceSnippets) {
   assert(agentGuidance.includes(snippet), `expected AGENTS.md to include iteration telemetry guidance: ${snippet}`);
+}
+
+const localSkillSnippets = [
+  "name: iteration-observability",
+  "bun run report:iteration --session-context",
+  "bun run report:iteration --session-history",
+  "Validation command summary",
+  "Edit/write attempts",
+  "Do not print raw prompts",
+  "Recommendation format",
+];
+
+for (const snippet of localSkillSnippets) {
+  assert(localSkill.includes(snippet), `expected iteration-observability skill to include: ${snippet}`);
 }
 
 console.log("workflow skill assertions passed");

@@ -35,6 +35,8 @@ When the operator asks "what's next?" or asks to continue planning:
 
 ## Agent iteration telemetry
 
+Agents learn about this repository's telemetry workflow from this file, the bundled `/plan` workflow prompt, and the project-local pi skill at `.pi/skills/iteration-observability/SKILL.md` (loadable as `/skill:iteration-observability` in pi environments with skill commands enabled).
+
 Use the local iteration telemetry report to keep future agent decisions evidence-based.
 
 When planning agent behavior improvements, analyzing speed of iteration, or choosing validation commands, run:
@@ -56,7 +58,15 @@ When a session may be context-heavy, inspect local pi JSONL session logs without
 bun run report:iteration --session-context
 ```
 
-Use this to estimate per-tool result payload size, largest context contributors, and latest model usage before deciding to read large artifacts or rerun verbose commands.
+Use this to estimate per-tool result payload size, largest context contributors, validation reruns, edit/write failures, and latest model usage before deciding to read large artifacts or rerun verbose commands.
+
+To backfill all available local session JSONL logs into aggregate process evidence, run:
+
+```bash
+bun run report:iteration --session-history
+```
+
+Use this to identify historical validation hotspots, high-churn edit-failure files, and repeated context sinks before proposing workflow/process improvements.
 
 Before validating code changes, prefer:
 
