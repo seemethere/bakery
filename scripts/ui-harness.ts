@@ -443,9 +443,9 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   });
   if (!sheet || sheet.bottom > sheet.viewportHeight + 1 || sheet.width < 300 || sheet.top > sheet.triggerBottom + 70) throw new Error(`Mobile metadata popover should be visible near the trigger: ${JSON.stringify(sheet)}`);
   await page.locator(".metadata-mobile-popover #metadataSuggestionTitle").fill("Mobile metadata smoke");
+  await page.screenshot({ path: join(artifactDir, "mobile-metadata-popover.png"), fullPage: true });
   await page.locator('.metadata-mobile-popover [data-accept-metadata="title"]', { hasText: "✓" }).click();
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Mobile metadata smoke", null, { timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "mobile-metadata-popover.png"), fullPage: true });
   return { ...(await collectMetrics(page)), layout, metadataPopover: sheet };
 }
 
