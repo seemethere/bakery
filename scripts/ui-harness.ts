@@ -214,7 +214,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("Please trigger the question-answer scenario.");
   await page.locator("#send").click();
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });

@@ -2430,7 +2430,7 @@ class PiWebAgentApp extends HTMLElement {
           ${question.title ? `<span>${escapeHtml(question.title)}</span>` : ""}
         </div>
         <p class="question-text">${escapeHtml(question.question)}</p>
-        ${question.recommendation ? `<p class="question-recommendation"><b>Recommended:</b> ${escapeHtml(question.recommendation)}</p>` : ""}
+        ${question.recommendation && recommendedOptionIndex < 0 ? `<p class="question-recommendation"><b>Recommended:</b> ${escapeHtml(question.recommendation)}</p>` : ""}
         ${question.options.length ? `<div class="question-options" role="listbox" aria-label="Answer options. Use arrow keys to choose, then Enter.">
           ${question.options.map((option, index) => {
             const recommended = index === recommendedOptionIndex;
