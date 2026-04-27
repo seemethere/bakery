@@ -2335,6 +2335,22 @@ class PiWebAgentApp extends HTMLElement {
     }, delayMs);
   }
 
+  private isComposerNotice(): boolean {
+    return this.notice === "Bash commands are available when the session is idle."
+      || this.notice === "Remove image attachments before running a bash command."
+      || this.notice === "Not connected. Your draft is saved locally; sending will be available after reconnect."
+      || this.notice === "Drop image files here to attach them to the prompt."
+      || this.notice.startsWith("No supported image files found.")
+      || this.notice.startsWith("Could not attach image:")
+      || this.notice.startsWith("Attached image to prompt,")
+      || this.notice.startsWith("Unsupported image type:")
+      || this.notice.includes("is larger than");
+  }
+
+  private renderComposerNotice(): string {
+    return this.notice && this.isComposerNotice() ? `<p class="notice composer-notice">${escapeHtml(this.notice)}</p>` : "";
+  }
+
   private renderContextUsageNotice(): string {
     const usage = this.settings?.contextUsage;
     if (!this.selectedSession || !usage) return "";
@@ -2456,7 +2472,7 @@ class PiWebAgentApp extends HTMLElement {
         </header>
         ${this.renderConnectionBanner()}
         ${this.renderAttentionNeeded()}
-        ${this.notice ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
+        ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
         <div class="transcript-shell ${hasRunningQueueItems(this.runningQueue) ? "has-running-queue" : ""}">
           <section class="transcript">${this.renderTranscript()}</section>
           ${this.renderRunningQueueHtml()}
@@ -2473,6 +2489,7 @@ class PiWebAgentApp extends HTMLElement {
             </div>
             ${renderPromptImages(this.promptImages)}
             <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+            ${this.renderComposerNotice()}
             ${renderCommandAutocomplete(this.commandAutocomplete)}
             ${renderFileAutocomplete(this.fileAutocomplete)}
           </div>

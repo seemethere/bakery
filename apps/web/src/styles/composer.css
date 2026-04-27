@@ -458,6 +458,10 @@ textarea {
   margin: 8px 16px 0;
 }
 
+.composer-notice {
+  margin: 0;
+}
+
 .connection-banner {
   grid-row: 2;
   display: flex;
