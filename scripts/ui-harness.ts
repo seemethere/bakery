@@ -207,9 +207,20 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
 
 async function ensureSidebarSettingsVisible(page: Page): Promise<void> {
   if (await page.locator("#themePreference").isVisible().catch(() => false)) return;
-  const mobileMenu = page.locator("#toggleSessionSidebarMobile");
-  if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
-  else await page.locator("#toggleSessionSidebar").click();
+  const app = page.locator("pi-web-agent");
+  const collapsed = await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"));
+  if (collapsed) {
+    const mobileMenu = page.locator("#toggleSessionSidebarMobile");
+    if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
+    else await page.locator("#toggleSessionSidebar").click();
+  }
+  if (!await page.locator("#themePreference").isVisible().catch(() => false)) {
+    await app.evaluate((element) => {
+      const appElement = element as HTMLElement & { sessionSidebarCollapsed?: boolean; render?: () => void };
+      appElement.sessionSidebarCollapsed = false;
+      appElement.render?.();
+    });
+  }
   await page.locator("#themePreference").waitFor({ state: "visible", timeout: 5_000 });
 }
 
@@ -217,6 +228,7 @@ async function setWorkbenchTheme(page: Page, theme: "workbench-dark" | "workbenc
   await ensureSidebarSettingsVisible(page);
   await page.locator("#themePreference").selectOption(theme);
   await page.waitForFunction((expected) => document.documentElement.dataset.theme === expected, theme);
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
 }
 
 async function runThemes(page: Page): Promise<Record<string, unknown>> {
@@ -588,7 +600,9 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
   await page.locator("#sessionTitle").fill("Manual metadata smoke");
   await page.locator("#sessionTitle").press("Enter");
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Manual metadata smoke", null, { timeout: 5_000 });
+  await ensureSidebarSettingsVisible(page);
   await page.locator(".session-card.active", { hasText: "Manual metadata smoke" }).waitFor({ timeout: 5_000 });
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
 
   await page.locator("#prompt").click();
   await page.locator("#prompt").fill("/name Canonical slash title");
@@ -616,6 +630,7 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
   await page.locator('[data-accept-metadata="title"]', { hasText: "✓" }).click();
   await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value.includes("summaries"), null, { timeout: 5_000 });
 
+  await ensureSidebarSettingsVisible(page);
   const sessionId = await page.locator(".session-card.active").getAttribute("data-session-id");
   if (!sessionId) throw new Error("Could not find active session id for summary patch.");
   const summary = "Manual summary preview from metadata harness. It should appear collapsed in the header and as the session-card snippet.";
@@ -630,6 +645,7 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
   }, { apiBase, sessionId, summary });
   await page.locator("#toggleSessionSummary", { hasText: "Summary — Manual summary preview" }).waitFor({ timeout: 5_000 });
   await page.locator(".session-card.active .session-snippet", { hasText: "Manual summary preview" }).waitFor({ timeout: 5_000 });
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
   await page.locator("#toggleSessionSummary").click();
   await page.locator(".session-summary-body", { hasText: summary }).waitFor({ timeout: 5_000 });
   await page.locator("#toggleSessionSummary").click();
@@ -676,20 +692,22 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-options button").first().click();
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await page.locator(".message.assistant", { hasText: "Thanks" }).waitFor({ timeout: 5_000 });
+  await ensureSidebarSettingsVisible(page);
   await page.locator(".session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
   await page.locator("#prompt").fill("/tree");
   await page.locator("#send").click();
   await page.locator(".tree-drawer", { hasText: "user: Launched /plan workflow" }).waitFor({ timeout: 5_000 });
   await page.locator(".tree-drawer", { hasText: "Question discipline:" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("#closeTreeDrawer").click();
-  const beforeNewSessions = await page.locator("[data-session-id]").count();
+  const beforeNewSessions = await page.locator("pi-web-agent").evaluate((element) => ((element as unknown as { sessions?: unknown[] }).sessions ?? []).length);
   await page.locator("#prompt").fill("/new with args");
   await page.locator("#send").click();
-  await page.locator(".notice", { hasText: "Usage: /new" }).waitFor({ timeout: 5_000 });
-  await page.waitForFunction((count) => document.querySelectorAll("[data-session-id]").length === count, beforeNewSessions);
+  await page.waitForFunction(() => document.querySelector(".notice")?.textContent?.includes("Usage: /new"), null, { timeout: 5_000 });
+  await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length === count, beforeNewSessions);
   await page.locator("#prompt").fill("/new");
   await page.locator("#send").click();
-  await page.waitForFunction((count) => document.querySelectorAll("[data-session-id]").length > count, beforeNewSessions, { timeout: 5_000 });
+  await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeNewSessions, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator("#prompt").fill("/tree");
@@ -742,6 +760,7 @@ async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown
   await forkableRow.focus();
   await page.keyboard.press("f");
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await ensureSidebarSettingsVisible(page);
   await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
   return collectMetrics(page);
 }
