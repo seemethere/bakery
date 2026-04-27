@@ -1047,9 +1047,10 @@ textarea:disabled {
 }
 
 .tool-run-group {
-  border: 1px solid rgba(86, 121, 88, 0.34);
+  border: 1px solid rgba(91, 111, 146, 0.42);
   border-radius: 6px;
-  background: rgba(24, 42, 30, 0.42);
+  background: rgba(18, 24, 35, 0.74);
+  box-shadow: inset 2px 0 0 rgba(112, 138, 180, 0.22);
   overflow: hidden;
 }
 
@@ -1059,7 +1060,7 @@ textarea:disabled {
   gap: 10px;
   min-height: 29px;
   padding: 5px 8px;
-  color: #9eb99a;
+  color: #aab7cf;
   cursor: pointer;
   font-size: 12px;
   list-style: none;
@@ -1071,7 +1072,7 @@ textarea:disabled {
 
 .tool-run-group summary::before {
   content: "▸";
-  color: #789174;
+  color: #7e8fad;
 }
 
 .tool-run-group[open] summary::before {
@@ -1080,7 +1081,7 @@ textarea:disabled {
 
 .tool-run-group summary strong {
   flex: 0 0 auto;
-  color: #b7cdb2;
+  color: #d3dcf0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-weight: 700;
 }
@@ -1088,7 +1089,7 @@ textarea:disabled {
 .tool-run-group summary span {
   min-width: 0;
   overflow: hidden;
-  color: #7f927d;
+  color: #8794ad;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1097,13 +1098,23 @@ textarea:disabled {
   display: grid;
   gap: 2px;
   padding: 0 6px 6px 18px;
+  border-top: 1px solid rgba(91, 111, 146, 0.22);
 }
 
 .tool-run-items .message.tool.done.collapsed {
   margin: 0;
-  border-color: rgba(86, 121, 88, 0.22);
-  background: rgba(18, 31, 22, 0.62);
-  opacity: 0.86;
+  border-color: rgba(91, 111, 146, 0.2);
+  background: rgba(13, 18, 27, 0.72);
+  box-shadow: none;
+  opacity: 0.88;
+}
+
+.tool-run-items .message.tool.done.collapsed .message-header strong {
+  color: #c0c9dc;
+}
+
+.tool-run-items .message-header .tool-summary {
+  color: #768198;
 }
 
 .message.tool.done.collapsed.tool-group-start,
