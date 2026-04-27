@@ -868,37 +868,9 @@ footer.running-footer {
   white-space: nowrap;
 }
 
-.image-drop-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: auto;
-  color: var(--color-text-muted);
-  font-size: 11px;
-}
-
-.image-drop-mode button {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 999px;
-  background: var(--color-bg-muted);
-  color: var(--color-text-muted);
-  padding: 2px 7px;
-  font-size: 11px;
-}
-
-.image-drop-mode button.active {
-  border-color: var(--color-accent-soft);
-  background: var(--color-accent-bg);
-  color: var(--color-text);
-}
-
 .prompt-shell.dragging-image textarea {
   border-color: var(--c-8fb3ff);
   box-shadow: 0 0 0 2px rgba(102, 140, 255, 0.35);
-}
-
-.hidden-file-input {
-  display: none;
 }
 
 .prompt-images {
@@ -1066,31 +1038,6 @@ textarea {
   color: var(--c-ffd18a);
   padding: 10px;
   font-size: 12px;
-}
-
-.image-debug {
-  border: 1px solid var(--c-343b49);
-  border-radius: 8px;
-  background: var(--c-10131a);
-  color: var(--c-aab2c0);
-  padding: 8px 10px;
-  font-size: 12px;
-}
-
-.image-debug summary {
-  cursor: pointer;
-  color: var(--c-d7dcea);
-  font-weight: 600;
-}
-
-.image-debug pre {
-  margin: 8px 0 0;
-  max-height: 150px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
 }
 
 .connection-banner {

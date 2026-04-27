@@ -379,7 +379,7 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#send").click();
   await page.locator(".queue-pill.steer", { hasText: "queued steer mixed with follow-ups" }).waitFor({ timeout: 5_000 });
 
-  await page.locator("#imageInput").setInputFiles(imagePath);
+  await chooseImageWithPaperclip(page, imagePath);
   await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
   await page.locator("#prompt").fill("queued follow-up with screenshot");
   await page.locator("#followUp").click();
@@ -827,8 +827,6 @@ async function runImageAttachments(page: Page): Promise<Record<string, unknown>>
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
   await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
-  await page.locator(".image-debug", { hasText: "paperclip click received" }).waitFor({ timeout: 5_000 });
-  await page.locator(".image-debug", { hasText: "transient input change fired" }).waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
@@ -845,8 +843,6 @@ async function runImageAttachments(page: Page): Promise<Record<string, unknown>>
 async function runImageArtifactDropUpload(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
-  if (await page.locator("#imageModeArtifact").getAttribute("aria-pressed") !== "true") await page.locator("#imageModeArtifact").click();
-  await page.waitForFunction(() => document.querySelector("#imageModeArtifact")?.getAttribute("aria-pressed") === "true");
   await chooseImageWithPaperclip(page, imagePath);
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/artifacts/"), null, { timeout: 5_000 });
   const artifactPrompt = "Please echo this uploaded screenshot artifact path exactly: " + await page.locator("#prompt").inputValue();
