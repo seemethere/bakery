@@ -771,6 +771,7 @@ class PiWebAgentApp extends HTMLElement {
   private sessionTree: SessionTreeResponse | null = null;
   private treeDrawerOpen = false;
   private treeActiveEntryId = "";
+  private focusTreeOnNextRender = false;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
@@ -1023,6 +1024,7 @@ class PiWebAgentApp extends HTMLElement {
     this.sessionTree = null;
     this.treeDrawerOpen = false;
     this.treeActiveEntryId = "";
+    this.focusTreeOnNextRender = false;
     this.transcriptScrollTop = 0;
     this.unreadTranscriptIds.clear();
     this.selectedTranscriptId = "opened";
@@ -1306,6 +1308,11 @@ class PiWebAgentApp extends HTMLElement {
     return path.reverse();
   }
 
+  private currentTreeEntryId(): string {
+    const nodes = this.treeNodes();
+    return nodes.find((node) => node.current)?.id ?? this.sessionTree?.leafId ?? "";
+  }
+
   private ensureTreeActiveEntryId(): string {
     const nodes = this.treeNodes();
     if (!nodes.length) {
@@ -1313,7 +1320,7 @@ class PiWebAgentApp extends HTMLElement {
       return "";
     }
     if (this.treeActiveEntryId && nodes.some((node) => node.id === this.treeActiveEntryId)) return this.treeActiveEntryId;
-    this.treeActiveEntryId = nodes.find((node) => node.current)?.id ?? this.sessionTree?.leafId ?? nodes[0]?.id ?? "";
+    this.treeActiveEntryId = nodes[0]?.id ?? "";
     return this.treeActiveEntryId;
   }
 
@@ -1348,6 +1355,10 @@ class PiWebAgentApp extends HTMLElement {
       this.setActiveTreeEntry(entryId, row, true);
       void this.navigateToTreeEntry(entryId);
       return;
+    } else if (event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      this.focusCurrentTreeEntry(row);
+      return;
     } else if (event.key.toLowerCase() === "f") {
       if (row.dataset.treeForkable !== "true") return;
       event.preventDefault();
@@ -1360,6 +1371,14 @@ class PiWebAgentApp extends HTMLElement {
     }
     event.preventDefault();
     if (nextRow) this.setActiveTreeEntry(nextRow.dataset.treeEntryId ?? "", nextRow, true);
+  }
+
+  private focusCurrentTreeEntry(source?: HTMLElement | null): void {
+    const currentId = this.currentTreeEntryId();
+    if (!currentId) return;
+    this.setActiveTreeEntry(currentId, source, true);
+    const tree = source?.closest(".session-tree") ?? this.querySelector(".session-tree");
+    tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(currentId)}"]`)?.scrollIntoView({ block: "center" });
   }
 
   private renderCurrentTreePath(path: SessionTreeNode[]): string {
@@ -1446,6 +1465,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     this.treeDrawerOpen = true;
     this.rightPanelTab = "tree";
+    this.focusTreeOnNextRender = true;
     localStorage.setItem("piWebRightPanelTab", "tree");
     void this.refreshTree();
     this.render();
@@ -2223,6 +2243,7 @@ class PiWebAgentApp extends HTMLElement {
         const tab = button.dataset.rightTab === "preview" ? "preview" : button.dataset.rightTab === "tree" ? "tree" : "details";
         this.rightPanelTab = tab;
         this.rightPanelCollapsed = false;
+        if (tab === "tree") this.focusTreeOnNextRender = true;
         localStorage.setItem("piWebRightPanelTab", tab);
         localStorage.setItem("piWebRightPanelCollapsed", "false");
         this.render();
@@ -2377,6 +2398,9 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("click", () => this.openTreeDrawer());
     });
     this.querySelector<HTMLButtonElement>("#closeTreeDrawer")?.addEventListener("click", () => this.closeTreeDrawer());
+    this.querySelectorAll<HTMLButtonElement>("[data-tree-current]").forEach((button) => {
+      button.addEventListener("click", () => this.focusCurrentTreeEntry(button));
+    });
     this.querySelectorAll<HTMLElement>("[data-tree-entry-id]").forEach((element) => {
       element.addEventListener("click", () => {
         this.setActiveTreeEntry(element.dataset.treeEntryId ?? "", element, false);
@@ -2733,11 +2757,12 @@ class PiWebAgentApp extends HTMLElement {
           <strong>Session Tree</strong>
           <span>Type <b>/tree</b> to open this wide view. Click a row to navigate; <b>fork</b> creates a new session branch.</span>
           <div class="tree-toolbar-actions">
+            <button data-tree-current title="Jump to the current leaf row">Current</button>
             ${options.drawer ? `<button id="closeTreeDrawer">Close</button>` : `<button data-open-tree-drawer>Wide</button>`}
             <button data-tree-refresh>Refresh</button>
           </div>
         </div>
-        <div class="tree-hints">TUI-style view · current path highlighted · arrows move · Enter navigates · F forks · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
+        <div class="tree-hints">Tab into rows · arrows move · Enter navigates · F forks · C jumps current · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
         ${this.renderCurrentTreePath(currentPath)}
         ${this.sessionTree?.tree.length
           ? `<div class="session-tree" role="tree" aria-label="Session tree entries">${this.renderTreeNodes(this.sessionTree.tree, "", currentPathIds, activeEntryId)}</div>`
@@ -3331,6 +3356,13 @@ class PiWebAgentApp extends HTMLElement {
     if (this.focusPendingQuestionOnNextRender) {
       this.focusPendingQuestionOnNextRender = false;
       this.focusQuestionPanel();
+    }
+    if (this.focusTreeOnNextRender && this.rightPanelTab === "tree") {
+      const treeRow = this.querySelector<HTMLElement>(".session-tree [tabindex='0']");
+      if (treeRow) {
+        this.focusTreeOnNextRender = false;
+        treeRow.focus({ preventScroll: true });
+      }
     }
     recordPerfSample("render", performance.now() - renderStart);
   }
