@@ -216,6 +216,8 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-key-hint", { hasText: "1-9" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-custom-field", { hasText: "Custom" }).waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });
   await page.keyboard.press("ArrowDown");

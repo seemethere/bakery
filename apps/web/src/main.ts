@@ -2460,17 +2460,18 @@ class PiWebAgentApp extends HTMLElement {
           ${question.options.map((option, index) => {
             const recommended = index === recommendedOptionIndex;
             return `<button type="button" data-question-option-index="${index}" class="${recommended ? "recommended-option" : ""}" aria-keyshortcuts="${index + 1}" aria-label="${recommended ? "Recommended option: " : ""}${index + 1}. ${escapeHtml(option.label)}" ${disabled ? "disabled" : ""}>
-              <span class="option-title"><strong>${index + 1}. ${escapeHtml(option.label)}</strong>${recommended ? `<em>Recommended</em>` : ""}</span>
+              <span class="option-title"><kbd>${index + 1}</kbd><strong>${escapeHtml(option.label)}</strong>${recommended ? `<em>Recommended</em>` : ""}</span>
               ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
             </button>`;
           }).join("")}
         </div>` : ""}
         ${question.allowCustomAnswer ? `<div class="question-custom">
-          <input id="questionCustomAnswer" type="text" ${disabled ? "disabled" : ""} placeholder="Type a custom answer…" />
-          <button id="questionCustomSubmit" type="button" ${disabled ? "disabled" : ""}>Answer</button>
+          <label class="question-custom-field"><span><kbd>C</kbd> Custom</span><input id="questionCustomAnswer" type="text" ${disabled ? "disabled" : ""} placeholder="Type a custom answer…" /></label>
+          <button id="questionCustomSubmit" type="button" ${disabled ? "disabled" : ""}>Answer <kbd>Enter</kbd></button>
         </div>` : ""}
         <div class="question-actions">
           ${viewerCopy}
+          <span class="question-key-hint"><kbd>↑↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom</span>
           <button id="questionCancel" type="button" ${disabled ? "disabled" : ""}>Cancel question</button>
         </div>
       </section>`;
