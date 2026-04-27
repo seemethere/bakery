@@ -4,6 +4,7 @@ import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, 
 import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { TranscriptFollowController } from "./transcript-follow";
 import { defaultTranscriptExpanded, isAfterRunningTool, renderTranscriptHtml, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
@@ -58,18 +59,6 @@ function formatTokenCount(value: number | null | undefined): string {
 
 function contextUsagePercentLabel(usage: ContextUsage): string {
   return usage.percent === null ? "unknown" : `${usage.percent.toFixed(usage.percent >= 10 ? 0 : 1)}%`;
-}
-
-function parseBashPrompt(text: string): { command: string; excludeFromContext: boolean } | null {
-  if (text.startsWith("!!")) {
-    const command = text.slice(2).trim();
-    return command ? { command, excludeFromContext: true } : null;
-  }
-  if (text.startsWith("!")) {
-    const command = text.slice(1).trim();
-    return command ? { command, excludeFromContext: false } : null;
-  }
-  return null;
 }
 
 function contextUsageLabel(usage: ContextUsage): string {
@@ -362,19 +351,8 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedTranscriptId) this.selectTranscriptItem(nextItem.id, false);
   }
 
-  private draftKey(sessionId = this.selectedSession?.id): string | null {
-    return sessionId ? `piWebPromptDraft:${sessionId}` : null;
-  }
-
-  private attachmentWarningKey(sessionId = this.selectedSession?.id): string | null {
-    return sessionId ? `piWebPromptAttachmentWarning:${sessionId}` : null;
-  }
-
   private savePromptDraft(): void {
-    const key = this.draftKey();
-    if (!key) return;
-    if (this.promptDraft) localStorage.setItem(key, this.promptDraft);
-    else localStorage.removeItem(key);
+    savePromptDraftForSession(localStorage, this.selectedSession?.id, this.promptDraft);
   }
 
   private schedulePromptDraftSave(): void {
@@ -386,12 +364,11 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private loadPromptDraft(sessionId: string): string {
-    return localStorage.getItem(`piWebPromptDraft:${sessionId}`) ?? "";
+    return loadPromptDraftForSession(localStorage, sessionId);
   }
 
   private persistAttachmentWarningIfNeeded(): void {
-    const key = this.attachmentWarningKey();
-    if (key && this.promptImages.length > 0) localStorage.setItem(key, "lost");
+    persistPromptAttachmentWarning(localStorage, this.selectedSession?.id, this.promptImages.length > 0);
   }
 
   private async refresh(): Promise<void> {
@@ -450,9 +427,7 @@ class PiWebAgentApp extends HTMLElement {
     localStorage.setItem("piWebLastSessionId", session.id);
     this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
     this.status = "connecting";
-    const attachmentWarningKey = this.attachmentWarningKey(session.id);
-    const hadLostAttachments = attachmentWarningKey ? localStorage.getItem(attachmentWarningKey) === "lost" : false;
-    if (attachmentWarningKey) localStorage.removeItem(attachmentWarningKey);
+    const hadLostAttachments = consumePromptAttachmentWarning(localStorage, session.id);
     this.notice = hadLostAttachments ? "Image attachments are not restored after a refresh. Please attach them again before sending." : "";
     this.promptDraft = this.loadPromptDraft(session.id);
     this.promptImages = [];
@@ -1078,9 +1053,9 @@ class PiWebAgentApp extends HTMLElement {
     else this.metadataSuggestion = next;
   }
 
-  private sendClientMessage(type: "prompt" | "steer" | "follow_up"): void {
+  private sendClientMessage(type: ClientMessageType): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const text = input?.value.trim() || (this.promptImages.length > 0 ? "Please inspect the attached image." : "");
+    const text = promptTextFromInput(input?.value, this.promptImages.length);
     if (!input || !text) return;
     if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
       this.promptDraft = "";
@@ -1107,10 +1082,9 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
-    const images = this.promptImages.length > 0 ? this.promptImages.map((image) => image.dataUrl) : undefined;
-    if (bash) this.ws.send(JSON.stringify({ type: "bash", command: bash.command, excludeFromContext: bash.excludeFromContext }));
-    else this.ws.send(JSON.stringify(images ? { type, text, images } : { type, text }));
-    const queuedItem = { text, imageCount: images?.length };
+    const images = this.promptImages.map((image) => image.dataUrl);
+    this.ws.send(JSON.stringify(buildComposerSendPayload(type, text, images)));
+    const queuedItem = composerQueueItem(text, images.length);
     if (type === "steer") this.runningQueue = addRunningQueueItem(this.runningQueue, "steering", queuedItem);
     if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", queuedItem);
     if (bash) {
