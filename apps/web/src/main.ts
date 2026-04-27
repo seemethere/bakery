@@ -1,12 +1,13 @@
 import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, PiTranscriptRow, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, formatToolTitle, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, questionSummaryFromTool, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolArgsToText, toolCallTitlesForItem, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { TranscriptFollowController } from "./transcript-follow";
-import { defaultTranscriptExpanded, isAfterRunningTool, renderTranscriptHtml, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
+import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
+import { defaultTranscriptExpanded, renderTranscriptHtml } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
@@ -119,7 +120,7 @@ class PiWebAgentApp extends HTMLElement {
   private openActionMenuId = "";
   private transcriptExpansion = new Map<string, boolean>();
   private expandedToolGroupIds = new Set<string>();
-  private transcriptPointerDown: { id: string; x: number; y: number } | null = null;
+  private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private pendingToolCallTitles: string[] = [];
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
@@ -2359,86 +2360,28 @@ class PiWebAgentApp extends HTMLElement {
     else if (selectedBottom > visibleBottom) container.scrollTop = selectedBottom - container.clientHeight;
   }
 
-  private findTranscriptElement(id: string): PiTranscriptRow | null {
-    return this.querySelector<PiTranscriptRow>(`.transcript pi-transcript-row[data-transcript-id="${CSS.escape(id)}"]`);
-  }
-
-  private insertTranscriptRowInOrder(transcript: HTMLElement, row: PiTranscriptRow, item: TranscriptItem): void {
-    const itemIndex = this.transcript.findIndex((candidate) => candidate.id === item.id);
-    if (itemIndex < 0) {
-      transcript.append(row);
-      return;
-    }
-    const nextSibling = Array.from(transcript.children).find((child) => transcriptElementOrderIndex(this.transcript, child) > itemIndex);
-    transcript.insertBefore(row, nextSibling ?? null);
-  }
-
-  private bindTranscriptElement(element: HTMLElement): void {
-    if (element.dataset.transcriptBound === "true") return;
-    element.dataset.transcriptBound = "true";
-    element.addEventListener("pointerdown", (event) => {
-      this.transcriptPointerDown = { id: element.dataset.transcriptId ?? "", x: event.clientX, y: event.clientY };
-    });
-    element.addEventListener("click", (event) => {
-      if ((event.target as HTMLElement | null)?.closest(".message-action-area")) return;
-      if ((event.target as HTMLElement | null)?.closest(".message-header") && element.classList.contains("collapsible")) return;
-      if (this.shouldPreserveTextSelection(element, event)) return;
-      this.openActionMenuId = "";
-      this.selectTranscriptItem(element.dataset.transcriptId ?? "");
-    });
-  }
-
-  private shouldPreserveTextSelection(element: HTMLElement, event: MouseEvent): boolean {
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed && selection.toString().trim()) {
-      for (let index = 0; index < selection.rangeCount; index++) {
-        const range = selection.getRangeAt(index);
-        if (range.intersectsNode(element)) return true;
-      }
-    }
-
-    const pointerDown = this.transcriptPointerDown;
-    if (!pointerDown || pointerDown.id !== (element.dataset.transcriptId ?? "")) return false;
-    const movedX = Math.abs(event.clientX - pointerDown.x);
-    const movedY = Math.abs(event.clientY - pointerDown.y);
-    return movedX > 4 || movedY > 4;
-  }
-
-  private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
-    row.setState(item, {
+  private transcriptRowStateOptions(): TranscriptRowStateOptions {
+    return {
       showThinking: this.showThinking,
-      selected: item.id === this.selectedTranscriptId,
-      expanded: this.transcriptExpansion.get(item.id),
-      actionMenuOpen: item.id === this.openActionMenuId,
-      canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
-      afterRunningTool: isAfterRunningTool(this.transcript, item),
-      toolGroupPosition: toolGroupPositionFor(this.transcript, item),
-      cache: this.renderedSegmentCache,
+      selectedTranscriptId: this.selectedTranscriptId,
+      transcriptExpansion: this.transcriptExpansion,
+      openActionMenuId: this.openActionMenuId,
+      canFork: (item) => Boolean(this.forkEntryIdForTranscriptItem(item)),
+      renderedSegmentCache: this.renderedSegmentCache,
       hideInspectorActions: this.mobileLayout,
       localImageUrl: (path) => this.localImageUrl(path),
-    });
+    };
+  }
+
+  private transcriptBindingOptions(): TranscriptBindingOptions {
+    return {
+      onCloseActionMenu: () => { this.openActionMenuId = ""; },
+      onSelect: (id) => this.selectTranscriptItem(id),
+    };
   }
 
   private hydrateTranscriptRows(): void {
-    this.querySelectorAll<PiTranscriptRow>("pi-transcript-row[data-transcript-id]").forEach((row) => {
-      this.bindTranscriptElement(row);
-      const item = this.transcript.find((candidate) => candidate.id === row.dataset.transcriptId);
-      if (item) this.updateTranscriptRow(row, item);
-    });
-    this.bindToolRunGroups();
-  }
-
-  private bindToolRunGroups(): void {
-    this.querySelectorAll<HTMLDetailsElement>(".tool-run-group[data-tool-run-group]").forEach((group) => {
-      if (group.dataset.toolRunBound === "true") return;
-      group.dataset.toolRunBound = "true";
-      group.addEventListener("toggle", () => {
-        const id = group.dataset.toolRunGroup ?? "";
-        if (!id) return;
-        if (group.open) this.expandedToolGroupIds.add(id);
-        else this.expandedToolGroupIds.delete(id);
-      });
-    });
+    hydrateTranscriptDomRows(this, this.transcript, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions(), { expandedToolGroupIds: this.expandedToolGroupIds });
   }
 
   private patchHeaderStatus(): void {
@@ -2548,23 +2491,7 @@ class PiWebAgentApp extends HTMLElement {
       return true;
     }
 
-    for (const id of this.dirtyTranscriptIds) {
-      const item = this.transcript.find((candidate) => candidate.id === id);
-      const existing = this.findTranscriptElement(id);
-      if (!item || !isRenderableTranscriptItem(item)) {
-        existing?.remove();
-        continue;
-      }
-      if (existing) {
-        this.updateTranscriptRow(existing, item);
-      } else {
-        const next = document.createElement("pi-transcript-row") as PiTranscriptRow;
-        next.dataset.transcriptId = item.id;
-        this.bindTranscriptElement(next);
-        this.updateTranscriptRow(next, item);
-        this.insertTranscriptRowInOrder(transcript, next, item);
-      }
-    }
+    patchDirtyTranscriptRows(this, transcript, this.transcript, this.dirtyTranscriptIds, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
