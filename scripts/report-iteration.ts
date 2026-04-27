@@ -1050,12 +1050,24 @@ function buildValidationRecommendation(files: string[]): ValidationRecommendatio
   return { files, commands, optionalCommands, scenarios, reasons };
 }
 
-function fullSuiteDecision(recommendation: ValidationRecommendation): string {
-  const recommendsFullSuite = recommendation.commands.includes("bun run test:web-perf") || recommendation.optionalCommands.includes("bun run test:web-perf");
-  if (recommendsFullSuite) {
-    return "Run `bun run test:web-perf` after the focused commands if the touched behavior is broad, protocol/session-lifecycle related, or focused validation fails.";
+function fullSuiteDecision(recommendation: ValidationRecommendation): { mode: "skip" | "escalate" | "run"; text: string } {
+  if (recommendation.commands.includes("bun run test:web-perf")) {
+    return {
+      mode: "run",
+      text: "RUN: the selector included the full fake-agent suite in the primary command list.",
+    };
   }
-  return "Full `bun run test:web-perf` not recommended by the selector for these files; skip it unless focused validation fails or the change proves broader than expected.";
+  if (recommendation.optionalCommands.includes("bun run test:web-perf")) {
+    return {
+      mode: "escalate",
+      text:
+        "ESCALATE ONLY: do not run the full fake-agent suite by default; run it after focused commands only if the touched behavior is broad, protocol/session-lifecycle related, or focused validation fails unexpectedly.",
+    };
+  }
+  return {
+    mode: "skip",
+    text: "SKIP by default: full fake-agent suite is not selected for these files; run it only if focused validation fails or the change proves broader than expected.",
+  };
 }
 
 function printValidationDecisionBlock(recommendation: ValidationRecommendation): void {
@@ -1068,13 +1080,15 @@ function printValidationDecisionBlock(recommendation: ValidationRecommendation):
     return;
   }
   console.log(`Files: ${recommendation.files.join(", ")}`);
+  console.log("Strategy: focused-first; stop and fix if an earlier command fails.");
   console.log("Commands:");
   recommendation.commands.forEach((command, index) => console.log(`${index + 1}. ${command}`));
   if (recommendation.optionalCommands.length > 0) {
     console.log("Optional / escalation:");
     recommendation.optionalCommands.forEach((command) => console.log(`- ${command}`));
   }
-  console.log(`Full suite: ${fullSuiteDecision(recommendation)}`);
+  const fullSuite = fullSuiteDecision(recommendation);
+  console.log(`Full suite: ${fullSuite.text}`);
 }
 
 function printValidationRecommendation(recommendation: ValidationRecommendation): void {
@@ -1084,6 +1098,7 @@ function printValidationRecommendation(recommendation: ValidationRecommendation)
     printValidationDecisionBlock(recommendation);
     return;
   }
+  console.log("Strategy: focused-first; stop and fix if an earlier command fails.");
   recommendation.commands.forEach((command, index) => console.log(`${index + 1}. ${command}`));
   if (recommendation.optionalCommands.length > 0) {
     console.log("\nOptional / escalation:");
@@ -1115,8 +1130,9 @@ function buildAgentActionInsights(report: IterationReport): AgentActionInsight[]
       ],
       optimizeAgentBy: [
         "Run `bun run report:iteration --recommend <changed files>` before choosing validation commands.",
-        "Prefer focused harness scenarios first; escalate to `bun run test:web-perf` for protocol/shared WebSocket changes, broad UI interaction changes, lifecycle/restart changes, or unexpected focused failures.",
-        "Include the selector output in handoffs so future agents can tune bad recommendations.",
+        "Follow the selector's focused-first command list; stop after the first failure instead of running later harness commands.",
+        "Treat full `bun run test:web-perf` as an explicit escalation, not the default: use it for protocol/shared WebSocket changes, broad UI interaction changes, lifecycle/restart changes, or unexpected focused failures.",
+        "Include the selector's `## Validation decision` block in handoffs so future agents can tune bad recommendations.",
       ],
     },
     {

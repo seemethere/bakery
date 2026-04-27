@@ -74,18 +74,19 @@ Before validating code changes, prefer:
 bun run report:iteration --recommend <changed files>
 ```
 
-Use the suggested focused scenarios first. Escalate to `bun run test:web-perf` when the report recommends it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly. For non-trivial validation choices, paste or summarize the report's `## Validation decision` block in the final handoff, including whether the full suite was run or intentionally skipped.
+Follow the report's focused-first command list in order and stop to fix the first failure instead of continuing through later harness commands. Treat full `bun run test:web-perf` as an explicit escalation, not the default: run it when the report selects it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly. For non-trivial validation choices, paste or summarize the report's `## Validation decision` block in the final handoff, including whether the full suite was run or intentionally skipped.
 
 ## UI validation expectations
 
 For changes that affect the browser UI, WebSocket/session lifecycle, transcript rendering, slash commands, inspector/tree panels, or perceived responsiveness:
 
-1. Run `bun run check`.
-2. Run the automated fake-agent browser harness with `bun run test:web-perf` unless the change is clearly unrelated to UI behavior.
-3. If the feature needs exploratory validation, use `bun run ui:manual` to launch a headed fake-agent browser session in a temp workspace. Inspect the feature there instead of relying only on a human operator's real browser/workspace.
-4. Mention the exact harness command(s), scenario(s), and artifact path(s) in the final handoff.
-5. Include the key screenshot PNG paths from the harness artifacts as workspace-relative paths in the final handoff when screenshots are generated, so the web transcript can render them as local image thumbnails for quick visual review.
-6. If the harness does not cover the new behavior, prefer adding/extending a scenario before asking the human operator to manually validate it.
+1. Run `bun run report:iteration --recommend <changed files>` and use its `## Validation decision` as the source of truth.
+2. Run `bun run check` plus the focused fake-agent scenario commands selected by the report.
+3. Escalate to full `bun run test:web-perf` only when the report selects it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly.
+4. If the feature needs exploratory validation, use `bun run ui:manual` to launch a headed fake-agent browser session in a temp workspace. Inspect the feature there instead of relying only on a human operator's real browser/workspace.
+5. Mention the exact harness command(s), scenario(s), and artifact path(s) in the final handoff.
+6. Include the key screenshot PNG paths from the harness artifacts as workspace-relative paths in the final handoff when screenshots are generated, so the web transcript can render them as local image thumbnails for quick visual review.
+7. If the harness does not cover the new behavior, prefer adding/extending a scenario before asking the human operator to manually validate it.
 
 On a fresh machine, install the Playwright browser once if needed:
 

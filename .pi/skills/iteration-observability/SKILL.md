@@ -41,9 +41,9 @@ In handoffs, include the report's `## Validation decision` block or summarize:
 - changed files;
 - exact commands run;
 - optional escalation;
-- whether full `bun run test:web-perf` was run or intentionally skipped.
+- whether full `bun run test:web-perf` was selected, escalated to, or intentionally skipped.
 
-Escalate to the full fake-agent suite when protocol/session lifecycle behavior changed, broad UI interaction paths changed, focused validation fails unexpectedly, or the selector recommends it.
+Follow the selector's focused-first command list in order and stop to fix the first failure. Treat full `bun run test:web-perf` as an explicit escalation, not the default: run it when protocol/session lifecycle behavior changed, broad UI interaction paths changed, focused validation fails unexpectedly, or the selector selects it.
 
 ## Reading current-session telemetry
 
@@ -65,7 +65,7 @@ Look for:
 Turn these into concrete process changes, for example:
 
 - replace broad log reads with `bun run project:notes` plus targeted `read` offsets;
-- prefer focused harness scenarios over full-suite runs when safe;
+- prefer focused harness scenarios over full-suite runs when the selector says the full suite is not required;
 - patch high-churn files with smaller exact replacements;
 - include key harness screenshot PNG paths in mobile/UI handoffs.
 
