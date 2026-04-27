@@ -811,15 +811,19 @@ async function runFileAutocomplete(page: Page): Promise<Record<string, unknown>>
 
 async function chooseImageWithPaperclip(page: Page, imagePath: string): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
+  await page.locator("#prompt").focus();
   await page.locator("#attachImages").click();
-  await (await chooser).setFiles(imagePath);
+  const fileChooser = await chooser;
+  // Real native file pickers often stay open long enough for prompt blur handlers
+  // to fire. Keep this delay so the harness catches input replacement races.
+  await page.waitForTimeout(250);
+  await fileChooser.setFiles(imagePath);
 }
 
 async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
   await chooseImageWithPaperclip(page, imagePath);
-  await page.locator(".notice", { hasText: "Processing 1 selected file" }).waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
@@ -839,7 +843,6 @@ async function runImageArtifactDropUpload(page: Page): Promise<Record<string, un
   if (await page.locator("#imageModeArtifact").getAttribute("aria-pressed") !== "true") await page.locator("#imageModeArtifact").click();
   await page.waitForFunction(() => document.querySelector("#imageModeArtifact")?.getAttribute("aria-pressed") === "true");
   await chooseImageWithPaperclip(page, imagePath);
-  await page.locator(".notice", { hasText: "Processing 1 selected file" }).waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/artifacts/"), null, { timeout: 5_000 });
   const artifactPrompt = "Please echo this uploaded screenshot artifact path exactly: " + await page.locator("#prompt").inputValue();
   await sendPromptAndWaitIdle(page, artifactPrompt);

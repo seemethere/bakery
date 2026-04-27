@@ -152,6 +152,7 @@ class PiWebAgentApp extends HTMLElement {
   private commandAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
   private commandAutocompleteRequest = 0;
   private promptDraftSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  private imagePickerActive = false;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private renderScheduled = false;
   private forceFullRender = false;
@@ -179,6 +180,10 @@ class PiWebAgentApp extends HTMLElement {
     this.renderedSegmentCache.clear();
     if (this.failedImageUrls.size > 200) this.failedImageUrls.clear();
   };
+  private readonly windowFocusHandler = (): void => {
+    if (!this.imagePickerActive) return;
+    window.setTimeout(() => { this.imagePickerActive = false; }, 500);
+  };
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
@@ -192,6 +197,7 @@ class PiWebAgentApp extends HTMLElement {
     applyThemePreference(this.themePreference);
     window.__piWebImageFailed = this.imageFailedHandler;
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    window.addEventListener("focus", this.windowFocusHandler);
     window.addEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.render();
@@ -201,6 +207,7 @@ class PiWebAgentApp extends HTMLElement {
   disconnectedCallback(): void {
     if (window.__piWebImageFailed === this.imageFailedHandler) delete window.__piWebImageFailed;
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    window.removeEventListener("focus", this.windowFocusHandler);
     window.removeEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.persistAttachmentWarningIfNeeded();
@@ -1694,6 +1701,7 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
     this.querySelector<HTMLInputElement>("#imageInput")?.addEventListener("change", (event) => {
+      this.imagePickerActive = false;
       const input = event.currentTarget as HTMLInputElement;
       const files = Array.from(input.files ?? []);
       this.notice = files.length > 0
@@ -1703,7 +1711,10 @@ class PiWebAgentApp extends HTMLElement {
       void this.handleImageFiles(files);
       input.value = "";
     });
-    this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => this.querySelector<HTMLInputElement>("#imageInput")?.click());
+    this.querySelector<HTMLButtonElement>("#attachImages")?.addEventListener("click", () => {
+      this.imagePickerActive = true;
+      this.querySelector<HTMLInputElement>("#imageInput")?.click();
+    });
     this.querySelector<HTMLButtonElement>("#imageModePrompt")?.addEventListener("click", () => this.setImageDropMode("prompt"));
     this.querySelector<HTMLButtonElement>("#imageModeArtifact")?.addEventListener("click", () => this.setImageDropMode("artifact"));
     this.querySelectorAll<HTMLButtonElement>("[data-remove-image-id]").forEach((button) => {
@@ -1739,7 +1750,7 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("blur", () => {
       window.setTimeout(() => {
         const focused = this.querySelector(":focus");
-        if (focused?.id === "prompt" || focused?.closest(".file-autocomplete") || focused?.closest(".command-autocomplete")) return;
+        if (this.imagePickerActive || focused?.id === "prompt" || focused?.closest(".file-autocomplete") || focused?.closest(".command-autocomplete")) return;
         this.closeFileAutocomplete();
         this.closeCommandAutocomplete();
         this.render();
