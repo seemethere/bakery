@@ -27,6 +27,8 @@ export type RenderContext = {
 
 export type ToolGroupPosition = "single" | "start" | "middle" | "end";
 
+const imageFailureHandlerAttr = ` onerror="window.__piWebImageFailed?.(this.currentSrc||this.src);this.closest('figure')?.remove();this.remove()"`;
+
 function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) {
   const renderer = new marked.Renderer();
   renderer.html = ({ text }) => escapeHtml(text);
@@ -41,7 +43,7 @@ function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) 
     const safeHref = resolveImageHref(href, localImageUrl);
     if (!safeHref) return escapeHtml(text || "image");
     const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-    return `<img src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy" />`;
+    return `<img src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy"${imageFailureHandlerAttr} />`;
   };
   return renderer;
 }
@@ -68,7 +70,7 @@ function isLocalImageHref(value: string): boolean {
 function resolveImageHref(value: string, localImageUrl?: RenderContext["localImageUrl"]): string | null {
   const safeHref = sanitizeUrl(value);
   if (!safeHref) return null;
-  if (isLocalImageHref(value)) return localImageUrl?.(value) ?? safeHref;
+  if (isLocalImageHref(value)) return localImageUrl?.(value) ?? null;
   return safeHref;
 }
 
@@ -132,7 +134,7 @@ function renderLocalImageArtifacts(text: string, localImageUrl?: RenderContext["
     const showParent = parent && parent !== artifact.path && parent !== fileName;
     return `
     <figure class="artifact-image">
-      <img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.path)}" loading="lazy" onerror="this.closest('figure')?.remove()" />
+      <img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.path)}" loading="lazy"${imageFailureHandlerAttr} />
       <figcaption title="${escapeHtml(artifact.path)}">${showParent ? `<small>${escapeHtml(parent)}/</small>` : ""}<strong>${escapeHtml(fileName)}</strong></figcaption>
     </figure>`;
   }).join("")}</div>`;
@@ -424,7 +426,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
       if (segment.kind === "toolCall") return `<div class="inline-tool-call">${escapeHtml(segment.label)}</div>`;
       if (segment.kind === "image") {
         return segment.src
-          ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
+          ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
       return `<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;

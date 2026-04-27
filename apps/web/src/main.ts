@@ -6,6 +6,13 @@ import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPr
 import { escapeHtml, isRecord, pathBasename, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
+declare global {
+  interface Window {
+    __piWebImageFailed?: (src: string) => void;
+    __piWebFailedImageCount?: number;
+  }
+}
+
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type RightPanelTab = "details" | "preview" | "tree";
@@ -150,6 +157,7 @@ class PiWebAgentApp extends HTMLElement {
   private focusPromptOnNextReadyRender = false;
   private focusPendingQuestionOnNextRender = false;
   private renderedSegmentCache = new Map<string, string>();
+  private failedImageUrls = new Map<string, number>();
   private readonly themeMedia = window.matchMedia(themeMediaQuery);
   private readonly themeMediaHandler = () => {
     if (this.themePreference === "system") applyThemePreference(this.themePreference);
@@ -162,6 +170,13 @@ class PiWebAgentApp extends HTMLElement {
     this.savePromptDraft();
     this.persistAttachmentWarningIfNeeded();
   };
+  private readonly imageFailedHandler = (src: string): void => {
+    if (!src) return;
+    window.__piWebFailedImageCount = (window.__piWebFailedImageCount ?? 0) + 1;
+    this.failedImageUrls.set(src, Date.now());
+    this.renderedSegmentCache.clear();
+    if (this.failedImageUrls.size > 200) this.failedImageUrls.clear();
+  };
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
@@ -173,6 +188,7 @@ class PiWebAgentApp extends HTMLElement {
 
   connectedCallback(): void {
     applyThemePreference(this.themePreference);
+    window.__piWebImageFailed = this.imageFailedHandler;
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
     window.addEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
@@ -181,6 +197,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   disconnectedCallback(): void {
+    if (window.__piWebImageFailed === this.imageFailedHandler) delete window.__piWebImageFailed;
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     window.removeEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
@@ -203,7 +220,11 @@ class PiWebAgentApp extends HTMLElement {
     const url = new URL(`${this.apiBase}/api/sessions/${this.selectedSession.id}/${imagePath.workspacePath ? "files" : "artifacts"}/raw`);
     url.searchParams.set("path", imagePath.workspacePath ?? imagePath.originalPath);
     if (this.token) url.searchParams.set("token", this.token);
-    return url.toString();
+    const href = url.toString();
+    const failedAt = this.failedImageUrls.get(href);
+    if (failedAt && Date.now() - failedAt < 30_000) return null;
+    if (failedAt) this.failedImageUrls.delete(href);
+    return href;
   }
 
   private normalizeImageArtifactPath(path: string): { originalPath: string; workspacePath?: string } | null {

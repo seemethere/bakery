@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -882,6 +882,20 @@ async function runRemoteImageArtifactUpload(page: Page): Promise<Record<string, 
   return { artifactImages: await page.locator(".artifact-image img").count(), renderedImages: sources.length, sources, ...(await collectMetrics(page)) };
 }
 
+async function runMissingRemoteImageArtifact(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please list uploaded remote screenshot artifact paths for rendering validation, but do not upload the file first.");
+  await page.waitForFunction(() => (window.__piWebFailedImageCount ?? 0) > 0, null, { timeout: 5_000 });
+  await page.waitForFunction(() => document.querySelectorAll(".artifact-image img, .markdown-body img").length === 0, null, { timeout: 5_000 });
+  await page.waitForTimeout(500);
+  const afterInitialFailure = await page.evaluate(() => window.__piWebFailedImageCount ?? 0);
+  await page.locator(".message.assistant").first().click();
+  await page.waitForTimeout(500);
+  const afterRerender = await page.evaluate(() => window.__piWebFailedImageCount ?? 0);
+  if (afterRerender > afterInitialFailure) throw new Error(`Expected failed image URLs to be suppressed after first error; saw ${afterRerender - afterInitialFailure} extra image failures`);
+  return { failedImageCount: afterRerender, ...(await collectMetrics(page)) };
+}
+
 async function runRepeatedImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const prompt = "Please list a local image artifact path for repeated screenshot path rendering validation.";
@@ -986,6 +1000,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "artifact-path-formats") return runArtifactPathFormats(page);
   if (name === "remote-image-artifact-paths") return runRemoteImageArtifactPaths(page);
   if (name === "remote-image-artifact-upload") return runRemoteImageArtifactUpload(page);
+  if (name === "missing-remote-image-artifact") return runMissingRemoteImageArtifact(page);
   if (name === "model-thinking") return runModelThinking(page);
   if (name === "context-usage") return runContextUsage(page);
   if (name === "themes") return runThemes(page);
