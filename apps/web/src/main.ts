@@ -406,7 +406,7 @@ class PiWebAgentApp extends HTMLElement {
     if (collapseSidebar && !this.sessionSidebarPinned) this.sessionSidebarCollapsed = true;
     this.lastSelectedSessionId = session.id;
     localStorage.setItem("piWebLastSessionId", session.id);
-    this.transcript = [{ id: "opened", kind: "system", title: "Session", body: `Opened ${session.cwd}` }];
+    this.transcript = [];
     this.status = "connecting";
     const hadLostAttachments = consumePromptAttachmentWarning(localStorage, session.id);
     this.notice = hadLostAttachments ? "Image attachments are not restored after a refresh. Please attach them again before sending." : "";
@@ -423,7 +423,7 @@ class PiWebAgentApp extends HTMLElement {
     this.focusTreeOnNextRender = false;
     this.scrollTreeCurrentAfterRefresh = false;
     this.transcriptFollow.resetToLatest();
-    this.selectedTranscriptId = "opened";
+    this.selectedTranscriptId = "";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
     this.socketGeneration++;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -514,7 +514,6 @@ class PiWebAgentApp extends HTMLElement {
     this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
     this.runningQueue = emptyRunningQueue();
     this.pendingToolCallTitles = [];
-    if (this.transcript.length === 0) this.transcript.push({ id: "empty", kind: "system", title: "Session", body: "No messages yet." });
     this.transcriptFollow.clearUnread();
     this.forceFullRender = true;
     this.dirtyTranscriptIds.clear();
@@ -2139,6 +2138,12 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderTranscript(): string {
+    if (this.selectedSession && this.transcript.length === 0) {
+      return `<div class="empty-transcript" role="status" aria-label="Empty session">
+        <strong>Ask pi to start.</strong>
+        <span>Paste a screenshot, type / for commands, or @ for files.</span>
+      </div>`;
+    }
     return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds);
   }
 
@@ -2495,7 +2500,7 @@ class PiWebAgentApp extends HTMLElement {
         ${this.renderAttentionNeeded()}
         ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
         <div class="transcript-shell ${hasRunningQueueItems(this.runningQueue) ? "has-running-queue" : ""}">
-          <section class="transcript">${this.renderTranscript()}</section>
+          <section class="transcript ${this.transcript.length === 0 ? "empty" : ""}">${this.renderTranscript()}</section>
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>

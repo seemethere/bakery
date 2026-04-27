@@ -345,7 +345,7 @@ async function runContextUsage(page: Page): Promise<Record<string, unknown>> {
 
 async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator(".message", { hasText: "No messages yet." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-transcript", { hasText: "Ask pi to start." }).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "empty-session-layout.png"), fullPage: true });
 
   const layout = await page.evaluate(() => {
@@ -385,7 +385,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
     localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
   await prepareSession(page);
-  await page.locator(".message", { hasText: "No messages yet." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-transcript", { hasText: "Ask pi to start." }).waitFor({ timeout: 5_000 });
   const app = page.locator("pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) await page.locator("#toggleSessionSidebar").click();
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
