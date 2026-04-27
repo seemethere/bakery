@@ -72,6 +72,14 @@ type SessionActionSummary = {
   lastTimestamp?: string;
 };
 
+type RerunOpportunity = {
+  repeatedValidationRuns: number;
+  repeatedFailedFocusedHarnessRuns: number;
+  conservativeAvoidableReruns: { min: number; max: number };
+  topRepeatedFailedFocusedHarness?: { command: string; runs: number; failures: number };
+  topRepeatedValidation?: { command: string; runs: number; failures: number };
+};
+
 type SessionHistoryActionSummary = SessionActionSummary & {
   sessionsWithValidationReruns: number;
   sessionsWithEditFailures: number;
@@ -90,6 +98,7 @@ type SessionContextReport = {
   readPaths: Array<{ path: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
   bashCommands: Array<{ command: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
   validationCommands: Array<{ command: string; runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>;
+  rerunOpportunity: RerunOpportunity;
   editAttempts: Array<{ path: string; attempts: number; successes: number; failures: number; resultChars: number }>;
   largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string; input?: string; durationMs?: number }>;
   assistantResponsesWithUsage: number;
@@ -110,6 +119,7 @@ type SessionHistoryReport = {
   toolCallsByName: Record<string, number>;
   toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
   validationCommands: Array<{ command: string; runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>;
+  rerunOpportunity: RerunOpportunity;
   editAttempts: Array<{ path: string; attempts: number; successes: number; failures: number; resultChars: number }>;
   topReadPaths: Array<{ path: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
   topBashCommands: Array<{ command: string; calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>;
@@ -321,6 +331,32 @@ function validationLabelsFromCommand(command: string): string[] {
   return Array.from(new Set(labels));
 }
 
+function isFocusedHarnessValidation(command: string): boolean {
+  return command.startsWith("ui-harness:");
+}
+
+function buildRerunOpportunity(validationCommands: Array<{ command: string; runs: number; failures: number }>): RerunOpportunity {
+  const repeatedValidationRuns = validationCommands.reduce((sum, item) => sum + Math.max(0, item.runs - 1), 0);
+  const repeatedFailedFocusedHarnessRuns = validationCommands
+    .filter((item) => isFocusedHarnessValidation(item.command) && item.runs > 1 && item.failures > 0)
+    .reduce((sum, item) => sum + Math.min(item.failures, Math.max(0, item.runs - 1)), 0);
+  const conservativeMin = repeatedFailedFocusedHarnessRuns > 0 ? Math.max(1, Math.floor(repeatedFailedFocusedHarnessRuns * 0.25)) : 0;
+  const conservativeMax = repeatedFailedFocusedHarnessRuns > 0 ? Math.max(conservativeMin, Math.ceil(repeatedFailedFocusedHarnessRuns * 0.5)) : 0;
+  const repeated = validationCommands.filter((item) => item.runs > 1).sort((a, b) => b.runs - a.runs || b.failures - a.failures);
+  const failedFocused = validationCommands
+    .filter((item) => isFocusedHarnessValidation(item.command) && item.runs > 1 && item.failures > 0)
+    .sort((a, b) => b.failures - a.failures || b.runs - a.runs);
+  return {
+    repeatedValidationRuns,
+    repeatedFailedFocusedHarnessRuns,
+    conservativeAvoidableReruns: { min: conservativeMin, max: conservativeMax },
+    topRepeatedFailedFocusedHarness: failedFocused[0]
+      ? { command: failedFocused[0].command, runs: failedFocused[0].runs, failures: failedFocused[0].failures }
+      : undefined,
+    topRepeatedValidation: repeated[0] ? { command: repeated[0].command, runs: repeated[0].runs, failures: repeated[0].failures } : undefined,
+  };
+}
+
 function addInputSummary(
   record: Record<string, { calls: number; resultChars: number; estimatedTokens: number; maxResultChars: number }>,
   key: string,
@@ -442,6 +478,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     readPaths: [],
     bashCommands: [],
     validationCommands: [],
+    rerunOpportunity: buildRerunOpportunity([]),
     editAttempts: [],
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
@@ -463,6 +500,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     readPaths: [],
     bashCommands: [],
     validationCommands: [],
+    rerunOpportunity: buildRerunOpportunity([]),
     editAttempts: [],
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
@@ -604,6 +642,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     .map(([command, summary]) => ({ command, ...summary }))
     .sort((a, b) => b.runs - a.runs || b.resultChars - a.resultChars)
     .slice(0, 10);
+  report.rerunOpportunity = buildRerunOpportunity(report.validationCommands);
   report.editAttempts = Object.entries(editAttemptSummaries)
     .map(([path, summary]) => ({ path, ...summary }))
     .sort((a, b) => b.failures - a.failures || b.attempts - a.attempts || b.resultChars - a.resultChars)
@@ -645,10 +684,21 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     const top = repeatedBash[0];
     report.actionRecommendations.push(`Repeated bash command: \`${top.command}\` ran ${top.calls} times; consider saving/using its previous result or narrowing validation reruns.`);
   }
-  const repeatedValidation = report.validationCommands.find((item) => item.runs > 1);
-  if (repeatedValidation) {
+  const focusedLoop = report.rerunOpportunity.topRepeatedFailedFocusedHarness;
+  if (focusedLoop) {
     report.actionRecommendations.push(
-      `Validation rerun: ${repeatedValidation.command} ran ${repeatedValidation.runs} times${repeatedValidation.failures ? ` with ${repeatedValidation.failures} failure(s)` : ""}; capture the reason in the handoff when reruns are intentional.`,
+      `Focused harness loop: ${focusedLoop.command} ran ${focusedLoop.runs} times with ${focusedLoop.failures} failure(s). Before rerunning, inspect the latest harness artifact directory/server.log, identify one failing assertion or cause, patch that cause, then rerun only this scenario; include the artifact path and rerun reason in the handoff.`,
+    );
+  }
+  const repeatedValidation = report.rerunOpportunity.topRepeatedValidation;
+  if (repeatedValidation && repeatedValidation.command !== focusedLoop?.command) {
+    const churnHint = repeatedValidation.command === "bun run report:iteration"
+      ? " Unless comparing before/after, save the previous result and rerun near handoff only."
+      : repeatedValidation.command === "bun run check"
+        ? " Rerun check after code changes, not after every observation."
+        : " Capture the reason in the handoff when reruns are intentional.";
+    report.actionRecommendations.push(
+      `Validation rerun: ${repeatedValidation.command} ran ${repeatedValidation.runs} times${repeatedValidation.failures ? ` with ${repeatedValidation.failures} failure(s)` : ""}.${churnHint}`,
     );
   }
   const failedEdit = report.editAttempts.find((item) => item.failures > 0);
@@ -772,6 +822,8 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     .map(([command, summary]) => ({ command, ...summary }))
     .sort((a, b) => b.runs - a.runs || b.failures - a.failures || b.resultChars - a.resultChars)
     .slice(0, 20);
+  const aggregateRerunOpportunity = buildRerunOpportunity(validationCommands);
+  const rerunOpportunity: RerunOpportunity = { ...aggregateRerunOpportunity, repeatedValidationRuns: actionSummary.validationReruns };
   const editAttempts = Object.entries(editSummaries)
     .map(([path, summary]) => ({ path, ...summary }))
     .sort((a, b) => b.failures - a.failures || b.attempts - a.attempts || b.resultChars - a.resultChars)
@@ -791,6 +843,12 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   actionSummary.lastTimestamp = typeof newestMtimeMs === "number" ? new Date(newestMtimeMs).toISOString() : undefined;
 
   const actionRecommendations: string[] = [];
+  const focusedLoop = rerunOpportunity.topRepeatedFailedFocusedHarness;
+  if (focusedLoop) {
+    actionRecommendations.push(
+      `Focused harness loops appear in history: ${focusedLoop.command} ran ${focusedLoop.runs} times with ${focusedLoop.failures} failure(s). Tune agents to inspect the latest artifact directory/server.log and patch one cause before rerunning the same scenario.`,
+    );
+  }
   const topValidation = validationCommands.find((item) => item.runs > 1);
   if (topValidation) actionRecommendations.push(`Across backfilled sessions, ${topValidation.command} ran ${topValidation.runs} times with ${topValidation.failures} reported failure result(s); use this to tune validation selectors and rerun guidance.`);
   const topEditFailure = editAttempts.find((item) => item.failures > 0);
@@ -812,6 +870,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     toolCallsByName,
     toolResultsByName,
     validationCommands,
+    rerunOpportunity,
     editAttempts,
     topReadPaths,
     topBashCommands,
@@ -843,6 +902,13 @@ function printSessionContextReport(report: SessionContextReport): void {
   console.log(`- edits: ${summary.editAttempts.toLocaleString()} attempts, ${summary.editFailures.toLocaleString()} failures`);
   console.log(`- context shape: ${summary.uniqueReadPaths.toLocaleString()} read path(s), ${summary.uniqueBashCommands.toLocaleString()} bash command(s), largest result ${summary.largestToolResultChars.toLocaleString()} chars`);
   if (typeof summary.elapsedMs === "number") console.log(`- elapsed event span: ${formatDuration(summary.elapsedMs)}${summary.firstTimestamp && summary.lastTimestamp ? ` (${summary.firstTimestamp} → ${summary.lastTimestamp})` : ""}`);
+  const reruns = report.rerunOpportunity;
+  if (reruns.repeatedValidationRuns > 0 || reruns.repeatedFailedFocusedHarnessRuns > 0) {
+    console.log("\nRerun opportunity:");
+    console.log(`- repeated validation runs: ${reruns.repeatedValidationRuns.toLocaleString()}`);
+    console.log(`- repeated failed focused harness runs: ${reruns.repeatedFailedFocusedHarnessRuns.toLocaleString()}`);
+    if (reruns.conservativeAvoidableReruns.max > 0) console.log(`- conservative target: avoid ${reruns.conservativeAvoidableReruns.min.toLocaleString()}-${reruns.conservativeAvoidableReruns.max.toLocaleString()} rerun(s) by inspecting artifacts before retrying`);
+  }
   console.log("\nTool calls requested:");
   const toolCalls = Object.entries(report.toolCallsByName).sort((a, b) => b[1] - a[1]);
   if (toolCalls.length === 0) console.log("- none found");
@@ -909,6 +975,13 @@ function printSessionHistoryReport(report: SessionHistoryReport): void {
   console.log(`- edits: ${summary.editAttempts.toLocaleString()} attempts, ${summary.editFailures.toLocaleString()} failures across ${summary.sessionsWithEditFailures.toLocaleString()} session(s)`);
   console.log(`- context shape: ${summary.uniqueReadPaths.toLocaleString()} read path(s), ${summary.uniqueBashCommands.toLocaleString()} bash command(s), largest result ${summary.largestToolResultChars.toLocaleString()} chars, largest session ${summary.largestSessionToolResultChars.toLocaleString()} chars`);
   if (typeof summary.elapsedMs === "number") console.log(`- summed event spans: ${formatDuration(summary.elapsedMs)}`);
+  const reruns = report.rerunOpportunity;
+  if (reruns.repeatedValidationRuns > 0 || reruns.repeatedFailedFocusedHarnessRuns > 0) {
+    console.log("\nRerun opportunity:");
+    console.log(`- repeated validation runs: ${reruns.repeatedValidationRuns.toLocaleString()}`);
+    console.log(`- repeated failed focused harness runs: ${reruns.repeatedFailedFocusedHarnessRuns.toLocaleString()}`);
+    if (reruns.conservativeAvoidableReruns.max > 0) console.log(`- conservative target: avoid ${reruns.conservativeAvoidableReruns.min.toLocaleString()}-${reruns.conservativeAvoidableReruns.max.toLocaleString()} rerun(s) by inspecting artifacts before retrying`);
+  }
   console.log("\nTop workspaces:");
   if (report.cwdFrequency.length === 0) console.log("- none found");
   report.cwdFrequency.forEach((item) => console.log(`- ${item.cwd}: ${item.sessions} sessions`));
