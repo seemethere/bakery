@@ -198,12 +198,33 @@ class PiWebAgentApp extends HTMLElement {
 
   private localImageUrl(path: string): string | null {
     if (!this.selectedSession) return null;
-    const normalized = path.replace(/^\.\//, "");
-    if (!/^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return null;
+    const workspacePath = this.workspaceRelativeImagePath(path);
+    if (!workspacePath) return null;
     const url = new URL(`${this.apiBase}/api/sessions/${this.selectedSession.id}/files/raw`);
-    url.searchParams.set("path", normalized);
+    url.searchParams.set("path", workspacePath);
     if (this.token) url.searchParams.set("token", this.token);
     return url.toString();
+  }
+
+  private workspaceRelativeImagePath(path: string): string | null {
+    const raw = path.trim();
+    let decoded: string;
+    try {
+      decoded = /^file:\/\//i.test(raw) ? decodeURIComponent(raw.replace(/^file:\/\/+/i, "/")) : raw;
+    } catch {
+      return null;
+    }
+    const normalizedCwd = this.selectedSession?.cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+    let normalized = decoded.replace(/\\/g, "/").replace(/^\.\//, "");
+    if (normalized.startsWith("/") && normalizedCwd) {
+      if (normalized === normalizedCwd) return null;
+      if (!normalized.startsWith(`${normalizedCwd}/`)) return null;
+      normalized = normalized.slice(normalizedCwd.length + 1);
+    }
+    normalized = normalized.replace(/^\.\//, "");
+    if (normalized.startsWith("/") || normalized.includes("\0")) return null;
+    if (!/^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return null;
+    return normalized;
   }
 
   private async api<T>(path: string, init?: RequestInit): Promise<T> {

@@ -108,6 +108,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 - Fixed the new/empty-session composer layout regression seen during dogfooding: the prompt textarea can no longer be vertically resized enough to squeeze the empty transcript, and the send/follow-up controls stay bottom-aligned instead of stretching to the textarea height.
 - Fixed the real empty-session layout regression behind that symptom: optional connection/attention banners now occupy explicit grid rows so the transcript remains the flexible row and the footer stays compact; hidden idle controls are truly hidden, prompt width no longer overlaps controls, and a focused `empty-session-layout` harness scenario guards the layout.
 - Added LAN dev entry points for `lot.local`/`bakery.lot.local`: `dev:server:lan` binds the API on `0.0.0.0`, `dev:web:lan` binds Vite on `0.0.0.0` with both hostnames allowed, the browser default API base now follows the page hostname, and `docs/local-network.md` documents token-protected LAN setup.
+- Added first remote-shaped screenshot artifact support: transcript image detection now recognizes absolute workspace paths and `file://` Markdown image URLs, the browser rewrites only paths under the selected session workspace to the existing safe raw-file endpoint, and a new `remote-image-artifact-paths` fake-agent harness scenario covers absolute + `file://` references without direct browser `file://` loads. The UI harness also clears inherited `PI_WEB_AUTH_TOKEN` so local auth env does not break isolated fake-agent runs.
 
 ## How to run
 
@@ -137,29 +138,30 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: `bun run report:iteration --recommend apps/web/vite.config.ts docs/local-network.md PROJECT_LOG.md`, `bun run check`, and focused Vite LAN host-header smoke tests on port 5174 for `lot.local` and `bakery.lot.local` passed after adding the shorter LAN hostname. Full UI harness intentionally skipped because the change is dev-server host allowlisting/documentation, not transcript/session interaction behavior.
+Latest: `bun run report:iteration --recommend apps/web/src/transcript.ts apps/web/src/transcript.test.ts apps/server/src/index.ts apps/server/src/fake-runner.ts scripts/ui-harness.ts`, `bun test apps/web/src/transcript.test.ts`, `bun run check`, `bun scripts/ui-harness.ts --scenario remote-image-artifact-paths`, `bun scripts/ui-harness.ts --scenario image-artifact-paths`, and `bun scripts/ui-harness.ts --scenario artifact-path-formats` passed after adding remote-shaped screenshot artifact handling. The full fake-agent suite was intentionally skipped because this changed transcript image path normalization and fake-agent artifact coverage, not broad session lifecycle/controller behavior.
 
 ## Next priorities
 
-1. Continue the architecture-review/iteration-speed pass with the next smallest extraction from `apps/web/src/main.ts`: likely a deeper autocomplete controller extraction, session lifecycle/controller helpers, or another pure rendering/state island, using `bun run report:iteration --recommend <changed files>` before validation.
-2. Dogfood `bun run project:notes` at the start of future sessions; tune its sections/caps if it omits needed handoff context or still prints too much.
-3. Dogfood `bun run report:iteration --session-context` in future long sessions; the first real-session reading showed large `read`/`bash` outputs dominate context cost, so prefer targeted `PROJECT_LOG.md` offsets, avoid broad diff/log dumps, and rerun the session-context report mid-session when context feels heavy.
-4. Dogfood the refined session-context action recommendations in future long sessions; tune thresholds/wording if repeated read/path, bash command, or largest-result guidance is noisy.
-5. Consider deeper per-session action telemetry if current JSONL-derived insights are insufficient: failed edit attempts, validation reruns, and rough phase timing.
-6. Dogfood the new `## Validation decision` handoff block in future sessions; tune `scripts/report-iteration.ts` guidance or `scripts/assert-workflow-skills.ts` assertions if agents still skip the report, omit full-suite run/skip rationale, or if recommendations are noisy.
-7. Continue dogfooding `/plan` in real model sessions and tune launcher prompt/tool guidance if the model asks multi-part questions, fails to inspect the codebase first, or needs stronger recommendation/options guidance.
-8. Continue keyboard-first polish from dogfooding if new edge cases appear: `/tree` screen-reader copy/ARIA refinements, reconnect timing beyond snapshot reload, Q&A viewer take-control flow from the question panel, and additional shortcut coverage.
-9. Continue evolving the typed bundled workflow-skill registry into a fuller default-installed skills layer: editable/content-like instructions, clearer resource provenance in UI/API surfaces, and reusable launch paths for additional bakery-owned workflows.
-10. Tune answered-question transcript summaries from real-use feedback: visual density, whether to show the recommendation/chosen option metadata, and interaction with tool-card grouping/collapse.
-11. Continue the theme/color pass from real-use feedback using `theme-gallery` first: inspect the gallery screenshots for remaining light/dark inconsistencies, then tune selected-row emphasis, tool/activity grouping, tree drawer, and lower-frequency overlays with contrast checks rather than trying to mimic GitHub directly.
-12. Consider adding a lightweight contrast/token audit for core foreground/background pairs now that the visual gallery exists.
-13. Tune session identity/sidebar details: adjust status labels, snippets, auto-collapse behavior, pin-mode copy, and summary preview density if they feel noisy in ongoing use.
-14. Continue attention hierarchy from new real-use feedback: current-action strip, user-input-needed states, selected-row emphasis, and completed activity grouping now have a first pass but may need tuning during real dogfooding.
-15. Fix any real-session lifecycle/UI state issues that surface: duplicate snapshots, stale controller state, scroll edge cases, reconnect copy, retry behavior, or remaining selection-preservation edge cases during live streaming.
-16. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
-17. Add sanitized real-event playback to complement the deterministic fake runner if real SDK/provider event patterns diverge from fake-agent coverage.
-18. Expand branch/tree support beyond basic navigation/current-path clarity: add keyboard navigation, summarize-before-navigation flow, label/bookmark editing, filter/search modes, and clearer current-path rendering refinements from dogfooding.
-19. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
+1. Dogfood remote screenshot artifact previews in the real failing remote-session setup. If paths are outside the Bakery backend's accessible filesystem, design the next vertical slice as an explicit remote artifact bridge rather than widening local file serving.
+2. Continue the architecture-review/iteration-speed pass with the next smallest extraction from `apps/web/src/main.ts`: likely a deeper autocomplete controller extraction, session lifecycle/controller helpers, or another pure rendering/state island, using `bun run report:iteration --recommend <changed files>` before validation.
+3. Dogfood `bun run project:notes` at the start of future sessions; tune its sections/caps if it omits needed handoff context or still prints too much.
+4. Dogfood `bun run report:iteration --session-context` in future long sessions; the first real-session reading showed large `read`/`bash` outputs dominate context cost, so prefer targeted `PROJECT_LOG.md` offsets, avoid broad diff/log dumps, and rerun the session-context report mid-session when context feels heavy.
+5. Dogfood the refined session-context action recommendations in future long sessions; tune thresholds/wording if repeated read/path, bash command, or largest-result guidance is noisy.
+6. Consider deeper per-session action telemetry if current JSONL-derived insights are insufficient: failed edit attempts, validation reruns, and rough phase timing.
+7. Dogfood the new `## Validation decision` handoff block in future sessions; tune `scripts/report-iteration.ts` guidance or `scripts/assert-workflow-skills.ts` assertions if agents still skip the report, omit full-suite run/skip rationale, or if recommendations are noisy.
+8. Continue dogfooding `/plan` in real model sessions and tune launcher prompt/tool guidance if the model asks multi-part questions, fails to inspect the codebase first, or needs stronger recommendation/options guidance.
+9. Continue keyboard-first polish from dogfooding if new edge cases appear: `/tree` screen-reader copy/ARIA refinements, reconnect timing beyond snapshot reload, Q&A viewer take-control flow from the question panel, and additional shortcut coverage.
+10. Continue evolving the typed bundled workflow-skill registry into a fuller default-installed skills layer: editable/content-like instructions, clearer resource provenance in UI/API surfaces, and reusable launch paths for additional bakery-owned workflows.
+11. Tune answered-question transcript summaries from real-use feedback: visual density, whether to show the recommendation/chosen option metadata, and interaction with tool-card grouping/collapse.
+12. Continue the theme/color pass from real-use feedback using `theme-gallery` first: inspect the gallery screenshots for remaining light/dark inconsistencies, then tune selected-row emphasis, tool/activity grouping, tree drawer, and lower-frequency overlays with contrast checks rather than trying to mimic GitHub directly.
+13. Consider adding a lightweight contrast/token audit for core foreground/background pairs now that the visual gallery exists.
+14. Tune session identity/sidebar details: adjust status labels, snippets, auto-collapse behavior, pin-mode copy, and summary preview density if they feel noisy in ongoing use.
+15. Continue attention hierarchy from new real-use feedback: current-action strip, user-input-needed states, selected-row emphasis, and completed activity grouping now have a first pass but may need tuning during real dogfooding.
+16. Fix any real-session lifecycle/UI state issues that surface: duplicate snapshots, stale controller state, scroll edge cases, reconnect copy, retry behavior, or remaining selection-preservation edge cases during live streaming.
+17. Tighten web-perf thresholds over time once more baseline runs are available, and consider reporting percentile timings in addition to max timings.
+18. Add sanitized real-event playback to complement the deterministic fake runner if real SDK/provider event patterns diverge from fake-agent coverage.
+19. Expand branch/tree support beyond basic navigation/current-path clarity: add keyboard navigation, summarize-before-navigation flow, label/bookmark editing, filter/search modes, and clearer current-path rendering refinements from dogfooding.
+20. Explore `@mariozechner/pi-web-ui` adapter once the remote agent state shape is clearer.
 
 ## Session handoff convention
 

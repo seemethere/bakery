@@ -55,4 +55,40 @@ describe("transcript image rendering", () => {
     expect(html).toContain("artifact-image-grid");
     expect(html).toContain('src="raw:test-results/ui-harness/run/final.png"');
   });
+
+  test("rewrites file URL markdown images through the local image resolver", () => {
+    const item: TranscriptItem = {
+      id: "assistant-file-image",
+      kind: "assistant",
+      title: "Pi",
+      body: "![Remote browser screenshot](file:///remote/workspace/screenshots/fixture.png)",
+      status: "done",
+    };
+
+    const html = renderTranscriptSegments(item, false, {
+      localImageUrl: (path) => path === "file:///remote/workspace/screenshots/fixture.png" ? "raw:screenshots/fixture.png" : null,
+    });
+
+    expect(html).toContain('src="raw:screenshots/fixture.png"');
+    expect(html).not.toContain('src="file:///remote/workspace/screenshots/fixture.png"');
+    expect(html).not.toContain("artifact-image-grid");
+  });
+
+  test("renders absolute workspace image paths as artifact cards when the resolver accepts them", () => {
+    const item: TranscriptItem = {
+      id: "assistant-absolute-artifact",
+      kind: "assistant",
+      title: "Pi",
+      body: "Screenshot: /remote/workspace/screenshots/fixture.png",
+      status: "done",
+    };
+
+    const html = renderTranscriptSegments(item, false, {
+      localImageUrl: (path) => path === "/remote/workspace/screenshots/fixture.png" ? "raw:screenshots/fixture.png" : null,
+    });
+
+    expect(html).toContain("artifact-image-grid");
+    expect(html).toContain('src="raw:screenshots/fixture.png"');
+    expect(html).toContain("/remote/workspace/screenshots/fixture.png");
+  });
 });

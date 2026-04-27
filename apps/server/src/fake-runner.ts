@@ -33,18 +33,23 @@ function fakeSettings(modelPolicy: ModelPolicy): SessionRuntimeSettings {
 
 const fakePreviewPng = "iVBORw0KGgoAAAANSUhEUgAAAWgAAACgCAYAAAAhKfa4AAADUElEQVR42u3d0QnCMBiF0W4gFaRQRBDcoDt1GmdxiS7UDeICVaE25m88D+fVC0n4Hm0z3lMCIJ7GIQAINAACDSDQAAg0gEADINAArA50118ByECgAQQaAIEGEGiBBhBoAIEWaACBBkCgAQQaAIEGEGiBBhBoAAQaQKABEGgAgRZoAIEGEGiBBhBoAAQaQKABEGgAgRZoAIEGQKABBBoAgQYQaIEGEGgAgRZoAIEGQKABBBoAgQYQaIEGEGgABBrgfwJ9PJ3fOrTdVz79vn379u3Xui/Q9u3bt19roB2wffv27efZF2j79u3bF2gXZN++ffsCbd++ffsCLdD27du3L9AeiH379gVaoO3bt29foF2Qffv27Qu0ffv27Qu0C7Jv3759gfZA7Nu3L9BBA/2YJ4DsBFqgAYEWaACBFmhAoAUaQKAD/WH/0kFehhvAaktd8UUVgQYEWqABBFqgAYEWaIEGBFqgAYEWaIEGBFqgAQRaoAGBFmgAgRZoQKAFWqABgRZoQKAFWqABgRZoAIEWaECgSwc62h/2e2DA1oH2RRWBBgRaoAEEWqABgRZogQYEWqABgRZogQYEWqABBFqgAYEWaACBFmhAoAVaoAGBFmhAoAVaoAGBFmgAgRZoQKBLB9of9gO1B9oXVQQaEGiBBhBogQYEWqAFGhBogQYEWqAFGhBogQYQaIEGBFqgAQRaoAGBFmiBBgRaoAGBFmiBBgRaoAEEWqABgS4daH/YD9QeaF9UEWhAoAUaQKAFGhBogRZoQKCDBxpgawIt0IBACzSAQAs0INACDSDQgQL9iwOyb9++fYF2Qfbt27cv0Pbt27cv0C7Ivn379gXavn379gVaoO3bt29/H4F2wPbt27fviyoeiH379gVaoO3bt29foF2Qffv27Qu0ffv27Qu0C7Jv3759gfZA7Nu3L9ACbd++ffsC7YLs27dvX6Dt27dvX6BdkH379u0LtH379u0LtEDbt2/fvkB7IPbt2xdogbZv3759gXZB9u3bt5830A7Yvn379n1RxQOxb9++QAu0ffv27Qu0C7Jv3759gbZv3759gXZB9u3bty/QHoh9+/YFWqDt27dvf2+BBqAMgQYQaAAEGkCgARBoAIEGQKABeOkJWSAfL9rB/N8AAAAASUVORK5CYII=";
 
-function responseFor(text: string): string {
+function responseFor(text: string, cwd = ""): string {
   const includesImage = /(?:image|screenshot|picture)/i.test(text);
   const includesArtifactPath = /(?:artifact path|screenshot path|local image path)/i.test(text);
+  const includesRemoteArtifactPath = /(?:remote screenshot|remote artifact|remote image artifact)/i.test(text);
   const includesArtifactFormatVariants = /(?:artifact format variants|inline fenced long artifact)/i.test(text);
   const requestedLength = /(?:long|stream|perf|performance)/i.test(text) ? 18000 : includesImage ? 3200 : 1400;
-  const imageBlock = includesArtifactFormatVariants
-    ? "\nRelevant screenshot artifact format variants:\n\nInline code: `screenshots/inline.png`\n\nFenced code:\n\n```text\nscreenshots/fenced.png\n```\n\nLong generated path: `test-results/ui-harness/sample-run/final.png`\n\nAll three workspace-relative paths should render safe local image previews.\n"
-    : includesArtifactPath
-      ? "\nRelevant screenshot artifacts:\n\n- `screenshots/fixture.png`\n- screenshots/fixture.png\n\nThe UI should render a safe local image preview for that workspace-relative path.\n"
-      : includesImage
-        ? `\n![Fake UI validation preview](data:image/png;base64,${fakePreviewPng})\n\nThe image above is an inline base64 PNG rendered from assistant Markdown.\n`
-        : "";
+  const normalizedCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+  const remoteFixturePath = `${normalizedCwd}/screenshots/fixture.png`;
+  const imageBlock = includesRemoteArtifactPath
+    ? `\nRemote screenshot artifacts:\n\n- ${remoteFixturePath}\n- ![Remote Markdown screenshot](file://${remoteFixturePath})\n\nBoth references point inside the session workspace and should render through the safe raw-file endpoint, not directly as file:// browser URLs.\n`
+    : includesArtifactFormatVariants
+      ? "\nRelevant screenshot artifact format variants:\n\nInline code: `screenshots/inline.png`\n\nFenced code:\n\n```text\nscreenshots/fenced.png\n```\n\nLong generated path: `test-results/ui-harness/sample-run/final.png`\n\nAll three workspace-relative paths should render safe local image previews.\n"
+      : includesArtifactPath
+        ? "\nRelevant screenshot artifacts:\n\n- `screenshots/fixture.png`\n- screenshots/fixture.png\n\nThe UI should render a safe local image preview for that workspace-relative path.\n"
+        : includesImage
+          ? `\n![Fake UI validation preview](data:image/png;base64,${fakePreviewPng})\n\nThe image above is an inline base64 PNG rendered from assistant Markdown.\n`
+          : "";
   const seed = [
     "# Synthetic streaming response",
     "",
@@ -143,7 +148,7 @@ class FakeSessionHandle implements SessionHandle {
     this.messages.push(assistant);
     this.emit({ type: "message_start", message: assistant });
 
-    const full = responseFor(text);
+    const full = responseFor(text, this.cwd);
     const toolAtOffset = shouldRunTool ? Math.min(Math.max(450, Math.floor(full.length * 0.22)), full.length - 1) : Infinity;
     let emittedTool = false;
     for (let offset = 0, chunkIndex = 0; offset < full.length && !this.aborted; chunkIndex++) {

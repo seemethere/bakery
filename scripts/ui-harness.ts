@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "file-autocomplete", "image-attachments", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -841,6 +841,20 @@ async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown
   return collectMetrics(page);
 }
 
+async function runRemoteImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please list remote screenshot artifact paths for rendering validation.");
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img, .markdown-body img"));
+    return images.length >= 2 && images.every((img) => img.complete && img.naturalWidth > 0);
+  }, null, { timeout: 5_000 });
+  const sources = await page.locator(".artifact-image img, .markdown-body img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
+  if (sources.some((src) => src.startsWith("file://"))) throw new Error(`Expected remote screenshots to use safe raw-file URLs, saw ${sources.join(", ")}`);
+  if (!sources.every((src) => src.includes("/api/sessions/") && src.includes("/files/raw"))) throw new Error(`Expected remote screenshots to use raw-file endpoint, saw ${sources.join(", ")}`);
+  await page.locator(".artifact-image figcaption", { hasText: "/screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
+  return { artifactImages: await page.locator(".artifact-image img").count(), renderedImages: sources.length, sources, ...(await collectMetrics(page)) };
+}
+
 async function runRepeatedImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const prompt = "Please list a local image artifact path for repeated screenshot path rendering validation.";
@@ -943,6 +957,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "image-artifact-paths") return runImageArtifactPaths(page);
   if (name === "repeated-image-artifact-paths") return runRepeatedImageArtifactPaths(page);
   if (name === "artifact-path-formats") return runArtifactPathFormats(page);
+  if (name === "remote-image-artifact-paths") return runRemoteImageArtifactPaths(page);
   if (name === "model-thinking") return runModelThinking(page);
   if (name === "context-usage") return runContextUsage(page);
   if (name === "themes") return runThemes(page);
@@ -984,6 +999,7 @@ async function main(): Promise<void> {
     PI_WEB_WORKSPACE_ROOT: workspace,
     PI_WEB_DATA_DIR: dataDir,
     PI_WEB_FAKE_AGENT: "1",
+    PI_WEB_AUTH_TOKEN: "",
     PI_WEB_CONTROLLER_TAKEOVER_TIMEOUT_MS: "1000",
     PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
     PI_WEB_LOAD_PROJECT_RESOURCES: "false",

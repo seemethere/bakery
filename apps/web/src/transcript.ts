@@ -61,10 +61,14 @@ function isExternalOrRootHref(value: string): boolean {
   return /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(value);
 }
 
+function isLocalImageHref(value: string): boolean {
+  return !isExternalOrRootHref(value) || value.startsWith("/") || /^file:\/\//i.test(value);
+}
+
 function resolveImageHref(value: string, localImageUrl?: RenderContext["localImageUrl"]): string | null {
   const safeHref = sanitizeUrl(value);
   if (!safeHref) return null;
-  if (!isExternalOrRootHref(value)) return localImageUrl?.(value) ?? safeHref;
+  if (isLocalImageHref(value)) return localImageUrl?.(value) ?? safeHref;
   return safeHref;
 }
 
@@ -82,7 +86,7 @@ export function renderMarkdown(value: string, localImageUrl?: RenderContext["loc
   return marked.parse(value, { async: false, gfm: true, breaks: false, renderer: createMarkdownRenderer(localImageUrl) });
 }
 
-const localImagePathPattern = /(?:^|[\s([{"'`])((?:\.{1,2}\/)?(?:[\w@.+-]+\/)+[\w@.+-]+\.(?:png|jpe?g|gif|webp|svg))(?![\w.-])/gi;
+const localImagePathPattern = /(?:^|[\s([{"'`])((?:(?:file:\/\/)?\/|\.{1,2}\/)?(?:[\w@.+-]+\/)+[\w@.+-]+\.(?:png|jpe?g|gif|webp|svg))(?![\w.-])/gi;
 
 function localImageArtifacts(text: string, localImageUrl?: RenderContext["localImageUrl"], suppressedPaths = new Set<string>()): Array<{ path: string; url: string }> {
   if (!localImageUrl) return [];
@@ -107,7 +111,7 @@ function markdownLocalImagePaths(text: string, localImageUrl?: RenderContext["lo
   if (!localImageUrl) return paths;
   for (const match of text.matchAll(markdownImageHrefPattern)) {
     const href = match[1]?.replace(/^\.\//, "");
-    if (!href || isExternalOrRootHref(href) || !localImageUrl(href)) continue;
+    if (!href || !isLocalImageHref(href) || !localImageUrl(href)) continue;
     paths.add(href);
   }
   return paths;
