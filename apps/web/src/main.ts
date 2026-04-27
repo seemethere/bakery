@@ -1218,8 +1218,10 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private updatePromptDraft(input: HTMLTextAreaElement): void {
+    const wasBashDraft = this.isBashPromptDraft();
     this.promptDraft = input.value;
     this.schedulePromptDraftSave();
+    if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerBashMode();
     const commandToken = this.getCommandToken(input);
     if (commandToken) {
       this.updateCommandAutocomplete(input, commandToken);
@@ -2351,6 +2353,16 @@ class PiWebAgentApp extends HTMLElement {
     return this.notice && this.isComposerNotice() ? `<p class="notice composer-notice">${escapeHtml(this.notice)}</p>` : "";
   }
 
+  private isBashPromptDraft(): boolean {
+    return this.promptDraft.trimStart().startsWith("!");
+  }
+
+  private patchComposerBashMode(): void {
+    const isBash = this.isBashPromptDraft();
+    this.querySelector<HTMLElement>(".prompt-shell")?.classList.toggle("bash-mode", isBash);
+    this.querySelector<HTMLElement>(".composer-mode")?.classList.toggle("bash-mode", isBash);
+  }
+
   private renderContextUsageNotice(): string {
     const usage = this.settings?.contextUsage;
     if (!this.selectedSession || !usage) return "";
@@ -2396,6 +2408,10 @@ class PiWebAgentApp extends HTMLElement {
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
     const summaryExpanded = this.selectedSession ? this.summaryExpanded(this.selectedSession.id) : false;
+    const isBashDraft = this.isBashPromptDraft();
+    const bashNoContext = this.promptDraft.trimStart().startsWith("!!");
+    const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
+    const composerHint = isBashDraft ? (isRunning ? "Bash commands run when the session is idle" : "Enter runs local bash · !! excludes output from context") : isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line";
     this.innerHTML = `
       ${sidebarOverlayOpen ? `<button id="sessionSidebarBackdrop" class="session-sidebar-backdrop" type="button" aria-label="Hide sessions"></button>` : ""}
       <aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""} ${sidebarOverlayOpen ? "overlay" : ""}">
@@ -2480,10 +2496,10 @@ class PiWebAgentApp extends HTMLElement {
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
           ${this.renderQuestionPanel(isController)}
-          <div class="prompt-shell">
-            <div class="composer-mode ${isRunning ? "running" : "idle"}">
-              <strong>${isRunning ? "Running input" : "Prompt"}</strong>
-              <span class="composer-hint">${isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line"}</span>
+          <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""}">
+            <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"}">
+              <strong>${escapeHtml(composerModeLabel)}</strong>
+              <span class="composer-hint">${escapeHtml(composerHint)}</span>
               ${this.renderComposerActivity()}
               ${this.renderContextUsageNotice()}
             </div>

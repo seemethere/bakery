@@ -236,6 +236,23 @@
   color: var(--c-cfe0ff);
 }
 
+.composer-mode.bash-mode strong {
+  border-color: color-mix(in srgb, var(--color-developer-bash-border) 78%, var(--color-border));
+  background: color-mix(in srgb, var(--color-developer-bash-border) 16%, var(--color-bg-surface));
+  color: var(--color-developer-bash-border);
+}
+
+.prompt-shell.bash-mode textarea {
+  border-color: color-mix(in srgb, var(--color-developer-bash-border) 78%, var(--color-border));
+  background: var(--color-developer-bash-bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-developer-bash-border) 18%, transparent);
+}
+
+.prompt-shell.bash-mode textarea:focus {
+  border-color: var(--color-developer-bash-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-border) 28%, transparent);
+}
+
 .composer-activity {
   display: flex;
   align-items: center;
