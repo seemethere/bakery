@@ -2359,8 +2359,13 @@ class PiWebAgentApp extends HTMLElement {
 
   private patchComposerBashMode(): void {
     const isBash = this.isBashPromptDraft();
-    this.querySelector<HTMLElement>(".prompt-shell")?.classList.toggle("bash-mode", isBash);
-    this.querySelector<HTMLElement>(".composer-mode")?.classList.toggle("bash-mode", isBash);
+    const isNoContext = this.promptDraft.trimStart().startsWith("!!");
+    const promptShell = this.querySelector<HTMLElement>(".prompt-shell");
+    const composerMode = this.querySelector<HTMLElement>(".composer-mode");
+    promptShell?.classList.toggle("bash-mode", isBash);
+    promptShell?.classList.toggle("no-context", isNoContext);
+    composerMode?.classList.toggle("bash-mode", isBash);
+    composerMode?.classList.toggle("no-context", isNoContext);
   }
 
   private renderContextUsageNotice(): string {
@@ -2496,8 +2501,8 @@ class PiWebAgentApp extends HTMLElement {
         </div>
         <footer class="${isRunning ? "running-footer" : ""}">
           ${this.renderQuestionPanel(isController)}
-          <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""}">
-            <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"}">
+          <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
+            <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""}">
               <strong>${escapeHtml(composerModeLabel)}</strong>
               <span class="composer-hint">${escapeHtml(composerHint)}</span>
               ${this.renderComposerActivity()}

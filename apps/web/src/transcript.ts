@@ -34,6 +34,12 @@ export function isDeveloperBashItem(item: TranscriptItem): boolean {
   return item.raw.role === "bashExecution" || String(item.raw.type ?? "").startsWith("bash_execution_");
 }
 
+export function isDeveloperBashNoContextItem(item: TranscriptItem): boolean {
+  if (!isDeveloperBashItem(item)) return false;
+  if (isRecord(item.raw) && item.raw.excludeFromContext === true) return true;
+  return /\(no context\)/i.test(item.title);
+}
+
 const imageFailureHandlerAttr = ` onerror="window.__piWebImageFailed?.(this.currentSrc||this.src);this.closest('figure')?.remove();this.remove()"`;
 
 function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) {
@@ -562,7 +568,8 @@ export class PiTranscriptRow extends HTMLElement {
     const groupClass = this.item.kind === "tool" && this.item.status === "done" ? `tool-group-${this.toolGroupPosition}` : "";
     const afterRunningClass = this.item.kind === "tool" && this.item.status === "done" && this.afterRunningTool ? "after-running-tool" : "";
     const developerBashClass = isDeveloperBashItem(this.item) ? "developer-bash" : "";
-    return ["message", this.item.kind, this.item.status ?? "", groupClass, afterRunningClass, developerBashClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    const noContextClass = isDeveloperBashNoContextItem(this.item) ? "no-context" : "";
+    return ["message", this.item.kind, this.item.status ?? "", groupClass, afterRunningClass, developerBashClass, noContextClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {

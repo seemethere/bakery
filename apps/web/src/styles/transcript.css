@@ -163,6 +163,25 @@
   background: var(--color-developer-bash-body-bg);
 }
 
+.message.tool.developer-bash.no-context {
+  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 72%, var(--color-tool-border));
+  background: var(--color-developer-bash-no-context-bg);
+}
+
+.message.tool.developer-bash.no-context .message-header {
+  border-bottom-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 36%, transparent);
+}
+
+.message.tool.developer-bash.no-context .message-header strong::before {
+  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 56%, transparent);
+  background: color-mix(in srgb, var(--color-developer-bash-no-context-border) 16%, transparent);
+  color: var(--color-developer-bash-no-context-border);
+}
+
+.message.tool.developer-bash.no-context .message-body {
+  background: var(--color-developer-bash-no-context-body-bg);
+}
+
 .message.error,
 .message.tool.error {
   border-color: var(--c-6e3438);

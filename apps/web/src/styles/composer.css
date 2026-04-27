@@ -253,6 +253,23 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-border) 28%, transparent);
 }
 
+.composer-mode.bash-mode.no-context strong {
+  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 78%, var(--color-border));
+  background: color-mix(in srgb, var(--color-developer-bash-no-context-border) 16%, var(--color-bg-surface));
+  color: var(--color-developer-bash-no-context-border);
+}
+
+.prompt-shell.bash-mode.no-context textarea {
+  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 78%, var(--color-border));
+  background: var(--color-developer-bash-no-context-bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-developer-bash-no-context-border) 18%, transparent);
+}
+
+.prompt-shell.bash-mode.no-context textarea:focus {
+  border-color: var(--color-developer-bash-no-context-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-no-context-border) 28%, transparent);
+}
+
 .composer-activity {
   display: flex;
   align-items: center;
