@@ -633,13 +633,13 @@ const validationRules: ValidationRule[] = [
   {
     name: "web-theme",
     matches: ["apps/web/src/styles.css"],
-    scenarios: ["theme-gallery", "themes", "tool-grouping", "question-answer"],
-    reason: "Theme/CSS changes are fastest to validate through the gallery plus focused component screenshots.",
+    scenarios: ["mobile-layout", "theme-gallery", "themes", "tool-grouping", "question-answer"],
+    reason: "Theme/CSS changes are fastest to validate through the mobile layout check, gallery, and focused component screenshots.",
   },
   {
     name: "harness",
     matches: ["scripts/ui-harness.ts"],
-    scenarios: ["slash-commands", "question-answer", "streaming-responsiveness"],
+    scenarios: ["mobile-layout", "slash-commands", "question-answer", "streaming-responsiveness"],
     optionalCommands: ["bun run test:web-perf"],
     reason: "Harness changes need at least one focused scenario to prove the runner still works; run the full suite when scenario orchestration changed broadly.",
   },

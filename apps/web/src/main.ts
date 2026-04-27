@@ -37,6 +37,7 @@ type RunningQueueState = {
 };
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
+const mobileLayoutMediaQuery = "(max-width: 760px)";
 
 function isThemePreference(value: string | null): value is ThemePreference {
   return value === "system" || value === "workbench-dark" || value === "workbench-light";
@@ -136,6 +137,7 @@ class PiWebAgentApp extends HTMLElement {
   private showOlderSessions = localStorage.getItem("piWebShowOlderSessions") === "true";
   private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
   private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
+  private mobileLayout = window.matchMedia(mobileLayoutMediaQuery).matches;
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
   private transcriptPointerDown: { id: string; x: number; y: number } | null = null;
@@ -168,8 +170,13 @@ class PiWebAgentApp extends HTMLElement {
   private renderedSegmentCache = new Map<string, string>();
   private failedImageUrls = new Map<string, number>();
   private readonly themeMedia = window.matchMedia(themeMediaQuery);
+  private readonly mobileLayoutMedia = window.matchMedia(mobileLayoutMediaQuery);
   private readonly themeMediaHandler = () => {
     if (this.themePreference === "system") applyThemePreference(this.themePreference);
+  };
+  private readonly mobileLayoutHandler = () => {
+    this.mobileLayout = this.mobileLayoutMedia.matches;
+    this.render();
   };
   private readonly beforeUnloadHandler = () => {
     if (this.promptDraftSaveTimer) {
@@ -228,6 +235,7 @@ class PiWebAgentApp extends HTMLElement {
     window.addEventListener("focus", this.windowFocusHandler);
     window.addEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
+    this.mobileLayoutMedia.addEventListener("change", this.mobileLayoutHandler);
     this.render();
     void this.refresh();
   }
@@ -238,6 +246,7 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("focus", this.windowFocusHandler);
     window.removeEventListener("keydown", this.questionKeyHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
+    this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
     this.persistAttachmentWarningIfNeeded();
     if (this.renderTimer) clearTimeout(this.renderTimer);
     if (this.promptDraftSaveTimer) clearTimeout(this.promptDraftSaveTimer);
@@ -891,6 +900,11 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
     if (action === "details" || action === "preview") {
+      if (this.mobileLayout) {
+        this.notice = "Inspector is hidden on mobile.";
+        this.render();
+        return;
+      }
       this.selectedTranscriptId = transcriptId;
       localStorage.setItem("piWebSelectedTranscriptId", transcriptId);
       this.rightPanelTab = action;
@@ -1583,13 +1597,17 @@ class PiWebAgentApp extends HTMLElement {
         this.render();
       });
     });
-    this.querySelector<HTMLButtonElement>("#toggleSessionSidebar")?.addEventListener("click", () => {
-      this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
-      this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
-      localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
-      localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
-      this.notice = this.sessionSidebarPinned ? "Session sidebar pinned open for future sessions." : "Session sidebar will auto-collapse after opening a session.";
-      this.render();
+    this.querySelectorAll<HTMLButtonElement>("#toggleSessionSidebar, #toggleSessionSidebarMobile").forEach((button) => {
+      button.addEventListener("click", () => {
+        this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
+        if (!this.mobileLayout) this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
+        localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
+        localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
+        this.notice = this.mobileLayout
+          ? (this.sessionSidebarCollapsed ? "Session menu hidden." : "Session menu open.")
+          : this.sessionSidebarPinned ? "Session sidebar pinned open for future sessions." : "Session sidebar will auto-collapse after opening a session.";
+        this.render();
+      });
     });
     this.querySelector<HTMLButtonElement>("#toggleOlderSessions")?.addEventListener("click", () => {
       this.showOlderSessions = !this.showOlderSessions;
@@ -2450,6 +2468,7 @@ class PiWebAgentApp extends HTMLElement {
       afterRunningTool: this.isAfterRunningTool(item),
       toolGroupPosition: this.toolGroupPositionFor(item),
       cache: this.renderedSegmentCache,
+      hideInspectorActions: this.mobileLayout,
       localImageUrl: (path) => this.localImageUrl(path),
     });
   }
@@ -2631,7 +2650,8 @@ class PiWebAgentApp extends HTMLElement {
     const titleSelectionEnd = titleInput?.selectionEnd ?? titleSelectionStart;
     const isRunning = this.status === "running";
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
-    this.classList.toggle("inspector-collapsed", this.rightPanelCollapsed);
+    this.classList.toggle("inspector-collapsed", this.mobileLayout || this.rightPanelCollapsed);
+    this.classList.toggle("mobile-layout", this.mobileLayout);
     const isController = this.controller?.isController ?? true;
     const takeoverRequest = this.controller?.takeoverRequest;
     const takeoverPending = takeoverRequest?.state === "requested";
@@ -2655,37 +2675,42 @@ class PiWebAgentApp extends HTMLElement {
           <span class="collapsed-sidebar-label">Sessions</span>
           ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
         ` : `
-          <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
-          <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
-          <label>Theme
-            <select id="themePreference">
-              <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
-              <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
-              <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
-            </select>
-          </label>
-          <button id="saveSettings">Save / Refresh</button>
-          ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
-          ${this.renderAppSettings()}
-          ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open for new sessions</p>` : `<p class="sidebar-mode">Auto-collapses after opening a session</p>`}
-          <hr />
-          <label>Workspace
-            <select id="workspace">
-              ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
-            </select>
-          </label>
-          <button id="newSession">New session</button>
-          <div class="sessions-heading">
-            <h2>Recent sessions</h2>
-            ${sessionGroups.olderCount > 0 ? `<button id="toggleOlderSessions" type="button">${this.showOlderSessions ? "Hide older" : `Show older (${sessionGroups.olderCount})`}</button>` : ""}
+          <div class="sidebar-section sidebar-session-section">
+            <label>Workspace
+              <select id="workspace">
+                ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
+              </select>
+            </label>
+            <button id="newSession">New session</button>
+            <div class="sessions-heading">
+              <h2>Recent sessions</h2>
+              ${sessionGroups.olderCount > 0 ? `<button id="toggleOlderSessions" type="button">${this.showOlderSessions ? "Hide older" : `Show older (${sessionGroups.olderCount})`}</button>` : ""}
+            </div>
+            <div class="sessions">
+              ${sessionGroups.visible.length ? sessionGroups.visible.map((session) => this.renderSessionCard(session)).join("") : `<p class="empty-sidebar">No recent sessions. Create one from the selected workspace.</p>`}
+            </div>
           </div>
-          <div class="sessions">
-            ${sessionGroups.visible.length ? sessionGroups.visible.map((session) => this.renderSessionCard(session)).join("") : `<p class="empty-sidebar">No recent sessions. Create one from the selected workspace.</p>`}
+          <div class="sidebar-section sidebar-settings-section">
+            <hr />
+            <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
+            <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
+            <label>Theme
+              <select id="themePreference">
+                <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
+                <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
+                <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
+              </select>
+            </label>
+            <button id="saveSettings">Save / Refresh</button>
+            ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
+            ${this.renderAppSettings()}
+            ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open for new sessions</p>` : `<p class="sidebar-mode">Auto-collapses after opening a session</p>`}
           </div>
         `}
       </aside>
       <main>
         <header>
+          <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
             ${this.selectedSession ? `<div class="session-title-row"><input id="sessionTitle" class="session-title-input" size="${Math.min(52, Math.max(12, selectedTitle.length || selectedTitlePlaceholder.length))}" value="${escapeHtml(selectedTitle)}" placeholder="${escapeHtml(selectedTitlePlaceholder)}" aria-label="Session title" title="Edit session title" />
               <button id="generateMetadata" class="metadata-generate-button" title="Suggest title and summary" aria-label="Suggest title and summary" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>${this.metadataGenerating ? "…" : "✨"}</button></div>
@@ -2740,7 +2765,7 @@ class PiWebAgentApp extends HTMLElement {
           </div>
         </footer>
       </main>
-      ${this.renderRightPanel()}
+      ${this.mobileLayout ? "" : this.renderRightPanel()}
       ${this.renderTreeDrawer()}
     `;
     this.forceFullRender = false;

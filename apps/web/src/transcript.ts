@@ -446,6 +446,7 @@ export class PiTranscriptRow extends HTMLElement {
   private collapsed = false;
   private actionMenuOpen = false;
   private canFork = false;
+  private hideInspectorActions = false;
   private afterRunningTool = false;
   private toolGroupPosition: ToolGroupPosition = "single";
   private lastRenderKey = "";
@@ -464,13 +465,13 @@ export class PiTranscriptRow extends HTMLElement {
       if (target?.closest(".message-header") && this.isCollapsible()) {
         event.stopImmediatePropagation();
         this.collapsed = !this.collapsed;
-        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork, afterRunningTool: this.afterRunningTool, toolGroupPosition: this.toolGroupPosition });
+        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork, hideInspectorActions: this.hideInspectorActions, afterRunningTool: this.afterRunningTool, toolGroupPosition: this.toolGroupPosition });
         else this.classList.toggle("collapsed", this.collapsed);
       }
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; hideInspectorActions?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
     const previous = this.item;
     const wasSelected = this.selected;
@@ -479,6 +480,7 @@ export class PiTranscriptRow extends HTMLElement {
     this.selected = options.selected;
     this.actionMenuOpen = options.actionMenuOpen ?? false;
     this.canFork = options.canFork ?? false;
+    this.hideInspectorActions = options.hideInspectorActions ?? false;
     this.afterRunningTool = options.afterRunningTool ?? false;
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
@@ -496,7 +498,7 @@ export class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.hideInspectorActions}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -534,8 +536,8 @@ export class PiTranscriptRow extends HTMLElement {
     return `
       <div class="message-action-menu" role="menu">
         <button type="button" role="menuitem" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}">Copy</button>
-        <button type="button" role="menuitem" data-row-action="details" data-transcript-id="${escapeHtml(item.id)}">Details</button>
-        ${previewable ? `<button type="button" role="menuitem" data-row-action="preview" data-transcript-id="${escapeHtml(item.id)}">Preview</button>` : ""}
+        ${this.hideInspectorActions ? "" : `<button type="button" role="menuitem" data-row-action="details" data-transcript-id="${escapeHtml(item.id)}">Details</button>`}
+        ${previewable && !this.hideInspectorActions ? `<button type="button" role="menuitem" data-row-action="preview" data-transcript-id="${escapeHtml(item.id)}">Preview</button>` : ""}
         ${this.canFork ? `<button type="button" role="menuitem" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}">Fork from here</button>` : ""}
       </div>`;
   }

@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "mobile-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -149,8 +149,10 @@ async function prepareSession(page: Page): Promise<string> {
     localStorage.setItem("piWebAuthToken", "");
   }, { apiBase });
   await page.goto(webBase, { waitUntil: "domcontentloaded" });
-  if (await page.locator("#apiBase").count() === 0 && await page.locator("#toggleSessionSidebar").count() > 0) {
-    await page.locator("#toggleSessionSidebar").click();
+  if (await page.locator("#apiBase").count() === 0) {
+    const mobileMenu = page.locator("#toggleSessionSidebarMobile");
+    if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
+    else if (await page.locator("#toggleSessionSidebar").count() > 0) await page.locator("#toggleSessionSidebar").click();
   }
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
@@ -162,6 +164,10 @@ async function prepareSession(page: Page): Promise<string> {
   const session = await response.json() as { id: string };
   await page.locator("#prompt").waitFor({ state: "visible" });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  if (await page.locator("#toggleSessionSidebarMobile").isVisible().catch(() => false)) {
+    const sidebarOpen = await page.locator("pi-web-agent").evaluate((element) => !element.classList.contains("session-sidebar-collapsed"));
+    if (sidebarOpen) await page.locator("#toggleSessionSidebar").click();
+  }
   return session.id;
 }
 
@@ -186,6 +192,7 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#followUp").click();
   await page.locator(".running-queue").waitFor({ timeout: 5_000 });
 
+  await ensureSidebarSettingsVisible(page);
   await page.locator("#themePreference").selectOption("workbench-dark");
   await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-dark");
   await page.screenshot({ path: join(artifactDir, "theme-gallery-dark.png"), fullPage: true });
@@ -198,7 +205,16 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
   return { ...(await collectMetrics(page)) };
 }
 
+async function ensureSidebarSettingsVisible(page: Page): Promise<void> {
+  if (await page.locator("#themePreference").isVisible().catch(() => false)) return;
+  const mobileMenu = page.locator("#toggleSessionSidebarMobile");
+  if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
+  else await page.locator("#toggleSessionSidebar").click();
+  await page.locator("#themePreference").waitFor({ state: "visible", timeout: 5_000 });
+}
+
 async function setWorkbenchTheme(page: Page, theme: "workbench-dark" | "workbench-light"): Promise<void> {
+  await ensureSidebarSettingsVisible(page);
   await page.locator("#themePreference").selectOption(theme);
   await page.waitForFunction((expected) => document.documentElement.dataset.theme === expected, theme);
 }
@@ -344,6 +360,70 @@ async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown
   if (transcriptHeight < 600) throw new Error(`Empty session transcript is too short: ${transcriptHeight}px`);
   if (layout.prompt && layout.controls && layout.prompt.left + layout.prompt.width > layout.controls.left) {
     throw new Error(`Empty session controls overlap prompt: prompt right ${layout.prompt.left + layout.prompt.width}px, controls left ${layout.controls.left}px`);
+  }
+  return { ...(await collectMetrics(page)), layout };
+}
+
+async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem("piWebSessionSidebarCollapsed", "true");
+    localStorage.setItem("piWebRightPanelCollapsed", "true");
+    localStorage.setItem("piWebSessionSidebarPinned", "false");
+  });
+  await prepareSession(page);
+  await page.locator(".message", { hasText: "No messages yet." }).waitFor({ timeout: 5_000 });
+  const app = page.locator("pi-web-agent");
+  if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) await page.locator("#toggleSessionSidebar").click();
+  await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
+  await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator("#prompt").fill("Mobile layout regression draft");
+  await page.locator("#toggleSessionSidebarMobile").click();
+  await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
+  const drawerOrder = await page.evaluate(() => {
+    const drawerElements = Array.from(document.querySelectorAll(".session-sidebar:not(.collapsed) *"));
+    return {
+      newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
+      apiBaseIndex: drawerElements.findIndex((element) => element.id === "apiBase"),
+    };
+  });
+  await page.locator("#toggleSessionSidebar").click();
+  await page.screenshot({ path: join(artifactDir, "mobile-layout.png"), fullPage: true });
+
+  const layout = await page.evaluate((drawerOrder) => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height), bottom: Math.round(rect.bottom), right: Math.round(rect.right) };
+    };
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      documentWidth: document.documentElement.scrollWidth,
+      app: rectOf("pi-web-agent"),
+      header: rectOf("header"),
+      transcript: rectOf(".transcript"),
+      footer: rectOf("footer"),
+      prompt: rectOf("#prompt"),
+      controls: rectOf(".controls"),
+      mobileMenu: rectOf("#toggleSessionSidebarMobile"),
+      closedSidebar: rectOf(".session-sidebar.collapsed"),
+      rightPanel: rectOf(".right-panel"),
+      drawerOrder,
+    };
+  }, drawerOrder);
+
+  const viewportWidth = layout.viewport.width;
+  if (layout.documentWidth > viewportWidth + 2) throw new Error(`Mobile layout has horizontal overflow: document ${layout.documentWidth}px, viewport ${viewportWidth}px`);
+  if ((layout.mobileMenu?.width ?? 0) < 30) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
+  if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
+  if (layout.rightPanel !== null) throw new Error(`Mobile inspector should be detached, saw ${JSON.stringify(layout.rightPanel)}`);
+  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put sessions before settings: new=${layout.drawerOrder.newSessionIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
+  if ((layout.header?.height ?? 999) > 140) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
+  if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
+  if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
+  if (layout.prompt && layout.controls && layout.prompt.bottom > layout.controls.top) {
+    throw new Error(`Mobile controls overlap prompt: prompt bottom ${layout.prompt.bottom}px, controls top ${layout.controls.top}px`);
   }
   return { ...(await collectMetrics(page)), layout };
 }
@@ -746,7 +826,7 @@ async function runConnectionDisconnected(page: Page, runtime: { stopServer: () =
 }
 
 async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
-  await page.setViewportSize({ width: 760, height: 900 });
+  await page.setViewportSize({ width: 800, height: 900 });
   await prepareSession(page);
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
@@ -1036,6 +1116,7 @@ function assertPerfThresholds(name: string, metrics: Record<string, unknown>): v
 async function runScenario(name: string, page: Page, browser: Browser, runtime: { restartServer: () => Promise<void>; stopServer: () => Promise<void> }): Promise<Record<string, unknown>> {
   if (name === "manual") return runManual(page);
   if (name === "empty-session-layout") return runEmptySessionLayout(page);
+  if (name === "mobile-layout") return runMobileLayout(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
