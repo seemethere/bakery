@@ -803,7 +803,7 @@ class PiWebAgentApp extends HTMLElement {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest(".question-panel")) return;
-    if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End", "Escape"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
+    if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End", "Enter", " ", "Escape"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
       this.handleQuestionPanelKeydown(event);
     }
   };
@@ -1579,6 +1579,8 @@ class PiWebAgentApp extends HTMLElement {
     this.closeFileAutocomplete();
     this.closeCommandAutocomplete();
     input.value = "";
+    this.focusPromptOnNextReadyRender = true;
+    this.requestRender(0);
   }
 
   private async addPromptImageFiles(files: FileList | File[]): Promise<void> {
@@ -1916,6 +1918,14 @@ class PiWebAgentApp extends HTMLElement {
     } else if (event.key === "End") {
       event.preventDefault();
       buttons[buttons.length - 1]?.focus();
+    } else if (event.key === "Enter" || event.key === " ") {
+      const button = buttons[safeCurrentIndex];
+      const index = Number(button?.dataset.questionOptionIndex ?? "-1");
+      const option = this.pendingQuestion.options[index];
+      if (option && this.canAnswerPendingQuestion()) {
+        event.preventDefault();
+        this.answerPendingQuestion({ answer: option.label, selectedIndex: index, wasCustom: false });
+      }
     } else if (/^[1-9]$/.test(event.key)) {
       const index = Number(event.key) - 1;
       const option = this.pendingQuestion.options[index];

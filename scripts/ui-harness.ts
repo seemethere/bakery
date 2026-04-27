@@ -238,7 +238,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
-  await page.locator("[data-question-option-index='1']").press("Enter");
+  await page.keyboard.press("Enter");
   await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
