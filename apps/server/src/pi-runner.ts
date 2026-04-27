@@ -187,7 +187,7 @@ class QuestionBroker {
     this.answer({ questionId: this.pending.id, cancelled: true, selectedIndex: null, wasCustom: false });
   }
 
-  async ask(input: { title?: string; question: string; recommendation?: string; options?: Array<{ label: string; description?: string }>; allowCustomAnswer?: boolean }, signal?: AbortSignal): Promise<QuestionAnswer> {
+  async ask(input: { title?: string; question: string; recommendation?: string; options?: Array<{ label: string; description?: string }>; recommendedOptionIndex?: number; allowCustomAnswer?: boolean }, signal?: AbortSignal): Promise<QuestionAnswer> {
     if (this.pending) throw new Error("A question is already pending for this session.");
     const question: PendingQuestion = {
       id: crypto.randomUUID(),
@@ -195,6 +195,7 @@ class QuestionBroker {
       question: input.question,
       ...(input.recommendation?.trim() ? { recommendation: input.recommendation.trim() } : {}),
       options: input.options ?? [],
+      ...(typeof input.recommendedOptionIndex === "number" && input.recommendedOptionIndex >= 0 && input.recommendedOptionIndex < (input.options?.length ?? 0) ? { recommendedOptionIndex: input.recommendedOptionIndex } : {}),
       allowCustomAnswer: input.allowCustomAnswer ?? true,
       createdAt: new Date().toISOString(),
     };
@@ -230,6 +231,7 @@ function createAskQuestionTool(broker: QuestionBroker) {
         label: Type.String({ description: "Option label." }),
         description: Type.Optional(Type.String({ description: "Optional short explanation for this option." })),
       }), { description: "Selectable answer options." })),
+      recommendedOptionIndex: Type.Optional(Type.Number({ description: "Zero-based index of the recommended option when options are provided. The UI highlights and initially focuses this option." })),
       allowCustomAnswer: Type.Optional(Type.Boolean({ description: "Whether the user may type a custom answer. Defaults to true." })),
     }),
     async execute(_toolCallId, params, signal) {

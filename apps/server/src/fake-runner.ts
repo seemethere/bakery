@@ -355,6 +355,7 @@ class FakeSessionHandle implements SessionHandle {
         { label: "Bug fix", description: "Tracking down and fixing an issue" },
         { label: "Refactoring", description: "Improving existing code structure" },
       ],
+      recommendedOptionIndex: expectCancel ? undefined : 0,
       allowCustomAnswer: true,
     };
     this.emit({ type: "tool_execution_start", toolCallId, toolName: "ask_question", args });

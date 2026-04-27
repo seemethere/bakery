@@ -290,6 +290,7 @@ export const pendingQuestionSchema = z.object({
   question: z.string().min(1),
   recommendation: z.string().optional(),
   options: z.array(questionOptionSchema),
+  recommendedOptionIndex: z.number().int().nonnegative().optional(),
   allowCustomAnswer: z.boolean(),
   createdAt: z.string(),
 });

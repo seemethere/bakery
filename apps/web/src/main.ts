@@ -1831,8 +1831,12 @@ class PiWebAgentApp extends HTMLElement {
 
   private recommendedQuestionOptionIndex(): number {
     const question = this.pendingQuestion;
-    const recommendation = question?.recommendation?.toLowerCase() ?? "";
-    if (!question || !recommendation) return -1;
+    if (!question) return -1;
+    if (typeof question.recommendedOptionIndex === "number" && question.recommendedOptionIndex >= 0 && question.recommendedOptionIndex < question.options.length) {
+      return question.recommendedOptionIndex;
+    }
+    const recommendation = question.recommendation?.toLowerCase() ?? "";
+    if (!recommendation) return -1;
     return question.options.findIndex((option) => {
       const label = option.label.toLowerCase();
       return Boolean(label && recommendation.includes(label));
