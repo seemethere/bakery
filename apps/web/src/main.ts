@@ -1065,6 +1065,21 @@ class PiWebAgentApp extends HTMLElement {
     else this.render();
   }
 
+  private isSupportedImageFile(file: File): boolean {
+    return file.type.startsWith("image/") || /\.(?:png|jpe?g|gif|webp)$/i.test(file.name);
+  }
+
+  private imageMimeType(file: File): string {
+    if (file.type === "image/jpg") return "image/jpeg";
+    if (file.type.startsWith("image/")) return file.type;
+    const extension = file.name.toLowerCase().split(".").pop();
+    if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+    if (extension === "png") return "image/png";
+    if (extension === "gif") return "image/gif";
+    if (extension === "webp") return "image/webp";
+    return file.type;
+  }
+
   private artifactPathForFile(file: File): string {
     const safeName = (file.name || "screenshot.png").replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "screenshot.png";
     return `.bakery/artifacts/${new Date().toISOString().replace(/[:.]/g, "-")}-${safeName}`;
@@ -1076,12 +1091,13 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
-    const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    const incoming = Array.from(files).filter((file) => this.isSupportedImageFile(file));
     if (incoming.length === 0) return;
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const uploadedPaths: string[] = [];
     for (const file of incoming) {
-      if (!supportedPromptImageTypes.has(file.type)) {
+      const mimeType = this.imageMimeType(file);
+      if (!supportedPromptImageTypes.has(mimeType)) {
         this.notice = `Unsupported image type: ${file.type || file.name}`;
         continue;
       }
@@ -1098,7 +1114,7 @@ class PiWebAgentApp extends HTMLElement {
       });
       await this.api(`/api/sessions/${this.selectedSession.id}/artifacts`, {
         method: "POST",
-        body: JSON.stringify({ path, mimeType: file.type === "image/jpg" ? "image/jpeg" : file.type, data }),
+        body: JSON.stringify({ path, mimeType, data }),
       });
       uploadedPaths.push(path);
     }
@@ -1125,7 +1141,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<void> {
-    const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    const incoming = Array.from(files).filter((file) => this.isSupportedImageFile(file));
     if (incoming.length === 0) return;
     const added: PromptImage[] = [];
     for (const file of incoming) {
@@ -1133,7 +1149,8 @@ class PiWebAgentApp extends HTMLElement {
         this.notice = `Only ${maxPromptImages} images can be attached to one prompt.`;
         break;
       }
-      if (!supportedPromptImageTypes.has(file.type)) {
+      const mimeType = this.imageMimeType(file);
+      if (!supportedPromptImageTypes.has(mimeType)) {
         this.notice = `Unsupported image type: ${file.type || file.name}`;
         continue;
       }
@@ -1147,7 +1164,7 @@ class PiWebAgentApp extends HTMLElement {
         reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image")));
         reader.readAsDataURL(file);
       });
-      added.push({ id: crypto.randomUUID(), name: file.name || "pasted-image", mimeType: file.type, dataUrl, size: file.size });
+      added.push({ id: crypto.randomUUID(), name: file.name || "pasted-image", mimeType, dataUrl, size: file.size });
     }
     if (added.length > 0) {
       this.promptImages = [...this.promptImages, ...added];
@@ -1664,19 +1681,25 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("click", () => this.removePromptImage(button.dataset.removeImageId ?? ""));
     });
     this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("dragover", (event) => {
-      if (Array.from(event.dataTransfer?.items ?? []).some((item) => item.type.startsWith("image/"))) {
-        event.preventDefault();
-        (event.currentTarget as HTMLElement).classList.add("dragging-image");
-      }
+      const items = Array.from(event.dataTransfer?.items ?? []);
+      const hasPotentialFileDrop = items.length === 0 || items.some((item) => item.kind === "file" || item.type.startsWith("image/"));
+      if (!hasPotentialFileDrop) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      (event.currentTarget as HTMLElement).classList.add("dragging-image");
     });
     this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("dragleave", (event) => {
       (event.currentTarget as HTMLElement).classList.remove("dragging-image");
     });
     this.querySelector<HTMLElement>(".prompt-shell")?.addEventListener("drop", (event) => {
       const files = event.dataTransfer?.files;
-      if (!files || !Array.from(files).some((file) => file.type.startsWith("image/"))) return;
       event.preventDefault();
       (event.currentTarget as HTMLElement).classList.remove("dragging-image");
+      if (!files || files.length === 0) {
+        this.notice = "Drop image files here to attach them to the prompt.";
+        this.render();
+        return;
+      }
       void this.handleImageFiles(files);
     });
     this.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("input", (event) => this.updatePromptDraft(event.currentTarget as HTMLTextAreaElement));
