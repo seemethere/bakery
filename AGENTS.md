@@ -50,7 +50,7 @@ Before validating code changes, prefer:
 bun run report:iteration --recommend <changed files>
 ```
 
-Use the suggested focused scenarios first. Escalate to `bun run test:web-perf` when the report recommends it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly.
+Use the suggested focused scenarios first. Escalate to `bun run test:web-perf` when the report recommends it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly. For non-trivial validation choices, paste or summarize the report's `## Validation decision` block in the final handoff, including whether the full suite was run or intentionally skipped.
 
 ## UI validation expectations
 

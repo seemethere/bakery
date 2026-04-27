@@ -370,10 +370,38 @@ function buildValidationRecommendation(files: string[]): ValidationRecommendatio
   return { files, commands, optionalCommands, scenarios, reasons };
 }
 
+function fullSuiteDecision(recommendation: ValidationRecommendation): string {
+  const recommendsFullSuite = recommendation.commands.includes("bun run test:web-perf") || recommendation.optionalCommands.includes("bun run test:web-perf");
+  if (recommendsFullSuite) {
+    return "Run `bun run test:web-perf` after the focused commands if the touched behavior is broad, protocol/session-lifecycle related, or focused validation fails.";
+  }
+  return "Full `bun run test:web-perf` not recommended by the selector for these files; skip it unless focused validation fails or the change proves broader than expected.";
+}
+
+function printValidationDecisionBlock(recommendation: ValidationRecommendation): void {
+  console.log("\n## Validation decision");
+  if (recommendation.files.length === 0) {
+    console.log("Files: none provided/detected");
+    console.log("Commands:");
+    console.log("1. bun run check");
+    console.log("Full suite: not selected; rerun with `bun run report:iteration --recommend <changed files>` once files are known.");
+    return;
+  }
+  console.log(`Files: ${recommendation.files.join(", ")}`);
+  console.log("Commands:");
+  recommendation.commands.forEach((command, index) => console.log(`${index + 1}. ${command}`));
+  if (recommendation.optionalCommands.length > 0) {
+    console.log("Optional / escalation:");
+    recommendation.optionalCommands.forEach((command) => console.log(`- ${command}`));
+  }
+  console.log(`Full suite: ${fullSuiteDecision(recommendation)}`);
+}
+
 function printValidationRecommendation(recommendation: ValidationRecommendation): void {
   console.log("\nSuggested validation:");
   if (recommendation.files.length === 0) {
     console.log("No changed files were provided or detected; run `bun run check` first.");
+    printValidationDecisionBlock(recommendation);
     return;
   }
   recommendation.commands.forEach((command, index) => console.log(`${index + 1}. ${command}`));
@@ -383,6 +411,7 @@ function printValidationRecommendation(recommendation: ValidationRecommendation)
   }
   console.log("\nWhy:");
   recommendation.reasons.forEach((reason) => console.log(`- ${reason}`));
+  printValidationDecisionBlock(recommendation);
 }
 
 function topEntries(record: Record<string, number>, limit: number): Array<[string, number]> {

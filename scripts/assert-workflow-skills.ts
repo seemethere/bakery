@@ -46,6 +46,8 @@ const guidanceSnippets = [
   "recurring hot-path harness scenarios",
   "missing telemetry",
   "Escalate to `bun run test:web-perf`",
+  "## Validation decision",
+  "full suite was run or intentionally skipped",
 ];
 
 for (const snippet of guidanceSnippets) {
