@@ -349,7 +349,7 @@ class FakeSessionHandle implements SessionHandle {
     const args = {
       title: expectCancel ? "Cancel path" : "Today's work",
       question: expectCancel ? "Should this question be cancelled?" : "What are you working on today?",
-      recommendation: expectCancel ? "Cancel this prompt to verify the cancellation path." : "Start with the smallest vertical slice that proves the UI lifecycle.",
+      recommendation: expectCancel ? "Cancel this prompt to verify the cancellation path." : "New feature — start with the smallest vertical slice that proves the UI lifecycle.",
       options: [
         { label: "New feature", description: "Adding new functionality to the project" },
         { label: "Bug fix", description: "Tracking down and fixing an issue" },

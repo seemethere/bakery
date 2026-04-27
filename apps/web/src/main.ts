@@ -750,6 +750,7 @@ class PiWebAgentApp extends HTMLElement {
   private forceFullRender = false;
   private dirtyTranscriptIds = new Set<string>();
   private focusPromptOnNextReadyRender = false;
+  private focusPendingQuestionOnNextRender = false;
   private renderedSegmentCache = new Map<string, string>();
   private readonly themeMedia = window.matchMedia(themeMediaQuery);
   private readonly themeMediaHandler = () => {
@@ -1032,7 +1033,9 @@ class PiWebAgentApp extends HTMLElement {
     this.sessions = this.sessions.map((candidate) => candidate.id === session.id ? session : candidate);
     this.controller = snapshot.controller ?? this.controller;
     this.settings = snapshot.settings ?? this.settings;
+    const previousQuestionId = this.pendingQuestion?.id ?? null;
     this.pendingQuestion = snapshot.pendingQuestion ?? null;
+    if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
     this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
     this.runningQueue = { steering: [], followUp: [] };
     this.pendingToolCallTitles = [];
@@ -1069,7 +1072,9 @@ class PiWebAgentApp extends HTMLElement {
     } else if (payload.type === "settings_update") {
       this.settings = payload.settings;
     } else if (payload.type === "question_update") {
+      const previousQuestionId = this.pendingQuestion?.id ?? null;
       this.pendingQuestion = payload.question;
+      if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
       this.forceFullRender = true;
     } else if (payload.type === "session_metadata_update") {
       const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
@@ -1785,6 +1790,53 @@ class PiWebAgentApp extends HTMLElement {
     this.answerPendingQuestion({ answer, selectedIndex: null, wasCustom: true });
   }
 
+  private recommendedQuestionOptionIndex(): number {
+    const question = this.pendingQuestion;
+    const recommendation = question?.recommendation?.toLowerCase() ?? "";
+    if (!question || !recommendation) return -1;
+    return question.options.findIndex((option) => {
+      const label = option.label.toLowerCase();
+      return Boolean(label && recommendation.includes(label));
+    });
+  }
+
+  private focusQuestionPanel(): void {
+    const buttons = Array.from(this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]:not(:disabled)"));
+    if (buttons.length > 0) {
+      const recommendedIndex = this.recommendedQuestionOptionIndex();
+      const target = recommendedIndex >= 0 ? buttons.find((button) => Number(button.dataset.questionOptionIndex ?? "-1") === recommendedIndex) : buttons[0];
+      (target ?? buttons[0])?.focus();
+      return;
+    }
+    this.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)")?.focus();
+  }
+
+  private handleQuestionPanelKeydown(event: KeyboardEvent): void {
+    if (!this.pendingQuestion) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.id === "questionCustomAnswer") return;
+    const buttons = Array.from(this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]:not(:disabled)"));
+    if (buttons.length === 0) return;
+    const currentIndex = Math.max(0, buttons.findIndex((button) => button === active));
+    const focusButton = (index: number) => buttons[(index + buttons.length) % buttons.length]?.focus();
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      event.preventDefault();
+      focusButton(currentIndex + 1);
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      focusButton(currentIndex - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      buttons[0]?.focus();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      buttons[buttons.length - 1]?.focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      this.querySelector<HTMLTextAreaElement>("#prompt")?.focus();
+    }
+  }
+
   private setModel(model: string): void {
     if (model && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_model", model }));
   }
@@ -1893,6 +1945,7 @@ class PiWebAgentApp extends HTMLElement {
         if (index >= 0 && text) this.cancelQueuedMessage(queue, index, text);
       });
     });
+    this.querySelector<HTMLElement>(".question-panel")?.addEventListener("keydown", (event) => this.handleQuestionPanelKeydown(event));
     this.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
       button.addEventListener("click", () => {
         const index = Number(button.dataset.questionOptionIndex ?? "-1");
@@ -2319,6 +2372,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!question) return "";
     const disabled = !isController || this.connectionState !== "connected";
     const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question.</p>` : this.connectionState !== "connected" ? `<p class="question-viewer-copy">Reconnect before answering.</p>` : "";
+    const recommendedOptionIndex = this.recommendedQuestionOptionIndex();
     return `
       <section class="question-panel" aria-label="Answer needed">
         <div class="question-panel-heading">
@@ -2327,11 +2381,14 @@ class PiWebAgentApp extends HTMLElement {
         </div>
         <p class="question-text">${escapeHtml(question.question)}</p>
         ${question.recommendation ? `<p class="question-recommendation"><b>Recommended:</b> ${escapeHtml(question.recommendation)}</p>` : ""}
-        ${question.options.length ? `<div class="question-options">
-          ${question.options.map((option, index) => `<button type="button" data-question-option-index="${index}" ${disabled ? "disabled" : ""}>
-            <strong>${index + 1}. ${escapeHtml(option.label)}</strong>
-            ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
-          </button>`).join("")}
+        ${question.options.length ? `<div class="question-options" role="listbox" aria-label="Answer options. Use arrow keys to choose, then Enter.">
+          ${question.options.map((option, index) => {
+            const recommended = index === recommendedOptionIndex;
+            return `<button type="button" data-question-option-index="${index}" class="${recommended ? "recommended-option" : ""}" aria-label="${recommended ? "Recommended option: " : ""}${index + 1}. ${escapeHtml(option.label)}" ${disabled ? "disabled" : ""}>
+              <span class="option-title"><strong>${index + 1}. ${escapeHtml(option.label)}</strong>${recommended ? `<em>Recommended</em>` : ""}</span>
+              ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
+            </button>`;
+          }).join("")}
         </div>` : ""}
         ${question.allowCustomAnswer ? `<div class="question-custom">
           <input id="questionCustomAnswer" type="text" ${disabled ? "disabled" : ""} placeholder="Type a custom answer…" />
@@ -2995,6 +3052,10 @@ class PiWebAgentApp extends HTMLElement {
     }
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    if (this.focusPendingQuestionOnNextRender) {
+      this.focusPendingQuestionOnNextRender = false;
+      this.focusQuestionPanel();
+    }
     recordPerfSample("render", performance.now() - renderStart);
   }
 }

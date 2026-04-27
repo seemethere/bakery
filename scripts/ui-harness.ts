@@ -215,7 +215,11 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#send").click();
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ timeout: 5_000 });
-  await page.locator("[data-question-option-index='1']").click();
+  await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
+  await page.keyboard.press("ArrowDown");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
+  await page.keyboard.press("Enter");
   await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 10_000 });
