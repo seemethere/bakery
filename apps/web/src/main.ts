@@ -550,6 +550,7 @@ class PiTranscriptRow extends HTMLElement {
   private collapsed = false;
   private actionMenuOpen = false;
   private canFork = false;
+  private afterRunningTool = false;
   private toolGroupPosition: ToolGroupPosition = "single";
   private lastRenderKey = "";
   private lastStreamingText = "";
@@ -567,13 +568,13 @@ class PiTranscriptRow extends HTMLElement {
       if (target?.closest(".message-header") && this.isCollapsible()) {
         event.stopImmediatePropagation();
         this.collapsed = !this.collapsed;
-        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork });
+        if (this.item) this.setState(this.item, { showThinking: this.showThinking, selected: this.selected, actionMenuOpen: this.actionMenuOpen, canFork: this.canFork, afterRunningTool: this.afterRunningTool });
         else this.classList.toggle("collapsed", this.collapsed);
       }
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; actionMenuOpen?: boolean; canFork?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
     const previous = this.item;
     const wasSelected = this.selected;
@@ -582,6 +583,7 @@ class PiTranscriptRow extends HTMLElement {
     this.selected = options.selected;
     this.actionMenuOpen = options.actionMenuOpen ?? false;
     this.canFork = options.canFork ?? false;
+    this.afterRunningTool = options.afterRunningTool ?? false;
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
     const completedDoneTool = item.kind === "tool" && item.status === "done";
@@ -596,7 +598,7 @@ class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -647,7 +649,8 @@ class PiTranscriptRow extends HTMLElement {
   private classNames(): string {
     if (!this.item) return "message";
     const groupClass = this.item.kind === "tool" && this.item.status === "done" ? `tool-group-${this.toolGroupPosition}` : "";
-    return ["message", this.item.kind, this.item.status ?? "", groupClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    const afterRunningClass = this.item.kind === "tool" && this.item.status === "done" && this.afterRunningTool ? "after-running-tool" : "";
+    return ["message", this.item.kind, this.item.status ?? "", groupClass, afterRunningClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {
@@ -2618,12 +2621,20 @@ class PiWebAgentApp extends HTMLElement {
     return "single";
   }
 
+  private isAfterRunningTool(item: TranscriptItem): boolean {
+    const index = this.transcript.findIndex((candidate) => candidate.id === item.id);
+    if (index <= 0 || item.kind !== "tool" || item.status !== "done") return false;
+    const previous = this.transcript[index - 1];
+    return previous?.kind === "tool" && previous.status === "running";
+  }
+
   private updateTranscriptRow(row: PiTranscriptRow, item: TranscriptItem): void {
     row.setState(item, {
       showThinking: this.showThinking,
       selected: item.id === this.selectedTranscriptId,
       actionMenuOpen: item.id === this.openActionMenuId,
       canFork: Boolean(this.forkEntryIdForTranscriptItem(item)),
+      afterRunningTool: this.isAfterRunningTool(item),
       toolGroupPosition: this.toolGroupPositionFor(item),
       cache: this.renderedSegmentCache,
       localImageUrl: (path) => this.localImageUrl(path),
