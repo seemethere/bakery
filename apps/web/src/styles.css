@@ -2377,9 +2377,19 @@ pre {
   box-shadow: inset 2px 0 0 rgba(102, 140, 255, 0.72);
 }
 
-.tree-line:hover {
+.tree-line:hover,
+.tree-line:focus-visible {
   background: var(--c-3a3d4d);
   color: var(--c-fff4c8);
+}
+
+.tree-line:focus-visible {
+  outline: 2px solid var(--c-fff1bd);
+  outline-offset: 1px;
+}
+
+.tree-line.keyboard-active:not(:focus-visible):not(:hover) {
+  box-shadow: inset 2px 0 0 rgba(255, 241, 189, 0.45);
 }
 
 .tree-line.current {

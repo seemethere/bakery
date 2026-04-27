@@ -566,12 +566,23 @@ async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown
   await page.locator(".tree-path-segment.leaf").waitFor({ timeout: 5_000 });
   await page.locator(".tree-line.current").waitFor({ timeout: 5_000 });
   await page.locator(".tree-line.current-path").first().waitFor({ timeout: 5_000 });
+  await page.locator('.tree-line[tabindex="0"]').waitFor({ timeout: 5_000 });
+  await page.locator(".tree-line").first().focus();
+  await page.keyboard.press("ArrowDown");
+  await page.locator(".tree-line").nth(1).evaluate((element) => {
+    if (document.activeElement !== element) throw new Error("ArrowDown did not move tree focus to the next row");
+  });
+  await page.keyboard.press("Home");
+  await page.locator(".tree-line").first().evaluate((element) => {
+    if (document.activeElement !== element) throw new Error("Home did not move tree focus to the first row");
+  });
   await page.screenshot({ path: join(artifactDir, "tree-current-path.png"), fullPage: true });
-  await page.locator(".tree-line").first().click();
+  await page.keyboard.press("Enter");
   await page.locator(".notice", { hasText: /Navigated|Tree navigation failed/ }).waitFor({ timeout: 5_000 }).catch(() => undefined);
-  const forkButton = page.locator("[data-fork-entry-id]").first();
-  await forkButton.waitFor({ timeout: 5_000 });
-  await forkButton.click();
+  const forkableRow = page.locator('.tree-line[data-tree-forkable="true"]').first();
+  await forkableRow.waitFor({ timeout: 5_000 });
+  await forkableRow.focus();
+  await page.keyboard.press("f");
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
   return collectMetrics(page);

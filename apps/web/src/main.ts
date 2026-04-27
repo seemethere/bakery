@@ -770,6 +770,7 @@ class PiWebAgentApp extends HTMLElement {
   private editingTitleDraft: string | null = null;
   private sessionTree: SessionTreeResponse | null = null;
   private treeDrawerOpen = false;
+  private treeActiveEntryId = "";
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private autoScroll = localStorage.getItem("piWebAutoScroll") !== "false";
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
@@ -1021,6 +1022,7 @@ class PiWebAgentApp extends HTMLElement {
     this.pendingQuestion = null;
     this.sessionTree = null;
     this.treeDrawerOpen = false;
+    this.treeActiveEntryId = "";
     this.transcriptScrollTop = 0;
     this.unreadTranscriptIds.clear();
     this.selectedTranscriptId = "opened";
@@ -1304,6 +1306,62 @@ class PiWebAgentApp extends HTMLElement {
     return path.reverse();
   }
 
+  private ensureTreeActiveEntryId(): string {
+    const nodes = this.treeNodes();
+    if (!nodes.length) {
+      this.treeActiveEntryId = "";
+      return "";
+    }
+    if (this.treeActiveEntryId && nodes.some((node) => node.id === this.treeActiveEntryId)) return this.treeActiveEntryId;
+    this.treeActiveEntryId = nodes.find((node) => node.current)?.id ?? this.sessionTree?.leafId ?? nodes[0]?.id ?? "";
+    return this.treeActiveEntryId;
+  }
+
+  private setActiveTreeEntry(entryId: string, sourceRow?: HTMLElement | null, focus = true): void {
+    if (!entryId) return;
+    this.treeActiveEntryId = entryId;
+    this.querySelectorAll<HTMLElement>("[data-tree-entry-id]").forEach((row) => {
+      const active = row.dataset.treeEntryId === entryId;
+      row.tabIndex = active ? 0 : -1;
+      row.classList.toggle("keyboard-active", active);
+    });
+    if (!focus) return;
+    const tree = sourceRow?.closest(".session-tree") ?? this.querySelector(".session-tree");
+    const target = tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(entryId)}"]`) ?? this.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(entryId)}"]`);
+    target?.focus({ preventScroll: true });
+  }
+
+  private handleTreeRowKeydown(event: KeyboardEvent, row: HTMLElement): void {
+    const tree = row.closest(".session-tree");
+    if (!tree) return;
+    const rows = Array.from(tree.querySelectorAll<HTMLElement>("[data-tree-entry-id]"));
+    if (!rows.length) return;
+    const index = Math.max(0, rows.indexOf(row));
+    let nextRow: HTMLElement | undefined;
+    if (event.key === "ArrowDown") nextRow = rows[Math.min(rows.length - 1, index + 1)];
+    else if (event.key === "ArrowUp") nextRow = rows[Math.max(0, index - 1)];
+    else if (event.key === "Home") nextRow = rows[0];
+    else if (event.key === "End") nextRow = rows[rows.length - 1];
+    else if (event.key === "Enter") {
+      event.preventDefault();
+      const entryId = row.dataset.treeEntryId ?? "";
+      this.setActiveTreeEntry(entryId, row, true);
+      void this.navigateToTreeEntry(entryId);
+      return;
+    } else if (event.key.toLowerCase() === "f") {
+      if (row.dataset.treeForkable !== "true") return;
+      event.preventDefault();
+      const entryId = row.dataset.treeEntryId ?? "";
+      this.setActiveTreeEntry(entryId, row, true);
+      void this.forkFromEntry(entryId);
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    if (nextRow) this.setActiveTreeEntry(nextRow.dataset.treeEntryId ?? "", nextRow, true);
+  }
+
   private renderCurrentTreePath(path: SessionTreeNode[]): string {
     if (!this.sessionTree?.tree.length) return "";
     if (!path.length) return `<div class="tree-current-path empty"><strong>Current path</strong><span>No current leaf yet.</span></div>`;
@@ -1341,6 +1399,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     try {
       this.sessionTree = await this.api<SessionTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree`);
+      this.ensureTreeActiveEntryId();
       this.requestRender(0);
     } catch (error) {
       this.notice = `Tree refresh failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -2319,7 +2378,12 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#closeTreeDrawer")?.addEventListener("click", () => this.closeTreeDrawer());
     this.querySelectorAll<HTMLElement>("[data-tree-entry-id]").forEach((element) => {
-      element.addEventListener("click", () => void this.navigateToTreeEntry(element.dataset.treeEntryId ?? ""));
+      element.addEventListener("click", () => {
+        this.setActiveTreeEntry(element.dataset.treeEntryId ?? "", element, false);
+        void this.navigateToTreeEntry(element.dataset.treeEntryId ?? "");
+      });
+      element.addEventListener("focus", () => this.setActiveTreeEntry(element.dataset.treeEntryId ?? "", element, false));
+      element.addEventListener("keydown", (event) => this.handleTreeRowKeydown(event, element));
     });
     this.querySelectorAll<HTMLButtonElement>("[data-fork-entry-id]").forEach((button) => {
       button.addEventListener("click", (event) => {
@@ -2636,7 +2700,7 @@ class PiWebAgentApp extends HTMLElement {
       </aside>`;
   }
 
-  private renderTreeNodes(nodes: SessionTreeNode[], prefix = "", currentPathIds = new Set<string>()): string {
+  private renderTreeNodes(nodes: SessionTreeNode[], prefix = "", currentPathIds = new Set<string>(), activeEntryId = this.ensureTreeActiveEntryId()): string {
     return nodes.map((node, index) => {
       const isLast = index === nodes.length - 1;
       const connector = prefix ? (isLast ? "└─" : "├─") : "•";
@@ -2644,16 +2708,17 @@ class PiWebAgentApp extends HTMLElement {
       const canFork = node.type === "message" && node.role === "user";
       const kind = node.role ?? node.type;
       const isPath = currentPathIds.has(node.id);
-      const classes = ["tree-line", node.current ? "current" : "", isPath ? "current-path" : "", canFork ? "forkable" : ""].filter(Boolean).join(" ");
+      const isKeyboardActive = node.id === activeEntryId;
+      const classes = ["tree-line", node.current ? "current" : "", isPath ? "current-path" : "", canFork ? "forkable" : "", isKeyboardActive ? "keyboard-active" : ""].filter(Boolean).join(" ");
       return `
-        <div class="${classes}" data-tree-entry-id="${escapeHtml(node.id)}" title="${node.current ? "Current leaf" : isPath ? "On the current path" : "Navigate to this point"}">
+        <div class="${classes}" data-tree-entry-id="${escapeHtml(node.id)}" data-tree-forkable="${canFork ? "true" : "false"}" role="treeitem" tabindex="${isKeyboardActive ? "0" : "-1"}" aria-current="${node.current ? "true" : "false"}" title="${node.current ? "Current leaf" : isPath ? "On the current path" : "Navigate to this point"}">
           <span class="tree-prefix">${escapeHtml(prefix)}${connector}</span>
           <span class="tree-kind ${escapeHtml(kind)}">${escapeHtml(kind)}:</span>
           <span class="tree-title">${escapeHtml(this.treeNodeDisplayTitle(node))}</span>
           ${node.current ? `<span class="tree-current">current leaf</span>` : isPath ? `<span class="tree-current path">path</span>` : `<span class="tree-current go">go</span>`}
-          ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message">fork</button>` : ""}
+          ${canFork ? `<button data-fork-entry-id="${escapeHtml(node.id)}" title="Fork from this user message" tabindex="-1">fork</button>` : ""}
         </div>
-        ${node.children.length ? this.renderTreeNodes(node.children, childPrefix, currentPathIds) : ""}`;
+        ${node.children.length ? this.renderTreeNodes(node.children, childPrefix, currentPathIds, activeEntryId) : ""}`;
     }).join("");
   }
 
@@ -2661,6 +2726,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return `<p class="empty-panel">Open a session to inspect its tree.</p>`;
     const currentPath = this.currentTreePath();
     const currentPathIds = new Set(currentPath.map((node) => node.id));
+    const activeEntryId = this.ensureTreeActiveEntryId();
     return `
       <div class="tree-panel tui-tree ${options.drawer ? "drawer-tree" : ""}">
         <div class="tree-toolbar">
@@ -2671,10 +2737,10 @@ class PiWebAgentApp extends HTMLElement {
             <button data-tree-refresh>Refresh</button>
           </div>
         </div>
-        <div class="tree-hints">TUI-style view · current path highlighted · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
+        <div class="tree-hints">TUI-style view · current path highlighted · arrows move · Enter navigates · F forks · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
         ${this.renderCurrentTreePath(currentPath)}
         ${this.sessionTree?.tree.length
-          ? `<div class="session-tree">${this.renderTreeNodes(this.sessionTree.tree, "", currentPathIds)}</div>`
+          ? `<div class="session-tree" role="tree" aria-label="Session tree entries">${this.renderTreeNodes(this.sessionTree.tree, "", currentPathIds, activeEntryId)}</div>`
           : `<p class="empty-panel">No tree entries yet. Send a prompt first.</p>`}
       </div>`;
   }
