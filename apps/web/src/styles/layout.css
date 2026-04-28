@@ -7,11 +7,13 @@ main {
   overflow: hidden;
 }
 
-.sessions-main {
+.sessions-main,
+.settings-main {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
-.sessions-page {
+.sessions-page,
+.settings-page {
   display: grid;
   grid-row: 3;
   grid-template-rows: auto auto;
@@ -21,13 +23,15 @@ main {
   padding: 18px;
 }
 
-.sessions-page-hero {
+.sessions-page-hero,
+.settings-page-hero {
   display: grid;
   gap: 8px;
   max-width: 920px;
 }
 
 .sessions-page-kicker,
+.settings-page-kicker,
 .sessions-result-count {
   margin: 0;
   color: var(--color-text-muted);
@@ -37,14 +41,16 @@ main {
   text-transform: uppercase;
 }
 
-.sessions-page h1 {
+.sessions-page h1,
+.settings-page h1 {
   margin: 0;
   color: var(--color-text);
   font-size: clamp(24px, 4vw, 36px);
   line-height: 1.05;
 }
 
-.sessions-page p {
+.sessions-page p,
+.settings-page p {
   margin: 0;
   color: var(--color-text-secondary);
 }
@@ -73,6 +79,53 @@ main {
   padding: 12px 14px;
   border-color: color-mix(in srgb, var(--color-border) 78%, transparent);
   background: color-mix(in srgb, var(--color-bg-elevated) 68%, var(--color-bg-main));
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  max-width: 980px;
+}
+
+.settings-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, var(--color-bg-main));
+  padding: 16px;
+  box-shadow: 0 12px 34px color-mix(in srgb, #000 14%, transparent);
+}
+
+.settings-card-heading {
+  display: grid;
+  gap: 5px;
+}
+
+.settings-card h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.settings-card label {
+  margin: 0;
+}
+
+.settings-card input,
+.settings-card select {
+  width: 100%;
+}
+
+.settings-card .app-settings {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-card .app-settings small {
+  color: var(--color-text-muted);
 }
 
 header,

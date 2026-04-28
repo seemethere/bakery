@@ -13,7 +13,7 @@ import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscript
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
-import { parseAppRoute, sessionsRoutePath, sessionRoutePath } from "./router";
+import { parseAppRoute, sessionsRoutePath, sessionRoutePath, settingsRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
 import "./styles.css";
@@ -509,7 +509,7 @@ class PiWebAgentApp extends HTMLElement {
       this.closeSelectedSessionForHomeRoute();
       return;
     }
-    if (route.kind === "sessions") {
+    if (route.kind === "sessions" || route.kind === "settings") {
       this.render();
       return;
     }
@@ -1571,20 +1571,14 @@ class PiWebAgentApp extends HTMLElement {
               <button id="newIsolatedSession" title="Create a Git worktree session on its own branch">New isolated session</button>
             </div>
           </div>
-          <div class="sidebar-section sidebar-settings-section">
+          <div class="sidebar-section sidebar-settings-nav-section">
             <hr />
-            <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
-            <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
-            <label>Theme
-              <select id="themePreference">
-                <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
-                <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
-                <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
-              </select>
-            </label>
-            <button id="saveSettings">Save / Refresh</button>
-            ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
-            ${this.renderAppSettings()}
+            <button type="button" class="sidebar-nav-item ${route.kind === "settings" ? "active" : ""}" data-route-path="${settingsRoutePath()}">
+              <strong>Settings</strong>
+              <span>API, theme, metadata</span>
+            </button>
+          </div>
+          <div class="sidebar-section sidebar-mode-section">
             ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open as a left column</p>` : `<p class="sidebar-mode">Opens as a temporary session menu</p>`}
           </div>
         `}
@@ -2578,6 +2572,65 @@ class PiWebAgentApp extends HTMLElement {
     </main>`;
   }
 
+  private renderSettingsMain(): string {
+    const chatPath = this.selectedSession ? sessionRoutePath(this.selectedSession.id) : "/";
+    return `<main class="settings-main">
+      <header>
+        <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}" aria-label="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}">☰</button>
+        <div class="session-identity">
+          <strong>Settings</strong>
+          <span>Configure this browser's Bakery connection and app preferences.</span>
+        </div>
+        <div class="header-status">
+          <button type="button" data-route-path="${escapeHtml(chatPath)}">${this.selectedSession ? "Current chat" : "Chat"}</button>
+        </div>
+      </header>
+      ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
+      <section class="settings-page" aria-label="Settings">
+        <div class="settings-page-hero">
+          <p class="settings-page-kicker">App settings</p>
+          <h1>Settings</h1>
+          <p>Low-frequency controls live here so the session drawer can stay focused on navigation and starting work.</p>
+        </div>
+        <div class="settings-grid">
+          <section class="settings-card" aria-labelledby="connectionSettingsHeading">
+            <div class="settings-card-heading">
+              <h2 id="connectionSettingsHeading">Connection</h2>
+              <p>Stored locally in this browser. Changing these values reloads server data from the selected API.</p>
+            </div>
+            <label>API base
+              <input id="apiBase" value="${escapeHtml(this.apiBase)}" spellcheck="false" />
+            </label>
+            <label>Token
+              <input id="token" type="password" value="${escapeHtml(this.token)}" autocomplete="off" />
+            </label>
+            <button id="saveSettings" class="primary-action" type="button">Save / Refresh</button>
+          </section>
+          <section class="settings-card" aria-labelledby="appearanceSettingsHeading">
+            <div class="settings-card-heading">
+              <h2 id="appearanceSettingsHeading">Appearance</h2>
+              <p>Theme preference applies immediately and follows system appearance when set to System.</p>
+            </div>
+            <label>Theme
+              <select id="themePreference">
+                <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
+                <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
+                <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
+              </select>
+            </label>
+          </section>
+          <section class="settings-card" aria-labelledby="metadataSettingsHeading">
+            <div class="settings-card-heading">
+              <h2 id="metadataSettingsHeading">Session metadata</h2>
+              <p>Titles and summaries are generated only when you click ✨ in session details.</p>
+            </div>
+            ${this.renderAppSettings()}
+          </section>
+        </div>
+      </section>
+    </main>`;
+  }
+
   private render(): void {
     this.syncRunningElapsedTimer();
     const renderStart = performance.now();
@@ -2586,15 +2639,23 @@ class PiWebAgentApp extends HTMLElement {
     const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
     const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
     const sessionsSearchInput = this.querySelector<HTMLInputElement>("#sessionsSearch");
+    const apiBaseInput = this.querySelector<HTMLInputElement>("#apiBase");
+    const tokenInput = this.querySelector<HTMLInputElement>("#token");
     const restorePromptFocus = document.activeElement === prompt;
     const restoreTitleFocus = document.activeElement === titleInput;
     const restoreSessionsSearchFocus = document.activeElement === sessionsSearchInput;
+    const restoreApiBaseFocus = document.activeElement === apiBaseInput;
+    const restoreTokenFocus = document.activeElement === tokenInput;
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
     const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
     const titleSelectionStart = titleInput?.selectionStart ?? (this.editingTitleDraft?.length ?? 0);
     const titleSelectionEnd = titleInput?.selectionEnd ?? titleSelectionStart;
     const sessionsSearchSelectionStart = sessionsSearchInput?.selectionStart ?? this.sessionsSearch.length;
     const sessionsSearchSelectionEnd = sessionsSearchInput?.selectionEnd ?? sessionsSearchSelectionStart;
+    const apiBaseSelectionStart = apiBaseInput?.selectionStart ?? this.apiBase.length;
+    const apiBaseSelectionEnd = apiBaseInput?.selectionEnd ?? apiBaseSelectionStart;
+    const tokenSelectionStart = tokenInput?.selectionStart ?? this.token.length;
+    const tokenSelectionEnd = tokenInput?.selectionEnd ?? tokenSelectionStart;
     const isRunning = this.status === "running";
     const activePlanActionItem = this.activePlanActionItem();
     const sidebarOverlayOpen = this.sidebarOverlayOpen();
@@ -2621,11 +2682,12 @@ class PiWebAgentApp extends HTMLElement {
     const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
     const followUpIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h7a4 4 0 0 1 0 8H5" /><path d="m8 12-3 4 3 4" /></svg>`;
     const stopIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>`;
-    if (parseAppRoute(window.location.pathname).kind === "sessions") {
+    const route = parseAppRoute(window.location.pathname);
+    if (route.kind === "sessions" || route.kind === "settings") {
       this.innerHTML = `
         ${this.renderSessionSidebarBackdrop()}
         ${this.renderSessionSidebar()}
-        ${this.renderSessionsMain()}
+        ${route.kind === "settings" ? this.renderSettingsMain() : this.renderSessionsMain()}
       `;
       this.forceFullRender = false;
       this.transcriptStructureDirty = false;
@@ -2637,6 +2699,22 @@ class PiWebAgentApp extends HTMLElement {
           nextSearch.focus();
           const max = nextSearch.value.length;
           nextSearch.setSelectionRange(Math.min(sessionsSearchSelectionStart, max), Math.min(sessionsSearchSelectionEnd, max));
+        }
+      }
+      if (restoreApiBaseFocus) {
+        const nextApiBase = this.querySelector<HTMLInputElement>("#apiBase");
+        if (nextApiBase) {
+          nextApiBase.focus();
+          const max = nextApiBase.value.length;
+          nextApiBase.setSelectionRange(Math.min(apiBaseSelectionStart, max), Math.min(apiBaseSelectionEnd, max));
+        }
+      }
+      if (restoreTokenFocus) {
+        const nextToken = this.querySelector<HTMLInputElement>("#token");
+        if (nextToken) {
+          nextToken.focus();
+          const max = nextToken.value.length;
+          nextToken.setSelectionRange(Math.min(tokenSelectionStart, max), Math.min(tokenSelectionEnd, max));
         }
       }
       this.syncAutocompleteScroll();

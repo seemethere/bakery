@@ -1,6 +1,7 @@
 export type AppRoute =
   | { kind: "home" }
   | { kind: "sessions" }
+  | { kind: "settings" }
   | { kind: "session"; sessionId: string }
   | { kind: "unknown"; path: string };
 
@@ -8,6 +9,7 @@ export function parseAppRoute(pathname: string): AppRoute {
   const path = pathname || "/";
   if (path === "/" || path === "") return { kind: "home" };
   if (path === "/sessions" || path === "/sessions/") return { kind: "sessions" };
+  if (path === "/settings" || path === "/settings/") return { kind: "settings" };
   const match = /^\/sessions\/([^/]+)\/?$/.exec(path);
   if (!match) return { kind: "unknown", path };
   try {
@@ -20,6 +22,10 @@ export function parseAppRoute(pathname: string): AppRoute {
 
 export function sessionsRoutePath(): string {
   return "/sessions";
+}
+
+export function settingsRoutePath(): string {
+  return "/settings";
 }
 
 export function sessionRoutePath(sessionId: string): string {

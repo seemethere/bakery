@@ -147,15 +147,16 @@ async function prepareSession(page: Page): Promise<string> {
     localStorage.setItem("piWebApiBase", apiBase);
     localStorage.setItem("piWebAuthToken", "");
   }, { apiBase });
-  await page.goto(webBase, { waitUntil: "domcontentloaded" });
-  if (await page.locator("#apiBase").count() === 0) {
+  await page.goto(`${webBase}/settings`, { waitUntil: "domcontentloaded" });
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
+  await page.locator("#apiBase").fill(apiBase);
+  await page.locator("#token").fill("");
+  await page.locator("#saveSettings").click();
+  if (await page.locator("#workspace").count() === 0) {
     const mobileMenu = page.locator("#toggleSessionSidebarMobile");
     if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
     else if (await page.locator("#toggleSessionSidebar").count() > 0) await page.locator("#toggleSessionSidebar").click();
   }
-  await page.locator("#apiBase").fill(apiBase);
-  await page.locator("#token").fill("");
-  await page.locator("#saveSettings").click();
   await page.waitForFunction(() => document.querySelectorAll("#workspace option").length > 0, undefined, { timeout: 5_000 });
   const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
   await page.locator("#newSession").click();
@@ -269,13 +270,10 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#followUp").click();
   await page.locator(".running-queue").waitFor({ timeout: 5_000 });
 
-  await ensureSidebarSettingsVisible(page);
-  await page.locator("#themePreference").selectOption("workbench-dark");
-  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-dark");
+  await setWorkbenchTheme(page, "workbench-dark");
   await page.screenshot({ path: join(artifactDir, "theme-gallery-dark.png"), fullPage: true });
 
-  await page.locator("#themePreference").selectOption("workbench-light");
-  await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-light");
+  await setWorkbenchTheme(page, "workbench-light");
   await page.screenshot({ path: join(artifactDir, "theme-gallery-light.png"), fullPage: true });
 
   await waitForAgentIdle(page, 30_000);
@@ -283,7 +281,7 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
 }
 
 async function ensureSidebarSettingsVisible(page: Page): Promise<void> {
-  if (await page.locator("#themePreference").isVisible().catch(() => false)) return;
+  if (await page.locator('[data-route-path="/settings"]').isVisible().catch(() => false)) return;
   const app = page.locator("pi-web-agent");
   const collapsed = await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"));
   if (collapsed) {
@@ -291,19 +289,25 @@ async function ensureSidebarSettingsVisible(page: Page): Promise<void> {
     if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
     else await page.locator("#toggleSessionSidebar").click();
   }
-  if (!await page.locator("#themePreference").isVisible().catch(() => false)) {
+  if (!await page.locator('[data-route-path="/settings"]').isVisible().catch(() => false)) {
     await app.evaluate((element) => {
       const appElement = element as HTMLElement & { sessionSidebarCollapsed?: boolean; render?: () => void };
       appElement.sessionSidebarCollapsed = false;
       appElement.render?.();
     });
   }
-  await page.locator("#themePreference").waitFor({ state: "visible", timeout: 5_000 });
+  await page.locator('[data-route-path="/settings"]').waitFor({ state: "visible", timeout: 5_000 });
 }
 
 async function setWorkbenchTheme(page: Page, theme: "workbench-dark" | "workbench-light"): Promise<void> {
-  await ensureSidebarSettingsVisible(page);
-  await page.locator("#themePreference").selectOption(theme);
+  await page.locator("pi-web-agent").evaluate((element, nextTheme) => {
+    localStorage.setItem("piWebThemePreference", nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.style.colorScheme = nextTheme === "workbench-light" ? "light" : "dark";
+    const appElement = element as HTMLElement & { themePreference?: string; render?: () => void };
+    appElement.themePreference = nextTheme;
+    appElement.render?.();
+  }, theme);
   await page.waitForFunction((expected) => document.documentElement.dataset.theme === expected, theme);
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
 }
@@ -517,6 +521,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       chatButtonCount: document.querySelectorAll('.session-sidebar:not(.collapsed) [data-route-path^="/sessions/"], .session-sidebar:not(.collapsed) [data-route-path="/"]').length,
       sessionsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/sessions"]')),
       newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
+      settingsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/settings"]')),
       apiBaseIndex: drawerElements.findIndex((element) => element.id === "apiBase"),
       pinButtonCount: document.querySelectorAll("#pinSessionSidebar").length,
       backdropVisible: !!document.querySelector("#sessionSidebarBackdrop"),
@@ -527,9 +532,13 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (drawerOrder.pinButtonCount !== 0) throw new Error("Mobile drawer should not show the desktop Pin affordance.");
   if (drawerOrder.sessionCardCount !== 0) throw new Error("Mobile navigation drawer should not duplicate the sessions page list.");
   if (drawerOrder.chatButtonCount !== 0) throw new Error("Mobile navigation drawer should not show a redundant chat route button.");
-  if (!(drawerOrder.sessionsIndex >= 0 && drawerOrder.newSessionIndex > drawerOrder.sessionsIndex && drawerOrder.apiBaseIndex > drawerOrder.newSessionIndex)) {
+  if (drawerOrder.apiBaseIndex !== -1) throw new Error(`Mobile drawer should move API settings to /settings: ${JSON.stringify(drawerOrder)}`);
+  if (!(drawerOrder.sessionsIndex >= 0 && drawerOrder.newSessionIndex > drawerOrder.sessionsIndex && drawerOrder.settingsIndex > drawerOrder.newSessionIndex)) {
     throw new Error(`Mobile drawer navigation/settings order is wrong: ${JSON.stringify(drawerOrder)}`);
   }
+  await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/settings"]').click();
+  await page.locator(".settings-page #apiBase").waitFor({ timeout: 5_000 });
+  await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/sessions"]').click();
   await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
   await page.locator(`.sessions-page [data-session-id="${originalSessionId}"]`).click();
@@ -607,7 +616,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.inspectorPanels !== 0) throw new Error(`Mobile inspector/tree panels should be detached, saw ${layout.inspectorPanels}`);
   if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
-  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should keep session creation before settings: new=${layout.drawerOrder.newSessionIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
+  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.settingsIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.settingsIndex) throw new Error(`Mobile drawer should keep session creation before settings nav: new=${layout.drawerOrder.newSessionIndex}, settings=${layout.drawerOrder.settingsIndex}`);
   if ((layout.header?.height ?? 999) > 64) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
