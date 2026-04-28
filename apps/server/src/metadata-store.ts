@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import type { AppSettings, AutoGenerateMetadataOverride, SummarySource, TitleSource, ToolPermissionMode, WebSession } from "@pi-web-agent/protocol";
+import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession } from "@pi-web-agent/protocol";
 
 export type SessionPreferences = {
   webSessionId: string;
@@ -13,6 +13,12 @@ type SessionRow = {
   id: string;
   cwd: string;
   pi_session_file: string;
+  isolation_kind: SessionIsolationKind;
+  source_cwd: string | null;
+  worktree_path: string | null;
+  worktree_branch: string | null;
+  worktree_base_commit: string | null;
+  worktree_source_dirty: number;
   title: string | null;
   title_source: TitleSource;
   summary: string | null;
@@ -30,6 +36,12 @@ function mapSession(row: SessionRow): WebSession {
     id: row.id,
     cwd: row.cwd,
     piSessionFile: row.pi_session_file,
+    isolationKind: row.isolation_kind,
+    sourceCwd: row.source_cwd,
+    worktreePath: row.worktree_path,
+    worktreeBranch: row.worktree_branch,
+    worktreeBaseCommit: row.worktree_base_commit,
+    worktreeSourceDirty: Boolean(row.worktree_source_dirty),
     title: row.title,
     titleSource: row.title_source,
     summary: row.summary,
@@ -109,6 +121,12 @@ export class MetadataStore {
         value TEXT NOT NULL
       );
     `);
+    this.addColumn("web_sessions", "isolation_kind TEXT NOT NULL DEFAULT 'none'", "isolation_kind");
+    this.addColumn("web_sessions", "source_cwd TEXT", "source_cwd");
+    this.addColumn("web_sessions", "worktree_path TEXT", "worktree_path");
+    this.addColumn("web_sessions", "worktree_branch TEXT", "worktree_branch");
+    this.addColumn("web_sessions", "worktree_base_commit TEXT", "worktree_base_commit");
+    this.addColumn("web_sessions", "worktree_source_dirty INTEGER NOT NULL DEFAULT 0", "worktree_source_dirty");
     this.addColumn("web_sessions", "title_source TEXT NOT NULL DEFAULT 'unset'", "title_source");
     this.addColumn("web_sessions", "summary TEXT", "summary");
     this.addColumn("web_sessions", "summary_source TEXT NOT NULL DEFAULT 'unset'", "summary_source");
@@ -141,11 +159,11 @@ export class MetadataStore {
     return row ? mapSession(row) : undefined;
   }
 
-  createSession(input: { id: string; cwd: string; piSessionFile: string; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource }): WebSession {
+  createSession(input: { id: string; cwd: string; piSessionFile: string; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean }): WebSession {
     const now = new Date().toISOString();
     this.db
-      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(input.id, input.cwd, input.piSessionFile, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
+      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(input.id, input.cwd, input.piSessionFile, input.isolationKind ?? "none", input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
     this.db.query("INSERT INTO session_preferences (web_session_id) VALUES (?)").run(input.id);
     const session = this.getSession(input.id);
     if (!session) throw new Error("Failed to create session");

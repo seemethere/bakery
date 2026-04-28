@@ -124,6 +124,16 @@ button.active {
   background: var(--c-27345f);
 }
 
+.new-session-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.new-session-actions button {
+  min-width: 0;
+}
+
 .sessions-heading {
   display: flex;
   align-items: center;
@@ -227,6 +237,12 @@ button.active {
   font-style: normal;
   padding: 1px 6px;
   text-transform: uppercase;
+}
+
+.session-indicator.isolated {
+  border-color: var(--c-668cff);
+  background: var(--c-22305a);
+  color: var(--c-b7d4ff);
 }
 
 .session-indicator.running {

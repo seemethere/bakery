@@ -79,6 +79,7 @@ header:has(.session-details-popover) {
   padding: 2px 8px;
 }
 
+.session-isolation-chip,
 .session-details-button {
   flex: 0 0 auto;
   align-self: center;
@@ -91,10 +92,33 @@ header:has(.session-details-popover) {
   font-weight: 700;
 }
 
+.session-isolation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: color-mix(in srgb, var(--color-accent-soft) 52%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 12%, var(--color-bg-elevated));
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.session-isolation-chip span {
+  color: inherit;
+  font-size: inherit;
+}
+
+.session-isolation-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
 .session-details-icon {
   display: none;
 }
 
+.session-isolation-chip.active,
+.session-isolation-chip:hover,
+.session-isolation-chip:focus-visible,
 .session-details-button.active,
 .session-details-button:hover,
 .session-details-button:focus-visible {

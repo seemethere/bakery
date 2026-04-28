@@ -83,6 +83,7 @@ bun run check               # Typecheck packages/apps and workflow-skill asserti
 | `PI_WEB_HOST` | `127.0.0.1` | Backend bind host. Use `0.0.0.0` only for LAN/container access with a token. |
 | `PI_WEB_PORT` | `3141` | Backend API/WebSocket port. |
 | `PI_WEB_AUTH_TOKEN` | unset | Required for non-localhost access; optional on localhost. |
-| `PI_WEB_DATA_DIR` | `~/.pi-web-agent` | Base directory for metadata, session files, and artifacts. |
+| `PI_WEB_DATA_DIR` | `~/.pi-web-agent` | Base directory for metadata, session files, artifacts, and managed worktrees. |
+| `PI_WEB_WORKTREE_DIR` | `$PI_WEB_DATA_DIR/worktrees` | Directory for opt-in isolated Git worktree sessions. |
 
 See `apps/server/src/config.ts` for the full set of server configuration knobs.

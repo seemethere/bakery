@@ -541,6 +541,28 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   });
   await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
   await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  await page.evaluate(() => {
+    const app = document.querySelector("pi-web-agent") as unknown as { selectedSession?: Record<string, unknown>; sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
+    if (!app?.selectedSession) return;
+    const isolatedSession = {
+      ...app.selectedSession,
+      isolationKind: "git_worktree",
+      sourceCwd: app.selectedSession.sourceCwd ?? app.selectedSession.cwd,
+      worktreePath: app.selectedSession.worktreePath ?? app.selectedSession.cwd,
+      worktreeBranch: app.selectedSession.worktreeBranch ?? "bakery/session/mobile-smoke",
+      worktreeBaseCommit: app.selectedSession.worktreeBaseCommit ?? "abcdef0",
+      worktreeSourceDirty: true,
+    };
+    app.selectedSession = isolatedSession;
+    if (app.sessions) app.sessions = app.sessions.map((session) => session.id === isolatedSession.id ? isolatedSession : session);
+    app.render?.();
+  });
+  await page.locator(".session-isolation-chip", { hasText: "Isolated" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "mobile-isolated-header.png"), fullPage: true });
+  await page.locator(".session-isolation-chip").click();
+  await page.locator(".session-details-popover", { hasText: "Worktree" }).waitFor({ timeout: 5_000 });
+  await page.locator("#closeSessionDetails").click();
+  await page.locator(".session-details-popover").waitFor({ state: "detached", timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "mobile-layout.png"), fullPage: true });
 
   const layout = await page.evaluate((drawerOrder) => {
@@ -565,6 +587,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       modelThinkingText: document.querySelector("#modelThinkingToggle")?.textContent?.trim() ?? "",
       mobileMenu: rectOf("#toggleSessionSidebarMobile"),
       mobileDetails: rectOf("#toggleSessionDetails"),
+      isolationChip: rectOf(".session-isolation-chip"),
+      isolationLabel: document.querySelector(".session-isolation-chip")?.textContent?.trim() ?? "",
       mobileDetailsLabelDisplay: getComputedStyle(document.querySelector(".session-details-label") ?? document.body).display,
       mobileDetailsIconDisplay: getComputedStyle(document.querySelector(".session-details-icon") ?? document.body).display,
       workspaceLine: rectOf(".session-workspace"),
@@ -579,6 +603,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.documentWidth > viewportWidth + 2) throw new Error(`Mobile layout has horizontal overflow: document ${layout.documentWidth}px, viewport ${viewportWidth}px`);
   if ((layout.mobileMenu?.width ?? 0) < 30) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
   if (!layout.mobileDetails || layout.mobileDetails.width > 34 || layout.mobileDetailsLabelDisplay !== "none" || layout.mobileDetailsIconDisplay === "none") throw new Error(`Mobile details affordance should be compact and icon-only: ${JSON.stringify({ rect: layout.mobileDetails, labelDisplay: layout.mobileDetailsLabelDisplay, iconDisplay: layout.mobileDetailsIconDisplay })}`);
+  if (!layout.isolationChip || layout.isolationChip.width > 96 || layout.isolationLabel !== "⎇Isolated") throw new Error(`Mobile isolated session chip should be compact and visible: ${JSON.stringify({ rect: layout.isolationChip, label: layout.isolationLabel })}`);
   if (layout.workspaceLine !== null) throw new Error(`Mobile workspace metadata should move out of the persistent header: ${JSON.stringify(layout.workspaceLine)}`);
   if (layout.headerStatus !== null) throw new Error(`Mobile header should hide passive status pills: ${JSON.stringify(layout.headerStatus)}`);
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);

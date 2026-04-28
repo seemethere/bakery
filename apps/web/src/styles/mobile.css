@@ -109,6 +109,19 @@
     padding: 1px 7px;
   }
 
+  .session-isolation-chip {
+    min-width: 0;
+    max-width: 92px;
+    padding: 4px 7px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .session-isolation-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .session-workspace {
     display: none;
   }

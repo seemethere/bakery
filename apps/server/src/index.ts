@@ -34,6 +34,7 @@ import { loadConfig } from "./config.js";
 import { MetadataStore } from "./metadata-store.js";
 import { completeFiles, searchFiles } from "./file-search.js";
 import { FakePiSessionRunner } from "./fake-runner.js";
+import { createGitWorktreeSession } from "./git-worktrees.js";
 import { InProcessPiSessionRunner, type ImageContent } from "./pi-runner.js";
 import { compactWorkflowLaunchText } from "./workflow-skills.js";
 import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
@@ -42,6 +43,7 @@ const config = loadConfig();
 const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
 mkdirSync(config.sessionDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
+mkdirSync(config.worktreeDir, { recursive: true });
 
 const store = new MetadataStore(config.metadataDbPath);
 const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
@@ -398,10 +400,27 @@ app.post("/api/sessions", async (request, reply) => {
   if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
   try {
-    const cwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
+    const sourceCwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
     const id = crypto.randomUUID();
     const piSessionFile = resolve(config.sessionDir, `${id}.jsonl`);
-    const session = store.createSession({ id, cwd, piSessionFile, title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
+    if (parsed.data.isolation === "git_worktree") {
+      const worktree = await createGitWorktreeSession({ sourceCwd, sessionId: id, worktreeDir: config.worktreeDir });
+      const session = store.createSession({
+        id,
+        cwd: worktree.cwd,
+        piSessionFile,
+        title: parsed.data.title ?? null,
+        titleSource: parsed.data.title ? "manual" : "unset",
+        isolationKind: "git_worktree",
+        sourceCwd: worktree.sourceCwd,
+        worktreePath: worktree.worktreePath,
+        worktreeBranch: worktree.worktreeBranch,
+        worktreeBaseCommit: worktree.worktreeBaseCommit,
+        worktreeSourceDirty: worktree.worktreeSourceDirty,
+      });
+      return reply.code(201).send(session);
+    }
+    const session = store.createSession({ id, cwd: sourceCwd, piSessionFile, title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
     return reply.code(201).send(session);
   } catch (error) {
     return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
