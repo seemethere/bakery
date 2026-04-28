@@ -2505,7 +2505,7 @@ class PiWebAgentApp extends HTMLElement {
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
-        <footer class="${isRunning ? "running-footer" : ""} ${activePlanActionItem ? "plan-takeover-footer" : ""}">
+        <footer class="${isRunning ? "running-footer" : ""} ${activePlanActionItem ? "plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
           ${this.renderQuestionPanel(isController)}
           ${activePlanActionItem ? this.renderPlanComposerTakeover(activePlanActionItem) : `
             <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">

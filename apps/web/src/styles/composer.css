@@ -34,6 +34,10 @@
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10), 0 0 0 3px color-mix(in srgb, var(--color-accent-soft) 12%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
+footer.model-picker-open .prompt-shell {
+  z-index: 61;
+}
+
 footer.plan-takeover-footer {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -775,7 +779,7 @@ header.model-picker-open {
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
-  z-index: 24;
+  z-index: 80;
   display: grid;
   box-sizing: border-box;
   gap: 9px;

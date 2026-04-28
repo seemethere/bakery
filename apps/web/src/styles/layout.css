@@ -187,7 +187,9 @@ header:has(.session-details-popover) {
 }
 
 footer {
+  position: relative;
   grid-row: 5;
+  z-index: 3;
   border-top: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
   border-bottom: 0;
   display: grid;
@@ -203,5 +205,9 @@ footer.running-footer {
   border-top-color: color-mix(in srgb, var(--color-accent-soft) 46%, var(--color-border));
   background: var(--color-footer-running-bg);
   box-shadow: var(--shadow-footer);
+}
+
+footer.model-picker-open {
+  z-index: 60;
 }
 
