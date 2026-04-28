@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
 
-export const PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Give feedback · Cancel plan · Back to chat";
+export const PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Back to chat";
+export const LEGACY_PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Give feedback · Cancel plan · Back to chat";
 
 export const toolPermissionModeSchema = z.enum(["bypass", "confirm", "deny"]);
 export type ToolPermissionMode = z.infer<typeof toolPermissionModeSchema>;

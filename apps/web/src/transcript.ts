@@ -1,4 +1,4 @@
-import { PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
+import { LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
 import ConvertAnsi from "ansi-to-html";
 import { marked } from "marked";
 import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
@@ -33,7 +33,9 @@ export type RenderContext = {
 export type ToolGroupPosition = "single" | "start" | "middle" | "end";
 
 export { PLAN_ACTIONS_MARKER };
-const planActionsMarkerPattern = new RegExp(`(?:\\n\\s*)?${PLAN_ACTIONS_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
+const planActionMarkers = [PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER];
+const escapedPlanActionMarkers = planActionMarkers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+const planActionsMarkerPattern = new RegExp(`(?:\\n\\s*)?(?:${escapedPlanActionMarkers})\\s*$`);
 
 export function stripPlanActionsMarker(text: string): string {
   return text.replace(planActionsMarkerPattern, "").trimEnd();

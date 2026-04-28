@@ -833,6 +833,10 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await planMessage.locator(".plan-action-row").waitFor({ state: "detached", timeout: 5_000 });
   const planActions = page.locator(".plan-composer-takeover", { hasText: "Plan ready" });
   await planActions.waitFor({ timeout: 5_000 });
+  await planActions.locator('[data-plan-action="accept"]').waitFor({ timeout: 5_000 });
+  await planActions.locator('[data-plan-action="chat"]').waitFor({ timeout: 5_000 });
+  await planActions.locator('[data-plan-action="feedback"]').waitFor({ state: "detached", timeout: 5_000 });
+  await planActions.locator('[data-plan-action="cancel"]').waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("#prompt").waitFor({ state: "detached", timeout: 5_000 });
   await planActions.locator('[data-plan-action="chat"]').click();
   await page.locator(".plan-composer-takeover").waitFor({ state: "detached", timeout: 5_000 });

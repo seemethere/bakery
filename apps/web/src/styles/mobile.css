@@ -370,16 +370,6 @@
     gap: 2px;
   }
 
-  .plan-feedback-field {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-
-  .plan-feedback-field input {
-    min-height: 38px;
-    font-size: 16px;
-  }
-
   .plan-composer-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;

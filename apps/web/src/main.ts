@@ -27,7 +27,7 @@ type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork" | "toggle-output";
-type PlanAction = "accept" | "feedback" | "cancel" | "chat";
+type PlanAction = "accept" | "chat";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
@@ -129,7 +129,6 @@ class PiWebAgentApp extends HTMLElement {
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private pendingToolCallTitles: string[] = [];
   private dismissedPlanActionTranscriptId = "";
-  private planFeedbackDraft = "";
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private runningQueue: RunningQueueState = emptyRunningQueue();
@@ -438,7 +437,6 @@ class PiWebAgentApp extends HTMLElement {
     this.modelThinkingPickerOpen = false;
     this.pendingQuestion = null;
     this.dismissedPlanActionTranscriptId = "";
-    this.planFeedbackDraft = "";
     this.sessionTree = null;
     this.treeDrawerOpen = false;
     this.treeActiveEntryId = "";
@@ -840,24 +838,13 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private handlePlanAction(action: PlanAction, transcriptId = this.activePlanActionItem()?.id ?? "", feedback = this.planFeedbackDraft): void {
-    const trimmedFeedback = feedback.trim();
-    if (action === "feedback" && !trimmedFeedback) {
-      this.querySelector<HTMLInputElement>("#planFeedback")?.focus();
-      return;
-    }
+  private handlePlanAction(action: PlanAction, transcriptId = this.activePlanActionItem()?.id ?? ""): void {
     if (transcriptId) this.dismissedPlanActionTranscriptId = transcriptId;
-    this.planFeedbackDraft = "";
     if (action === "chat") {
       this.fillPromptDraft("");
       return;
     }
-    const drafts: Record<Exclude<PlanAction, "chat">, string> = {
-      accept: "Proceed with the recommended plan.",
-      feedback: `Feedback on the plan: ${trimmedFeedback}`,
-      cancel: "Cancel this plan. Return to normal chat.",
-    };
-    this.submitPlanActionText(drafts[action]);
+    this.submitPlanActionText("Proceed with the recommended plan.");
   }
 
   private submitPlanActionText(text: string): void {
@@ -1026,7 +1013,6 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = promptTextFromInput(input?.value, this.promptImages.length);
     if (!input || !text) return;
-    this.planFeedbackDraft = "";
     if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
       this.promptDraft = "";
       this.savePromptDraft();
@@ -1933,8 +1919,7 @@ class PiWebAgentApp extends HTMLElement {
         event.preventDefault();
         button.blur();
         const action = button.dataset.planAction;
-        const feedback = this.querySelector<HTMLInputElement>("#planFeedback")?.value ?? this.planFeedbackDraft;
-        if (action === "accept" || action === "feedback" || action === "cancel" || action === "chat") this.handlePlanAction(action, button.dataset.transcriptId ?? "", feedback);
+        if (action === "accept" || action === "chat") this.handlePlanAction(action, button.dataset.transcriptId ?? "");
       });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {
@@ -2289,16 +2274,10 @@ class PiWebAgentApp extends HTMLElement {
     return `<section class="plan-composer-takeover" aria-label="Plan decision needed">
       <div class="plan-composer-heading">
         <strong>Plan ready</strong>
-        <span>Choose a next step or write feedback. The normal composer returns after you pick an action.</span>
+        <span>Accept to continue with this implementation plan, or return to the normal composer.</span>
       </div>
-      <label class="plan-feedback-field">
-        <span>Feedback</span>
-        <input id="planFeedback" type="text" value="${escapeHtml(this.planFeedbackDraft)}" placeholder="Optional: what should change?" />
-      </label>
       <div class="plan-composer-actions">
         <button type="button" class="primary-action" data-plan-action="accept" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
-        <button type="button" data-plan-action="feedback" data-transcript-id="${escapeHtml(item.id)}">Give feedback</button>
-        <button type="button" data-plan-action="cancel" data-transcript-id="${escapeHtml(item.id)}">Cancel plan</button>
         <button type="button" data-plan-action="chat" data-transcript-id="${escapeHtml(item.id)}">Back to chat</button>
       </div>
     </section>`;
