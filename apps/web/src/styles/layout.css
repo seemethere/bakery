@@ -67,17 +67,18 @@ header {
 
 footer {
   grid-row: 5;
-  border-top: 1px solid var(--c-2a2f3a);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
   border-bottom: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   padding-block: 8px;
-  background: var(--color-footer-bg);
+  background: color-mix(in srgb, var(--color-footer-bg) 82%, transparent);
+  backdrop-filter: blur(14px);
 }
 
 footer.running-footer {
-  border-top-color: var(--color-footer-running-border);
+  border-top-color: color-mix(in srgb, var(--color-accent-soft) 46%, var(--color-border));
   background: var(--color-footer-running-bg);
   box-shadow: var(--shadow-footer);
 }

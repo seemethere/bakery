@@ -5,6 +5,24 @@
   display: grid;
   gap: 6px;
   min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--color-border) 62%, transparent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
+  padding: 8px 10px 9px;
+  box-shadow: 0 10px 30px color-mix(in srgb, #000 16%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.prompt-shell:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 54%, var(--color-border));
+  box-shadow: 0 12px 34px color-mix(in srgb, #000 18%, transparent), 0 0 0 3px color-mix(in srgb, var(--color-accent-soft) 13%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+:root[data-theme="workbench-light"] .prompt-shell {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+:root[data-theme="workbench-light"] .prompt-shell:focus-within {
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10), 0 0 0 3px color-mix(in srgb, var(--color-accent-soft) 12%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
 footer.plan-takeover-footer {
@@ -286,56 +304,82 @@ footer.plan-takeover-footer {
   align-items: center;
   gap: 8px;
   min-height: 18px;
-  color: var(--c-8b94a7);
+  color: var(--color-text-muted);
   font-size: 11px;
 }
 
 .composer-mode strong {
-  border: 1px solid var(--c-343b49);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 0;
+  color: var(--color-text-secondary);
+  padding: 0;
+  text-transform: none;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+
+.composer-mode strong::before {
+  content: "";
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
-  color: var(--c-c8ced8);
-  padding: 1px 7px;
-  text-transform: uppercase;
+  background: var(--color-text-faint);
 }
 
 .composer-mode.running strong {
-  border-color: var(--c-668cff);
-  background: var(--c-1a2950);
-  color: var(--c-cfe0ff);
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-accent-soft) 82%, var(--color-text-secondary));
+}
+
+.composer-mode.running strong::before {
+  background: var(--color-accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-soft) 16%, transparent);
 }
 
 .composer-mode.bash-mode strong {
-  border-color: color-mix(in srgb, var(--color-developer-bash-border) 78%, var(--color-border));
-  background: color-mix(in srgb, var(--color-developer-bash-border) 16%, var(--color-bg-surface));
+  border-color: transparent;
+  background: transparent;
   color: var(--color-developer-bash-border);
 }
 
-.prompt-shell.bash-mode textarea {
-  border-color: color-mix(in srgb, var(--color-developer-bash-border) 78%, var(--color-border));
-  background: var(--color-developer-bash-bg);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-developer-bash-border) 18%, transparent);
+.composer-mode.bash-mode strong::before {
+  background: var(--color-developer-bash-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-border) 14%, transparent);
 }
 
-.prompt-shell.bash-mode textarea:focus {
+.prompt-shell.bash-mode {
+  border-color: color-mix(in srgb, var(--color-developer-bash-border) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-developer-bash-bg) 38%, var(--color-bg-surface));
+}
+
+.prompt-shell.bash-mode:focus-within {
   border-color: var(--color-developer-bash-border);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-border) 28%, transparent);
+  box-shadow: 0 12px 34px color-mix(in srgb, #000 18%, transparent), 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-border) 18%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+.prompt-shell.bash-mode.no-context {
+  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-developer-bash-no-context-bg) 42%, var(--color-bg-surface));
 }
 
 .composer-mode.bash-mode.no-context strong {
-  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 78%, var(--color-border));
-  background: color-mix(in srgb, var(--color-developer-bash-no-context-border) 16%, var(--color-bg-surface));
+  border-color: transparent;
+  background: transparent;
   color: var(--color-developer-bash-no-context-border);
 }
 
-.prompt-shell.bash-mode.no-context textarea {
-  border-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 78%, var(--color-border));
-  background: var(--color-developer-bash-no-context-bg);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-developer-bash-no-context-border) 18%, transparent);
+.composer-mode.bash-mode.no-context strong::before {
+  background: var(--color-developer-bash-no-context-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-no-context-border) 14%, transparent);
 }
 
-.prompt-shell.bash-mode.no-context textarea:focus {
+.prompt-shell.bash-mode.no-context:focus-within {
   border-color: var(--color-developer-bash-no-context-border);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-no-context-border) 28%, transparent);
+  box-shadow: 0 12px 34px color-mix(in srgb, #000 18%, transparent), 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-no-context-border) 18%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
 }
 
 .composer-activity {
@@ -343,8 +387,8 @@ footer.plan-takeover-footer {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  border-left: 1px solid var(--c-343b49);
-  color: var(--c-bcd0ff);
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+  color: color-mix(in srgb, var(--color-accent-soft) 78%, var(--color-text-secondary));
   padding-left: 8px;
   font-size: 11px;
 }
@@ -384,35 +428,36 @@ footer.plan-takeover-footer {
   white-space: nowrap;
 }
 
-.prompt-shell.dragging-image textarea {
+.prompt-shell.dragging-image {
   border-color: var(--c-8fb3ff);
-  box-shadow: 0 0 0 2px rgba(102, 140, 255, 0.35);
+  background: color-mix(in srgb, var(--color-accent-soft) 8%, var(--color-bg-surface));
+  box-shadow: 0 12px 34px color-mix(in srgb, #000 18%, transparent), 0 0 0 3px rgba(102, 140, 255, 0.18);
 }
 
 .prompt-images {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
 }
 
 .prompt-image {
   position: relative;
   display: grid;
-  grid-template-rows: 64px auto;
-  width: 94px;
+  grid-template-rows: 58px auto;
+  width: 88px;
   margin: 0;
-  border: 1px solid var(--c-343b49);
-  border-radius: 8px;
-  background: var(--c-171a21);
+  border: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, transparent);
   overflow: hidden;
 }
 
 .prompt-image img {
   width: 100%;
-  height: 64px;
+  height: 58px;
   object-fit: cover;
-  background: var(--c-0f1117);
+  background: var(--color-bg-input);
 }
 
 .prompt-image figcaption {
@@ -448,6 +493,26 @@ textarea {
 #prompt {
   height: 56px;
   max-height: 120px;
+  min-height: 42px;
+  border-color: transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text);
+  padding: 5px 2px 2px;
+  line-height: 1.45;
+  resize: none;
+}
+
+#prompt:hover,
+#prompt:focus {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+#prompt::placeholder {
+  color: var(--color-text-faint);
 }
 
 .file-autocomplete,
@@ -805,7 +870,7 @@ header.model-picker-open {
   position: relative;
   z-index: 2;
   display: flex;
-  align-self: end;
+  align-self: stretch;
   align-items: stretch;
   gap: 6px;
 }
@@ -819,8 +884,21 @@ header.model-picker-open {
   place-content: center;
   gap: 1px;
   min-width: 72px;
+  min-height: 40px;
+  border-color: color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
+  color: var(--color-text-secondary);
   padding: 6px 9px;
   font-size: 13px;
+  box-shadow: 0 10px 26px color-mix(in srgb, #000 10%, transparent);
+}
+
+.controls button:hover,
+.controls button:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 58%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 9%, var(--color-bg-surface));
+  color: var(--color-text);
 }
 
 .controls button small {
@@ -835,16 +913,24 @@ header.model-picker-open {
 }
 
 .controls .primary-action {
-  border-color: var(--c-668cff);
-  background: var(--c-263b75);
-  color: var(--c-eef3ff);
+  border-color: color-mix(in srgb, var(--color-accent-soft) 60%, var(--color-border));
+  background: var(--color-chat-outgoing-bg);
+  color: var(--color-chat-outgoing-text);
   font-weight: 700;
+  box-shadow: var(--color-chat-outgoing-shadow);
+}
+
+.controls .primary-action:hover,
+.controls .primary-action:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 78%, var(--color-border));
+  background: var(--color-chat-outgoing-bg);
+  color: var(--color-chat-outgoing-text);
 }
 
 .controls .secondary-action {
-  border-color: var(--c-6d4b1f);
-  background: var(--c-2a2114);
-  color: var(--c-ffd18a);
+  border-color: color-mix(in srgb, var(--color-warning) 44%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-bg) 42%, var(--color-bg-surface));
+  color: color-mix(in srgb, var(--color-warning) 82%, var(--color-text-secondary));
 }
 
 .running-queue {
