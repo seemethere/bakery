@@ -183,7 +183,9 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: consolidated model/thinking picker used `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/styles/mobile.css scripts/ui-harness.ts`; `bun test apps/web/src/model-thinking-picker.test.ts`, `bun run check`, `bun scripts/ui-harness.ts --scenario model-thinking`, and `bun scripts/ui-harness.ts --scenario mobile-layout` passed. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
+Latest: mobile model/thinking picker fix used `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/model-thinking-picker.ts apps/web/src/model-thinking-picker.test.ts apps/web/src/styles/composer.css scripts/ui-harness.ts PROJECT_LOG.md`; `bun test apps/web/src/model-thinking-picker.test.ts`, `bun run check`, `bun scripts/ui-harness.ts --scenario mobile-layout`, and `bun scripts/ui-harness.ts --scenario model-thinking` passed. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
+
+Previous latest: consolidated model/thinking picker used `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/styles/mobile.css scripts/ui-harness.ts`; `bun test apps/web/src/model-thinking-picker.test.ts`, `bun run check`, `bun scripts/ui-harness.ts --scenario model-thinking`, and `bun scripts/ui-harness.ts --scenario mobile-layout` passed. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
 
 Previous latest: bounded recent-history telemetry used `bun run report:iteration --recommend scripts/report-iteration.ts .pi/skills/iteration-observability/SKILL.md PROJECT_LOG.md`; `bun run check`, `bun run report:iteration`, `bun run project:notes`, and `bun run report:iteration --session-history --latest-sessions 10 --exclude-current-session` passed. Full `bun run test:web-perf` was intentionally skipped because the selector marked this script/skill-doc change as script-only with no browser harness coverage needed.
 

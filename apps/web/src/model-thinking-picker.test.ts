@@ -13,7 +13,8 @@ const settings = (overrides: Partial<SessionRuntimeSettings> = {}): SessionRunti
 describe("model thinking picker", () => {
   test("formats compact model shorthand", () => {
     expect(modelShorthand({ id: "anthropic/claude-sonnet-4", provider: "anthropic", name: "Claude Sonnet 4" })).toBe("Sonnet 4");
-    expect(modelShorthand({ id: "openai/gpt-5-codex", provider: "openai" })).toBe("GPT-5 Codex");
+    expect(modelShorthand({ id: "openai/gpt-5.5", provider: "openai", name: "GPT-5.5" })).toBe("GPT 5.5");
+    expect(modelShorthand({ id: "openai/gpt-5-codex", provider: "openai" })).toBe("GPT 5 Codex");
   });
 
   test("only includes thinking in the trigger when non-default", () => {

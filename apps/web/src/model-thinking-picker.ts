@@ -15,9 +15,9 @@ function trimProviderPrefix(value: string): string {
 
 function titleCaseCompact(value: string): string {
   return value
-    .split(/[\s._/-]+/)
+    .split(/[\s_/-]+/)
     .filter(Boolean)
-    .map((part) => part.length <= 3 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .map((part) => /^\d+(?:\.\d+)*$/.test(part) ? part : part.length <= 3 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
     .join(" ");
 }
 
@@ -31,13 +31,17 @@ export function modelOptionLabel(model: ModelInfo): string {
 
 export function modelShorthand(model: ModelInfo | null | undefined): string {
   if (!model) return "Model";
+  const decimalPlaceholder = "__PI_DECIMAL__";
   const base = trimProviderPrefix(modelDisplayName(model))
+    .replace(/(\d)\.(\d)/g, `$1${decimalPlaceholder}$2`)
     .replace(/\bclaude[-\s]*/i, "")
     .replace(/\bchatgpt[-\s]*/i, "")
-    .replace(/\bgpt[-\s]*/i, "GPT-")
+    .replace(/\bgpt[-\s]*/i, "GPT ")
+    .replace(/\./g, " ")
+    .replace(new RegExp(decimalPlaceholder, "g"), ".")
     .replace(/\s+/g, " ")
     .trim();
-  return titleCaseCompact(base || modelDisplayName(model)).replace(/\bGPT (\d)/g, "GPT-$1");
+  return titleCaseCompact(base || modelDisplayName(model));
 }
 
 export function isNonDefaultThinkingLevel(level: string, defaultThinkingLevel?: string | undefined): boolean {

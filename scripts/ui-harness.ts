@@ -486,6 +486,13 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
   await page.locator("#modelThinkingToggle").click();
+  const mobilePickerPopover = await page.evaluate(() => {
+    const element = document.querySelector(".model-thinking-popover");
+    if (!element || getComputedStyle(element).display === "none") return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportHeight: window.innerHeight };
+  });
+  if (!mobilePickerPopover || mobilePickerPopover.height < 60 || mobilePickerPopover.bottom > mobilePickerPopover.viewportHeight + 1) throw new Error(`Mobile model/thinking popover should open visibly: ${JSON.stringify(mobilePickerPopover)}`);
   await page.locator("#thinking").selectOption("high");
   await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"), null, { timeout: 5_000 });
   if (layout.prompt && layout.controls && layout.prompt.bottom > layout.controls.top) {

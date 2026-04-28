@@ -2487,7 +2487,7 @@ class PiWebAgentApp extends HTMLElement {
         `}
       </aside>
       <main>
-        <header>
+        <header class="${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
             ${this.selectedSession ? `<div class="session-title-row"><input id="sessionTitle" class="session-title-input" size="${Math.min(52, Math.max(12, selectedTitle.length || selectedTitlePlaceholder.length))}" value="${escapeHtml(selectedTitle)}" placeholder="${escapeHtml(selectedTitlePlaceholder)}" aria-label="Session title" title="Edit session title" />
