@@ -100,6 +100,9 @@ class PiWebAgentApp extends HTMLElement {
   private settings: SessionRuntimeSettings | null = null;
   private config: AppConfig | null = null;
   private modelThinkingPickerOpen = false;
+  private sessionDetailsOpen = false;
+  private mobileHeaderHidden = false;
+  private lastTranscriptScrollTop = 0;
   private pendingQuestion: PendingQuestion | null = null;
   private appSettings: AppSettings | null = null;
   private metadataSuggestion: SessionMetadataSuggestion | null = null;
@@ -200,7 +203,13 @@ class PiWebAgentApp extends HTMLElement {
     }
   };
   private readonly sidebarKeyHandler = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.key !== "Escape" || this.sessionSidebarCollapsed || this.sessionSidebarPinned) return;
+    if (event.defaultPrevented || event.key !== "Escape") return;
+    if (this.sessionDetailsOpen) {
+      this.sessionDetailsOpen = false;
+      this.render();
+      return;
+    }
+    if (this.sessionSidebarCollapsed || this.sessionSidebarPinned) return;
     this.sessionSidebarCollapsed = true;
     localStorage.setItem("piWebSessionSidebarCollapsed", "true");
     this.render();
@@ -440,6 +449,9 @@ class PiWebAgentApp extends HTMLElement {
     this.controller = null;
     this.settings = null;
     this.modelThinkingPickerOpen = false;
+    this.sessionDetailsOpen = false;
+    this.mobileHeaderHidden = false;
+    this.lastTranscriptScrollTop = 0;
     this.pendingQuestion = null;
     this.dismissedPlanActionTranscriptId = "";
     this.sessionTree = null;
@@ -471,6 +483,9 @@ class PiWebAgentApp extends HTMLElement {
     this.notice = "";
     this.controller = null;
     this.settings = null;
+    this.sessionDetailsOpen = false;
+    this.mobileHeaderHidden = false;
+    this.lastTranscriptScrollTop = 0;
     this.pendingQuestion = null;
     this.sessionTree = null;
     this.selectedTranscriptId = "";
@@ -1688,6 +1703,17 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLInputElement>("#sessionTitle")?.addEventListener("blur", (event) => {
       void this.updateSessionTitle((event.currentTarget as HTMLInputElement).value);
     });
+    this.querySelector<HTMLButtonElement>("#toggleSessionDetails")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.sessionDetailsOpen = !this.sessionDetailsOpen;
+      if (this.sessionDetailsOpen) this.mobileHeaderHidden = false;
+      this.render();
+    });
+    this.querySelector<HTMLButtonElement>("#closeSessionDetails")?.addEventListener("click", () => {
+      this.sessionDetailsOpen = false;
+      this.render();
+    });
+    this.querySelector<HTMLButtonElement>("#copyWorkspacePath")?.addEventListener("click", () => this.copyWorkspacePath());
     this.querySelector<HTMLButtonElement>("#generateMetadata")?.addEventListener("click", () => void this.generateMetadataSuggestion());
     this.querySelectorAll<HTMLButtonElement>("#regenerateMetadata").forEach((button) => button.addEventListener("click", () => void this.generateMetadataSuggestion()));
     this.querySelector<HTMLButtonElement>("#toggleSessionSummary")?.addEventListener("click", () => this.setSummaryExpanded(!this.summaryExpanded()));
@@ -1787,6 +1813,7 @@ class PiWebAgentApp extends HTMLElement {
     transcriptElement?.addEventListener("wheel", () => this.markTranscriptUserScrollIntent(), { passive: true });
     transcriptElement?.addEventListener("touchmove", () => this.markTranscriptUserScrollIntent(), { passive: true });
     transcriptElement?.addEventListener("scroll", (event) => {
+      this.handleTranscriptHeaderReveal((event.currentTarget as HTMLElement).scrollTop);
       this.transcriptFollow.handleScroll(event, {
         requestRender: () => this.requestRender(80),
         patchJumpToLatest: () => this.patchJumpToLatest(),
@@ -1845,7 +1872,7 @@ class PiWebAgentApp extends HTMLElement {
     </div>`;
   }
 
-  private renderSessionSummary(expanded: boolean): string {
+  private renderSessionSummary(expanded: boolean, showSuggestion = !this.mobileLayout): string {
     if (!this.selectedSession) return "";
     return renderSessionSummaryHtml({
       session: this.selectedSession,
@@ -1855,8 +1882,60 @@ class PiWebAgentApp extends HTMLElement {
       error: this.metadataSuggestionError,
       metadataGenerating: this.metadataGenerating,
       status: this.status,
-      showSuggestion: !this.mobileLayout,
+      showSuggestion,
     });
+  }
+
+  private renderSessionDetails(expanded: boolean): string {
+    if (!this.selectedSession || !this.sessionDetailsOpen) return "";
+    return `<div class="session-details-popover" role="dialog" aria-label="Session details">
+      <div class="session-details-header">
+        <strong>Session details</strong>
+        <button id="closeSessionDetails" type="button" aria-label="Close session details">×</button>
+      </div>
+      <div class="session-details-path">
+        <span>Workspace</span>
+        <code title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(this.selectedSession.cwd)}</code>
+        <button id="copyWorkspacePath" type="button">Copy path</button>
+      </div>
+      ${this.renderSessionSummary(expanded, !this.mobileLayout)}
+      <button id="generateMetadata" class="session-details-generate" type="button" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>${this.metadataGenerating ? "Generating…" : "Suggest title and summary"}</button>
+    </div>`;
+  }
+
+  private copyWorkspacePath(): void {
+    if (!this.selectedSession) return;
+    if (!navigator.clipboard?.writeText) {
+      this.notice = "Clipboard access is not available in this browser.";
+      this.render();
+      return;
+    }
+    void navigator.clipboard.writeText(this.selectedSession.cwd).then(() => {
+      this.notice = "Workspace path copied.";
+      this.sessionDetailsOpen = false;
+      this.render();
+    }).catch((error) => {
+      this.notice = `Could not copy workspace path: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    });
+  }
+
+  private handleTranscriptHeaderReveal(scrollTop: number): void {
+    if (!this.mobileLayout) {
+      this.mobileHeaderHidden = false;
+      this.lastTranscriptScrollTop = scrollTop;
+      return;
+    }
+    if (this.sessionDetailsOpen || this.modelThinkingPickerOpen || scrollTop <= 12) {
+      this.mobileHeaderHidden = false;
+    } else {
+      const delta = scrollTop - this.lastTranscriptScrollTop;
+      if (delta > 12) this.mobileHeaderHidden = true;
+      else if (delta < -8) this.mobileHeaderHidden = false;
+    }
+    this.lastTranscriptScrollTop = scrollTop;
+    const header = this.querySelector<HTMLElement>("header");
+    header?.classList.toggle("mobile-header-hidden", this.mobileHeaderHidden);
   }
 
   private renderMobileMetadataSuggestion(): string {
@@ -2390,6 +2469,10 @@ class PiWebAgentApp extends HTMLElement {
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
     const summaryExpanded = this.selectedSession ? this.summaryExpanded(this.selectedSession.id) : false;
+    const headerClasses = [
+      this.modelThinkingPickerOpen ? "model-picker-open" : "",
+      this.mobileHeaderHidden && !this.sessionDetailsOpen && !this.modelThinkingPickerOpen ? "mobile-header-hidden" : "",
+    ].filter(Boolean).join(" ");
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = this.promptDraft.trimStart().startsWith("!!");
     const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
@@ -2401,13 +2484,13 @@ class PiWebAgentApp extends HTMLElement {
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}
       <main>
-        <header class="${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
+        <header class="${headerClasses}">
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
             ${this.selectedSession ? `<div class="session-title-row"><input id="sessionTitle" class="session-title-input" size="${Math.min(52, Math.max(12, selectedTitle.length || selectedTitlePlaceholder.length))}" value="${escapeHtml(selectedTitle)}" placeholder="${escapeHtml(selectedTitlePlaceholder)}" aria-label="Session title" title="Edit session title" />
-              <button id="generateMetadata" class="metadata-generate-button" title="Suggest title and summary" aria-label="Suggest title and summary" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>${this.metadataGenerating ? "…" : "✨"}</button></div>
-              <span title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>
-              ${this.renderSessionSummary(summaryExpanded)}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
+              <button id="toggleSessionDetails" class="session-details-button ${this.sessionDetailsOpen ? "active" : ""}" type="button" title="Session details" aria-label="Session details" aria-expanded="${this.sessionDetailsOpen}">Details</button></div>
+              <span class="session-workspace" title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>
+              ${this.renderSessionDetails(summaryExpanded)}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
           </div>
           <div class="header-status ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}

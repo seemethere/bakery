@@ -21,6 +21,16 @@ header {
   gap: 12px;
   min-width: 0;
   overflow: hidden;
+  border-bottom-color: color-mix(in srgb, var(--color-border) 42%, transparent);
+  background: color-mix(in srgb, var(--color-bg-surface) 68%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 12px 30px color-mix(in srgb, #000 10%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+header:has(.session-details-popover) {
+  position: relative;
+  z-index: 26;
+  overflow: visible;
 }
 
 .session-identity {
@@ -45,6 +55,10 @@ header {
   font-size: 12px;
 }
 
+.session-workspace {
+  max-width: min(68vw, 760px);
+}
+
 .session-title-input {
   flex: 0 1 auto;
   width: auto;
@@ -60,9 +74,105 @@ header {
 
 .session-title-input:hover,
 .session-title-input:focus {
-  border-color: var(--c-343b49);
-  background: var(--c-0f1117);
+  border-color: color-mix(in srgb, var(--color-accent-soft) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-bg-input) 82%, transparent);
   padding: 2px 8px;
+}
+
+.session-details-button {
+  flex: 0 0 auto;
+  align-self: center;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--color-border) 62%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, transparent);
+  color: var(--color-text-secondary);
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-details-button.active,
+.session-details-button:hover,
+.session-details-button:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 56%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 12%, var(--color-bg-elevated));
+  color: var(--color-text);
+}
+
+.session-details-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 28;
+  display: grid;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(72dvh, 560px);
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-popover-bg) 92%, transparent);
+  padding: 12px;
+  box-shadow: var(--color-popover-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.session-details-header,
+.session-details-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-details-header {
+  justify-content: space-between;
+}
+
+.session-details-header button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 999px;
+  padding: 0;
+}
+
+.session-details-path {
+  flex-wrap: wrap;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.session-details-path span {
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.session-details-path code {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-input) 72%, transparent);
+  color: var(--color-text-secondary);
+  padding: 3px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-details-path button,
+.session-details-generate {
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.session-details-generate {
+  justify-self: start;
 }
 
 footer {

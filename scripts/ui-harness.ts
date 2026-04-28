@@ -574,7 +574,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   }
 
   await sendPromptAndWaitIdle(page, "Improve mobile title and summary generation controls.");
-  await page.locator("#generateMetadata").click();
+  await page.locator("#toggleSessionDetails").click();
+  await page.locator(".session-details-popover #generateMetadata").click();
   await page.locator(".metadata-mobile-popover #metadataSuggestionTitle").waitFor({ timeout: 5_000 });
   const sheet = await page.evaluate(() => {
     const element = document.querySelector(".metadata-mobile-popover");
@@ -790,7 +791,8 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
   if (clearedPlaceholder !== "New session") throw new Error(`Expected generic cleared session placeholder to be New session, saw ${clearedPlaceholder}`);
 
   await sendPromptAndWaitIdle(page, "Improve session summaries and title generation with dedicated harness coverage.");
-  await page.locator("#generateMetadata").click();
+  await page.locator("#toggleSessionDetails").click();
+  await page.locator(".session-details-popover #generateMetadata").click();
   await page.locator(".metadata-suggestion", { hasText: "Suggested title" }).waitFor({ timeout: 5_000 });
   await page.locator("#metadataSuggestionTitle").waitFor({ timeout: 5_000 });
   await page.locator("#regenerateMetadata", { hasText: "Regenerate" }).waitFor({ timeout: 5_000 });
