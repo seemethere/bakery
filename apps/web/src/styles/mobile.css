@@ -256,7 +256,7 @@
 
   .message.user .markdown-body,
   .message.assistant .markdown-body {
-    padding: 8px 13px 9px;
+    padding: 10px 13px 7px;
     font-size: 15px;
   }
 
