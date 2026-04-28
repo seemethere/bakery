@@ -2044,7 +2044,7 @@ class PiWebAgentApp extends HTMLElement {
       <section class="question-panel" aria-label="Answer needed" tabindex="-1">
         <div class="question-panel-heading">
           <strong>Answer needed</strong>
-          ${question.title ? `<span>${escapeHtml(question.title)}</span>` : ""}
+          ${question.title ? `<span>${escapeHtml(question.title)}</span>` : `<span>Choose how to continue</span>`}
         </div>
         <p class="question-text">${escapeHtml(question.question)}</p>
         ${question.recommendation && recommendedOptionIndex < 0 ? `<p class="question-recommendation"><b>Recommended:</b> ${escapeHtml(question.recommendation)}</p>` : ""}
@@ -2064,6 +2064,7 @@ class PiWebAgentApp extends HTMLElement {
         <div class="question-actions">
           ${viewerCopy}
           <span class="question-key-hint"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom · <kbd>Esc</kbd> cancel</span>
+          <span class="question-touch-hint">Tap an option or type a custom answer.</span>
           <button id="questionCancel" type="button" aria-keyshortcuts="Escape" ${disabled ? "disabled" : ""}>Cancel question</button>
         </div>
       </section>`;

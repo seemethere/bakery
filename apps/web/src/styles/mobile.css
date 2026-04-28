@@ -426,6 +426,54 @@
     padding: 7px 9px 8px;
   }
 
+  .question-panel {
+    gap: 9px;
+    border-radius: 18px;
+    padding: 10px;
+  }
+
+  .question-panel-heading {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .question-text {
+    font-size: 15px;
+  }
+
+  .question-options {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .question-options button {
+    min-height: 56px;
+    padding: 9px;
+  }
+
+  .question-custom {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+  }
+
+  .question-custom-field {
+    min-width: 0;
+  }
+
+  .question-actions {
+    align-items: flex-start;
+    gap: 7px;
+  }
+
+  .question-key-hint {
+    display: none;
+  }
+
+  .question-touch-hint {
+    display: inline-flex;
+  }
+
   .plan-composer-takeover {
     gap: 8px;
     padding: 8px;
@@ -617,4 +665,19 @@
     min-width: 0;
   }
 
+  .question-custom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .question-custom button,
+  #questionCancel {
+    min-height: 38px;
+  }
+
+  .question-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
 }
+
