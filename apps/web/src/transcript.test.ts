@@ -1,8 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { TranscriptItem } from "./transcript";
 
+let PLAN_ACTIONS_MARKER: typeof import("./transcript").PLAN_ACTIONS_MARKER;
 let renderTranscriptSegments: typeof import("./transcript").renderTranscriptSegments;
 let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDeveloperBash;
+let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
+let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, "HTMLElement", {
@@ -17,7 +20,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ renderTranscriptSegments, mergeDuplicateDeveloperBash } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker } = await import("./transcript"));
 });
 
 describe("transcript terminal rendering", () => {
@@ -67,6 +70,22 @@ describe("transcript terminal rendering", () => {
     expect(html).toContain("failed &lt;script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("\u001b[31m");
+  });
+});
+
+describe("transcript plan actions", () => {
+  test("detects and strips the final /plan action marker", () => {
+    const item: TranscriptItem = {
+      id: "assistant-plan",
+      kind: "assistant",
+      title: "Pi",
+      body: `Recommendation\n\n${PLAN_ACTIONS_MARKER}`,
+      status: "done",
+    };
+
+    expect(hasPlanActionsMarker(item)).toBe(true);
+    expect(stripPlanActionsMarker(item.body)).toBe("Recommendation");
+    expect(hasPlanActionsMarker({ ...item, kind: "user" })).toBe(false);
   });
 });
 

@@ -816,7 +816,11 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-options button").first().click();
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
-  await page.locator(".message.assistant", { hasText: "Thanks" }).waitFor({ timeout: 5_000 });
+  const planMessage = page.locator(".message.assistant", { hasText: "Recommendation: start with the smallest vertical slice" }).last();
+  await planMessage.waitFor({ timeout: 5_000 });
+  await planMessage.locator(".plan-action-row", { hasText: "Accept plan" }).waitFor({ timeout: 5_000 });
+  await planMessage.locator('[data-plan-action="feedback"]').click();
+  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "Feedback on the plan: ", null, { timeout: 5_000 });
   await ensureSidebarSettingsVisible(page);
   await page.locator(".session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();

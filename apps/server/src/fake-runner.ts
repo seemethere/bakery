@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import type { AnswerQuestionPayload, CommandInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
+import { PLAN_ACTIONS_MARKER, type AnswerQuestionPayload, type CommandInfo, type ModelPolicy, type NormalizedAgentEvent, type PendingQuestion, type SessionRuntimeSettings, type SessionSnapshot, type WebSession } from "@pi-web-agent/protocol";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 import { getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "./workflow-skills.js";
 
@@ -155,7 +155,8 @@ class FakeSessionHandle implements SessionHandle {
     }
 
     if (shouldAskQuestion) {
-      await this.emitFakeQuestionRun(/cancel/i.test(text));
+      const isPlanWorkflow = /^Run the bundled `plan` workflow skill for this coding session\./m.test(text);
+      await this.emitFakeQuestionRun(!isPlanWorkflow && /cancel/i.test(text), isPlanWorkflow);
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -427,7 +428,7 @@ class FakeSessionHandle implements SessionHandle {
     return editorText === undefined ? { cancelled: false } : { cancelled: false, editorText };
   }
 
-  private async emitFakeQuestionRun(expectCancel = false): Promise<void> {
+  private async emitFakeQuestionRun(expectCancel = false, isPlanWorkflow = false): Promise<void> {
     const toolCallId = crypto.randomUUID();
     const args = {
       title: expectCancel ? "Cancel path" : "Today's work",
@@ -451,7 +452,18 @@ class FakeSessionHandle implements SessionHandle {
       ? { content: [{ type: "text", text: "User cancelled the question." }], details: { questionId: answer.questionId, question: args.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } }
       : { content: [{ type: "text", text: `${answer.wasCustom ? "User wrote" : `User selected option ${(answer.selectedIndex ?? 0) + 1}`}: ${answer.answer ?? ""}` }], details: { questionId: answer.questionId, question: args.question, answer: answer.answer ?? null, selectedIndex: answer.selectedIndex ?? null, wasCustom: answer.wasCustom ?? false, cancelled: false } };
     this.emit({ type: "tool_execution_end", toolCallId, toolName: "ask_question", result, isError: false });
-    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : `Thanks — I'll proceed with: ${answer.answer}.` };
+    const planSummary = [
+      "Recommendation: start with the smallest vertical slice that proves the UI lifecycle.",
+      "",
+      "Smallest next vertical slice: add the focused Bakery UI behavior, keep shared contracts in packages/protocol if needed, and validate with the selected focused harness command.",
+      "",
+      "Key files likely to change: apps/web/src/main.ts, apps/web/src/transcript.ts, apps/web/src/styles/transcript.css, and targeted tests.",
+      "",
+      "Validation plan: bun run report:iteration --recommend <changed files>, then bun run check and the focused harness scenario selected by the report.",
+      "",
+      PLAN_ACTIONS_MARKER,
+    ].join("\n");
+    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : isPlanWorkflow ? planSummary : `Thanks — I'll proceed with: ${answer.answer}.` };
     this.messages.push(assistant);
     this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: assistant });

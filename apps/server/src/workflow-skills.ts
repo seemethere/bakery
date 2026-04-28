@@ -1,4 +1,4 @@
-import type { CommandInfo } from "@pi-web-agent/protocol";
+import { PLAN_ACTIONS_MARKER, type CommandInfo } from "@pi-web-agent/protocol";
 
 export type WorkflowSkill = {
   name: string;
@@ -35,6 +35,7 @@ function planPrompt(args: string): string {
     "Finish:",
     "- After enough answers, stop interviewing and summarize the recommendation.",
     "- Propose the smallest next vertical slice, name the key files likely to change, and include a validation plan with exact commands/harness scenarios when practical.",
+    `- End the final plan summary with this exact standalone line so Bakery can render mobile-friendly inline actions: ${PLAN_ACTIONS_MARKER}`,
   ].join("\n");
 }
 

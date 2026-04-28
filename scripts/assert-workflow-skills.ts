@@ -25,6 +25,7 @@ const requiredSnippets = [
   "recommendedOptionIndex",
   "smallest next vertical slice",
   "validation plan with exact commands/harness scenarios",
+  "Plan actions: Accept plan · Give feedback · Cancel plan · Back to chat",
 ];
 
 for (const snippet of requiredSnippets) {

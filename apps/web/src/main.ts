@@ -27,6 +27,7 @@ type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type RightPanelTab = "details" | "preview" | "tree";
 type TranscriptRowAction = "copy" | "details" | "preview" | "fork" | "toggle-output";
+type PlanAction = "accept" | "feedback" | "cancel" | "chat";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
@@ -823,6 +824,26 @@ class PiWebAgentApp extends HTMLElement {
       this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
     }
     this.render();
+  }
+
+  private fillPromptDraft(text: string): void {
+    this.promptDraft = text;
+    this.savePromptDraft();
+    this.closeCommandAutocomplete();
+    this.closeFileAutocomplete();
+    this.focusPromptOnNextReadyRender = true;
+    this.notice = "";
+    this.render();
+  }
+
+  private handlePlanAction(action: PlanAction): void {
+    const drafts: Record<PlanAction, string> = {
+      accept: "Proceed with the recommended plan.",
+      feedback: "Feedback on the plan: ",
+      cancel: "Cancel this plan. Return to normal chat.",
+      chat: "Back to chat: ",
+    };
+    this.fillPromptDraft(drafts[action]);
   }
 
   private async handleTranscriptRowAction(action: TranscriptRowAction | "menu", transcriptId: string): Promise<void> {
@@ -1756,6 +1777,14 @@ class PiWebAgentApp extends HTMLElement {
     });
 
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
+      const planButton = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-plan-action]");
+      if (planButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const action = planButton.dataset.planAction;
+        if (action === "accept" || action === "feedback" || action === "cancel" || action === "chat") this.handlePlanAction(action);
+        return;
+      }
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
       if (!button) {
         if (this.openActionMenuId) {

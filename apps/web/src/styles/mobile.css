@@ -166,6 +166,17 @@
     max-width: 180px;
   }
 
+  .plan-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .plan-action-button {
+    min-height: 42px;
+    padding: 8px 10px;
+  }
+
   .status,
   .controller {
     font-size: 11px;
