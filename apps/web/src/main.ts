@@ -2600,13 +2600,13 @@ class PiWebAgentApp extends HTMLElement {
         <footer class="${isRunning ? "running-footer" : ""}">
           ${this.renderQuestionPanel(isController)}
           <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
+            ${renderPromptImages(this.promptImages)}
             <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""}">
               <strong>${escapeHtml(composerModeLabel)}</strong>
               <span class="composer-hint">${escapeHtml(composerHint)}</span>
               ${this.renderComposerActivity()}
               ${this.renderContextUsageNotice()}
             </div>
-            ${renderPromptImages(this.promptImages)}
             <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
             ${this.renderComposerNotice()}
             ${renderCommandAutocomplete(this.commandAutocomplete)}
