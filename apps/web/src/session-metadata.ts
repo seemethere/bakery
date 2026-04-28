@@ -139,10 +139,15 @@ export function renderSessionSummary(options: {
   const { session, expanded, suggestion, draft, error, metadataGenerating, status, showSuggestion } = options;
   const summary = session.summary?.trim();
   const sourceHint = `Title: ${session.titleSource}; summary: ${session.summarySource}`;
+  const summaryPreview = summary ? `${escapeHtml(summary.slice(0, 150))}${summary.length > 150 ? "…" : ""}` : "";
   const summaryBlock = summary ? `
-      <button id="toggleSessionSummary" class="session-summary-toggle" type="button" title="${escapeHtml(sourceHint)}">${expanded ? "▾" : "▸"} Summary${expanded ? "" : ` — ${escapeHtml(summary.slice(0, 120))}${summary.length > 120 ? "…" : ""}`}</button>
+      <button id="toggleSessionSummary" class="session-summary-toggle" type="button" title="${escapeHtml(sourceHint)}" aria-expanded="${expanded}">
+        <span class="session-summary-kicker">Summary</span>
+        <span class="session-summary-preview">${expanded ? "Hide session summary" : summaryPreview}</span>
+        <span class="session-summary-caret" aria-hidden="true">${expanded ? "▾" : "▸"}</span>
+      </button>
       ${expanded ? `<p class="session-summary-body">${escapeHtml(summary)}</p>` : ""}
-    ` : `<span class="session-summary-empty" title="${escapeHtml(sourceHint)}">No summary yet.</span>`;
+    ` : `<span class="session-summary-empty" title="${escapeHtml(sourceHint)}"><span>Summary</span><strong>No summary yet</strong><em>Generate one from this session when enough context exists.</em></span>`;
   const suggestionBlock = showSuggestion ? renderMetadataSuggestion({ suggestion, draft, error, metadataGenerating, status }) : "";
   return `<div class="session-summary">${summaryBlock}${suggestionBlock}</div>`;
 }

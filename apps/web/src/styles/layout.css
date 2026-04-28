@@ -139,19 +139,27 @@ header:has(.session-details-popover) {
 
 .session-details-path {
   flex-wrap: wrap;
+  border: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 50%, transparent);
   color: var(--color-text-muted);
+  padding: 9px 10px;
   font-size: 12px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
 }
 
 .session-details-path span {
+  flex: 0 0 100%;
   color: var(--color-text-faint);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
 .session-details-path code {
+  flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -159,7 +167,7 @@ header:has(.session-details-popover) {
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-bg-input) 72%, transparent);
   color: var(--color-text-secondary);
-  padding: 3px 8px;
+  padding: 5px 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -167,12 +175,16 @@ header:has(.session-details-popover) {
 .session-details-path button,
 .session-details-generate {
   border-radius: 999px;
-  padding: 4px 9px;
+  padding: 5px 10px;
   font-size: 12px;
 }
 
 .session-details-generate {
   justify-self: start;
+  border-color: color-mix(in srgb, var(--color-accent-soft) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 12%, var(--color-bg-elevated));
+  color: var(--color-text);
+  font-weight: 750;
 }
 
 footer {
