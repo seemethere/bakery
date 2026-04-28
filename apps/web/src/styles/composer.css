@@ -7,6 +7,105 @@
   min-width: 0;
 }
 
+footer.plan-takeover-footer {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.plan-composer-takeover {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft) 42%, var(--color-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 86%, var(--color-accent-soft) 6%);
+  padding: 10px;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--color-accent-soft) 9%, transparent);
+}
+
+.plan-composer-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plan-composer-heading strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.plan-composer-heading span {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.plan-feedback-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-feedback-field span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.plan-feedback-field input {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.plan-feedback-field input:focus {
+  border-color: var(--color-accent-soft);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-soft) 22%, transparent);
+}
+
+.plan-composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plan-composer-actions button {
+  flex: 1 1 auto;
+  min-height: 34px;
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--color-bg-surface) 86%, transparent);
+  color: var(--color-text-secondary);
+  padding: 6px 10px;
+  font-weight: 700;
+}
+
+.plan-composer-actions .primary-action {
+  border-color: var(--c-668cff);
+  background: var(--c-263b75);
+  color: var(--c-eef3ff);
+}
+
+.plan-composer-actions button:hover,
+.plan-composer-actions button:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 10%, var(--color-bg-surface));
+  color: var(--color-text);
+}
+
+.plan-composer-actions .primary-action:hover,
+.plan-composer-actions .primary-action:focus-visible {
+  background: color-mix(in srgb, var(--c-263b75) 82%, var(--color-accent-soft));
+  color: var(--c-eef3ff);
+}
+
 .question-panel {
   grid-column: 1 / -1;
   display: grid;

@@ -166,15 +166,6 @@
     max-width: 180px;
   }
 
-  .plan-action-row {
-    gap: 6px;
-  }
-
-  .plan-action-button {
-    min-height: 36px;
-    padding: 6px 10px;
-  }
-
   .status,
   .controller {
     font-size: 11px;
@@ -364,8 +355,40 @@
   }
 
   .prompt-shell,
-  .controls {
+  .controls,
+  .plan-composer-takeover {
     grid-column: 1;
+  }
+
+  .plan-composer-takeover {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .plan-composer-heading {
+    display: grid;
+    gap: 2px;
+  }
+
+  .plan-feedback-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .plan-feedback-field input {
+    min-height: 38px;
+    font-size: 16px;
+  }
+
+  .plan-composer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .plan-composer-actions button {
+    min-height: 38px;
+    padding: 7px 8px;
   }
 
   .composer-mode {

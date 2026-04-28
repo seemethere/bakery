@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
@@ -128,6 +128,8 @@ class PiWebAgentApp extends HTMLElement {
   private expandedToolGroupIds = new Set<string>();
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private pendingToolCallTitles: string[] = [];
+  private dismissedPlanActionTranscriptId = "";
+  private planFeedbackDraft = "";
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private runningQueue: RunningQueueState = emptyRunningQueue();
@@ -435,6 +437,8 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = null;
     this.modelThinkingPickerOpen = false;
     this.pendingQuestion = null;
+    this.dismissedPlanActionTranscriptId = "";
+    this.planFeedbackDraft = "";
     this.sessionTree = null;
     this.treeDrawerOpen = false;
     this.treeActiveEntryId = "";
@@ -836,14 +840,41 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private handlePlanAction(action: PlanAction): void {
+  private handlePlanAction(action: PlanAction, transcriptId = this.activePlanActionItem()?.id ?? "", feedback = this.planFeedbackDraft): void {
+    const trimmedFeedback = feedback.trim();
+    if (action === "feedback" && !trimmedFeedback) {
+      this.querySelector<HTMLInputElement>("#planFeedback")?.focus();
+      return;
+    }
+    if (transcriptId) this.dismissedPlanActionTranscriptId = transcriptId;
     const drafts: Record<PlanAction, string> = {
       accept: "Proceed with the recommended plan.",
-      feedback: "Feedback on the plan: ",
+      feedback: `Feedback on the plan: ${trimmedFeedback}`,
       cancel: "Cancel this plan. Return to normal chat.",
-      chat: "Back to chat: ",
+      chat: "Back to chat.",
     };
-    this.fillPromptDraft(drafts[action]);
+    this.planFeedbackDraft = "";
+    this.submitPlanActionText(drafts[action]);
+  }
+
+  private submitPlanActionText(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.fillPromptDraft(text);
+      this.notice = "Not connected. Your plan response is saved in the composer.";
+      return;
+    }
+    const type: ClientMessageType = this.status === "running" ? "follow_up" : "prompt";
+    this.ws.send(JSON.stringify(buildComposerSendPayload(type, trimmed, [])));
+    if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", composerQueueItem(trimmed, 0));
+    this.promptDraft = "";
+    this.promptImages = [];
+    this.savePromptDraft();
+    this.closeCommandAutocomplete();
+    this.closeFileAutocomplete();
+    this.notice = "";
+    this.render();
   }
 
   private async handleTranscriptRowAction(action: TranscriptRowAction | "menu", transcriptId: string): Promise<void> {
@@ -992,6 +1023,7 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = promptTextFromInput(input?.value, this.promptImages.length);
     if (!input || !text) return;
+    this.planFeedbackDraft = "";
     if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
       this.promptDraft = "";
       this.savePromptDraft();
@@ -1777,15 +1809,6 @@ class PiWebAgentApp extends HTMLElement {
     });
 
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
-      const planButton = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-plan-action]");
-      if (planButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        planButton.blur();
-        const action = planButton.dataset.planAction;
-        if (action === "accept" || action === "feedback" || action === "cancel" || action === "chat") this.handlePlanAction(action);
-        return;
-      }
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
       if (!button) {
         if (this.openActionMenuId) {
@@ -1807,6 +1830,15 @@ class PiWebAgentApp extends HTMLElement {
         requestRender: () => this.requestRender(80),
         patchJumpToLatest: () => this.patchJumpToLatest(),
         scheduleFollow: () => this.scheduleTranscriptFollow(),
+      });
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-plan-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        button.blur();
+        const action = button.dataset.planAction;
+        const feedback = this.querySelector<HTMLInputElement>("#planFeedback")?.value ?? this.planFeedbackDraft;
+        if (action === "accept" || action === "feedback" || action === "cancel" || action === "chat") this.handlePlanAction(action, button.dataset.transcriptId ?? "", feedback);
       });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
@@ -2155,6 +2187,31 @@ class PiWebAgentApp extends HTMLElement {
     }
     const runningAssistant = [...this.transcript].reverse().find((item) => item.kind === "assistant" && item.status === "running");
     return { label: runningAssistant ? "Pi is responding" : "Pi is working", detail: queued > 0 ? "Queued input will be applied during this run." : "Waiting for the next agent update…", queued };
+  }
+
+  private activePlanActionItem(): TranscriptItem | null {
+    const latestItem = this.transcript.at(-1);
+    if (!latestItem || latestItem.kind !== "assistant" || !hasPlanActionsMarker(latestItem)) return null;
+    return latestItem.id === this.dismissedPlanActionTranscriptId ? null : latestItem;
+  }
+
+  private renderPlanComposerTakeover(item: TranscriptItem): string {
+    return `<section class="plan-composer-takeover" aria-label="Plan decision needed">
+      <div class="plan-composer-heading">
+        <strong>Plan ready</strong>
+        <span>Choose a next step or write feedback. The normal composer returns after you pick an action.</span>
+      </div>
+      <label class="plan-feedback-field">
+        <span>Feedback</span>
+        <input id="planFeedback" type="text" value="${escapeHtml(this.planFeedbackDraft)}" placeholder="Optional: what should change?" />
+      </label>
+      <div class="plan-composer-actions">
+        <button type="button" class="primary-action" data-plan-action="accept" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
+        <button type="button" data-plan-action="feedback" data-transcript-id="${escapeHtml(item.id)}">Give feedback</button>
+        <button type="button" data-plan-action="cancel" data-transcript-id="${escapeHtml(item.id)}">Cancel plan</button>
+        <button type="button" data-plan-action="chat" data-transcript-id="${escapeHtml(item.id)}">Back to chat</button>
+      </div>
+    </section>`;
   }
 
   private renderComposerActivity(): string {
@@ -2533,6 +2590,7 @@ class PiWebAgentApp extends HTMLElement {
     const titleSelectionStart = titleInput?.selectionStart ?? (this.editingTitleDraft?.length ?? 0);
     const titleSelectionEnd = titleInput?.selectionEnd ?? titleSelectionStart;
     const isRunning = this.status === "running";
+    const activePlanActionItem = this.activePlanActionItem();
     const sidebarOverlayOpen = !this.sessionSidebarPinned && !this.sessionSidebarCollapsed;
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("session-sidebar-overlay-open", sidebarOverlayOpen);
@@ -2627,27 +2685,29 @@ class PiWebAgentApp extends HTMLElement {
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
-        <footer class="${isRunning ? "running-footer" : ""}">
+        <footer class="${isRunning ? "running-footer" : ""} ${activePlanActionItem ? "plan-takeover-footer" : ""}">
           ${this.renderQuestionPanel(isController)}
-          <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
-            ${renderPromptImages(this.promptImages)}
-            <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""}">
-              <strong>${escapeHtml(composerModeLabel)}</strong>
-              <span class="composer-hint">${escapeHtml(composerHint)}</span>
-              ${this.renderComposerActivity()}
-              ${this.renderContextUsageNotice()}
+          ${activePlanActionItem ? this.renderPlanComposerTakeover(activePlanActionItem) : `
+            <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
+              ${renderPromptImages(this.promptImages)}
+              <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""}">
+                <strong>${escapeHtml(composerModeLabel)}</strong>
+                <span class="composer-hint">${escapeHtml(composerHint)}</span>
+                ${this.renderComposerActivity()}
+                ${this.renderContextUsageNotice()}
+              </div>
+              <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+              ${this.renderComposerNotice()}
+              ${renderCommandAutocomplete(this.commandAutocomplete)}
+              ${renderFileAutocomplete(this.fileAutocomplete)}
             </div>
-            <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
-            ${this.renderComposerNotice()}
-            ${renderCommandAutocomplete(this.commandAutocomplete)}
-            ${renderFileAutocomplete(this.fileAutocomplete)}
-          </div>
-          <div class="controls ${isRunning ? "running" : ""}">
-            <button id="attachImages" class="icon-button" title="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>📎</button>
-            <button id="send" class="primary-action" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}<small>Enter</small></button>
-            <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
-            <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>
-          </div>
+            <div class="controls ${isRunning ? "running" : ""}">
+              <button id="attachImages" class="icon-button" title="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>📎</button>
+              <button id="send" class="primary-action" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}<small>Enter</small></button>
+              <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
+              <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>
+            </div>
+          `}
         </footer>
       </main>
       ${this.mobileLayout ? "" : this.renderRightPanel()}

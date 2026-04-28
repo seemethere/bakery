@@ -252,32 +252,6 @@
   margin-bottom: 10px;
 }
 
-.plan-action-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.plan-action-button {
-  min-height: 32px;
-  border-color: var(--color-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-elevated) 84%, transparent);
-  color: var(--color-text-secondary);
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.plan-action-button:hover,
-.plan-action-button:focus-visible {
-  border-color: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-border));
-  background: color-mix(in srgb, var(--color-accent-soft) 10%, var(--color-bg-elevated));
-  color: var(--color-text);
-}
-
 .message-action-bar {
   position: relative;
   display: flex;

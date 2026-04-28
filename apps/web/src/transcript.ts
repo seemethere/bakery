@@ -602,12 +602,12 @@ export class PiTranscriptRow extends HTMLElement {
     }
 
     const hasPlanActions = hasPlanActionsMarker(item);
-    const renderedItem = hasPlanActions ? { ...item, body: stripPlanActionsMarker(item.body), segments: [{ kind: "markdown" as const, text: stripPlanActionsMarker(item.body) }] } : item;
+    const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
+    const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
     const body = this.collapsed ? "" : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     this.innerHTML = isConversationMessage ? `
       <div class="message-body">${body}</div>
-      ${hasPlanActions ? this.renderPlanActionRow(item) : ""}
       ${this.renderConversationActionBar(item)}` : `
       <div class="message-header">
         ${isCollapsible ? `<button class="message-expand-toggle" type="button" data-row-action="toggle-output" data-transcript-id="${escapeHtml(item.id)}" aria-expanded="${this.collapsed ? "false" : "true"}" aria-label="${this.collapsed ? "Show output" : "Hide output"}" title="${this.collapsed ? "Show output" : "Hide output"}">${this.collapsed ? "▸" : "▾"}</button>` : ""}
@@ -633,18 +633,6 @@ export class PiTranscriptRow extends HTMLElement {
     const body = this.querySelector<HTMLElement>(".message-body");
     if (!body) return;
     body.scrollTop = body.scrollHeight;
-  }
-
-  private renderPlanActionRow(item: TranscriptItem): string {
-    const actions = [
-      ["accept", "Accept plan"],
-      ["feedback", "Give feedback"],
-      ["cancel", "Cancel plan"],
-      ["chat", "Back to chat"],
-    ] as const;
-    return `<div class="plan-action-row" aria-label="Plan actions">
-      ${actions.map(([action, label]) => `<button class="plan-action-button" type="button" data-plan-action="${action}" data-transcript-id="${escapeHtml(item.id)}">${escapeHtml(label)}</button>`).join("")}
-    </div>`;
   }
 
   private renderConversationActionBar(item: TranscriptItem): string {
