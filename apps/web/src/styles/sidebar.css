@@ -57,6 +57,12 @@
   cursor: default;
 }
 
+.session-sidebar-backdrop:hover,
+.session-sidebar-backdrop:focus-visible {
+  border: 0;
+  background: rgba(0, 0, 0, 0.38);
+}
+
 .collapsed-sidebar-label,
 .collapsed-sidebar-session {
   display: none;
