@@ -2291,23 +2291,37 @@ class PiWebAgentApp extends HTMLElement {
   private patchRunningQueue(): void {
     const shell = this.querySelector<HTMLElement>(".transcript-shell");
     if (!shell) return;
-    shell.classList.toggle("has-running-queue", hasRunningQueueItems(this.runningQueue));
+    const hasQueueItems = hasRunningQueueItems(this.runningQueue);
+    shell.classList.toggle("has-running-queue", hasQueueItems);
     const existing = shell.querySelector<HTMLElement>(".running-queue");
     const rendered = renderRunningQueue(this.runningQueue, this.runningQueueExpanded, this.mobileLayout && !this.runningQueueSectionExpanded);
     this.runningQueueExpanded = rendered.expanded;
     if (!rendered.html) {
       existing?.remove();
+      this.syncRunningQueueHeight(shell);
       return;
     }
     if (existing) {
       existing.outerHTML = rendered.html;
       this.bindRunningQueueControls();
+      this.syncRunningQueueHeight(shell);
       return;
     }
     const jump = shell.querySelector<HTMLElement>(".jump-to-latest");
     if (jump) jump.insertAdjacentHTML("beforebegin", rendered.html);
     else shell.insertAdjacentHTML("beforeend", rendered.html);
     this.bindRunningQueueControls();
+    this.syncRunningQueueHeight(shell);
+  }
+
+  private syncRunningQueueHeight(shell = this.querySelector<HTMLElement>(".transcript-shell")): void {
+    if (!shell) return;
+    const queue = shell.querySelector<HTMLElement>(".running-queue");
+    if (!queue) {
+      shell.style.removeProperty("--running-queue-height");
+      return;
+    }
+    shell.style.setProperty("--running-queue-height", `${Math.ceil(queue.getBoundingClientRect().height)}px`);
   }
 
   private patchTranscriptStructure(transcript: HTMLElement): void {

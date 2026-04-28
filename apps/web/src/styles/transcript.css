@@ -23,6 +23,10 @@
   padding-bottom: 22px;
 }
 
+.transcript-shell.has-running-queue .jump-to-latest {
+  bottom: calc(var(--running-queue-height, 0px) + 24px);
+}
+
 .transcript.empty {
   display: grid;
   align-content: center;
