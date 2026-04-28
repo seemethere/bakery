@@ -791,7 +791,7 @@ class PiWebAgentApp extends HTMLElement {
         this.promptDraft = result.editorText;
         this.savePromptDraft();
       }
-      this.notice = result.editorText ? "Navigated to user message draft" : "Navigated to selected point";
+      this.notice = "";
       this.render();
     } catch (error) {
       this.notice = `Tree navigation failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -815,10 +815,10 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private async copyText(value: string, label = "Copied"): Promise<void> {
+  private async copyText(value: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
-      this.notice = label;
+      this.notice = "";
     } catch (error) {
       this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
     }
@@ -846,7 +846,7 @@ class PiWebAgentApp extends HTMLElement {
 
     this.openActionMenuId = "";
     if (action === "copy") {
-      await this.copyText(item.body, "Copied message content");
+      await this.copyText(item.body);
       return;
     }
     if (action === "details" || action === "preview") {
@@ -895,7 +895,7 @@ class PiWebAgentApp extends HTMLElement {
       });
       this.selectedSession = updated;
       this.sessions = this.sessions.map((session) => session.id === updated.id ? updated : session);
-      this.notice = nextTitle ? "Session title updated." : "Session title cleared.";
+      this.notice = "";
     } catch (error) {
       this.selectedSession = previous;
       this.sessions = this.sessions.map((session) => session.id === previous.id ? previous : session);
@@ -1054,7 +1054,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.removeQueuedMessage(queue, index, text)) return;
     this.promptDraft = text;
     this.savePromptDraft();
-    this.notice = `Queued ${queue === "followUp" ? "follow-up" : "steer"} moved back to the composer.`;
+    this.notice = "";
     this.render();
     window.requestAnimationFrame(() => {
       const input = this.querySelector<HTMLTextAreaElement>("#prompt");
@@ -1224,7 +1224,7 @@ class PiWebAgentApp extends HTMLElement {
   private takeControl(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "take_control" }));
-      this.notice = "Control request sent to the current controller.";
+      this.notice = "";
       this.render();
     }
   }
@@ -1601,7 +1601,7 @@ class PiWebAgentApp extends HTMLElement {
         if (!this.mobileLayout && button.id === "toggleSessionSidebar") this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
         localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
         localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
-        if (!this.mobileLayout && this.sessionSidebarPinned) this.notice = "Session sidebar pinned open for future sessions.";
+        if (!this.mobileLayout && this.sessionSidebarPinned) this.notice = "";
         this.render();
       });
     });
@@ -1610,7 +1610,7 @@ class PiWebAgentApp extends HTMLElement {
       this.sessionSidebarCollapsed = false;
       localStorage.setItem("piWebSessionSidebarPinned", "true");
       localStorage.setItem("piWebSessionSidebarCollapsed", "false");
-      this.notice = "Session sidebar pinned open for future sessions.";
+      this.notice = "";
       this.render();
     });
     this.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.addEventListener("click", () => {
@@ -1735,11 +1735,11 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#copySelectedBody")?.addEventListener("click", () => {
       const item = this.selectedTranscriptItem();
-      if (item) void this.copyText(item.body, "Copied selected content");
+      if (item) void this.copyText(item.body);
     });
     this.querySelector<HTMLButtonElement>("#copySelectedJson")?.addEventListener("click", () => {
       const item = this.selectedTranscriptItem();
-      if (item) void this.copyText(stringify(item.raw ?? item), "Copied selected JSON");
+      if (item) void this.copyText(stringify(item.raw ?? item));
     });
     this.querySelector<HTMLButtonElement>("#modelThinkingToggle")?.addEventListener("click", (event) => {
       event.stopPropagation();
