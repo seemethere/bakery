@@ -467,7 +467,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
           ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
-      return `<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
+      return `${item.kind === "tool" ? '<div class="terminal-window" aria-label="Terminal output">' : ""}<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>${item.kind === "tool" ? "</div>" : ""}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
     })
     .join("");
   if (context.cache) {
