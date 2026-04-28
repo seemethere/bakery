@@ -464,6 +464,18 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
   return rendered;
 }
 
+function copyIconSvg(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2.2"></rect><path d="M5 16V7a2 2 0 0 1 2-2h9"></path></svg>`;
+}
+
+function forkIconSvg(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="6" r="2.5"></circle><circle cx="17" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M7 8.5v2.2c0 1.7 1 3.2 2.6 3.9L12 15.7l2.4-1.1A4.3 4.3 0 0 0 17 10.7V8.5"></path><path d="M12 15.7V18"></path></svg>`;
+}
+
+function ellipsisIconSvg(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="18" cy="12" r="1.6"></circle></svg>`;
+}
+
 export class PiTranscriptRow extends HTMLElement {
   private item: TranscriptItem | null = null;
   private showThinking = false;
@@ -486,7 +498,7 @@ export class PiTranscriptRow extends HTMLElement {
         expandableImage.classList.toggle("expanded");
         return;
       }
-      if (target?.closest(".message-action-area, .message-expand-toggle")) return;
+      if (target?.closest(".message-action-area, .message-action-bar, .message-expand-toggle")) return;
     });
   }
 
@@ -522,19 +534,23 @@ export class PiTranscriptRow extends HTMLElement {
       return;
     }
 
-    this.innerHTML = `
+    const body = this.collapsed ? "" : renderTranscriptSegments(item, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const isConversationMessage = item.kind === "user" || item.kind === "assistant";
+    this.innerHTML = isConversationMessage ? `
+      <div class="message-body">${body}</div>
+      ${this.renderConversationActionBar(item)}` : `
       <div class="message-header">
         ${isCollapsible ? `<button class="message-expand-toggle" type="button" data-row-action="toggle-output" data-transcript-id="${escapeHtml(item.id)}" aria-expanded="${this.collapsed ? "false" : "true"}" aria-label="${this.collapsed ? "Show output" : "Hide output"}" title="${this.collapsed ? "Show output" : "Hide output"}">${this.collapsed ? "▸" : "▾"}</button>` : ""}
         <strong>${escapeHtml(item.title)}</strong>
         ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
         <span class="message-header-spacer"></span>
         ${item.status ? `<span class="message-status">${escapeHtml(item.status)}</span>` : ""}
-        <span class="message-action-area">
-          <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="Message actions">⋯</button>
+        <div class="message-action-area">
+          <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="Message actions">${ellipsisIconSvg()}</button>
           ${this.actionMenuOpen ? this.renderActionMenu(item) : ""}
-        </span>
+        </div>
       </div>
-      <div class="message-body">${this.collapsed ? "" : renderTranscriptSegments(item, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths })}</div>`;
+      <div class="message-body">${body}</div>`;
     this.pinRunningToolOutputToBottom(item);
     this.lastRenderKey = renderKey;
     this.lastStreamingText = streamingText ?? "";
@@ -548,14 +564,27 @@ export class PiTranscriptRow extends HTMLElement {
     body.scrollTop = body.scrollHeight;
   }
 
-  private renderActionMenu(item: TranscriptItem): string {
+  private renderConversationActionBar(item: TranscriptItem): string {
+    const hasSecondaryActions = !this.hideInspectorActions;
+    return `
+      <div class="message-action-bar">
+        <button class="message-action-button" type="button" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}" aria-label="Copy message" title="Copy message">${copyIconSvg()}</button>
+        ${this.canFork ? `<button class="message-action-button" type="button" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}" aria-label="Fork from here" title="Fork from here">${forkIconSvg()}</button>` : ""}
+        ${hasSecondaryActions ? `<div class="message-action-area">
+          <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="More message actions">${ellipsisIconSvg()}</button>
+          ${this.actionMenuOpen ? this.renderActionMenu(item, { secondaryOnly: true }) : ""}
+        </div>` : ""}
+      </div>`;
+  }
+
+  private renderActionMenu(item: TranscriptItem, options: { secondaryOnly?: boolean } = {}): string {
     const previewable = item.body.trim().length > 0;
     return `
       <div class="message-action-menu" role="menu">
-        <button type="button" role="menuitem" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}">Copy</button>
+        ${options.secondaryOnly ? "" : `<button type="button" role="menuitem" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}">Copy</button>`}
         ${this.hideInspectorActions ? "" : `<button type="button" role="menuitem" data-row-action="details" data-transcript-id="${escapeHtml(item.id)}">Details</button>`}
         ${previewable && !this.hideInspectorActions ? `<button type="button" role="menuitem" data-row-action="preview" data-transcript-id="${escapeHtml(item.id)}">Preview</button>` : ""}
-        ${this.canFork ? `<button type="button" role="menuitem" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}">Fork from here</button>` : ""}
+        ${!options.secondaryOnly && this.canFork ? `<button type="button" role="menuitem" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}">Fork from here</button>` : ""}
       </div>`;
   }
 

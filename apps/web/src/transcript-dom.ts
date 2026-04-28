@@ -48,7 +48,7 @@ export function bindTranscriptElement(element: HTMLElement, bindingState: Transc
     bindingState.pointerDown = { id: element.dataset.transcriptId ?? "", x: event.clientX, y: event.clientY };
   });
   element.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement | null)?.closest(".message-action-area")) return;
+    if ((event.target as HTMLElement | null)?.closest(".message-action-area, .message-action-bar")) return;
     if ((event.target as HTMLElement | null)?.closest(".message-header") && element.classList.contains("collapsible")) return;
     if (shouldPreserveTextSelection(element, event, bindingState.pointerDown)) return;
     options.onCloseActionMenu();
