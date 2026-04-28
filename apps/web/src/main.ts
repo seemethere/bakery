@@ -1711,6 +1711,11 @@ class PiWebAgentApp extends HTMLElement {
       this.sessionDetailsOpen = !this.sessionDetailsOpen;
       this.render();
     });
+    this.querySelector<HTMLButtonElement>("#toggleIsolationDetails")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.sessionDetailsOpen = !this.sessionDetailsOpen;
+      this.render();
+    });
     this.querySelector<HTMLButtonElement>("#closeSessionDetails")?.addEventListener("click", () => {
       this.sessionDetailsOpen = false;
       this.render();
@@ -2528,6 +2533,7 @@ class PiWebAgentApp extends HTMLElement {
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
+    const selectedIsIsolated = this.selectedSession?.isolationKind === "git_worktree";
     const headerClasses = [
       this.modelThinkingPickerOpen ? "model-picker-open" : "",
     ].filter(Boolean).join(" ");
@@ -2546,6 +2552,7 @@ class PiWebAgentApp extends HTMLElement {
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
             ${this.selectedSession ? `<div class="session-title-row"><input id="sessionTitle" class="session-title-input" size="${Math.min(52, Math.max(12, selectedTitle.length || selectedTitlePlaceholder.length))}" value="${escapeHtml(selectedTitle)}" placeholder="${escapeHtml(selectedTitlePlaceholder)}" aria-label="Session title" title="Edit session title" />
+              ${selectedIsIsolated ? `<button id="toggleIsolationDetails" class="session-isolation-chip ${this.sessionDetailsOpen ? "active" : ""}" type="button" title="This session runs in an isolated Git worktree" aria-label="Isolated Git worktree session. Open session details" aria-expanded="${this.sessionDetailsOpen}"><span class="session-isolation-icon" aria-hidden="true">⎇</span><span class="session-isolation-label">Isolated</span></button>` : ""}
               <button id="toggleSessionDetails" class="session-details-button ${this.sessionDetailsOpen ? "active" : ""}" type="button" title="Session details" aria-label="Session details" aria-expanded="${this.sessionDetailsOpen}"><span class="session-details-label">Details</span><span class="session-details-icon" aria-hidden="true">i</span></button></div>
               <span class="session-workspace" title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>
               ${this.renderSessionDetails()}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
