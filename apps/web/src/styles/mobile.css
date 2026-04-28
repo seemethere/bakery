@@ -153,10 +153,13 @@
   }
 
   .model-thinking-popover {
-    right: auto;
-    left: 50%;
-    width: min(360px, calc(100vw - 16px));
-    transform: translateX(-50%);
+    position: fixed;
+    top: calc(104px + env(safe-area-inset-top, 0px));
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+    transform: none;
   }
 
   .inline-control select {

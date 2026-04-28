@@ -1243,6 +1243,22 @@ async function runModelThinking(page: Page): Promise<Record<string, unknown>> {
   await sendPromptAndWaitIdle(page, "Confirm model and thinking picker remains usable after settings updates.");
   await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("Slow"));
   await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await page.locator("#modelThinkingToggle").click();
+  await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
+  const mobilePickerState = await page.evaluate(() => {
+    const model = document.querySelector<HTMLSelectElement>("#model");
+    const thinking = document.querySelector<HTMLSelectElement>("#thinking");
+    const popover = document.querySelector(".model-thinking-popover");
+    const rect = popover?.getBoundingClientRect();
+    return { model: model?.value, thinking: thinking?.value, left: rect ? Math.round(rect.left) : null, right: rect ? Math.round(rect.right) : null, viewportWidth: window.innerWidth };
+  });
+  if (mobilePickerState.model !== "fake/slow" || mobilePickerState.thinking !== "high" || (mobilePickerState.left ?? -999) < -1 || (mobilePickerState.right ?? 9999) > mobilePickerState.viewportWidth + 1) {
+    throw new Error(`Mobile model/thinking picker should preserve selections and stay onscreen: ${JSON.stringify(mobilePickerState)}`);
+  }
+  await page.screenshot({ path: join(artifactDir, "model-thinking-mobile.png"), fullPage: true });
   return collectMetrics(page);
 }
 

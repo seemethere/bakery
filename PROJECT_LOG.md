@@ -183,7 +183,9 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: mobile model/thinking popover viewport fix used `bun run check` and `bun scripts/ui-harness.ts --scenario mobile-layout`; the first mobile harness rerun caught right-edge overflow, then passed after centering the mobile popover and applying border-box sizing. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
+Latest: model/thinking picker regression coverage used `bun run check`, `bun scripts/ui-harness.ts --scenario model-thinking`, and `bun scripts/ui-harness.ts --scenario mobile-layout`; `model-thinking` now repeats the picker check at mobile width, verifies selected model/thinking values persist, asserts the popover stays onscreen, and captures `model-thinking-mobile.png`. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
+
+Previous latest: mobile model/thinking popover viewport fix used `bun run check` and `bun scripts/ui-harness.ts --scenario mobile-layout`; the first mobile harness rerun caught right-edge overflow, then passed after centering the mobile popover and applying border-box sizing. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
 
 Previous latest: mobile model/thinking picker fix used `bun run report:iteration --recommend apps/web/src/main.ts apps/web/src/model-thinking-picker.ts apps/web/src/model-thinking-picker.test.ts apps/web/src/styles/composer.css scripts/ui-harness.ts PROJECT_LOG.md`; `bun test apps/web/src/model-thinking-picker.test.ts`, `bun run check`, `bun scripts/ui-harness.ts --scenario mobile-layout`, and `bun scripts/ui-harness.ts --scenario model-thinking` passed. Full `bun run test:web-perf` was intentionally skipped per focused-first escalation guidance.
 
