@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { parseAppRoute, sessionRoutePath } from "./router";
+import { parseAppRoute, sessionsRoutePath, sessionRoutePath } from "./router";
 
 describe("app routes", () => {
   test("parses the home route", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "home" });
     expect(parseAppRoute("")).toEqual({ kind: "home" });
+  });
+
+  test("parses sessions list routes", () => {
+    expect(parseAppRoute("/sessions")).toEqual({ kind: "sessions" });
+    expect(parseAppRoute("/sessions/")).toEqual({ kind: "sessions" });
+    expect(sessionsRoutePath()).toBe("/sessions");
   });
 
   test("parses session routes", () => {
@@ -21,6 +27,6 @@ describe("app routes", () => {
 
   test("preserves unknown paths", () => {
     expect(parseAppRoute("/settings")).toEqual({ kind: "unknown", path: "/settings" });
-    expect(parseAppRoute("/sessions/")).toEqual({ kind: "unknown", path: "/sessions/" });
+    expect(parseAppRoute("/sessions//")).toEqual({ kind: "unknown", path: "/sessions//" });
   });
 });

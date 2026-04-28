@@ -7,6 +7,74 @@ main {
   overflow: hidden;
 }
 
+.sessions-main {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.sessions-page {
+  display: grid;
+  grid-row: 3;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.sessions-page-hero {
+  display: grid;
+  gap: 8px;
+  max-width: 920px;
+}
+
+.sessions-page-kicker,
+.sessions-result-count {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sessions-page h1 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: clamp(24px, 4vw, 36px);
+  line-height: 1.05;
+}
+
+.sessions-page p {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.sessions-search {
+  max-width: 680px;
+  margin: 8px 0 0;
+}
+
+.sessions-search input {
+  width: 100%;
+  font-size: 15px;
+}
+
+.sessions-page-list {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.sessions-page-list .session-groups {
+  max-width: 980px;
+}
+
+.sessions-page-list .session-card {
+  padding: 12px 14px;
+  border-color: color-mix(in srgb, var(--color-border) 78%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 68%, var(--color-bg-main));
+}
+
 header,
 footer {
   padding: 14px 16px;

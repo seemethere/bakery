@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "mobile-layout", "session-routing", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "mobile-layout", "session-routing", "sessions-page", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -197,6 +197,34 @@ async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#send").click();
   await waitForAgentRunning(page);
   await waitForAgentIdle(page, 30_000);
+}
+
+async function runSessionsPage(page: Page): Promise<Record<string, unknown>> {
+  const firstSessionId = await prepareSession(page);
+  await page.locator("pi-web-agent").evaluate(async (element) => {
+    await (element as unknown as { updateSessionTitle: (title: string) => Promise<void> }).updateSessionTitle("Findable sessions page title");
+  });
+  const secondSession = await page.locator("pi-web-agent").evaluate(async (element) => {
+    const session = await (element as unknown as { createSession: () => Promise<{ id: string } | null> }).createSession();
+    if (!session) throw new Error("Could not create comparison session");
+    return { id: session.id };
+  });
+  await waitForSelectedSession(page, secondSession.id);
+
+  await ensureSidebarSettingsVisible(page);
+  await page.locator('[data-route-path="/sessions"]').click();
+  await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
+  if (new URL(page.url()).pathname !== "/sessions") throw new Error(`Expected sessions page URL, saw ${page.url()}`);
+  const initialCards = await page.locator(".sessions-page [data-session-id]").count();
+  if (initialCards < 2) throw new Error(`Expected at least two sessions on page, saw ${initialCards}`);
+
+  await page.locator("#sessionsSearch").fill("Findable");
+  await page.waitForFunction(() => document.querySelectorAll(".sessions-page [data-session-id]").length === 1, undefined, { timeout: 5_000 });
+  await page.locator(".sessions-page [data-session-id]").click();
+  await waitForSelectedSession(page, firstSessionId);
+  if (new URL(page.url()).pathname !== `/sessions/${firstSessionId}`) throw new Error(`Expected resumed session URL, saw ${page.url()}`);
+  await page.screenshot({ path: join(artifactDir, "sessions-page.png"), fullPage: true });
+  return { firstSessionId, secondSessionId: secondSession.id, initialCards, selectedSessionId: await selectedSessionId(page), pathname: new URL(page.url()).pathname };
 }
 
 async function runSessionRouting(page: Page): Promise<Record<string, unknown>> {
@@ -478,67 +506,32 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("Mobile layout regression draft");
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
-  const originalSessionId = await page.locator(".session-card.active").getAttribute("data-session-id");
+  const originalSessionId = await selectedSessionId(page);
   if (!originalSessionId) throw new Error("Could not find active mobile session before selection smoke.");
-  const createdMobileSession = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
-  await page.locator(".session-sidebar:not(.collapsed) #newSession").click();
-  const mobileSession = await (await createdMobileSession).json() as { id: string };
-  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, mobileSession.id, { timeout: 5_000 });
-  await page.locator("#toggleSessionSidebarMobile").click();
-  await page.locator(`.session-sidebar:not(.collapsed) [data-session-id="${originalSessionId}"]`).click();
-  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, originalSessionId, { timeout: 5_000 });
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
-  await page.locator("#toggleSessionSidebarMobile").click();
-  await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
-  await page.evaluate(() => {
-    const app = document.querySelector("pi-web-agent") as unknown as { sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
-    const current = app?.sessions?.[0];
-    if (!app?.sessions || !current) return;
-    (window as unknown as { __mobileOriginalSessions?: Array<Record<string, unknown>> }).__mobileOriginalSessions = app.sessions;
-    const clone = (suffix: string, daysAgo: number, title: string) => {
-      const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
-      return { ...current, id: `${current.id}-${suffix}`, title, lastActivityAt: date, lastOpenedAt: date, status: "idle" };
-    };
-    app.sessions = [current, clone("yesterday", 1, "Yesterday mobile smoke"), clone("week", 3, "Earlier week mobile smoke"), clone("older", 12, "Older mobile smoke")];
-    app.render?.();
-  });
-  await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   const drawerOrder = await page.evaluate(() => {
     const drawerElements = Array.from(document.querySelectorAll(".session-sidebar:not(.collapsed) *"));
-    const group = (id: string) => {
-      const heading = document.querySelector(`[data-session-group='${id}'] .session-group-heading`);
-      return {
-        expanded: heading?.getAttribute("aria-expanded"),
-        cards: document.querySelectorAll(`[data-session-group='${id}'] [data-session-id]`).length,
-      };
-    };
     return {
+      chatIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path^="/sessions/"]') || element.matches?.('[data-route-path="/"]')),
+      sessionsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/sessions"]')),
       newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
-      firstGroupIndex: drawerElements.findIndex((element) => element.classList.contains("session-group-heading")),
       apiBaseIndex: drawerElements.findIndex((element) => element.id === "apiBase"),
       pinButtonCount: document.querySelectorAll("#pinSessionSidebar").length,
       backdropVisible: !!document.querySelector("#sessionSidebarBackdrop"),
-      groups: {
-        today: group("today"),
-        yesterday: group("yesterday"),
-        thisWeek: group("this-week"),
-        older: group("older"),
-      },
+      sessionCardCount: document.querySelectorAll(".session-sidebar [data-session-id]").length,
     };
   });
   if (!drawerOrder.backdropVisible) throw new Error("Mobile drawer should render a backdrop while open.");
   if (drawerOrder.pinButtonCount !== 0) throw new Error("Mobile drawer should not show the desktop Pin affordance.");
-  if (drawerOrder.groups.today.expanded !== "true" || drawerOrder.groups.today.cards < 1) throw new Error(`Mobile Today group should be expanded with sessions: ${JSON.stringify(drawerOrder.groups.today)}`);
-  if (drawerOrder.groups.yesterday.expanded !== "true" || drawerOrder.groups.yesterday.cards < 1) throw new Error(`Mobile Yesterday group should be expanded with sessions: ${JSON.stringify(drawerOrder.groups.yesterday)}`);
-  if (drawerOrder.groups.thisWeek.expanded !== "false" || drawerOrder.groups.older.expanded !== "false") throw new Error(`Mobile older groups should default collapsed: ${JSON.stringify(drawerOrder.groups)}`);
-  await page.evaluate(() => {
-    const app = document.querySelector("pi-web-agent") as unknown as { sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
-    const original = (window as unknown as { __mobileOriginalSessions?: Array<Record<string, unknown>> }).__mobileOriginalSessions;
-    if (app?.sessions && original) {
-      app.sessions = original;
-      app.render?.();
-    }
-  });
+  if (drawerOrder.sessionCardCount !== 0) throw new Error("Mobile navigation drawer should not duplicate the sessions page list.");
+  if (!(drawerOrder.chatIndex >= 0 && drawerOrder.sessionsIndex > drawerOrder.chatIndex && drawerOrder.newSessionIndex > drawerOrder.sessionsIndex && drawerOrder.apiBaseIndex > drawerOrder.newSessionIndex)) {
+    throw new Error(`Mobile drawer navigation/settings order is wrong: ${JSON.stringify(drawerOrder)}`);
+  }
+  await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/sessions"]').click();
+  await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
+  await page.locator(`.sessions-page [data-session-id="${originalSessionId}"]`).click();
+  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, originalSessionId, { timeout: 5_000 });
+  await page.locator("#toggleSessionSidebarMobile").click();
+  await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
   await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
   await page.evaluate(() => {
@@ -610,7 +603,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.inspectorPanels !== 0) throw new Error(`Mobile inspector/tree panels should be detached, saw ${layout.inspectorPanels}`);
   if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
-  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.firstGroupIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.firstGroupIndex || layout.drawerOrder.firstGroupIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put session creation/groups before settings: new=${layout.drawerOrder.newSessionIndex}, group=${layout.drawerOrder.firstGroupIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
+  if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should keep session creation before settings: new=${layout.drawerOrder.newSessionIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
   if ((layout.header?.height ?? 999) > 64) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
@@ -935,8 +928,14 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".message.user", { hasText: "Back to chat" }).waitFor({ state: "detached", timeout: 1_500 }).catch(() => undefined);
   await waitForAgentIdle(page, 10_000);
   await ensureSidebarSettingsVisible(page);
-  await page.locator(".session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
-  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
+  await page.locator('[data-route-path="/sessions"]').click();
+  await page.locator(".sessions-page .session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
+  const currentSessionId = await page.locator(".sessions-page .session-card.active").getAttribute("data-session-id");
+  if (!currentSessionId) throw new Error("Expected active session card on sessions page");
+  await page.locator(`header [data-route-path="/sessions/${currentSessionId}"]`).click();
+  await page.waitForURL(`**/sessions/${currentSessionId}`, { timeout: 5_000 });
+  await page.locator("#prompt").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
   await page.locator("#prompt").fill("/");
   await page.locator(".command-autocomplete", { hasText: "/tree" }).waitFor({ state: "detached", timeout: 1_500 });
   await page.locator("#prompt").fill("");
@@ -1511,6 +1510,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "empty-session-layout") return runEmptySessionLayout(page);
   if (name === "mobile-layout") return runMobileLayout(page);
   if (name === "session-routing") return runSessionRouting(page);
+  if (name === "sessions-page") return runSessionsPage(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);
