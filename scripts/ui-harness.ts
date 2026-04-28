@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "mobile-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "mobile-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -1116,6 +1116,85 @@ async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, u
   };
 }
 
+async function runMobileLongTranscriptControls(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for mobile control latency measurement.");
+  await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 80, null, { timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
+    return images.length >= 1 && images.slice(0, 12).every((image) => image.complete && image.naturalWidth > 0);
+  }, null, { timeout: 15_000 });
+  await page.evaluate(() => {
+    if (window.__piWebPerf) {
+      window.__piWebPerf.renderCount = 0;
+      window.__piWebPerf.renderMs = [];
+      window.__piWebPerf.patchCount = 0;
+      window.__piWebPerf.patchMs = [];
+      window.__piWebPerf.rowUpdateCount = 0;
+      window.__piWebPerf.rowUpdateMs = [];
+    }
+    window.__piWebLongTasks = [];
+  });
+
+  const responsiveness: Array<{ label: string; ms: number }> = [];
+  const app = page.locator("pi-web-agent");
+  if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
+    await page.locator("#toggleSessionSidebarMobile").click().catch(async () => page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click()));
+    await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  }
+
+  responsiveness.push(await timed("mobile-open-session-drawer", async () => {
+    await page.locator("#toggleSessionSidebarMobile").click();
+    await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
+  }));
+  responsiveness.push(await timed("mobile-close-session-drawer", async () => {
+    await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
+    await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  }));
+  responsiveness.push(await timed("mobile-open-model-thinking", async () => {
+    await page.locator("#modelThinkingToggle").click();
+    await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
+  }));
+  responsiveness.push(await timed("mobile-change-thinking", async () => {
+    const nextThinking = await page.locator("#thinking").evaluate((select) => {
+      const element = select as HTMLSelectElement;
+      return Array.from(element.options).find((option) => option.value !== element.value)?.value ?? element.value;
+    });
+    await page.locator("#thinking").selectOption(nextThinking);
+    await page.locator(".model-thinking-popover").waitFor({ state: "detached", timeout: 5_000 });
+  }));
+  responsiveness.push(await timed("mobile-fill-prompt-after-heavy-transcript", () => page.locator("#prompt").fill("typing after mobile heavy transcript")));
+
+  const group = page.locator(".tool-run-group").first();
+  await group.waitFor({ timeout: 5_000 });
+  responsiveness.push(await timed("mobile-open-completed-tool-group", async () => {
+    await group.locator("summary").click();
+    await page.waitForFunction(() => Boolean(document.querySelector(".tool-run-group[open]")), null, { timeout: 5_000 });
+  }));
+  const firstToolToggle = page.locator('.tool-run-group[open] .message.tool [data-row-action="toggle-output"]').first();
+  responsiveness.push(await timed("mobile-expand-tool-output", async () => {
+    await firstToolToggle.click();
+    await page.locator(".tool-run-group[open] .message.tool:not(.collapsed) .message-body").first().waitFor({ state: "visible", timeout: 5_000 });
+  }));
+  responsiveness.push(await timed("mobile-open-tool-action-menu", async () => {
+    await page.locator('.tool-run-group[open] .message.tool [data-row-action="menu"]').first().click();
+    await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1, null, { timeout: 5_000 });
+  }));
+
+  const maxLatencyMs = Math.max(...responsiveness.map((sample) => sample.ms));
+  await page.screenshot({ path: join(artifactDir, "mobile-long-transcript-controls.png"), fullPage: true });
+  return {
+    responsiveness,
+    maxLatencyMs,
+    toolRows: await page.locator(".message.tool").count(),
+    toolGroups: await page.locator(".tool-run-group").count(),
+    artifactImages: await page.locator(".artifact-image img").count(),
+    ...(await collectMetrics(page)),
+  };
+}
+
 async function runFileAutocomplete(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("Please inspect @Button");
@@ -1367,6 +1446,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "narrow-tool-stream") return runNarrowToolStream(page);
   if (name === "tool-grouping") return runToolGrouping(page);
   if (name === "tool-image-heavy-transcript") return runToolImageHeavyTranscript(page);
+  if (name === "mobile-long-transcript-controls") return runMobileLongTranscriptControls(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
   if (name === "image-artifact-drop-upload") return runImageArtifactDropUpload(page);
