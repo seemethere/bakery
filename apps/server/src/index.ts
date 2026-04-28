@@ -712,8 +712,6 @@ type SocketClient = {
 class SessionHub {
   private readonly clients = new Map<string, SocketClient>();
   private controllerId: string | null = null;
-  private pendingTakeover: { requesterId: string; expiresAt: number } | null = null;
-  private takeoverTimer: ReturnType<typeof setTimeout> | undefined;
   private disposeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeQuestion: () => void;
@@ -771,11 +769,8 @@ class SessionHub {
 
     socket.on("close", () => {
       this.clients.delete(clientId);
-      if (this.pendingTakeover?.requesterId === clientId) this.clearPendingTakeover();
       if (this.controllerId === clientId) {
-        const pending = this.activePendingTakeover();
-        this.controllerId = pending && this.clients.has(pending.requesterId) ? pending.requesterId : this.clients.keys().next().value ?? null;
-        this.clearPendingTakeover();
+        this.controllerId = this.clients.keys().next().value ?? null;
       }
       this.broadcastControllerUpdate();
       if (this.clients.size === 0) this.scheduleDispose();
@@ -784,7 +779,6 @@ class SessionHub {
 
   async dispose(): Promise<void> {
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
-    if (this.takeoverTimer) clearTimeout(this.takeoverTimer);
     this.unsubscribe();
     this.unsubscribeQuestion();
     for (const client of this.clients.values()) client.socket.close(1001, "session disposed");
@@ -793,20 +787,11 @@ class SessionHub {
   }
 
   private controllerFor(currentClientId: string): ControllerInfo {
-    const pending = this.activePendingTakeover();
-    const takeoverRequest = pending && (currentClientId === this.controllerId || currentClientId === pending.requesterId)
-      ? {
-          state: currentClientId === pending.requesterId ? ("requested" as const) : ("incoming" as const),
-          requesterClientId: pending.requesterId,
-          expiresAt: new Date(pending.expiresAt).toISOString(),
-        }
-      : undefined;
     return {
       clientId: this.controllerId,
       connectedClients: this.clients.size,
       currentClientId,
       isController: this.controllerId === currentClientId,
-      takeoverRequest,
     };
   }
 
@@ -814,25 +799,9 @@ class SessionHub {
     client.socket.send(JSON.stringify(envelope(client.seq++, payload)));
   }
 
-  private activePendingTakeover(): { requesterId: string; expiresAt: number } | null {
-    if (!this.pendingTakeover) return null;
-    if (this.pendingTakeover.expiresAt <= Date.now() || !this.clients.has(this.pendingTakeover.requesterId)) {
-      this.clearPendingTakeover();
-      return null;
-    }
-    return this.pendingTakeover;
-  }
-
-  private clearPendingTakeover(): void {
-    this.pendingTakeover = null;
-    if (this.takeoverTimer) clearTimeout(this.takeoverTimer);
-    this.takeoverTimer = undefined;
-  }
-
   private grantControl(requesterId: string): void {
     if (!this.clients.has(requesterId)) return;
     this.controllerId = requesterId;
-    this.clearPendingTakeover();
     this.broadcastControllerUpdate();
   }
 
@@ -938,42 +907,7 @@ class SessionHub {
     }
     if (parsed.data.type === "hello_ack") return;
     if (parsed.data.type === "take_control") {
-      if (this.controllerId === client.clientId || !this.controllerId || !this.clients.has(this.controllerId)) {
-        this.grantControl(client.clientId);
-        return;
-      }
-      const timeoutMs = Math.max(1, config.controllerTakeoverTimeoutMs);
-      const expiresAt = Date.now() + timeoutMs;
-      this.pendingTakeover = { requesterId: client.clientId, expiresAt };
-      if (this.takeoverTimer) clearTimeout(this.takeoverTimer);
-      this.takeoverTimer = setTimeout(() => {
-        if (this.pendingTakeover?.requesterId === client.clientId) {
-          const requester = this.clients.get(client.clientId);
-          if (requester) this.send(requester, { type: "error", code: "control_request_expired", message: "Control request expired." });
-          this.clearPendingTakeover();
-          this.broadcastControllerUpdate();
-        }
-      }, timeoutMs);
-      this.broadcastControllerUpdate();
-      return;
-    }
-    if (parsed.data.type === "approve_control" || parsed.data.type === "deny_control") {
-      if (this.controllerId !== client.clientId) {
-        this.send(client, { type: "error", code: "not_controller", message: "Only the current controller can approve control requests." });
-        return;
-      }
-      const pending = this.activePendingTakeover();
-      if (!pending || pending.requesterId !== parsed.data.requesterClientId) {
-        this.send(client, { type: "error", code: "no_control_request", message: "No matching control request is pending." });
-        return;
-      }
-      if (parsed.data.type === "approve_control") this.grantControl(pending.requesterId);
-      else {
-        const requester = this.clients.get(pending.requesterId);
-        if (requester) this.send(requester, { type: "error", code: "control_request_denied", message: "The current controller denied your control request." });
-        this.clearPendingTakeover();
-        this.broadcastControllerUpdate();
-      }
+      this.grantControl(client.clientId);
       return;
     }
     if (this.controllerId !== client.clientId) {

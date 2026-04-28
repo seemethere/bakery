@@ -1049,10 +1049,8 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   await viewer.locator("#prompt").waitFor({ state: "visible" });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await viewer.locator("#takeControl").click();
-  await viewer.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
-  await page.locator(".control-request", { hasText: "Another tab wants control" }).waitFor({ timeout: 5_000 });
-  await page.locator("#approveControl").click();
   await viewer.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await viewer.locator("#prompt").fill("controller handoff smoke");
   await viewer.locator("#send").click();
   await waitForAgentIdle(viewer, 8_000);
@@ -1071,14 +1069,11 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
 
   await viewer.locator("#takeControl").click();
-  await page.locator(".control-request", { hasText: "Another tab wants control" }).waitFor({ timeout: 5_000 });
-  await page.locator("#denyControl").click();
-  await viewer.locator(".message.error", { hasText: "denied" }).waitFor({ timeout: 5_000 });
-  await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
+  await viewer.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
 
-  await viewer.locator("#takeControl").click();
-  await viewer.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
-  await viewer.locator(".message.error", { hasText: "expired" }).waitFor({ timeout: 6_000 });
+  await page.locator("#takeControl").click();
+  await page.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await viewer.close();
 
@@ -1089,9 +1084,8 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   await requester.goto(webBase, { waitUntil: "domcontentloaded" });
   await requester.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await requester.locator("#takeControl").click();
-  await requester.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
-  await owner.close();
   await requester.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await owner.close();
   await requester.locator("#prompt").fill("disconnected controller handoff smoke");
   await requester.locator("#send").click();
   await waitForAgentIdle(requester, 8_000);
@@ -1623,7 +1617,6 @@ async function main(): Promise<void> {
     PI_WEB_DATA_DIR: dataDir,
     PI_WEB_FAKE_AGENT: "1",
     PI_WEB_AUTH_TOKEN: "",
-    PI_WEB_CONTROLLER_TAKEOVER_TIMEOUT_MS: "1000",
     PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
     PI_WEB_LOAD_PROJECT_RESOURCES: "false",
   };

@@ -1214,11 +1214,6 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private respondToControlRequest(approve: boolean, requesterClientId: string): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({ type: approve ? "approve_control" : "deny_control", requesterClientId }));
-  }
-
   private getFileToken(input: HTMLTextAreaElement): AutocompleteToken | null {
     return fileAutocompleteToken(input.value, input.selectionStart ?? input.value.length);
   }
@@ -1791,19 +1786,8 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#abort")?.addEventListener("click", () => this.abort());
     this.querySelector<HTMLButtonElement>("#takeControl")?.addEventListener("click", () => this.takeControl());
     this.querySelector<HTMLButtonElement>("#attentionRefresh")?.addEventListener("click", () => void this.refresh());
-    this.querySelector<HTMLButtonElement>("#approveControl")?.addEventListener("click", (event) => {
-      this.respondToControlRequest(true, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
-    });
-    this.querySelector<HTMLButtonElement>("#denyControl")?.addEventListener("click", (event) => {
-      this.respondToControlRequest(false, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-control-action]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        const action = (event.currentTarget as HTMLButtonElement).dataset.controlAction;
-        if (action === "take") this.takeControl();
-        else if (action === "approve") this.respondToControlRequest(true, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
-        else if (action === "deny") this.respondToControlRequest(false, (event.currentTarget as HTMLButtonElement).dataset.requesterClientId ?? "");
-      });
+    this.querySelectorAll<HTMLButtonElement>("[data-control-action='take']").forEach((button) => {
+      button.addEventListener("click", () => this.takeControl());
     });
     this.querySelector<HTMLInputElement>("#autoScroll")?.addEventListener("change", (event) => {
       this.autoScroll = (event.currentTarget as HTMLInputElement).checked;
@@ -2149,18 +2133,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderAttentionNeeded(): string {
-    const takeoverRequest = this.controller?.takeoverRequest;
-    const takeoverPending = takeoverRequest?.state === "requested";
-    const takeoverIncoming = takeoverRequest?.state === "incoming";
     const isController = this.controller?.isController ?? true;
-    if (takeoverIncoming) {
-      const requesterId = escapeHtml(takeoverRequest?.requesterClientId ?? "");
-      return `<div class="attention-needed urgent" role="alert">
-        <strong>Input needed</strong>
-        <span>Another tab wants to control this session.</span>
-        <div class="attention-actions"><button type="button" data-control-action="approve" data-requester-client-id="${requesterId}">Approve</button><button type="button" data-control-action="deny" data-requester-client-id="${requesterId}">Deny</button></div>
-      </div>`;
-    }
     if (this.connectionState === "retry_failed") {
       return `<div class="attention-needed urgent" role="alert">
         <strong>Reconnect failed</strong>
@@ -2174,17 +2147,11 @@ class PiWebAgentApp extends HTMLElement {
         <span>Sending is paused while the browser reconnects. Your prompt draft is saved locally.</span>
       </div>`;
     }
-    if (takeoverPending) {
-      return `<div class="attention-needed warning" role="status">
-        <strong>Control requested</strong>
-        <span>Waiting for the current controller to approve input from this tab.</span>
-      </div>`;
-    }
     if (!isController) {
       return `<div class="attention-needed viewer" role="status">
         <strong>Viewer mode</strong>
-        <span>Take control before sending prompts or steering the active run.</span>
-        <div class="attention-actions"><button type="button" data-control-action="take" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button></div>
+        <span>Take control to send prompts or steer the active run.</span>
+        <div class="attention-actions"><button type="button" data-control-action="take">Take control</button></div>
       </div>`;
     }
     return "";
@@ -2663,9 +2630,6 @@ class PiWebAgentApp extends HTMLElement {
     this.classList.toggle("session-sidebar-overlay-open", sidebarOverlayOpen);
     this.classList.toggle("mobile-layout", this.mobileLayout);
     const isController = this.controller?.isController ?? true;
-    const takeoverRequest = this.controller?.takeoverRequest;
-    const takeoverPending = takeoverRequest?.state === "requested";
-    const takeoverIncoming = takeoverRequest?.state === "incoming";
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
@@ -2735,8 +2699,7 @@ class PiWebAgentApp extends HTMLElement {
               ${this.renderSessionDetails()}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
           </div>
           <div class="header-status">
-            ${!isController ? `<button id="takeControl" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button>` : ""}
-            ${takeoverIncoming ? `<span class="control-request">Another tab wants control <button id="approveControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Approve</button><button id="denyControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Deny</button></span>` : ""}
+            ${!isController ? `<button id="takeControl">Take control</button>` : ""}
             ${this.renderStatusPill()}
           </div>
         </header>

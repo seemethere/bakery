@@ -22,7 +22,6 @@ export type ServerConfig = AppConfig & {
   artifactDir: string;
   worktreeDir: string;
   fakeAgent: boolean;
-  controllerTakeoverTimeoutMs: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -31,7 +30,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const dataDir = expandHome(env.PI_WEB_DATA_DIR ?? "~/.pi-web-agent");
   const authToken = env.PI_WEB_AUTH_TOKEN?.trim() || undefined;
-  const controllerTakeoverTimeoutMs = Number(env.PI_WEB_CONTROLLER_TAKEOVER_TIMEOUT_MS ?? "30000");
 
   return {
     host: env.PI_WEB_HOST ?? "127.0.0.1",
@@ -44,7 +42,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     artifactDir: env.PI_WEB_ARTIFACT_DIR ? expandHome(env.PI_WEB_ARTIFACT_DIR) : resolve(dataDir, "artifacts"),
     worktreeDir: env.PI_WEB_WORKTREE_DIR ? expandHome(env.PI_WEB_WORKTREE_DIR) : resolve(dataDir, "worktrees"),
     fakeAgent: env.PI_WEB_FAKE_AGENT === "true" || env.PI_WEB_FAKE_AGENT === "1",
-    controllerTakeoverTimeoutMs: Number.isFinite(controllerTakeoverTimeoutMs) ? controllerTakeoverTimeoutMs : 30000,
     toolPermissionPolicy: {
       allowedModes: ["bypass", "confirm"],
       defaultMode: "bypass",
