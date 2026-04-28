@@ -207,8 +207,10 @@
   width: 24px;
   min-width: 24px;
   height: 24px;
+  border-color: color-mix(in srgb, currentColor 14%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
   color: currentColor;
-  opacity: 0;
+  opacity: 0.36;
 }
 
 .message.user:hover .message-overflow,
@@ -219,7 +221,7 @@
 .message.assistant.selected .message-overflow,
 .message.user .message-overflow[aria-expanded="true"],
 .message.assistant .message-overflow[aria-expanded="true"] {
-  opacity: 0.74;
+  opacity: 0.88;
 }
 
 .message.user .message-overflow:hover,

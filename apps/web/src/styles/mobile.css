@@ -278,6 +278,11 @@
     gap: 6px;
   }
 
+  .message.user .message-overflow,
+  .message.assistant .message-overflow {
+    opacity: 0.56;
+  }
+
   .message-expand-toggle,
   .message-overflow {
     width: 34px;
