@@ -154,8 +154,9 @@
 
   .model-thinking-popover {
     right: auto;
-    left: 0;
-    width: min(320px, calc(100vw - 16px));
+    left: 50%;
+    width: min(360px, calc(100vw - 16px));
+    transform: translateX(-50%);
   }
 
   .inline-control select {

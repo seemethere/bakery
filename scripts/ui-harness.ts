@@ -490,9 +490,9 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
     const element = document.querySelector(".model-thinking-popover");
     if (!element || getComputedStyle(element).display === "none") return null;
     const rect = element.getBoundingClientRect();
-    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportHeight: window.innerHeight };
+    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight };
   });
-  if (!mobilePickerPopover || mobilePickerPopover.height < 60 || mobilePickerPopover.bottom > mobilePickerPopover.viewportHeight + 1) throw new Error(`Mobile model/thinking popover should open visibly: ${JSON.stringify(mobilePickerPopover)}`);
+  if (!mobilePickerPopover || mobilePickerPopover.height < 60 || mobilePickerPopover.bottom > mobilePickerPopover.viewportHeight + 1 || mobilePickerPopover.left < -1 || mobilePickerPopover.right > mobilePickerPopover.viewportWidth + 1) throw new Error(`Mobile model/thinking popover should open visibly within the viewport: ${JSON.stringify(mobilePickerPopover)}`);
   await page.locator("#thinking").selectOption("high");
   await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"), null, { timeout: 5_000 });
   if (layout.prompt && layout.controls && layout.prompt.bottom > layout.controls.top) {
