@@ -1145,6 +1145,11 @@ async function runMobileLongTranscriptControls(page: Page): Promise<Record<strin
     await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
   }
 
+  const beforeHamburgerPerf = await page.evaluate(() => ({
+    renderCount: window.__piWebPerf?.renderCount ?? 0,
+    patchCount: window.__piWebPerf?.patchCount ?? 0,
+    rowUpdateCount: window.__piWebPerf?.rowUpdateCount ?? 0,
+  }));
   responsiveness.push(await timed("mobile-open-session-drawer", async () => {
     await page.locator("#toggleSessionSidebarMobile").click();
     await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
@@ -1153,6 +1158,12 @@ async function runMobileLongTranscriptControls(page: Page): Promise<Record<strin
     await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
     await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
   }));
+  const hamburgerPerf = await page.evaluate((before) => ({
+    renderDelta: (window.__piWebPerf?.renderCount ?? 0) - before.renderCount,
+    patchDelta: (window.__piWebPerf?.patchCount ?? 0) - before.patchCount,
+    rowUpdateDelta: (window.__piWebPerf?.rowUpdateCount ?? 0) - before.rowUpdateCount,
+  }), beforeHamburgerPerf);
+  if (hamburgerPerf.renderDelta !== 0 || hamburgerPerf.rowUpdateDelta !== 0) throw new Error(`Mobile hamburger should not full-render or rehydrate transcript rows: ${JSON.stringify(hamburgerPerf)}`);
   responsiveness.push(await timed("mobile-open-model-thinking", async () => {
     await page.locator("#modelThinkingToggle").click();
     await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
@@ -1188,6 +1199,7 @@ async function runMobileLongTranscriptControls(page: Page): Promise<Record<strin
   return {
     responsiveness,
     maxLatencyMs,
+    hamburgerPerf,
     toolRows: await page.locator(".message.tool").count(),
     toolGroups: await page.locator(".tool-run-group").count(),
     artifactImages: await page.locator(".artifact-image img").count(),

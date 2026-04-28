@@ -1601,27 +1601,102 @@ class PiWebAgentApp extends HTMLElement {
     this.transcriptFollow.markUserScrollIntent();
   }
 
-  private bindComposerControls(): void {
-    bindComposerControls(this, {
-      commandAutocomplete: () => this.commandAutocomplete,
-      fileAutocomplete: () => this.fileAutocomplete,
-      imagePickerActive: () => this.imagePickerActive,
-      setImagePickerActive: (active) => { this.imagePickerActive = active; },
-      setNotice: (notice) => { this.notice = notice; },
-      render: () => this.render(),
-      sendFromInput: (followUp) => this.sendFromInput(followUp),
-      handleImageFiles: (files) => this.handleImageFiles(files),
-      updatePromptDraft: (input) => this.updatePromptDraft(input),
-      removePromptImage: (id) => this.removePromptImage(id),
-      closeFileAutocomplete: () => this.closeFileAutocomplete(),
-      closeCommandAutocomplete: () => this.closeCommandAutocomplete(),
-      patchAutocompleteSelection: (kind) => this.patchAutocompleteSelection(kind),
-      chooseCommandAutocomplete: () => this.chooseCommandAutocomplete(),
-      chooseFileAutocomplete: () => this.chooseFileAutocomplete(),
-    });
+  private sidebarOverlayOpen(): boolean {
+    return !this.sessionSidebarPinned && !this.sessionSidebarCollapsed;
   }
 
-  private bindEvents(): void {
+  private renderSessionSidebarBackdrop(): string {
+    return this.sidebarOverlayOpen() ? `<button id="sessionSidebarBackdrop" class="session-sidebar-backdrop" type="button" aria-label="Hide sessions"></button>` : "";
+  }
+
+  private renderSessionSidebar(): string {
+    const sidebarOverlayOpen = this.sidebarOverlayOpen();
+    const sessionGroups = groupedSessions(this.sessions);
+    return `<aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""} ${sidebarOverlayOpen ? "overlay" : ""}">
+        <div class="sidebar-titlebar">
+          <h1>Pi Web Agent</h1>
+          <div class="sidebar-titlebar-actions">
+            ${sidebarOverlayOpen && !this.mobileLayout ? `<button id="pinSessionSidebar" class="pin-sidebar" type="button" title="Pin sessions as a left column">Pin</button>` : ""}
+            <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : this.sessionSidebarPinned ? "Hide sessions and unpin auto-collapse" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
+          </div>
+        </div>
+        ${this.sessionSidebarCollapsed ? `
+          <span class="collapsed-sidebar-label">Sessions</span>
+          ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
+        ` : `
+          <div class="sidebar-section sidebar-session-section">
+            <label>Workspace
+              <select id="workspace">
+                ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
+              </select>
+            </label>
+            <button id="newSession">New session</button>
+            <div class="sessions-heading">
+              <h2>Recent sessions</h2>
+            </div>
+            <div class="session-groups">
+              ${renderSessionGroups({ groups: sessionGroups, selectedSessionId: this.selectedSession?.id, collapsedGroups: this.collapsedSessionGroups, status: this.status })}
+            </div>
+          </div>
+          <div class="sidebar-section sidebar-settings-section">
+            <hr />
+            <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
+            <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
+            <label>Theme
+              <select id="themePreference">
+                <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
+                <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
+                <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
+              </select>
+            </label>
+            <button id="saveSettings">Save / Refresh</button>
+            ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
+            ${this.renderAppSettings()}
+            ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open as a left column</p>` : `<p class="sidebar-mode">Opens as a temporary session menu</p>`}
+          </div>
+        `}
+      </aside>`;
+  }
+
+  private patchMobileSessionSidebar(): void {
+    const sidebarOverlayOpen = this.sidebarOverlayOpen();
+    this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
+    this.classList.toggle("session-sidebar-overlay-open", sidebarOverlayOpen);
+    this.querySelector("#sessionSidebarBackdrop")?.remove();
+    const sidebar = this.querySelector<HTMLElement>(".session-sidebar");
+    if (sidebarOverlayOpen) sidebar?.insertAdjacentHTML("beforebegin", this.renderSessionSidebarBackdrop());
+    if (sidebar) {
+      sidebar.outerHTML = this.renderSessionSidebar();
+    } else {
+      this.insertAdjacentHTML("afterbegin", `${this.renderSessionSidebarBackdrop()}${this.renderSessionSidebar()}`);
+    }
+    const mobileToggle = this.querySelector<HTMLButtonElement>("#toggleSessionSidebarMobile");
+    if (mobileToggle) {
+      const label = this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions";
+      mobileToggle.title = label;
+      mobileToggle.setAttribute("aria-label", label);
+    }
+    this.bindSessionSidebarEvents();
+  }
+
+  private toggleSessionSidebar(buttonId: string): void {
+    this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
+    if (!this.mobileLayout && buttonId === "toggleSessionSidebar") this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
+    localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
+    localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
+    if (!this.mobileLayout && this.sessionSidebarPinned) this.notice = "";
+    if (this.mobileLayout) this.patchMobileSessionSidebar();
+    else this.render();
+  }
+
+  private hideSessionSidebarFromBackdrop(): void {
+    this.sessionSidebarCollapsed = true;
+    localStorage.setItem("piWebSessionSidebarCollapsed", "true");
+    if (this.mobileLayout) this.patchMobileSessionSidebar();
+    else this.render();
+  }
+
+  private bindSessionSidebarEvents(): void {
     this.querySelector<HTMLSelectElement>("#themePreference")?.addEventListener("change", (event) => {
       const value = (event.currentTarget as HTMLSelectElement).value;
       this.themePreference = isThemePreference(value) ? value : "system";
@@ -1651,29 +1726,8 @@ class PiWebAgentApp extends HTMLElement {
         this.render();
       });
     });
-    this.querySelectorAll<HTMLButtonElement>("#toggleSessionSidebar, #toggleSessionSidebarMobile").forEach((button) => {
-      button.addEventListener("click", () => {
-        this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
-        if (!this.mobileLayout && button.id === "toggleSessionSidebar") this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
-        localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
-        localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
-        if (!this.mobileLayout && this.sessionSidebarPinned) this.notice = "";
-        this.render();
-      });
-    });
-    this.querySelector<HTMLButtonElement>("#pinSessionSidebar")?.addEventListener("click", () => {
-      this.sessionSidebarPinned = true;
-      this.sessionSidebarCollapsed = false;
-      localStorage.setItem("piWebSessionSidebarPinned", "true");
-      localStorage.setItem("piWebSessionSidebarCollapsed", "false");
-      this.notice = "";
-      this.render();
-    });
-    this.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.addEventListener("click", () => {
-      this.sessionSidebarCollapsed = true;
-      localStorage.setItem("piWebSessionSidebarCollapsed", "true");
-      this.render();
-    });
+    this.querySelector<HTMLButtonElement>("#toggleSessionSidebar")?.addEventListener("click", () => this.toggleSessionSidebar("toggleSessionSidebar"));
+    this.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.addEventListener("click", () => this.hideSessionSidebarFromBackdrop());
     this.querySelectorAll<HTMLButtonElement>("[data-session-group-toggle]").forEach((button) => {
       button.addEventListener("click", () => {
         const group = button.dataset.sessionGroupToggle;
@@ -1683,6 +1737,39 @@ class PiWebAgentApp extends HTMLElement {
         persistCollapsedSessionGroups(this.collapsedSessionGroups);
         this.render();
       });
+    });
+  }
+
+  private bindComposerControls(): void {
+    bindComposerControls(this, {
+      commandAutocomplete: () => this.commandAutocomplete,
+      fileAutocomplete: () => this.fileAutocomplete,
+      imagePickerActive: () => this.imagePickerActive,
+      setImagePickerActive: (active) => { this.imagePickerActive = active; },
+      setNotice: (notice) => { this.notice = notice; },
+      render: () => this.render(),
+      sendFromInput: (followUp) => this.sendFromInput(followUp),
+      handleImageFiles: (files) => this.handleImageFiles(files),
+      updatePromptDraft: (input) => this.updatePromptDraft(input),
+      removePromptImage: (id) => this.removePromptImage(id),
+      closeFileAutocomplete: () => this.closeFileAutocomplete(),
+      closeCommandAutocomplete: () => this.closeCommandAutocomplete(),
+      patchAutocompleteSelection: (kind) => this.patchAutocompleteSelection(kind),
+      chooseCommandAutocomplete: () => this.chooseCommandAutocomplete(),
+      chooseFileAutocomplete: () => this.chooseFileAutocomplete(),
+    });
+  }
+
+  private bindEvents(): void {
+    this.bindSessionSidebarEvents();
+    this.querySelector<HTMLButtonElement>("#toggleSessionSidebarMobile")?.addEventListener("click", () => this.toggleSessionSidebar("toggleSessionSidebarMobile"));
+    this.querySelector<HTMLButtonElement>("#pinSessionSidebar")?.addEventListener("click", () => {
+      this.sessionSidebarPinned = true;
+      this.sessionSidebarCollapsed = false;
+      localStorage.setItem("piWebSessionSidebarPinned", "true");
+      localStorage.setItem("piWebSessionSidebarCollapsed", "false");
+      this.notice = "";
+      this.render();
     });
     this.querySelector<HTMLInputElement>("#sessionTitle")?.addEventListener("input", (event) => {
       this.editingTitleDraft = (event.currentTarget as HTMLInputElement).value;
@@ -2594,7 +2681,7 @@ class PiWebAgentApp extends HTMLElement {
     const titleSelectionEnd = titleInput?.selectionEnd ?? titleSelectionStart;
     const isRunning = this.status === "running";
     const activePlanActionItem = this.activePlanActionItem();
-    const sidebarOverlayOpen = !this.sessionSidebarPinned && !this.sessionSidebarCollapsed;
+    const sidebarOverlayOpen = this.sidebarOverlayOpen();
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("session-sidebar-overlay-open", sidebarOverlayOpen);
     this.classList.toggle("inspector-collapsed", this.mobileLayout || this.rightPanelCollapsed);
@@ -2606,7 +2693,6 @@ class PiWebAgentApp extends HTMLElement {
     const controllerLabel = this.controller
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
       : "";
-    const sessionGroups = groupedSessions(this.sessions);
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
@@ -2616,51 +2702,8 @@ class PiWebAgentApp extends HTMLElement {
     const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
     const composerHint = isBashDraft ? (isRunning ? "Bash commands run when the session is idle" : "Enter runs local bash · !! excludes output from context") : isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line";
     this.innerHTML = `
-      ${sidebarOverlayOpen ? `<button id="sessionSidebarBackdrop" class="session-sidebar-backdrop" type="button" aria-label="Hide sessions"></button>` : ""}
-      <aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""} ${sidebarOverlayOpen ? "overlay" : ""}">
-        <div class="sidebar-titlebar">
-          <h1>Pi Web Agent</h1>
-          <div class="sidebar-titlebar-actions">
-            ${sidebarOverlayOpen && !this.mobileLayout ? `<button id="pinSessionSidebar" class="pin-sidebar" type="button" title="Pin sessions as a left column">Pin</button>` : ""}
-            <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : this.sessionSidebarPinned ? "Hide sessions and unpin auto-collapse" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
-          </div>
-        </div>
-        ${this.sessionSidebarCollapsed ? `
-          <span class="collapsed-sidebar-label">Sessions</span>
-          ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
-        ` : `
-          <div class="sidebar-section sidebar-session-section">
-            <label>Workspace
-              <select id="workspace">
-                ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
-              </select>
-            </label>
-            <button id="newSession">New session</button>
-            <div class="sessions-heading">
-              <h2>Recent sessions</h2>
-            </div>
-            <div class="session-groups">
-              ${renderSessionGroups({ groups: sessionGroups, selectedSessionId: this.selectedSession?.id, collapsedGroups: this.collapsedSessionGroups, status: this.status })}
-            </div>
-          </div>
-          <div class="sidebar-section sidebar-settings-section">
-            <hr />
-            <label>API <input id="apiBase" value="${escapeHtml(this.apiBase)}" /></label>
-            <label>Token <input id="token" type="password" value="${escapeHtml(this.token)}" /></label>
-            <label>Theme
-              <select id="themePreference">
-                <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
-                <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
-                <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
-              </select>
-            </label>
-            <button id="saveSettings">Save / Refresh</button>
-            ${this.notice ? `<p class="notice">${escapeHtml(this.notice)}</p>` : ""}
-            ${this.renderAppSettings()}
-            ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open as a left column</p>` : `<p class="sidebar-mode">Opens as a temporary session menu</p>`}
-          </div>
-        `}
-      </aside>
+      ${this.renderSessionSidebarBackdrop()}
+      ${this.renderSessionSidebar()}
       <main>
         <header class="${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
