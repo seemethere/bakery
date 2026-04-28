@@ -1,0 +1,26 @@
+import { describe, expect, test } from "bun:test";
+import { parseAppRoute, sessionRoutePath } from "./router";
+
+describe("app routes", () => {
+  test("parses the home route", () => {
+    expect(parseAppRoute("/")).toEqual({ kind: "home" });
+    expect(parseAppRoute("")).toEqual({ kind: "home" });
+  });
+
+  test("parses session routes", () => {
+    expect(parseAppRoute("/sessions/abc-123")).toEqual({ kind: "session", sessionId: "abc-123" });
+    expect(parseAppRoute("/sessions/abc-123/")).toEqual({ kind: "session", sessionId: "abc-123" });
+  });
+
+  test("decodes and builds session paths", () => {
+    const id = "session id/with slash";
+    const path = sessionRoutePath(id);
+    expect(path).toBe("/sessions/session%20id%2Fwith%20slash");
+    expect(parseAppRoute(path)).toEqual({ kind: "session", sessionId: id });
+  });
+
+  test("preserves unknown paths", () => {
+    expect(parseAppRoute("/settings")).toEqual({ kind: "unknown", path: "/settings" });
+    expect(parseAppRoute("/sessions/")).toEqual({ kind: "unknown", path: "/sessions/" });
+  });
+});

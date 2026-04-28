@@ -15,7 +15,7 @@ declare global {
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "mobile-layout", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "mobile-layout", "session-routing", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -171,11 +171,47 @@ async function prepareSession(page: Page): Promise<string> {
   return session.id;
 }
 
+async function selectedSessionId(page: Page): Promise<string | null> {
+  return await page.locator("pi-web-agent").evaluate((element) => ((element as unknown as { selectedSession?: { id?: string } | null }).selectedSession?.id ?? null));
+}
+
+async function waitForSelectedSession(page: Page, sessionId: string): Promise<void> {
+  await page.waitForFunction((id) => ((document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null } | null)?.selectedSession?.id ?? null) === id, sessionId, { timeout: 5_000 });
+}
+
 async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#prompt").fill(text);
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+}
+
+async function runSessionRouting(page: Page): Promise<Record<string, unknown>> {
+  const firstSessionId = await prepareSession(page);
+  await waitForSelectedSession(page, firstSessionId);
+  if (new URL(page.url()).pathname !== `/sessions/${firstSessionId}`) throw new Error(`Expected first session URL, saw ${page.url()}`);
+
+  const secondSession = await page.locator("pi-web-agent").evaluate(async (element) => {
+    const session = await (element as unknown as { createSession: () => Promise<{ id: string } | null> }).createSession();
+    if (!session) throw new Error("Could not create second session");
+    return { id: session.id };
+  });
+  await waitForSelectedSession(page, secondSession.id);
+  if (new URL(page.url()).pathname !== `/sessions/${secondSession.id}`) throw new Error(`Expected second session URL, saw ${page.url()}`);
+
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, firstSessionId);
+  if (new URL(page.url()).pathname !== `/sessions/${firstSessionId}`) throw new Error(`Expected Back to restore first session URL, saw ${page.url()}`);
+
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => ((document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null } | null)?.selectedSession ?? null) === null, null, { timeout: 5_000 });
+  if (new URL(page.url()).pathname !== "/") throw new Error(`Expected Back to restore home URL, saw ${page.url()}`);
+
+  await page.goto(`${webBase}/sessions/${secondSession.id}`, { waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, secondSession.id);
+  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "session-routing.png"), fullPage: true });
+  return { firstSessionId, secondSessionId: secondSession.id, selectedSessionId: await selectedSessionId(page), pathname: new URL(page.url()).pathname };
 }
 
 async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
@@ -1456,6 +1492,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "manual") return runManual(page);
   if (name === "empty-session-layout") return runEmptySessionLayout(page);
   if (name === "mobile-layout") return runMobileLayout(page);
+  if (name === "session-routing") return runSessionRouting(page);
   if (name === "streaming-responsiveness") return runStreamingResponsiveness(page);
   if (name === "queued-follow-up") return runQueuedFollowUp(page);
   if (name === "transcript-scroll-stability") return runTranscriptScrollStability(page);

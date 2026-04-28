@@ -13,6 +13,7 @@ import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscript
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker } from "./model-thinking-picker";
+import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
@@ -194,6 +195,9 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.imagePickerActive) return;
     window.setTimeout(() => { this.imagePickerActive = false; }, 500);
   };
+  private readonly popstateHandler = (): void => {
+    void this.openRouteFromLocation();
+  };
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
     if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
     const target = event.target as HTMLElement | null;
@@ -217,6 +221,7 @@ class PiWebAgentApp extends HTMLElement {
     window.addEventListener("keydown", this.questionKeyHandler);
     window.addEventListener("keydown", this.sidebarKeyHandler);
     window.addEventListener("resize", this.viewportResizeHandler);
+    window.addEventListener("popstate", this.popstateHandler);
     window.visualViewport?.addEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.addEventListener("change", this.mobileLayoutHandler);
@@ -231,6 +236,7 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("keydown", this.questionKeyHandler);
     window.removeEventListener("keydown", this.sidebarKeyHandler);
     window.removeEventListener("resize", this.viewportResizeHandler);
+    window.removeEventListener("popstate", this.popstateHandler);
     window.visualViewport?.removeEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
@@ -385,11 +391,17 @@ class PiWebAgentApp extends HTMLElement {
         if (updated) this.selectedSession = updated;
       }
       this.notice = "";
-      if (!this.selectedSession && this.lastSelectedSessionId) {
-        const session = sessions.find((candidate) => candidate.id === this.lastSelectedSessionId);
-        if (session) {
-          this.openSession(session);
-          return;
+      if (!this.selectedSession) {
+        const route = parseAppRoute(window.location.pathname);
+        const routeSessionId = route.kind === "session" ? route.sessionId : "";
+        const targetSessionId = routeSessionId || this.lastSelectedSessionId;
+        if (targetSessionId) {
+          const session = sessions.find((candidate) => candidate.id === targetSessionId);
+          if (session) {
+            this.openSession(session, true, !routeSessionId);
+            return;
+          }
+          if (routeSessionId) this.notice = `Session ${routeSessionId} was not found.`;
         }
       }
       this.render();
@@ -418,7 +430,7 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private openSession(session: WebSession, collapseSidebar = true): void {
+  private openSession(session: WebSession, collapseSidebar = true, updateRoute = true): void {
     this.persistAttachmentWarningIfNeeded();
     this.selectedSession = session;
     if (collapseSidebar && !this.sessionSidebarPinned) this.sessionSidebarCollapsed = true;
@@ -448,8 +460,53 @@ class PiWebAgentApp extends HTMLElement {
     this.socketGeneration++;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
+    if (updateRoute) this.pushSessionRoute(session.id);
     this.connectWebSocket(session, "connecting");
     this.render();
+  }
+
+  private pushSessionRoute(sessionId: string): void {
+    const nextPath = sessionRoutePath(sessionId);
+    if (window.location.pathname === nextPath) return;
+    window.history.pushState({ sessionId }, "", nextPath);
+  }
+
+  private closeSelectedSessionForHomeRoute(): void {
+    if (!this.selectedSession) return;
+    this.persistAttachmentWarningIfNeeded();
+    this.selectedSession = null;
+    this.transcript = [];
+    this.status = "disconnected";
+    this.connectionState = "disconnected";
+    this.connectionMessage = "No session connected.";
+    this.notice = "";
+    this.controller = null;
+    this.settings = null;
+    this.pendingQuestion = null;
+    this.sessionTree = null;
+    this.selectedTranscriptId = "";
+    localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
+    this.socketGeneration++;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.ws?.close();
+    this.render();
+  }
+
+  private async openRouteFromLocation(): Promise<void> {
+    const route = parseAppRoute(window.location.pathname);
+    if (route.kind === "home") {
+      this.closeSelectedSessionForHomeRoute();
+      return;
+    }
+    if (route.kind !== "session") return;
+    const session = this.sessions.find((candidate) => candidate.id === route.sessionId);
+    if (session) {
+      if (this.selectedSession?.id !== session.id) this.openSession(session, true, false);
+      return;
+    }
+    await this.refresh();
+    const refreshedSession = this.sessions.find((candidate) => candidate.id === route.sessionId);
+    if (refreshedSession && this.selectedSession?.id !== refreshedSession.id) this.openSession(refreshedSession, true, false);
   }
 
   private connectWebSocket(session: WebSession, state: ConnectionState): void {
