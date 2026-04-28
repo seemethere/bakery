@@ -104,6 +104,7 @@ class PiWebAgentApp extends HTMLElement {
   private sessionDetailsOpen = false;
   private mobileHeaderHidden = false;
   private lastTranscriptScrollTop = 0;
+  private mobileHeaderRevealIntentUntil = 0;
   private pendingQuestion: PendingQuestion | null = null;
   private appSettings: AppSettings | null = null;
   private metadataSuggestion: SessionMetadataSuggestion | null = null;
@@ -1504,6 +1505,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private markTranscriptUserScrollIntent(): void {
     this.transcriptFollow.markUserScrollIntent();
+    this.mobileHeaderRevealIntentUntil = Date.now() + 1500;
   }
 
   private sidebarOverlayOpen(): boolean {
@@ -1939,9 +1941,11 @@ class PiWebAgentApp extends HTMLElement {
       this.lastTranscriptScrollTop = scrollTop;
       return;
     }
-    if (this.sessionDetailsOpen || this.modelThinkingPickerOpen || scrollTop <= 12) {
+    const shouldForceVisible = this.sessionDetailsOpen || this.modelThinkingPickerOpen || scrollTop <= 12;
+    const hasRecentUserScrollIntent = Date.now() <= this.mobileHeaderRevealIntentUntil;
+    if (shouldForceVisible) {
       this.mobileHeaderHidden = false;
-    } else {
+    } else if (hasRecentUserScrollIntent) {
       const delta = scrollTop - this.lastTranscriptScrollTop;
       if (delta > 12) this.mobileHeaderHidden = true;
       else if (delta < -8) this.mobileHeaderHidden = false;
