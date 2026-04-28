@@ -1773,6 +1773,9 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => this.chooseCommandAutocomplete(Number(button.dataset.commandIndex ?? "0")));
     });
+    this.querySelectorAll<HTMLButtonElement>("[data-empty-quick-start]").forEach((button) => {
+      button.addEventListener("click", () => this.useEmptyQuickStart(button.dataset.emptyQuickStart ?? ""));
+    });
 
     this.querySelectorAll<HTMLButtonElement>("[data-tree-refresh]").forEach((button) => {
       button.addEventListener("click", () => void this.refreshTree());
@@ -2158,12 +2161,40 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderTranscript(): string {
     if (this.selectedSession && this.transcript.length === 0) {
+      const quickStarts = [
+        { action: "plan", label: "/plan", title: "Plan next work", description: "Interview, inspect context, then hand off a small slice." },
+        { action: "screenshot", label: "Screenshot", title: "Attach visual context", description: "Paste, drop, or pick an image for the next prompt." },
+        { action: "file", label: "@file", title: "Mention workspace files", description: "Start file autocomplete for targeted context." },
+        { action: "bash", label: "!bash", title: "Run local bash", description: "Draft a command; use !! to exclude output from context." },
+      ];
       return `<div class="empty-transcript" role="status" aria-label="Empty session">
-        <strong>Ask pi to start.</strong>
-        <span>Paste a screenshot, type / for commands, or @ for files.</span>
+        <p class="empty-transcript-kicker">New pi browser session</p>
+        <strong>Start with a workflow.</strong>
+        <span>Use Bakery for visual transcript review, screenshots, and guided planning from any browser.</span>
+        <div class="empty-quick-starts" aria-label="Quick starts">
+          ${quickStarts.map((item) => `<button type="button" class="empty-quick-start" data-empty-quick-start="${escapeHtml(item.action)}">
+            <span class="empty-quick-start-label">${escapeHtml(item.label)}</span>
+            <span class="empty-quick-start-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.description)}</small></span>
+          </button>`).join("")}
+        </div>
       </div>`;
     }
     return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds);
+  }
+
+  private useEmptyQuickStart(action: string): void {
+    if (action === "screenshot") {
+      this.querySelector<HTMLButtonElement>("#attachImages")?.click();
+      return;
+    }
+    const draft = action === "plan" ? "/plan " : action === "file" ? "@" : action === "bash" ? "!" : "";
+    if (!draft) return;
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    if (!input || input.disabled) return;
+    input.focus();
+    input.value = draft;
+    input.setSelectionRange(draft.length, draft.length);
+    this.updatePromptDraft(input);
   }
 
   private renderJumpToLatest(): string {

@@ -345,7 +345,21 @@ async function runContextUsage(page: Page): Promise<Record<string, unknown>> {
 
 async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator(".empty-transcript", { hasText: "Ask pi to start." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-transcript", { hasText: "Start with a workflow." }).waitFor({ timeout: 5_000 });
+  await page.locator("[data-empty-quick-start='plan']", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
+  const assertPromptValue = async (expected: string) => {
+    const actual = await page.locator("#prompt").inputValue();
+    if (actual !== expected) throw new Error(`Expected prompt quick start ${JSON.stringify(expected)}, saw ${JSON.stringify(actual)}`);
+  };
+  await page.locator("[data-empty-quick-start='plan']").click();
+  await assertPromptValue("/plan ");
+  await page.locator("#prompt").fill("");
+  await page.locator("[data-empty-quick-start='file']").click();
+  await assertPromptValue("@");
+  await page.locator("#prompt").fill("");
+  await page.locator("[data-empty-quick-start='bash']").click();
+  await assertPromptValue("!");
+  await page.locator("#prompt").fill("");
   await page.screenshot({ path: join(artifactDir, "empty-session-layout.png"), fullPage: true });
 
   const layout = await page.evaluate(() => {
@@ -385,7 +399,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
     localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
   await prepareSession(page);
-  await page.locator(".empty-transcript", { hasText: "Ask pi to start." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-transcript", { hasText: "Start with a workflow." }).waitFor({ timeout: 5_000 });
   const app = page.locator("pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) await page.locator("#toggleSessionSidebar").click();
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });

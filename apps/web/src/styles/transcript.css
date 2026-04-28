@@ -31,11 +31,21 @@
 
 .empty-transcript {
   display: grid;
-  gap: 6px;
-  max-width: min(520px, 100%);
+  gap: 8px;
+  max-width: min(760px, 100%);
   padding: 18px 20px;
   color: var(--color-text-secondary);
   text-align: center;
+}
+
+.empty-transcript-kicker {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .empty-transcript strong {
@@ -47,6 +57,65 @@
 .empty-transcript span {
   font-size: 13px;
   line-height: 1.45;
+}
+
+.empty-quick-starts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+  text-align: left;
+}
+
+.empty-quick-start {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 16px;
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-card);
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
+.empty-quick-start:hover,
+.empty-quick-start:focus-visible {
+  border-color: var(--color-accent-soft);
+  background: var(--color-bg-selected);
+  color: var(--color-text);
+}
+
+.empty-quick-start-label {
+  min-width: 56px;
+  padding: 4px 7px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  background: var(--color-bg-muted);
+  color: var(--color-accent-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.empty-quick-start-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.empty-quick-start-copy strong {
+  font-size: 13px;
+}
+
+.empty-quick-start-copy small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .jump-to-latest {
