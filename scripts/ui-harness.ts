@@ -149,7 +149,14 @@ async function prepareSession(page: Page): Promise<string> {
     localStorage.setItem("piWebAuthToken", "");
   }, { apiBase });
   await page.goto(`${webBase}/settings`, { waitUntil: "domcontentloaded" });
-  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) {
+    await page.locator("pi-web-agent").evaluate((element) => {
+      element.classList.add("session-sidebar-collapsed");
+      element.classList.remove("session-sidebar-overlay-open");
+      element.querySelector(".session-sidebar")?.classList.add("collapsed");
+      element.querySelector("#sessionSidebarBackdrop")?.remove();
+    });
+  }
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
   await page.locator("#saveSettings").click();

@@ -734,6 +734,17 @@
   font-weight: 700;
 }
 
+.tool-run-group summary em {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-style: normal;
+  font-weight: 650;
+}
+
+.tool-run-group.has-failed-tool summary em {
+  color: color-mix(in srgb, var(--color-error) 76%, var(--color-text-secondary));
+}
+
 .tool-run-group summary span {
   flex: 0 1 auto;
   min-width: 0;
@@ -744,12 +755,38 @@
   white-space: nowrap;
 }
 
+.tool-run-group.live-tool-stack {
+  opacity: 1;
+}
+
+.tool-run-group.live-tool-stack::before {
+  background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--color-info) 46%, transparent) 38%, color-mix(in srgb, var(--color-info) 70%, transparent) 100%);
+}
+
+.tool-run-group.live-tool-stack.has-failed-tool::before {
+  background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--color-tool-done-border) 42%, transparent) 38%, color-mix(in srgb, var(--color-error) 70%, transparent) 100%);
+}
+
 .tool-run-items {
   display: grid;
   gap: 0;
   padding: 0 0 2px 18px;
   border-top: 0;
   background: transparent;
+}
+
+.tool-run-stack-slot {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(5) { opacity: 0.38; }
+.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(4) { opacity: 0.52; }
+.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(3) { opacity: 0.68; }
+.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(2) { opacity: 0.84; }
+.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(1) { opacity: 1; }
+
+.tool-run-group.live-tool-stack .tool-run-stack-slot.failed {
+  opacity: 1;
 }
 
 .tool-run-items .message.tool.done.collapsed:not(.developer-bash) {

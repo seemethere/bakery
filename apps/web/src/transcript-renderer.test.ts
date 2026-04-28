@@ -54,9 +54,29 @@ describe("transcript renderer", () => {
     expect(html).toContain("Ran 2 tools · 5s");
   });
 
-  test("does not group running, developer bash, or single tool rows", () => {
+  test("groups live tools open with only the five most recent receipts", () => {
     const transcript = [
-      item({ id: "running", kind: "tool", title: "Running", status: "running" }),
+      item({ id: "t1", kind: "tool", title: "Read 1" }),
+      item({ id: "t2", kind: "tool", title: "Read 2" }),
+      item({ id: "t3", kind: "tool", title: "Read 3" }),
+      item({ id: "t4", kind: "tool", title: "Read 4" }),
+      item({ id: "t5", kind: "tool", title: "Read 5" }),
+      item({ id: "t6", kind: "tool", title: "Read 6", status: "running" }),
+    ];
+
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+
+    expect(html).toContain('class="tool-run-group live-tool-stack"');
+    expect(html).toContain('data-tool-run-group="t1|t2|t3|t4|t5|t6" data-live-tool-stack="true" open');
+    expect(html).toContain("1 running");
+    expect(html).toContain("1 earlier");
+    expect(html).not.toContain('data-transcript-id="t1"');
+    expect(html).toContain('data-transcript-id="t2"');
+    expect(html).toContain('data-transcript-id="t6"');
+  });
+
+  test("keeps developer bash and single tools outside live grouping", () => {
+    const transcript = [
       item({ id: "bash:local", kind: "tool", title: "$ pwd" }),
       item({ id: "single", kind: "tool", title: "Read" }),
     ];
@@ -64,7 +84,20 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
 
     expect(html).not.toContain("tool-run-group");
-    expect(html.match(/data-transcript-id=/g)?.length).toBe(3);
+    expect(html.match(/data-transcript-id=/g)?.length).toBe(2);
+  });
+
+  test("keeps failed tools collapsed in the live stack and marks the summary", () => {
+    const transcript = [
+      item({ id: "t1", kind: "tool", title: "Read" }),
+      item({ id: "t2", kind: "tool", title: "Bash", status: "error" }),
+    ];
+
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+
+    expect(html).toContain('class="tool-run-group live-tool-stack has-failed-tool"');
+    expect(html).toContain("1 failed");
+    expect(html).toContain('tool-run-stack-slot tool-run-stack-slot-2 failed');
   });
 
   test("groups completed image tools with adjacent background tools", () => {
@@ -88,7 +121,7 @@ describe("transcript renderer", () => {
     ];
 
     expect(renderHelpers.isAfterRunningTool(transcript, transcript[1]!)).toBe(true);
-    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[1]!)).toBe("start");
+    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[1]!)).toBe("middle");
     expect(renderHelpers.toolGroupPositionFor(transcript, transcript[2]!)).toBe("end");
     expect(renderHelpers.toolGroupPositionFor(transcript, transcript[3]!)).toBe("single");
   });
@@ -96,8 +129,9 @@ describe("transcript renderer", () => {
   test("keeps explicit expansion defaults for system, bash, running, and error rows", () => {
     expect(renderHelpers.defaultTranscriptExpanded(item({ id: "system", kind: "system", title: "System" }))).toBe(true);
     expect(renderHelpers.defaultTranscriptExpanded(item({ id: "bash:1", kind: "tool", title: "$ test" }))).toBe(true);
-    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "running", kind: "tool", title: "Read", status: "running" }))).toBe(true);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "running", kind: "tool", title: "Read", status: "running" }))).toBe(false);
     expect(renderHelpers.defaultTranscriptExpanded(item({ id: "question", kind: "tool", title: "Question", status: "running" }))).toBe(false);
+    expect(renderHelpers.defaultTranscriptExpanded(item({ id: "failed-tool", kind: "tool", title: "Bash", status: "error" }))).toBe(false);
     expect(renderHelpers.defaultTranscriptExpanded(item({ id: "error", kind: "assistant", title: "Pi", status: "error" }))).toBe(true);
   });
 });

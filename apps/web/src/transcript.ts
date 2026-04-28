@@ -589,7 +589,7 @@ export class PiTranscriptRow extends HTMLElement {
     const isQuestionTool = item.kind === "tool" && item.title === "Question";
     const hasVisualResult = itemHasRenderedImage(item) || itemHasLocalImageArtifacts(item, options.localImageUrl, options.suppressLocalImageArtifactPaths);
     const isDeveloperBash = isDeveloperBashItem(item);
-    const defaultOpen = item.kind === "system" || isDeveloperBash || (item.status === "running" && !isQuestionTool) || item.status === "error" || (hasVisualResult && item.status !== "done");
+    const defaultOpen = item.kind === "system" || isDeveloperBash || (item.kind !== "tool" && item.status === "error") || (hasVisualResult && item.status !== "done");
     const expanded = isCollapsible ? (options.expanded ?? defaultOpen) : true;
     this.collapsed = isCollapsible && !expanded;
 
