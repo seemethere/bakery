@@ -14,10 +14,10 @@ main {
 .sessions-page {
   display: grid;
   grid-row: 3;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   gap: 16px;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   padding: 18px;
 }
 
@@ -60,8 +60,8 @@ main {
 }
 
 .sessions-page-list {
-  min-height: 0;
-  overflow: auto;
+  min-height: auto;
+  overflow: visible;
   padding-right: 4px;
 }
 
