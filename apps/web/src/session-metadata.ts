@@ -42,7 +42,7 @@ export function formatMetadataError(error: unknown): string {
 export function sessionDisplayTitle(session: WebSession): string {
   return session.title?.trim()
     || (session.lastUserPrompt && isGenericSessionPrompt(session.lastUserPrompt) ? "New session" : session.lastUserPrompt?.trim().slice(0, 60))
-    || pathBasename(session.cwd)
+    || pathBasename(session.sourceCwd ?? session.cwd)
     || "Untitled session";
 }
 
@@ -51,6 +51,10 @@ export function sessionTitlePlaceholder(session: WebSession): string {
 }
 
 export function sessionMetadataLabel(session: WebSession): string {
+  if (session.isolationKind === "git_worktree") {
+    const repo = pathBasename(session.sourceCwd ?? session.cwd);
+    return `${repo} · isolated${session.worktreeBranch ? ` · ${session.worktreeBranch}` : ""}`;
+  }
   const repo = pathBasename(session.cwd);
   const parent = pathParent(session.cwd);
   return `${repo}${parent && parent !== repo ? ` · ${parent}` : ""}`;

@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
 import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
@@ -412,17 +412,21 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private async createSession(cwdOverride?: string): Promise<WebSession | null> {
+  private async createSession(cwdOverride?: string, isolation: SessionIsolationKind = "none"): Promise<WebSession | null> {
     const select = this.querySelector<HTMLSelectElement>("#workspace");
     const cwd = cwdOverride || select?.value || this.workspaces[0]?.path;
     if (!cwd) return null;
     try {
       const session = await this.api<WebSession>("/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ cwd }),
+        body: JSON.stringify({ cwd, isolation }),
       });
       this.sessions = [session, ...this.sessions];
       this.openSession(session);
+      if (session.isolationKind === "git_worktree" && session.worktreeSourceDirty) {
+        this.notice = "Isolated session created from HEAD. Uncommitted source workspace changes were not copied.";
+        this.render();
+      }
       return session;
     } catch (error) {
       this.notice = `Create session failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -1529,7 +1533,10 @@ class PiWebAgentApp extends HTMLElement {
                 ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
               </select>
             </label>
-            <button id="newSession">New session</button>
+            <div class="new-session-actions">
+              <button id="newSession">New session</button>
+              <button id="newIsolatedSession" title="Create a Git worktree session on its own branch">New isolated session</button>
+            </div>
             <div class="sessions-heading">
               <h2>Recent sessions</h2>
             </div>
@@ -1615,6 +1622,7 @@ class PiWebAgentApp extends HTMLElement {
       void this.refresh();
     });
     this.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void this.createSession());
+    this.querySelector<HTMLButtonElement>("#newIsolatedSession")?.addEventListener("click", () => void this.createSession(undefined, "git_worktree"));
     this.querySelector<HTMLSelectElement>("#metadataModelSetting")?.addEventListener("change", (event) => {
       const model = (event.currentTarget as HTMLSelectElement).value;
       void this.api<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify({ sessionMetadataModel: model ? { model } : null }) }).then((settings) => {
@@ -1899,10 +1907,21 @@ class PiWebAgentApp extends HTMLElement {
         <button id="closeSessionDetails" type="button" aria-label="Close session details">×</button>
       </div>
       <div class="session-details-path">
-        <span>Workspace</span>
+        <span>${this.selectedSession.isolationKind === "git_worktree" ? "Worktree" : "Workspace"}</span>
         <code title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(this.selectedSession.cwd)}</code>
         <button id="copyWorkspacePath" type="button">Copy path</button>
       </div>
+      ${this.selectedSession.isolationKind === "git_worktree" ? `
+        <div class="session-details-path">
+          <span>Source</span>
+          <code title="${escapeHtml(this.selectedSession.sourceCwd ?? "")}">${escapeHtml(this.selectedSession.sourceCwd ?? "")}</code>
+        </div>
+        <div class="session-details-path">
+          <span>Branch</span>
+          <code title="${escapeHtml(this.selectedSession.worktreeBranch ?? "")}">${escapeHtml(this.selectedSession.worktreeBranch ?? "")}</code>
+        </div>
+        ${this.selectedSession.worktreeSourceDirty ? `<p class="notice">Created from HEAD; source had uncommitted changes that were not copied.</p>` : ""}
+      ` : ""}
       ${this.renderSessionSummary(!this.mobileLayout)}
       <button id="generateMetadata" class="session-details-generate" type="button" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>${this.metadataGenerating ? "Generating…" : "Suggest title and summary"}</button>
     </div>`;

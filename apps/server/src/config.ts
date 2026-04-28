@@ -20,6 +20,7 @@ export type ServerConfig = AppConfig & {
   metadataDbPath: string;
   sessionDir: string;
   artifactDir: string;
+  worktreeDir: string;
   fakeAgent: boolean;
   controllerTakeoverTimeoutMs: number;
 };
@@ -41,6 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     metadataDbPath: env.PI_WEB_METADATA_DB ?? resolve(dataDir, "metadata.sqlite"),
     sessionDir: env.PI_WEB_SESSION_DIR ? expandHome(env.PI_WEB_SESSION_DIR) : resolve(dataDir, "sessions"),
     artifactDir: env.PI_WEB_ARTIFACT_DIR ? expandHome(env.PI_WEB_ARTIFACT_DIR) : resolve(dataDir, "artifacts"),
+    worktreeDir: env.PI_WEB_WORKTREE_DIR ? expandHome(env.PI_WEB_WORKTREE_DIR) : resolve(dataDir, "worktrees"),
     fakeAgent: env.PI_WEB_FAKE_AGENT === "true" || env.PI_WEB_FAKE_AGENT === "1",
     controllerTakeoverTimeoutMs: Number.isFinite(controllerTakeoverTimeoutMs) ? controllerTakeoverTimeoutMs : 30000,
     toolPermissionPolicy: {

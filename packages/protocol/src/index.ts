@@ -86,10 +86,19 @@ export const updateAppSettingsRequestSchema = z.object({
 });
 export type UpdateAppSettingsRequest = z.infer<typeof updateAppSettingsRequestSchema>;
 
+export const sessionIsolationKindSchema = z.enum(["none", "git_worktree"]);
+export type SessionIsolationKind = z.infer<typeof sessionIsolationKindSchema>;
+
 export const webSessionSchema = z.object({
   id: z.string(),
   cwd: z.string(),
   piSessionFile: z.string(),
+  isolationKind: sessionIsolationKindSchema,
+  sourceCwd: z.string().nullable(),
+  worktreePath: z.string().nullable(),
+  worktreeBranch: z.string().nullable(),
+  worktreeBaseCommit: z.string().nullable(),
+  worktreeSourceDirty: z.boolean(),
   title: z.string().nullable(),
   titleSource: titleSourceSchema,
   summary: z.string().nullable(),
@@ -109,6 +118,7 @@ export type WebSession = z.infer<typeof webSessionSchema>;
 export const createSessionRequestSchema = z.object({
   cwd: z.string().min(1),
   title: z.string().min(1).max(120).optional(),
+  isolation: sessionIsolationKindSchema.optional().default("none"),
 });
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 

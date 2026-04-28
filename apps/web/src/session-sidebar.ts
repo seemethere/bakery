@@ -102,14 +102,16 @@ function renderSessionCard(options: {
   const activity = sessionActivityValue(session);
   const snippet = sessionSnippet(session);
   const status = session.status ?? (session.id === selectedSessionId ? currentStatus === "connecting" || currentStatus === "disconnected" ? undefined : currentStatus : "idle");
+  const workspaceLabel = session.isolationKind === "git_worktree" ? pathBasename(session.sourceCwd ?? session.cwd) : pathBasename(session.cwd);
   return `
       <button data-session-id="${escapeHtml(session.id)}" class="session-card ${session.id === selectedSessionId ? "active" : ""}">
         <span class="session-card-top">
           <strong>${escapeHtml(title)}</strong>
+          ${session.isolationKind === "git_worktree" ? `<em class="session-indicator isolated">isolated</em>` : ""}
           ${status ? `<em class="session-indicator ${escapeHtml(status)}">${escapeHtml(status)}</em>` : ""}
         </span>
         <span class="session-snippet">${escapeHtml(snippet)}</span>
-        <small>${escapeHtml(relativeTime(activity))} · ${escapeHtml(pathBasename(session.cwd))}</small>
+        <small>${escapeHtml(relativeTime(activity))} · ${escapeHtml(workspaceLabel)}${session.worktreeBranch ? ` · ${escapeHtml(session.worktreeBranch)}` : ""}</small>
       </button>`;
 }
 
