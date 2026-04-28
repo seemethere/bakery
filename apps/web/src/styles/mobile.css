@@ -77,17 +77,6 @@
     gap: 6px;
     flex-direction: column;
     align-items: stretch;
-    transition: max-height 160ms ease, padding-block 160ms ease, opacity 120ms ease, transform 160ms ease, border-color 160ms ease;
-  }
-
-  header.mobile-header-hidden {
-    max-height: 0;
-    overflow: hidden;
-    border-bottom-color: transparent;
-    opacity: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    transform: translateY(-8px);
   }
 
   header:has(.session-details-popover) {

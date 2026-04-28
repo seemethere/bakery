@@ -102,9 +102,6 @@ class PiWebAgentApp extends HTMLElement {
   private modelThinkingPickerOpen = false;
   private modelThinkingAnchor: { left: number; bottom: number; arrowLeft: number } | null = null;
   private sessionDetailsOpen = false;
-  private mobileHeaderHidden = false;
-  private lastTranscriptScrollTop = 0;
-  private mobileHeaderRevealIntentUntil = 0;
   private pendingQuestion: PendingQuestion | null = null;
   private appSettings: AppSettings | null = null;
   private metadataSuggestion: SessionMetadataSuggestion | null = null;
@@ -452,8 +449,6 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = null;
     this.modelThinkingPickerOpen = false;
     this.sessionDetailsOpen = false;
-    this.mobileHeaderHidden = false;
-    this.lastTranscriptScrollTop = 0;
     this.pendingQuestion = null;
     this.dismissedPlanActionTranscriptId = "";
     this.sessionTree = null;
@@ -486,8 +481,6 @@ class PiWebAgentApp extends HTMLElement {
     this.controller = null;
     this.settings = null;
     this.sessionDetailsOpen = false;
-    this.mobileHeaderHidden = false;
-    this.lastTranscriptScrollTop = 0;
     this.pendingQuestion = null;
     this.sessionTree = null;
     this.selectedTranscriptId = "";
@@ -1505,7 +1498,6 @@ class PiWebAgentApp extends HTMLElement {
 
   private markTranscriptUserScrollIntent(): void {
     this.transcriptFollow.markUserScrollIntent();
-    this.mobileHeaderRevealIntentUntil = Date.now() + 1500;
   }
 
   private sidebarOverlayOpen(): boolean {
@@ -1709,7 +1701,6 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelector<HTMLButtonElement>("#toggleSessionDetails")?.addEventListener("click", (event) => {
       event.stopPropagation();
       this.sessionDetailsOpen = !this.sessionDetailsOpen;
-      if (this.sessionDetailsOpen) this.mobileHeaderHidden = false;
       this.render();
     });
     this.querySelector<HTMLButtonElement>("#closeSessionDetails")?.addEventListener("click", () => {
@@ -1829,7 +1820,6 @@ class PiWebAgentApp extends HTMLElement {
     transcriptElement?.addEventListener("wheel", () => this.markTranscriptUserScrollIntent(), { passive: true });
     transcriptElement?.addEventListener("touchmove", () => this.markTranscriptUserScrollIntent(), { passive: true });
     transcriptElement?.addEventListener("scroll", (event) => {
-      this.handleTranscriptHeaderReveal((event.currentTarget as HTMLElement).scrollTop);
       this.transcriptFollow.handleScroll(event, {
         requestRender: () => this.requestRender(80),
         patchJumpToLatest: () => this.patchJumpToLatest(),
@@ -1933,26 +1923,6 @@ class PiWebAgentApp extends HTMLElement {
       this.notice = `Could not copy workspace path: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
     });
-  }
-
-  private handleTranscriptHeaderReveal(scrollTop: number): void {
-    if (!this.mobileLayout) {
-      this.mobileHeaderHidden = false;
-      this.lastTranscriptScrollTop = scrollTop;
-      return;
-    }
-    const shouldForceVisible = this.sessionDetailsOpen || this.modelThinkingPickerOpen || scrollTop <= 12;
-    const hasRecentUserScrollIntent = Date.now() <= this.mobileHeaderRevealIntentUntil;
-    if (shouldForceVisible) {
-      this.mobileHeaderHidden = false;
-    } else if (hasRecentUserScrollIntent) {
-      const delta = scrollTop - this.lastTranscriptScrollTop;
-      if (delta > 12) this.mobileHeaderHidden = true;
-      else if (delta < -8) this.mobileHeaderHidden = false;
-    }
-    this.lastTranscriptScrollTop = scrollTop;
-    const header = this.querySelector<HTMLElement>("header");
-    header?.classList.toggle("mobile-header-hidden", this.mobileHeaderHidden);
   }
 
   private renderMobileModelThinkingPopover(isController: boolean): string {
@@ -2496,7 +2466,6 @@ class PiWebAgentApp extends HTMLElement {
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
     const headerClasses = [
       this.modelThinkingPickerOpen ? "model-picker-open" : "",
-      this.mobileHeaderHidden && !this.sessionDetailsOpen && !this.modelThinkingPickerOpen ? "mobile-header-hidden" : "",
     ].filter(Boolean).join(" ");
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = this.promptDraft.trimStart().startsWith("!!");
