@@ -1,6 +1,7 @@
 const autoScrollStorageKey = "piWebAutoScroll";
 const nearBottomThresholdPx = 48;
 const userScrollIntentMs = 1500;
+const jumpToLatestIcon = `<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M12 4.75v13.5m0 0 6-6m-6 6-6-6"/></svg>`;
 
 export class TranscriptFollowController {
   private autoScrollValue = localStorage.getItem(autoScrollStorageKey) !== "false";
@@ -56,8 +57,8 @@ export class TranscriptFollowController {
 
   renderJumpToLatest(): string {
     if (this.autoScrollValue) return "";
-    const count = this.unreadCount;
-    return `<button id="jumpToLatest" class="jump-to-latest" type="button">${this.jumpToLatestLabel()}</button>`;
+    const label = this.jumpToLatestLabel();
+    return `<button id="jumpToLatest" class="jump-to-latest" type="button" aria-label="${label}" title="${label}">${jumpToLatestIcon}</button>`;
   }
 
   isNearBottom(transcript: HTMLElement | null | undefined): boolean {
@@ -104,14 +105,18 @@ export class TranscriptFollowController {
     }
     const label = this.jumpToLatestLabel();
     if (existing) {
-      existing.textContent = label;
+      existing.setAttribute("aria-label", label);
+      existing.title = label;
+      existing.innerHTML = jumpToLatestIcon;
       return;
     }
     const button = document.createElement("button");
     button.id = "jumpToLatest";
     button.className = "jump-to-latest";
     button.type = "button";
-    button.textContent = label;
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = jumpToLatestIcon;
     button.addEventListener("click", onJumpToLatest);
     shell.append(button);
   }

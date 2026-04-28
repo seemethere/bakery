@@ -123,13 +123,35 @@
   left: 50%;
   bottom: 14px;
   z-index: 5;
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
   transform: translateX(-50%);
-  border-color: var(--c-668cff);
-  background: var(--color-bg-selected);
-  box-shadow: var(--shadow-panel);
+  border: 1px solid color-mix(in srgb, var(--c-668cff) 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-selected) 58%, transparent);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.2);
   color: var(--c-dbe4ff);
-  font-size: 13px;
-  font-weight: 700;
+  padding: 0;
+  backdrop-filter: blur(15px) saturate(1.2);
+  -webkit-backdrop-filter: blur(15px) saturate(1.2);
+}
+
+.jump-to-latest:hover,
+.jump-to-latest:focus-visible {
+  border-color: var(--c-668cff);
+  background: color-mix(in srgb, var(--color-bg-selected) 72%, transparent);
+}
+
+.jump-to-latest svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
 }
 
 .message {
