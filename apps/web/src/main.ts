@@ -847,13 +847,16 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
     if (transcriptId) this.dismissedPlanActionTranscriptId = transcriptId;
-    const drafts: Record<PlanAction, string> = {
+    this.planFeedbackDraft = "";
+    if (action === "chat") {
+      this.fillPromptDraft("");
+      return;
+    }
+    const drafts: Record<Exclude<PlanAction, "chat">, string> = {
       accept: "Proceed with the recommended plan.",
       feedback: `Feedback on the plan: ${trimmedFeedback}`,
       cancel: "Cancel this plan. Return to normal chat.",
-      chat: "Back to chat.",
     };
-    this.planFeedbackDraft = "";
     this.submitPlanActionText(drafts[action]);
   }
 
