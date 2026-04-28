@@ -1527,8 +1527,8 @@ class PiWebAgentApp extends HTMLElement {
 
   private bindComposerControls(): void {
     bindComposerControls(this, {
-      commandAutocomplete: this.commandAutocomplete,
-      fileAutocomplete: this.fileAutocomplete,
+      commandAutocomplete: () => this.commandAutocomplete,
+      fileAutocomplete: () => this.fileAutocomplete,
       imagePickerActive: () => this.imagePickerActive,
       setImagePickerActive: (active) => { this.imagePickerActive = active; },
       setNotice: (notice) => { this.notice = notice; },

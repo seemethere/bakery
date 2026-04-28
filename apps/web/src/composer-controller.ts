@@ -2,8 +2,8 @@ import type { CommandAutocompleteState, FileAutocompleteState } from "./autocomp
 import { isSupportedImageFile } from "./prompt-images";
 
 export type ComposerControlOptions = {
-  commandAutocomplete: CommandAutocompleteState;
-  fileAutocomplete: FileAutocompleteState;
+  commandAutocomplete: () => CommandAutocompleteState;
+  fileAutocomplete: () => FileAutocompleteState;
   imagePickerActive: () => boolean;
   setImagePickerActive: (active: boolean) => void;
   setNotice: (notice: string) => void;
@@ -90,17 +90,18 @@ export function bindComposerControls(root: ParentNode, options: ComposerControlO
   root.querySelector<HTMLTextAreaElement>("#prompt")?.addEventListener("keydown", (event) => handleComposerKeydown(event, options));
 }
 
-function handleComposerKeydown(event: KeyboardEvent, options: ComposerControlOptions): void {
-  if (options.commandAutocomplete.active) {
+export function handleComposerKeydown(event: KeyboardEvent, options: ComposerControlOptions): void {
+  const commandAutocomplete = options.commandAutocomplete();
+  if (commandAutocomplete.active) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const direction = event.key === "ArrowDown" ? 1 : -1;
-      const count = Math.max(1, options.commandAutocomplete.commands.length);
-      options.commandAutocomplete.selectedIndex = (options.commandAutocomplete.selectedIndex + direction + count) % count;
+      const count = Math.max(1, commandAutocomplete.commands.length);
+      commandAutocomplete.selectedIndex = (commandAutocomplete.selectedIndex + direction + count) % count;
       options.patchAutocompleteSelection("command");
       return;
     }
-    if ((event.key === "Tab" || event.key === "Enter") && options.commandAutocomplete.commands.length > 0) {
+    if ((event.key === "Tab" || event.key === "Enter") && commandAutocomplete.commands.length > 0) {
       event.preventDefault();
       options.chooseCommandAutocomplete();
       return;
@@ -113,16 +114,17 @@ function handleComposerKeydown(event: KeyboardEvent, options: ComposerControlOpt
     }
   }
 
-  if (options.fileAutocomplete.active) {
+  const fileAutocomplete = options.fileAutocomplete();
+  if (fileAutocomplete.active) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const direction = event.key === "ArrowDown" ? 1 : -1;
-      const count = Math.max(1, options.fileAutocomplete.files.length);
-      options.fileAutocomplete.selectedIndex = (options.fileAutocomplete.selectedIndex + direction + count) % count;
+      const count = Math.max(1, fileAutocomplete.files.length);
+      fileAutocomplete.selectedIndex = (fileAutocomplete.selectedIndex + direction + count) % count;
       options.patchAutocompleteSelection("file");
       return;
     }
-    if ((event.key === "Tab" || event.key === "Enter") && options.fileAutocomplete.files.length > 0) {
+    if ((event.key === "Tab" || event.key === "Enter") && fileAutocomplete.files.length > 0) {
       event.preventDefault();
       options.chooseFileAutocomplete();
       return;
