@@ -40,6 +40,12 @@
   --color-assistant-border: #334155;
   --color-user-bg: #10233f;
   --color-user-border: #2563eb;
+  --color-chat-outgoing-bg: linear-gradient(180deg, #38bdf8 0%, #0a84ff 100%);
+  --color-chat-outgoing-text: #ffffff;
+  --color-chat-outgoing-shadow: 0 8px 24px rgba(10, 132, 255, 0.18);
+  --color-chat-incoming-bg: #202b3d;
+  --color-chat-incoming-text: #f8fafc;
+  --color-chat-incoming-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
   --color-tool-bg: #121827;
   --color-tool-border: #3a4658;
   --color-developer-bash-bg: #182111;
@@ -128,6 +134,12 @@
   --color-assistant-border: #cbd5e1;
   --color-user-bg: #e8f1ff;
   --color-user-border: #2563eb;
+  --color-chat-outgoing-bg: linear-gradient(180deg, #36b6ff 0%, #0a84ff 100%);
+  --color-chat-outgoing-text: #ffffff;
+  --color-chat-outgoing-shadow: 0 8px 22px rgba(10, 132, 255, 0.16);
+  --color-chat-incoming-bg: #e9e9eb;
+  --color-chat-incoming-text: #050505;
+  --color-chat-incoming-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
   --color-tool-bg: #f7f9fc;
   --color-tool-border: #c5d0df;
   --color-developer-bash-bg: #f5fee7;

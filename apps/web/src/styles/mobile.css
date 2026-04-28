@@ -183,7 +183,19 @@
   }
 
   .transcript {
-    padding: 14px 8px 18px;
+    padding: 14px 10px 18px;
+  }
+
+  .message.user,
+  .message.assistant {
+    max-width: min(84%, 620px);
+    border-radius: 22px;
+  }
+
+  .message.user .markdown-body,
+  .message.assistant .markdown-body {
+    padding: 8px 13px 9px;
+    font-size: 15px;
   }
 
   .message + .message,
