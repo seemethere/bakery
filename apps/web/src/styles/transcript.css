@@ -430,9 +430,27 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
-.message.tool.running {
-  border-color: var(--color-info);
-  background: var(--color-info-bg);
+.message.tool.running:not(.developer-bash) {
+  padding-left: 16px;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--color-info) 76%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.message.tool.running:not(.developer-bash) .message-header {
+  min-height: 32px;
+  padding: 5px 0;
+  border-bottom: 0;
+}
+
+.message.tool.running:not(.developer-bash) .message-body {
+  margin: 0 0 8px 28px;
+  border: 1px solid color-mix(in srgb, var(--color-info) 42%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-info-bg) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 48%, transparent);
 }
 
 .message.tool.developer-bash {
