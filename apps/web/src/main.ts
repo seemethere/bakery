@@ -9,7 +9,7 @@ import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWar
 import { bindComposerControls } from "./composer-controller";
 import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
-import { defaultTranscriptExpanded, renderTranscriptHtml } from "./transcript-renderer";
+import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscriptHtml } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker } from "./model-thinking-picker";
@@ -144,6 +144,7 @@ class PiWebAgentApp extends HTMLElement {
   private promptDraftSaveTimer: ReturnType<typeof setTimeout> | undefined;
   private imagePickerActive = false;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
+  private runningElapsedTimer: ReturnType<typeof setInterval> | undefined;
   private renderScheduled = false;
   private forceFullRender = false;
   private transcriptStructureDirty = false;
@@ -232,6 +233,7 @@ class PiWebAgentApp extends HTMLElement {
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
     this.persistAttachmentWarningIfNeeded();
+    if (this.runningElapsedTimer) clearInterval(this.runningElapsedTimer);
     if (this.renderTimer) clearTimeout(this.renderTimer);
     if (this.promptDraftSaveTimer) clearTimeout(this.promptDraftSaveTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -2180,7 +2182,10 @@ class PiWebAgentApp extends HTMLElement {
         </div>
       </div>`;
     }
-    return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds);
+    return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds, {
+      activeToolGroupId: this.status === "running" ? latestGroupableToolGroupId(this.transcript) : undefined,
+      nowMs: Date.now(),
+    });
   }
 
   private useEmptyQuickStart(action: string): void {
@@ -2351,6 +2356,23 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
   }
 
+  private syncRunningElapsedTimer(): void {
+    const shouldTick = this.status === "running" && Boolean(latestGroupableToolGroupId(this.transcript));
+    if (shouldTick && !this.runningElapsedTimer) {
+      this.runningElapsedTimer = setInterval(() => {
+        if (this.status !== "running" || !latestGroupableToolGroupId(this.transcript)) {
+          this.syncRunningElapsedTimer();
+          return;
+        }
+        this.transcriptStructureDirty = true;
+        this.requestRender(0);
+      }, 1_000);
+    } else if (!shouldTick && this.runningElapsedTimer) {
+      clearInterval(this.runningElapsedTimer);
+      this.runningElapsedTimer = undefined;
+    }
+  }
+
   private syncOpenActionMenus(root: ParentNode = this): void {
     root.querySelectorAll<HTMLElement>("pi-transcript-row[data-transcript-id]").forEach((row) => {
       const isOpenRow = Boolean(this.openActionMenuId) && row.dataset.transcriptId === this.openActionMenuId;
@@ -2451,6 +2473,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private render(): void {
+    this.syncRunningElapsedTimer();
     const renderStart = performance.now();
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
     this.transcriptFollow.captureScrollTop(existingTranscript);

@@ -42,6 +42,18 @@ describe("transcript renderer", () => {
     expect(html).toContain('data-transcript-id="a1"');
   });
 
+  test("uses wall-clock elapsed time for the active tool group", () => {
+    const transcript = [
+      item({ id: "t1", kind: "tool", title: "$ ls", startedAt: "2026-04-27T00:00:00.000Z", endedAt: "2026-04-27T00:00:00.400Z", durationMs: 400 }),
+      item({ id: "t2", kind: "tool", title: "Read", startedAt: "2026-04-27T00:00:00.500Z", endedAt: "2026-04-27T00:00:01.500Z", durationMs: 1000 }),
+    ];
+
+    expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBe("t1|t2");
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(), { activeToolGroupId: "t1|t2", nowMs: Date.parse("2026-04-27T00:00:05.000Z") });
+
+    expect(html).toContain("Ran 2 tools · 5s");
+  });
+
   test("does not group running, developer bash, or single tool rows", () => {
     const transcript = [
       item({ id: "running", kind: "tool", title: "Running", status: "running" }),
