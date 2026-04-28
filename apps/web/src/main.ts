@@ -12,7 +12,7 @@ import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscript
 import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscriptHtml } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
-import { renderModelThinkingPicker } from "./model-thinking-picker";
+import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfSample } from "./utils";
 import "./styles.css";
@@ -1786,6 +1786,12 @@ class PiWebAgentApp extends HTMLElement {
       this.modelThinkingPickerOpen = !this.modelThinkingPickerOpen;
       this.render();
     });
+    this.querySelector<HTMLDivElement>(".model-thinking-mobile-popover")?.addEventListener("click", (event) => {
+      if (event.target === event.currentTarget) {
+        this.modelThinkingPickerOpen = false;
+        this.render();
+      }
+    });
     this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => {
       this.modelThinkingPickerOpen = false;
       this.setModel((event.currentTarget as HTMLSelectElement).value);
@@ -1935,6 +1941,13 @@ class PiWebAgentApp extends HTMLElement {
     this.lastTranscriptScrollTop = scrollTop;
     const header = this.querySelector<HTMLElement>("header");
     header?.classList.toggle("mobile-header-hidden", this.mobileHeaderHidden);
+  }
+
+  private renderMobileModelThinkingPopover(isController: boolean): string {
+    if (!this.mobileLayout || !this.modelThinkingPickerOpen || !this.settings) return "";
+    return `<div class="model-thinking-mobile-popover">
+      ${renderModelThinkingPopover({ settings: this.settings, isController, open: true, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel, showThinking: this.showThinking, includeShowThinking: true })}
+    </div>`;
   }
 
   private renderMobileMetadataSuggestion(): string {
@@ -2513,7 +2526,7 @@ class PiWebAgentApp extends HTMLElement {
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
                 <strong>${escapeHtml(composerModeLabel)}</strong>
                 <span class="composer-mode-spacer" aria-hidden="true"></span>
-                ${this.settings ? renderModelThinkingPicker({ settings: this.settings, isController, open: this.modelThinkingPickerOpen, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel, showThinking: this.showThinking, includeShowThinking: true }) : ""}
+                ${this.settings ? renderModelThinkingPicker({ settings: this.settings, isController, open: this.modelThinkingPickerOpen, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel, showThinking: this.showThinking, includeShowThinking: true, renderPopover: !this.mobileLayout }) : ""}
                 ${this.renderContextUsageNotice()}
               </div>
               <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
@@ -2531,6 +2544,7 @@ class PiWebAgentApp extends HTMLElement {
         </footer>
       </main>
       ${this.renderMobileMetadataSuggestion()}
+      ${this.renderMobileModelThinkingPopover(isController)}
     `;
     this.forceFullRender = false;
     this.transcriptStructureDirty = false;

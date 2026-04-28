@@ -188,14 +188,8 @@
     font-size: 11px;
   }
 
-  .model-thinking-popover {
-    position: fixed;
-    right: 8px;
-    bottom: calc(122px + env(safe-area-inset-bottom, 0px));
-    left: 8px;
-    width: auto;
-    max-width: none;
-    transform: none;
+  .model-thinking-picker .model-thinking-popover {
+    display: none;
   }
 
   .inline-control select {
