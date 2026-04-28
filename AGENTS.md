@@ -128,6 +128,7 @@ Before ending a work session, unless the user asks otherwise:
 2. Update `PROJECT_LOG.md` with changed status and next priorities.
 3. Tell the human operator how to test the changes manually, including whether the currently running browser page can pick them up automatically, requires a page refresh, or requires a backend/dev-server restart.
 4. Commit with a concise Conventional Commit message, unless the user explicitly asks not to commit.
+5. For this repository's current isolated-worktree dev loop, if the branch is a `bakery/session/*` branch and `gh auth status` succeeds, push the branch and create or update a GitHub PR so the operator can review/merge there. Use `git push -u origin HEAD` for a new branch, then `gh pr create --fill --head <branch>` when no PR exists; if a PR already exists, mention its URL. If GitHub auth/remote/branch conditions are not met, skip PR creation and say why.
 
 ## Useful commands
 
