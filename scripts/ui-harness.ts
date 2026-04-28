@@ -1052,10 +1052,9 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
-  await page.locator(".composer-activity", { hasText: /\$|Pi is/ }).waitFor({ timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "composer-activity-running.png"), fullPage: true });
+  await page.locator(".message.tool").waitFor({ timeout: 15_000 });
+  await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
   await page.locator(".status.idle").waitFor({ timeout: 30_000 });
-  await page.locator(".composer-activity").waitFor({ state: "detached", timeout: 5_000 });
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();

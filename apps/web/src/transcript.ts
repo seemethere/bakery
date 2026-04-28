@@ -503,6 +503,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
 
   const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
   const usePlainStreamingText = item.status === "running" && (item.kind === "assistant" || item.kind === "user");
+  const usePlainStreamingToolOutput = item.status === "running" && item.kind === "tool";
   const rendered = segments
     .map((segment) => {
       if (segment.kind === "markdown") {
@@ -522,8 +523,8 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
           ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
-      const terminalText = item.kind === "tool" ? ansiConverter.toHtml(segment.text) : escapeHtml(segment.text);
-      return `${item.kind === "tool" ? '<div class="terminal-window" aria-label="Terminal output">' : ""}<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${terminalText}</pre>${item.kind === "tool" ? "</div>" : ""}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
+      const terminalText = item.kind === "tool" && !usePlainStreamingToolOutput ? ansiConverter.toHtml(segment.text) : escapeHtml(segment.text);
+      return `${item.kind === "tool" ? '<div class="terminal-window" aria-label="Terminal output">' : ""}<pre class="${item.kind === "tool" ? `terminal-output${usePlainStreamingToolOutput ? " tool-streaming-output" : ""}` : ""}">${terminalText}</pre>${item.kind === "tool" ? "</div>" : ""}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
     })
     .join("");
   if (context.cache) {
@@ -591,11 +592,13 @@ export class PiTranscriptRow extends HTMLElement {
     this.className = this.classNames();
 
     const streamingText = this.streamingText();
-    const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
+    const streamingTextTarget = streamingText !== null ? this.querySelector<HTMLElement>(this.item?.kind === "tool" ? ".tool-streaming-output" : ".streaming-plain pre") : null;
+    const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && streamingTextTarget);
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
     const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
-      this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
+      streamingTextTarget!.textContent = streamingText ?? "";
+      this.pinRunningToolOutputToBottom(item);
       this.lastStreamingText = streamingText ?? "";
       recordPerfSample("rowUpdate", performance.now() - start);
       return;
@@ -665,10 +668,16 @@ export class PiTranscriptRow extends HTMLElement {
   }
 
   private streamingText(): string | null {
-    if (!this.item || this.item.status !== "running" || (this.item.kind !== "assistant" && this.item.kind !== "user")) return null;
-    const segments = this.item.segments?.length ? this.item.segments : [{ kind: "markdown", text: this.item.body } satisfies TranscriptSegment];
-    const text = segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown").map((segment) => segment.text).join("\n\n");
-    return text;
+    if (!this.item || this.item.status !== "running") return null;
+    if (this.item.kind === "assistant" || this.item.kind === "user") {
+      const segments = this.item.segments?.length ? this.item.segments : [{ kind: "markdown", text: this.item.body } satisfies TranscriptSegment];
+      return segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown").map((segment) => segment.text).join("\n\n");
+    }
+    if (this.item.kind === "tool") {
+      const segments = this.item.segments?.length ? this.item.segments : [{ kind: "pre", text: this.item.body } satisfies TranscriptSegment];
+      return segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "pre" }> => segment.kind === "pre").map((segment) => segment.text).join("\n\n");
+    }
+    return null;
   }
 }
 

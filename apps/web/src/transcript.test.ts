@@ -71,6 +71,24 @@ describe("transcript terminal rendering", () => {
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("\u001b[31m");
   });
+
+  test("marks running tool output for text-only live patching", () => {
+    const item: TranscriptItem = {
+      id: "tool-running",
+      kind: "tool",
+      title: "$ test",
+      body: "\u001b[31mstreaming <script>\u001b[0m",
+      segments: [{ kind: "pre", text: "\u001b[31mstreaming <script>\u001b[0m" }],
+      status: "running",
+    };
+
+    const html = renderTranscriptSegments(item, false);
+
+    expect(html).toContain("tool-streaming-output");
+    expect(html).toContain("streaming &lt;script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("\u001b[31m");
+  });
 });
 
 describe("transcript plan actions", () => {
