@@ -1178,7 +1178,7 @@ class PiWebAgentApp extends HTMLElement {
         this.promptDraft = `${this.promptDraft.trimEnd()}${this.promptDraft.trim() ? "\n" : ""}${insertion}`;
         this.schedulePromptDraftSave();
       }
-      this.notice = `Attached ${uploadedPaths.length} image${uploadedPaths.length === 1 ? "" : "s"} to the prompt and uploaded transcript artifact preview path${uploadedPaths.length === 1 ? "" : "s"}.`;
+      this.notice = "";
     }
     this.render();
   }
