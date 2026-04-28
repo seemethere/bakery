@@ -1738,6 +1738,12 @@ class PiWebAgentApp extends HTMLElement {
         this.render();
       });
     });
+    this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const session = this.sessions.find((candidate) => candidate.id === button.dataset.sessionId);
+        if (session) this.openSession(session);
+      });
+    });
   }
 
   private bindComposerControls(): void {
@@ -1929,12 +1935,6 @@ class PiWebAgentApp extends HTMLElement {
         const action = button.dataset.planAction;
         const feedback = this.querySelector<HTMLInputElement>("#planFeedback")?.value ?? this.planFeedbackDraft;
         if (action === "accept" || action === "feedback" || action === "cancel" || action === "chat") this.handlePlanAction(action, button.dataset.transcriptId ?? "", feedback);
-      });
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const session = this.sessions.find((candidate) => candidate.id === button.dataset.sessionId);
-        if (session) this.openSession(session);
       });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {

@@ -422,6 +422,18 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("Mobile layout regression draft");
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
+  const originalSessionId = await page.locator(".session-card.active").getAttribute("data-session-id");
+  if (!originalSessionId) throw new Error("Could not find active mobile session before selection smoke.");
+  const createdMobileSession = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
+  await page.locator(".session-sidebar:not(.collapsed) #newSession").click();
+  const mobileSession = await (await createdMobileSession).json() as { id: string };
+  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, mobileSession.id, { timeout: 5_000 });
+  await page.locator("#toggleSessionSidebarMobile").click();
+  await page.locator(`.session-sidebar:not(.collapsed) [data-session-id="${originalSessionId}"]`).click();
+  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, originalSessionId, { timeout: 5_000 });
+  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  await page.locator("#toggleSessionSidebarMobile").click();
+  await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   await page.evaluate(() => {
     const app = document.querySelector("pi-web-agent") as unknown as { sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
     const current = app?.sessions?.[0];
