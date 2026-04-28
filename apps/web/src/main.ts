@@ -2550,7 +2550,7 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
     if (existing) existing.outerHTML = html;
-    else mode.querySelector(".composer-hint")?.insertAdjacentHTML("afterend", html);
+    else mode.querySelector("strong")?.insertAdjacentHTML("afterend", html);
   }
 
   private patchJumpToLatest(): void {
@@ -2680,12 +2680,16 @@ class PiWebAgentApp extends HTMLElement {
   private patchComposerBashMode(): void {
     const isBash = this.isBashPromptDraft();
     const isNoContext = this.promptDraft.trimStart().startsWith("!!");
+    const isRunning = this.status === "running";
+    const label = isBash ? (isNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
     const promptShell = this.querySelector<HTMLElement>(".prompt-shell");
     const composerMode = this.querySelector<HTMLElement>(".composer-mode");
     promptShell?.classList.toggle("bash-mode", isBash);
     promptShell?.classList.toggle("no-context", isNoContext);
     composerMode?.classList.toggle("bash-mode", isBash);
     composerMode?.classList.toggle("no-context", isNoContext);
+    const modeLabel = composerMode?.querySelector<HTMLElement>("strong");
+    if (modeLabel) modeLabel.textContent = label;
   }
 
   private renderContextUsageNotice(): string {
@@ -2736,7 +2740,8 @@ class PiWebAgentApp extends HTMLElement {
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = this.promptDraft.trimStart().startsWith("!!");
     const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
-    const composerHint = isBashDraft ? (isRunning ? "Bash commands run when the session is idle" : "Enter runs local bash · !! excludes output from context") : isRunning ? "Enter steers now · Alt+Enter queues a follow-up" : "Enter sends · Shift+Enter adds a line";
+    const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
+    const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
     this.innerHTML = `
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}
@@ -2774,7 +2779,6 @@ class PiWebAgentApp extends HTMLElement {
               ${renderPromptImages(this.promptImages)}
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""}">
                 <strong>${escapeHtml(composerModeLabel)}</strong>
-                <span class="composer-hint">${escapeHtml(composerHint)}</span>
                 ${this.renderComposerActivity()}
                 ${this.renderContextUsageNotice()}
               </div>
@@ -2784,10 +2788,10 @@ class PiWebAgentApp extends HTMLElement {
               ${renderFileAutocomplete(this.fileAutocomplete)}
             </div>
             <div class="controls ${isRunning ? "running" : ""}">
-              <button id="attachImages" class="icon-button" title="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>📎</button>
-              <button id="send" class="primary-action" ${isController ? "" : "disabled"}>${isRunning ? "Steer" : "Send"}<small>Enter</small></button>
+              <button id="attachImages" class="icon-button" title="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>${attachIcon}</button>
+              <button id="send" class="primary-action ${isRunning ? "" : "icon-send"}" aria-label="${isRunning ? "Steer" : "Send"}" ${isController ? "" : "disabled"}>${isRunning ? "Steer<small>Enter</small>" : `${sendIcon}<span class="sr-only">Send</span>`}</button>
               <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
-              <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Abort</button>
+              <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Stop</button>
             </div>
           `}
         </footer>

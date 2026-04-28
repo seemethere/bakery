@@ -444,15 +444,15 @@
   }
 
   .controls button {
-    min-width: 56px;
-    min-height: 36px;
-    padding: 5px 7px;
+    min-width: 48px;
+    min-height: 31px;
+    padding: 4px 6px;
     font-size: 12px;
     white-space: nowrap;
   }
 
   .controls .icon-button {
-    min-width: 36px;
+    min-width: 32px;
     padding-inline: 6px;
   }
 
@@ -559,8 +559,8 @@
   }
 
   .controls .icon-button {
-    flex: 0 0 36px;
-    min-width: 36px;
+    flex: 0 0 32px;
+    min-width: 32px;
   }
 
   .controls .primary-action,

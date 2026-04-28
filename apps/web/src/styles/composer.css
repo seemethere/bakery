@@ -1,3 +1,12 @@
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .prompt-shell {
   grid-column: 1;
   position: relative;
@@ -260,10 +269,10 @@ footer.plan-takeover-footer {
 .context-usage {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
   margin-left: auto;
-  color: var(--c-8b94a7);
+  color: var(--color-text-faint);
   font-size: 11px;
 }
 
@@ -280,23 +289,23 @@ footer.plan-takeover-footer {
 }
 
 .context-usage strong {
-  color: var(--c-f3d96b);
+  color: var(--color-text-muted);
   text-transform: uppercase;
 }
 
 .context-usage-bar {
-  flex: 0 0 96px;
-  height: 5px;
+  flex: 0 0 78px;
+  height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--c-272d39);
+  background: color-mix(in srgb, var(--color-border) 42%, transparent);
 }
 
 .context-usage-bar i {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--c-6aa6ff), var(--c-f3d96b));
+  background: color-mix(in srgb, var(--color-text-muted) 64%, var(--color-accent-soft));
 }
 
 .composer-mode {
@@ -870,28 +879,30 @@ header.model-picker-open {
   position: relative;
   z-index: 2;
   display: flex;
-  align-self: stretch;
-  align-items: stretch;
+  align-self: end;
+  align-items: end;
   gap: 6px;
 }
 
 .controls.running {
   align-self: end;
+  align-items: end;
 }
 
 .controls button {
   display: grid;
   place-content: center;
-  gap: 1px;
-  min-width: 72px;
-  min-height: 40px;
+  gap: 0;
+  min-width: 58px;
+  height: 32px;
+  min-height: 0;
   border-color: color-mix(in srgb, var(--color-border) 70%, transparent);
-  border-radius: 16px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
   color: var(--color-text-secondary);
-  padding: 6px 9px;
-  font-size: 13px;
-  box-shadow: 0 10px 26px color-mix(in srgb, #000 10%, transparent);
+  padding: 4px 7px;
+  font-size: 12px;
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 7%, transparent);
 }
 
 .controls button:hover,
@@ -903,28 +914,41 @@ header.model-picker-open {
 
 .controls button small {
   color: var(--c-8b94a7);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
+  line-height: 1.05;
 }
 
-.controls .icon-button {
-  min-width: 38px;
-  padding-inline: 8px;
+.controls button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.controls .icon-button,
+.controls .icon-send {
+  min-width: 34px;
+  width: 34px;
+  padding-inline: 0;
 }
 
 .controls .primary-action {
-  border-color: color-mix(in srgb, var(--color-accent-soft) 60%, var(--color-border));
-  background: var(--color-chat-outgoing-bg);
-  color: var(--color-chat-outgoing-text);
+  border-color: color-mix(in srgb, var(--color-accent-soft) 46%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 18%, var(--color-bg-surface));
+  color: color-mix(in srgb, var(--color-accent-soft) 78%, var(--color-text));
   font-weight: 700;
-  box-shadow: var(--color-chat-outgoing-shadow);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-accent-soft) 8%, transparent);
 }
 
 .controls .primary-action:hover,
 .controls .primary-action:focus-visible {
-  border-color: color-mix(in srgb, var(--color-accent-soft) 78%, var(--color-border));
-  background: var(--color-chat-outgoing-bg);
-  color: var(--color-chat-outgoing-text);
+  border-color: color-mix(in srgb, var(--color-accent-soft) 62%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 24%, var(--color-bg-surface));
+  color: var(--color-text);
 }
 
 .controls .secondary-action {

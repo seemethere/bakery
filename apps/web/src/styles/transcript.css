@@ -12,7 +12,7 @@
   background: var(--color-transcript-bg);
   height: 100%;
   min-height: 0;
-  padding: 18px 16px 22px;
+  padding: 18px max(16px, calc((100% - 860px) / 2)) 22px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
