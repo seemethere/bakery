@@ -501,6 +501,9 @@
 }
 
 .message.tool .message-header strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(48ch, 42vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -643,7 +646,9 @@
 }
 
 .tool-run-group summary span {
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: min(62ch, 52vw);
   overflow: hidden;
   color: var(--color-text-muted);
   text-overflow: ellipsis;

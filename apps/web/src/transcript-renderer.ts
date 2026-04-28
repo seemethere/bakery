@@ -62,7 +62,7 @@ export function renderToolRunGroup(items: TranscriptItem[], expandedToolGroupIds
   return `<details class="tool-run-group" data-tool-run-group="${escapeHtml(groupId)}" ${expanded ? "open" : ""}>
       <summary>
         <strong>Ran ${items.length} tools${duration ? ` · ${escapeHtml(duration)}` : ""}</strong>
-        ${labels ? `<span>${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
+        ${labels ? `<span title="${escapeHtml(labels)}">${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
       </summary>
       <div class="tool-run-items">
         ${items.map((item) => renderTranscriptItemShell(item)).join("")}

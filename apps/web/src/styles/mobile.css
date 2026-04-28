@@ -319,6 +319,14 @@
     gap: 6px;
   }
 
+  .message.tool .message-header strong {
+    max-width: min(42ch, 46vw);
+  }
+
+  .tool-run-group summary span {
+    max-width: 44vw;
+  }
+
   .message-action-bar {
     opacity: 1;
   }

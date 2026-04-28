@@ -554,7 +554,7 @@ export class PiTranscriptRow extends HTMLElement {
       ${this.renderConversationActionBar(item)}` : `
       <div class="message-header">
         ${isCollapsible ? `<button class="message-expand-toggle" type="button" data-row-action="toggle-output" data-transcript-id="${escapeHtml(item.id)}" aria-expanded="${this.collapsed ? "false" : "true"}" aria-label="${this.collapsed ? "Show output" : "Hide output"}" title="${this.collapsed ? "Show output" : "Hide output"}">${this.collapsed ? "▸" : "▾"}</button>` : ""}
-        <strong>${escapeHtml(item.title)}</strong>
+        <strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong>
         ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
         <span class="message-header-spacer"></span>
         ${item.durationMs !== undefined ? `<span class="tool-duration">${escapeHtml(formatToolDuration(item.durationMs))}</span>` : ""}
