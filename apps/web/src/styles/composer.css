@@ -908,6 +908,18 @@ header.model-picker-open {
   color: var(--c-bcd0ff);
 }
 
+.status.connecting,
+.status.aborting {
+  border-color: var(--c-6d4b1f);
+  color: var(--c-ffd18a);
+}
+
+.status.disconnected,
+.status.error {
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
 .controls {
   position: relative;
   z-index: 2;

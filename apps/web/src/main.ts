@@ -2242,11 +2242,34 @@ class PiWebAgentApp extends HTMLElement {
     hydrateTranscriptDomRows(this, this.transcript, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions(), { expandedToolGroupIds: this.expandedToolGroupIds });
   }
 
+  private renderStatusPill(): string {
+    if (!this.selectedSession || this.status === "idle") return "";
+    const labels: Record<AgentStatus, string> = {
+      aborting: "Stopping",
+      connecting: "Connecting",
+      disconnected: "Offline",
+      error: "Error",
+      idle: "Idle",
+      running: "Running",
+    };
+    const label = labels[this.status] ?? this.status;
+    return `<span class="status ${escapeHtml(this.status)}" aria-label="Agent status: ${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+  }
+
   private patchHeaderStatus(): void {
-    const status = this.querySelector<HTMLElement>(".status");
-    if (!status) return;
-    status.className = `status ${this.status}`;
-    status.textContent = this.status;
+    const headerStatus = this.querySelector<HTMLElement>(".header-status");
+    const status = headerStatus?.querySelector<HTMLElement>(".status");
+    const html = this.renderStatusPill();
+    if (!headerStatus) return;
+    if (!html) {
+      status?.remove();
+      return;
+    }
+    if (status) {
+      status.outerHTML = html;
+      return;
+    }
+    headerStatus.insertAdjacentHTML("beforeend", html);
   }
 
   private patchConnectionBanner(): void {
@@ -2504,7 +2527,7 @@ class PiWebAgentApp extends HTMLElement {
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button>` : ""}
             ${takeoverIncoming ? `<span class="control-request">Another tab wants control <button id="approveControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Approve</button><button id="denyControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Deny</button></span>` : ""}
-            <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
+            ${this.renderStatusPill()}
           </div>
         </header>
         ${this.renderConnectionBanner()}

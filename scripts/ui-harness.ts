@@ -162,7 +162,7 @@ async function prepareSession(page: Page): Promise<string> {
   const response = await created;
   const session = await response.json() as { id: string };
   await page.locator("#prompt").waitFor({ state: "visible" });
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   if (await page.locator("#toggleSessionSidebarMobile").isVisible().catch(() => false)) {
     const sidebarOpen = await page.locator("pi-web-agent").evaluate((element) => !element.classList.contains("session-sidebar-collapsed"));
     if (sidebarOpen) await page.locator("#toggleSessionSidebar").click();
@@ -178,11 +178,18 @@ async function waitForSelectedSession(page: Page, sessionId: string): Promise<vo
   await page.waitForFunction((id) => ((document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null } | null)?.selectedSession?.id ?? null) === id, sessionId, { timeout: 5_000 });
 }
 
+async function waitForAgentIdle(page: Page, timeout = 30_000): Promise<void> {
+  await page.waitForFunction(() => {
+    const app = document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null; status?: string } | null;
+    return Boolean(app?.selectedSession?.id) && app?.status === "idle";
+  }, undefined, { timeout });
+}
+
 async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#prompt").fill(text);
   await page.locator("#send").click();
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
 }
 
 async function runSessionRouting(page: Page): Promise<Record<string, unknown>> {
@@ -208,7 +215,7 @@ async function runSessionRouting(page: Page): Promise<Record<string, unknown>> {
 
   await page.goto(`${webBase}/sessions/${secondSession.id}`, { waitUntil: "domcontentloaded" });
   await waitForSelectedSession(page, secondSession.id);
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   await page.screenshot({ path: join(artifactDir, "session-routing.png"), fullPage: true });
   return { firstSessionId, secondSessionId: secondSession.id, selectedSessionId: await selectedSessionId(page), pathname: new URL(page.url()).pathname };
 }
@@ -236,7 +243,7 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
   await page.waitForFunction(() => document.documentElement.dataset.theme === "workbench-light");
   await page.screenshot({ path: join(artifactDir, "theme-gallery-light.png"), fullPage: true });
 
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
   return { ...(await collectMetrics(page)) };
 }
 
@@ -314,7 +321,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".message.tool", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "Q: What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Bug fix" }).waitFor({ timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 10_000);
 
   await page.locator("#prompt").fill("Please trigger a cancel question-answer scenario.");
   await page.locator("#send").click();
@@ -327,7 +334,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".message.tool", { hasText: "User cancelled the question" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "A: Cancelled" }).waitFor({ timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 10_000);
 
   await page.locator("#prompt").fill("Please trigger question-answer and keep it pending through reload.");
   await page.locator("#send").click();
@@ -361,7 +368,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 10_000);
   await page.screenshot({ path: join(artifactDir, "question-answer.png"), fullPage: true });
   return { ...(await collectMetrics(page)) };
 }
@@ -636,7 +643,7 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
     await page.waitForTimeout(75);
   }
 
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
   const maxLatencyMs = Math.max(...responsiveness.map((sample) => sample.ms));
   const slowSamples = responsiveness.filter((sample) => sample.ms > 750);
   if (slowSamples.length > 0) {
@@ -701,7 +708,7 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await pill.locator(".queue-cancel").click();
   await pill.waitFor({ state: "detached", timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "queued-follow-up-after-cancel.png"), fullPage: true });
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
   await page.screenshot({ path: join(artifactDir, "queued-follow-up-final.png"), fullPage: true });
   return collectMetrics(page);
 }
@@ -737,7 +744,7 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
     const transcript = document.querySelector(".transcript") as HTMLElement | null;
     return Boolean(transcript && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 60 && !document.querySelector("#jumpToLatest"));
   }, null, { timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
   return { before, after, drift, ...(await collectMetrics(page)) };
 }
 
@@ -862,7 +869,7 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".message.user", { hasText: "Question discipline:" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-options button").first().click();
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   const planMessage = page.locator(".message.assistant", { hasText: "Recommendation: start with the smallest vertical slice" }).last();
   await planMessage.waitFor({ timeout: 5_000 });
   await planMessage.locator(".plan-action-row").waitFor({ state: "detached", timeout: 5_000 });
@@ -878,7 +885,7 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "", null, { timeout: 5_000 });
   await page.locator(".message.user", { hasText: "Back to chat" }).waitFor({ state: "detached", timeout: 1_500 }).catch(() => undefined);
-  await page.locator(".status.idle").waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 10_000);
   await ensureSidebarSettingsVisible(page);
   await page.locator(".session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
@@ -894,7 +901,7 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("/new");
   await page.locator("#send").click();
   await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeNewSessions, { timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   return collectMetrics(page);
@@ -907,7 +914,7 @@ async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
   const bashRow = page.locator(".message.tool.developer-bash:not(.collapsed)", { hasText: "$ echo bakery bash" }).last();
   await bashRow.waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row.developer-bash:not(.collapsed)")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery bash")), null, { timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "", null, { timeout: 5_000 });
 
   await page.locator("#prompt").fill("!!echo bakery hidden");
@@ -915,7 +922,7 @@ async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
   const hiddenRow = page.locator(".message.tool.developer-bash:not(.collapsed)", { hasText: "$ echo bakery hidden (no context)" }).last();
   await hiddenRow.waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row.developer-bash:not(.collapsed)")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("bakery hidden")), null, { timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
 
   await page.locator("#prompt").fill("Please produce a long streaming performance response while bash is blocked.");
   await page.locator("#send").click();
@@ -924,7 +931,7 @@ async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#send").click();
   await page.waitForFunction(() => document.querySelector(".notice")?.textContent?.includes("Bash commands are available when the session is idle"), null, { timeout: 5_000 });
   await page.locator(".message.tool", { hasText: "blocked while running" }).waitFor({ state: "detached", timeout: 1_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
   return collectMetrics(page);
 }
 
@@ -938,7 +945,7 @@ async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown
   await userRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
   await userRow.locator('[data-row-action="fork"]').click();
   await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeSessions, { timeout: 5_000 });
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   await ensureSidebarSettingsVisible(page);
   await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "transcript-fork-no-tree-ui.png"), fullPage: true });
@@ -959,11 +966,11 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   await viewer.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
   await viewer.locator("#prompt").fill("controller handoff smoke");
   await viewer.locator("#send").click();
-  await viewer.locator(".status.idle").waitFor({ timeout: 8_000 });
+  await waitForAgentIdle(viewer, 8_000);
   await viewer.close();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("#prompt").waitFor({ state: "visible" });
-  await page.locator(".status.idle").waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   return collectMetrics(page);
 }
 
@@ -998,7 +1005,7 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   await requester.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
   await requester.locator("#prompt").fill("disconnected controller handoff smoke");
   await requester.locator("#send").click();
-  await requester.locator(".status.idle").waitFor({ timeout: 8_000 });
+  await waitForAgentIdle(requester, 8_000);
   const metrics = await collectMetrics(requester);
   await isolated.close();
   return metrics;
@@ -1054,7 +1061,7 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await page.locator(".status.running").waitFor({ timeout: 5_000 });
   await page.locator(".message.tool").waitFor({ timeout: 15_000 });
   await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
-  await page.locator(".status.idle").waitFor({ timeout: 30_000 });
+  await waitForAgentIdle(page, 30_000);
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();
