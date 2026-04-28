@@ -1,4 +1,4 @@
-import { isDeveloperBashItem, isRenderableTranscriptItem, itemHasRenderedImage, type ToolGroupPosition, type TranscriptItem } from "./transcript";
+import { formatToolDuration, isDeveloperBashItem, isRenderableTranscriptItem, type ToolGroupPosition, type TranscriptItem } from "./transcript";
 import { escapeHtml } from "./utils";
 
 export function renderTranscriptItemShell(item: TranscriptItem): string {
@@ -8,8 +8,20 @@ export function renderTranscriptItemShell(item: TranscriptItem): string {
 export function isGroupableToolItem(item: TranscriptItem): boolean {
   return item.kind === "tool"
     && item.status === "done"
-    && !isDeveloperBashItem(item)
-    && !itemHasRenderedImage(item);
+    && !isDeveloperBashItem(item);
+}
+
+function groupDurationMs(items: readonly TranscriptItem[]): number | undefined {
+  const starts = items
+    .map((item) => item.startedAt ? Date.parse(item.startedAt) : Number.NaN)
+    .filter(Number.isFinite);
+  const ends = items
+    .map((item) => item.endedAt ? Date.parse(item.endedAt) : Number.NaN)
+    .filter(Number.isFinite);
+  if (starts.length > 0 && ends.length > 0) return Math.max(0, Math.max(...ends) - Math.min(...starts));
+  const durations = items.map((item) => item.durationMs).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (durations.length === 0) return undefined;
+  return durations.reduce((sum, value) => sum + Math.max(0, value), 0);
 }
 
 export function renderToolRunGroup(items: TranscriptItem[], expandedToolGroupIds: ReadonlySet<string>): string {
@@ -19,9 +31,10 @@ export function renderToolRunGroup(items: TranscriptItem[], expandedToolGroupIds
     .slice(0, 3)
     .map((item) => item.title.replace(/^\$\s*/, ""))
     .join(" · ");
+  const duration = formatToolDuration(groupDurationMs(items));
   return `<details class="tool-run-group" data-tool-run-group="${escapeHtml(groupId)}" ${expanded ? "open" : ""}>
       <summary>
-        <strong>Ran ${items.length} tools</strong>
+        <strong>Ran ${items.length} tools${duration ? ` · ${escapeHtml(duration)}` : ""}</strong>
         ${labels ? `<span>${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
       </summary>
       <div class="tool-run-items">

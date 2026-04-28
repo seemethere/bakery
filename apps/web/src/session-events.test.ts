@@ -103,11 +103,11 @@ describe("session event helpers", () => {
   });
 
   test("converts tool events and preserves existing title on completion", () => {
-    const start = helpers.toolExecutionToTranscriptItem("tool_execution_start", { toolCallId: "t1", toolName: "read", args: { path: "README.md" } });
-    expect(start).toMatchObject({ id: "tool:t1", kind: "tool", title: "read README.md", status: "running" });
+    const start = helpers.toolExecutionToTranscriptItem("tool_execution_start", { toolCallId: "t1", toolName: "read", args: { path: "README.md" }, eventTime: "2026-04-27T00:00:00.000Z" });
+    expect(start).toMatchObject({ id: "tool:t1", kind: "tool", title: "read README.md", status: "running", startedAt: "2026-04-27T00:00:00.000Z" });
 
-    const end = helpers.toolExecutionToTranscriptItem("tool_execution_end", { toolCallId: "t1", toolName: "read", result: { content: "hello" } }, start ?? undefined);
-    expect(end).toMatchObject({ id: "tool:t1", kind: "tool", title: "read README.md", body: "hello", status: "done" });
+    const end = helpers.toolExecutionToTranscriptItem("tool_execution_end", { toolCallId: "t1", toolName: "read", result: { content: "hello" }, eventTime: "2026-04-27T00:00:01.250Z" }, start ?? undefined);
+    expect(end).toMatchObject({ id: "tool:t1", kind: "tool", title: "read README.md", body: "hello", status: "done", startedAt: "2026-04-27T00:00:00.000Z", endedAt: "2026-04-27T00:00:01.250Z", durationMs: 1250 });
 
     const failed = helpers.toolExecutionToTranscriptItem("tool_execution_end", { toolCallId: "t2", toolName: "bash", isError: true, result: { error: "nope" } });
     expect(failed?.status).toBe("error");

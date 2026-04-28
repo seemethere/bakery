@@ -2,6 +2,24 @@ import type { WebSession } from "@pi-web-agent/protocol";
 import { formatToolTitle, messageToTranscriptItem, questionSummaryFromTool, toolArgsToText, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { isRecord, stringify } from "./utils";
 
+function eventTimestamp(event: Record<string, unknown>): string {
+  const value = event.endedAt ?? event.timestamp ?? event.eventTime ?? event.time;
+  return typeof value === "string" ? value : new Date().toISOString();
+}
+
+function eventStartTimestamp(event: Record<string, unknown>, existing?: TranscriptItem): string {
+  const value = event.startedAt ?? event.startTime ?? existing?.startedAt ?? event.eventTime ?? event.time;
+  return typeof value === "string" ? value : new Date().toISOString();
+}
+
+function durationMs(startedAt?: string, endedAt?: string): number | undefined {
+  if (!startedAt || !endedAt) return undefined;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  return Math.max(0, end - start);
+}
+
 export function agentEventType(event: unknown): string | null {
   return isRecord(event) ? String(event.type ?? "event") : null;
 }
@@ -61,12 +79,14 @@ export function messageEventToTranscriptItem(type: string, event: Record<string,
 export function toolExecutionToTranscriptItem(type: string, event: Record<string, unknown>, existing?: TranscriptItem): TranscriptItem | null {
   const id = `tool:${String(event.toolCallId ?? Date.now())}`;
   if (type === "tool_execution_start") {
+    const startedAt = eventStartTimestamp(event);
     return {
       id,
       kind: "tool",
       title: formatToolTitle(event.toolName, event.args),
       body: toolArgsToText(event.args ?? {}),
       status: "running",
+      startedAt,
       raw: event,
     };
   }
@@ -80,11 +100,15 @@ export function toolExecutionToTranscriptItem(type: string, event: Record<string
       body: partialText || toolArgsToText(event.args ?? {}),
       segments: toolResultToSegments(partialResult),
       status: "running",
+      startedAt: eventStartTimestamp(event, existing),
       raw: event,
     };
   }
   if (type === "tool_execution_end") {
     const result = event.result ?? {};
+    const startedAt = eventStartTimestamp(event, existing);
+    const endedAt = eventTimestamp(event);
+    const elapsedMs = typeof event.durationMs === "number" ? Math.max(0, event.durationMs) : durationMs(startedAt, endedAt);
     return {
       id,
       kind: "tool",
@@ -92,6 +116,9 @@ export function toolExecutionToTranscriptItem(type: string, event: Record<string
       body: toolResultToText(result),
       segments: toolResultToSegments(result),
       status: event.isError ? "error" : "done",
+      startedAt,
+      endedAt,
+      ...(elapsedMs === undefined ? {} : { durationMs: elapsedMs }),
       raw: event,
     };
   }

@@ -248,7 +248,12 @@
     -webkit-line-clamp: 2;
   }
 
-  .message.assistant {
+  .message.assistant,
+  .message.tool,
+  .message.question,
+  .message.system,
+  .message.error,
+  .tool-run-group {
     width: 100%;
     max-width: 100%;
   }

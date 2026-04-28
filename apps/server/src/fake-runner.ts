@@ -497,22 +497,44 @@ class FakeSessionHandle implements SessionHandle {
 
   private async emitFakeToolRun(longOutput = false, runIndex = 1): Promise<void> {
     const toolCallId = crypto.randomUUID();
+    const startedAt = new Date(Date.now() - 40).toISOString();
+    if (!longOutput && runIndex === 2) {
+      const args = { path: "screenshots/fixture.png" };
+      this.emit({ type: "tool_execution_start", toolCallId, toolName: "read", args, startedAt });
+      await sleep(45);
+      const endedAt = new Date().toISOString();
+      this.emit({
+        type: "tool_execution_end",
+        toolCallId,
+        toolName: "read",
+        args,
+        startedAt,
+        endedAt,
+        result: { content: [{ type: "image", mimeType: "image/png", data: fakePreviewPng }] },
+      });
+      return;
+    }
+
     const args = { command: longOutput ? "for i in {1..80}; do echo fake tool line $i; done" : `echo fake tool ${runIndex}` };
     const outputLines = longOutput
       ? Array.from({ length: 80 }, (_, index) => `[server] fake tool line ${String(index + 1).padStart(2, "0")} {\"level\":30,\"msg\":\"synthetic streaming terminal output\"}`).join("\n")
       : `fake tool ${runIndex} output\nstdout: first line\nstderr: delayed diagnostic`;
-    this.emit({ type: "tool_execution_start", toolCallId, toolName: "bash", args });
+    this.emit({ type: "tool_execution_start", toolCallId, toolName: "bash", args, startedAt });
     await sleep(35);
-    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: "running fake tool...\n" }] } });
+    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, startedAt, partialResult: { content: [{ type: "text", text: "running fake tool...\n" }] } });
     // Burst two updates together to exercise tool-card patching under clustered events.
-    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: `running fake tool...\n${longOutput ? outputLines.split("\n").slice(0, 18).join("\n") + "\n" : "stdout: first line\n"}` }] } });
+    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, startedAt, partialResult: { content: [{ type: "text", text: `running fake tool...\n${longOutput ? outputLines.split("\n").slice(0, 18).join("\n") + "\n" : "stdout: first line\n"}` }] } });
     await sleep(120);
-    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, partialResult: { content: [{ type: "text", text: longOutput ? `running fake tool...\n${outputLines}\n` : "running fake tool...\nstdout: first line\nstderr: delayed diagnostic\n" }] } });
+    this.emit({ type: "tool_execution_update", toolCallId, toolName: "bash", args, startedAt, partialResult: { content: [{ type: "text", text: longOutput ? `running fake tool...\n${outputLines}\n` : "running fake tool...\nstdout: first line\nstderr: delayed diagnostic\n" }] } });
     await sleep(25);
+    const endedAt = new Date().toISOString();
     this.emit({
       type: "tool_execution_end",
       toolCallId,
       toolName: "bash",
+      args,
+      startedAt,
+      endedAt,
       result: {
         content: [{ type: "text", text: outputLines }],
         details: { stdout: `${outputLines}\n`, stderr: longOutput ? "" : "delayed diagnostic\n", exitCode: 0 },

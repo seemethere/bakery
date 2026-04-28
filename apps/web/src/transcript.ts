@@ -16,6 +16,9 @@ export type TranscriptItem = {
   body: string;
   segments?: TranscriptSegment[];
   status?: "running" | "done" | "error";
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
   raw?: unknown;
 };
 
@@ -380,6 +383,16 @@ export function compactToolSummaryLine(part: string): string | null {
   return withoutAnsi.replace(/^stdout:\s*/i, "").replace(/\s+/g, " ").trim() || null;
 }
 
+export function formatToolDuration(durationMs: number | undefined): string {
+  if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) return "";
+  if (durationMs < 1_000) return `${Math.max(1, Math.round(durationMs))}ms`;
+  if (durationMs < 10_000) return `${(durationMs / 1_000).toFixed(1).replace(/\.0$/, "")}s`;
+  if (durationMs < 60_000) return `${Math.round(durationMs / 1_000)}s`;
+  const minutes = Math.floor(durationMs / 60_000);
+  const seconds = Math.round((durationMs % 60_000) / 1_000);
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
@@ -526,7 +539,7 @@ export class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.hideInspectorActions}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.hideInspectorActions}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -544,6 +557,7 @@ export class PiTranscriptRow extends HTMLElement {
         <strong>${escapeHtml(item.title)}</strong>
         ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
         <span class="message-header-spacer"></span>
+        ${item.durationMs !== undefined ? `<span class="tool-duration">${escapeHtml(formatToolDuration(item.durationMs))}</span>` : ""}
         ${item.status ? `<span class="message-status">${escapeHtml(item.status)}</span>` : ""}
         <div class="message-action-area">
           <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="Message actions">${ellipsisIconSvg()}</button>

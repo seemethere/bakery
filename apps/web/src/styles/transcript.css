@@ -363,6 +363,13 @@
   margin-top: 18px;
 }
 
+.message.question,
+.message.system,
+.message.error {
+  width: min(100%, 820px);
+  margin-right: auto;
+}
+
 .message.question {
   border-color: color-mix(in srgb, var(--color-accent-soft) 34%, var(--color-border));
   background: color-mix(in srgb, var(--color-accent-soft) 7%, var(--color-bg-surface));
@@ -406,6 +413,8 @@
 }
 
 .message.tool {
+  width: min(100%, 820px);
+  margin-right: auto;
   border-color: var(--color-tool-border);
   background: var(--color-tool-bg);
   border-radius: 6px;
@@ -525,27 +534,32 @@
   overflow-wrap: break-word;
 }
 
-.message.tool.done.collapsed {
-  border-color: var(--color-tool-done-border);
-  background: var(--color-tool-done-bg);
+.message.tool.done.collapsed:not(.developer-bash) {
+  width: min(100%, 820px);
+  margin-right: auto;
+  padding-left: 16px;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--color-tool-done-border) 58%, transparent);
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
-  opacity: 0.82;
+  opacity: 0.86;
 }
 
-.message.tool.done.collapsed + .message.tool.done.collapsed {
-  margin-top: 5px;
+.message.tool.done.collapsed:not(.developer-bash) + .message.tool.done.collapsed:not(.developer-bash) {
+  margin-top: 2px;
 }
 
-.message.tool.done.collapsed.after-running-tool {
-  margin-top: 4px;
-  border-style: dashed;
+.message.tool.done.collapsed.after-running-tool:not(.developer-bash) {
+  margin-top: 2px;
+  border-left-style: dashed;
   opacity: 0.72;
 }
 
-.message.tool.done.collapsed.after-running-tool .message-header::before {
+.message.tool.done.collapsed.after-running-tool:not(.developer-bash) .message-header::before {
   content: "also ran";
   flex: 0 0 auto;
-  border: 1px solid var(--color-tool-done-border);
+  border: 1px solid color-mix(in srgb, var(--color-tool-done-border) 52%, transparent);
   border-radius: 999px;
   color: var(--color-text-muted);
   padding: 1px 6px;
@@ -556,23 +570,45 @@
 }
 
 .tool-run-group {
-  border: 1px solid var(--color-tool-group-border);
-  border-radius: 8px;
-  background: var(--color-tool-group-bg);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-info) 26%, transparent), var(--shadow-card);
-  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+  width: min(100%, 820px);
+  margin-right: auto;
+  padding-left: 16px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  opacity: 0.9;
+}
+
+.tool-run-group::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-tool-done-border) 58%, transparent);
 }
 
 .tool-run-group summary {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 34px;
-  padding: 7px 10px;
+  min-height: 32px;
+  padding: 4px 0;
   color: var(--c-aab7cf);
   cursor: pointer;
   font-size: 12px;
   list-style: none;
+  outline: none;
+}
+
+.tool-run-group summary:focus-visible {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-selected-ring) 32%, transparent);
 }
 
 .tool-run-group summary::-webkit-details-marker {
@@ -581,7 +617,9 @@
 
 .tool-run-group summary::before {
   content: "▸";
+  flex: 0 0 auto;
   color: var(--c-7e8fad);
+  font-size: 10px;
 }
 
 .tool-run-group[open] summary::before {
@@ -590,81 +628,66 @@
 
 .tool-run-group summary strong {
   flex: 0 0 auto;
-  color: var(--c-d3dcf0);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color: var(--color-text-secondary);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-weight: 700;
 }
 
 .tool-run-group summary span {
   min-width: 0;
   overflow: hidden;
-  color: var(--c-8794ad);
+  color: var(--color-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tool-run-items {
   display: grid;
-  gap: 7px;
-  padding: 9px 9px 9px 24px;
-  border-top: 1px solid rgba(91, 111, 146, 0.22);
+  gap: 0;
+  padding: 0 0 2px 18px;
+  border-top: 0;
+  background: transparent;
 }
 
-.tool-run-items .message.tool.done.collapsed {
+.tool-run-items .message.tool.done.collapsed:not(.developer-bash) {
+  width: 100%;
   margin: 0;
-  border-color: var(--color-tool-done-border);
-  background: var(--color-tool-done-bg);
+  padding-left: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-tool-done-border) 26%, transparent);
+  background: transparent;
   box-shadow: none;
-  opacity: 0.9;
+  opacity: 0.86;
 }
 
-.tool-run-items .message.tool.done.collapsed .message-header {
-  min-height: 31px;
-  padding: 6px 8px;
+.tool-run-items .message.tool.done.collapsed:not(.developer-bash) .message-header {
+  min-height: 34px;
+  padding: 5px 0;
+  border-bottom: 0;
 }
 
-.tool-run-items .message.tool.done.collapsed .message-header strong {
-  color: var(--c-c0c9dc);
+.tool-run-items .message.tool.done.collapsed:not(.developer-bash) .message-header strong {
+  color: var(--color-text-secondary);
 }
 
 .tool-run-items .message-header .tool-summary {
-  color: var(--c-768198);
+  color: var(--color-text-muted);
+}
+
+.tool-run-items .message.tool.done.collapsed:not(.developer-bash) .message-status {
+  display: none;
 }
 
 .message.tool.done.collapsed.tool-group-start,
 .message.tool.done.collapsed.tool-group-middle,
 .message.tool.done.collapsed.tool-group-end {
-  border-left-color: var(--color-tool-done-border);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-border-strong) 30%, transparent);
-}
-
-.message.tool.done.collapsed.tool-group-start {
-  border-bottom-left-radius: 3px;
-  border-bottom-right-radius: 3px;
-}
-
-.message.tool.done.collapsed.tool-group-middle {
-  border-radius: 3px;
-}
-
-.message.tool.done.collapsed.tool-group-end {
-  border-top-left-radius: 3px;
-  border-top-right-radius: 3px;
-}
-
-.message.tool.done.collapsed.tool-group-middle,
-.message.tool.done.collapsed.tool-group-end {
-  margin-top: 2px;
-}
-
-.message.tool.done.collapsed.tool-group-middle .message-status,
-.message.tool.done.collapsed.tool-group-end .message-status {
-  visibility: hidden;
+  box-shadow: none;
 }
 
 .message.tool.done.collapsed .message-header {
-  min-height: 27px;
-  padding: 4px 8px;
+  min-height: 28px;
+  padding: 4px 0;
+  border-bottom: 0;
   gap: 8px;
 }
 
@@ -676,6 +699,14 @@
 .message.tool.done.collapsed .message-status {
   color: var(--c-789174);
   font-size: 11px;
+}
+
+.message-header .tool-duration {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .message.tool.done.collapsed .message-status::before {

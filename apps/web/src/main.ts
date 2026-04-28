@@ -546,7 +546,8 @@ class PiWebAgentApp extends HTMLElement {
       this.reconnectAttempt = 0;
       this.applySnapshot(payload.snapshot);
     } else if (payload.type === "agent_event") {
-      this.applyAgentEvent(payload.event.data ?? payload.event);
+      const eventData = isRecord(payload.event.data) ? { ...payload.event.data, eventTime: payload.event.time } : payload.event;
+      this.applyAgentEvent(eventData);
     } else if (payload.type === "controller_update") {
       this.controller = payload.controller;
     } else if (payload.type === "settings_update") {
@@ -608,7 +609,7 @@ class PiWebAgentApp extends HTMLElement {
 
     if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
       const id = `tool:${String(event.toolCallId ?? Date.now())}`;
-      const existing = type === "tool_execution_end" ? this.transcript.find((item) => item.id === id) : undefined;
+      const existing = this.transcript.find((item) => item.id === id);
       const toolItem = toolExecutionToTranscriptItem(type, event, existing);
       if (!toolItem) return;
       this.upsertTranscript(toolItem);

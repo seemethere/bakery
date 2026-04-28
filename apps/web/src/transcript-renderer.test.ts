@@ -27,8 +27,8 @@ describe("transcript renderer", () => {
   test("groups adjacent completed non-image tool rows", () => {
     const transcript = [
       item({ id: "u1", kind: "user", title: "You", body: "hello" }),
-      item({ id: "t1", kind: "tool", title: "$ ls" }),
-      item({ id: "t2", kind: "tool", title: "Read" }),
+      item({ id: "t1", kind: "tool", title: "$ ls", startedAt: "2026-04-27T00:00:00.000Z", endedAt: "2026-04-27T00:00:00.400Z", durationMs: 400 }),
+      item({ id: "t2", kind: "tool", title: "Read", startedAt: "2026-04-27T00:00:00.500Z", endedAt: "2026-04-27T00:00:01.500Z", durationMs: 1000 }),
       item({ id: "a1", kind: "assistant", title: "Pi", body: "done" }),
     ];
 
@@ -37,23 +37,34 @@ describe("transcript renderer", () => {
     expect(html).toContain('data-transcript-id="u1"');
     expect(html).toContain('class="tool-run-group"');
     expect(html).toContain('data-tool-run-group="t1|t2" open');
-    expect(html).toContain("Ran 2 tools");
+    expect(html).toContain("Ran 2 tools · 1.5s");
     expect(html).toContain("ls · Read");
     expect(html).toContain('data-transcript-id="a1"');
   });
 
-  test("does not group running, developer bash, image, or single tool rows", () => {
+  test("does not group running, developer bash, or single tool rows", () => {
     const transcript = [
       item({ id: "running", kind: "tool", title: "Running", status: "running" }),
       item({ id: "bash:local", kind: "tool", title: "$ pwd" }),
-      item({ id: "image", kind: "tool", title: "Screenshot", segments: [{ kind: "image", label: "image", src: "data:image/png;base64,abc=" }] }),
       item({ id: "single", kind: "tool", title: "Read" }),
     ];
 
     const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
 
     expect(html).not.toContain("tool-run-group");
-    expect(html.match(/data-transcript-id=/g)?.length).toBe(4);
+    expect(html.match(/data-transcript-id=/g)?.length).toBe(3);
+  });
+
+  test("groups completed image tools with adjacent background tools", () => {
+    const transcript = [
+      item({ id: "t1", kind: "tool", title: "$ ls" }),
+      item({ id: "image", kind: "tool", title: "read screenshots/fixture.png", segments: [{ kind: "image", label: "image", src: "data:image/png;base64,abc=" }] }),
+    ];
+
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+
+    expect(html).toContain('class="tool-run-group"');
+    expect(html).toContain('data-tool-run-group="t1|image"');
   });
 
   test("calculates tool grouping positions and running adjacency", () => {

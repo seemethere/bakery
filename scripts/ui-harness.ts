@@ -1031,13 +1031,13 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await page.locator(".composer-activity").waitFor({ state: "detached", timeout: 5_000 });
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
-  await tool.locator(".message-header").click();
+  await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => !document.querySelector(".message.tool")?.classList.contains("collapsed"));
   await page.waitForFunction(() => {
     const body = document.querySelector<HTMLElement>(".message.tool .message-body");
     return Boolean(body && body.scrollHeight > body.clientHeight && body.clientHeight < 460);
   });
-  await tool.locator(".message-header").click();
+  await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => document.querySelector(".message.tool")?.classList.contains("collapsed"));
   await page.waitForFunction(() => {
     const summary = document.querySelector<HTMLElement>(".message.tool .tool-summary")?.textContent ?? "";
@@ -1062,11 +1062,13 @@ async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   await sendPromptAndWaitIdle(page, "Please run multiple tools for compact grouping validation.");
   const group = page.locator(".tool-run-group").first();
   await group.waitFor({ timeout: 5_000 });
-  await page.locator(".tool-run-group summary", { hasText: "Ran 4 tools" }).waitFor({ timeout: 5_000 });
+  await page.locator(".tool-run-group summary", { hasText: /Ran 4 tools · \d/ }).waitFor({ timeout: 5_000 });
+  await page.locator(".tool-run-group summary", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
   const visibleToolRowsBefore = await page.locator(".tool-run-group .message.tool:visible").count();
   if (visibleToolRowsBefore !== 0) throw new Error(`Expected grouped tool rows to be hidden before expansion, saw ${visibleToolRowsBefore}`);
   await group.locator("summary").click();
   await page.waitForFunction(() => document.querySelectorAll(".tool-run-group[open] .message.tool").length >= 4);
+  await page.locator(".tool-run-group[open] .message.tool", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
   await group.locator("summary").click();
   await page.waitForFunction(() => !document.querySelector(".tool-run-group")?.hasAttribute("open"));
