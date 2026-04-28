@@ -511,7 +511,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   const drawerOrder = await page.evaluate(() => {
     const drawerElements = Array.from(document.querySelectorAll(".session-sidebar:not(.collapsed) *"));
     return {
-      chatIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path^="/sessions/"]') || element.matches?.('[data-route-path="/"]')),
+      chatButtonCount: document.querySelectorAll('.session-sidebar:not(.collapsed) [data-route-path^="/sessions/"], .session-sidebar:not(.collapsed) [data-route-path="/"]').length,
       sessionsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/sessions"]')),
       newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
       apiBaseIndex: drawerElements.findIndex((element) => element.id === "apiBase"),
@@ -523,7 +523,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (!drawerOrder.backdropVisible) throw new Error("Mobile drawer should render a backdrop while open.");
   if (drawerOrder.pinButtonCount !== 0) throw new Error("Mobile drawer should not show the desktop Pin affordance.");
   if (drawerOrder.sessionCardCount !== 0) throw new Error("Mobile navigation drawer should not duplicate the sessions page list.");
-  if (!(drawerOrder.chatIndex >= 0 && drawerOrder.sessionsIndex > drawerOrder.chatIndex && drawerOrder.newSessionIndex > drawerOrder.sessionsIndex && drawerOrder.apiBaseIndex > drawerOrder.newSessionIndex)) {
+  if (drawerOrder.chatButtonCount !== 0) throw new Error("Mobile navigation drawer should not show a redundant chat route button.");
+  if (!(drawerOrder.sessionsIndex >= 0 && drawerOrder.newSessionIndex > drawerOrder.sessionsIndex && drawerOrder.apiBaseIndex > drawerOrder.newSessionIndex)) {
     throw new Error(`Mobile drawer navigation/settings order is wrong: ${JSON.stringify(drawerOrder)}`);
   }
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/sessions"]').click();

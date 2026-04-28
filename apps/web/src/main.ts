@@ -517,11 +517,15 @@ class PiWebAgentApp extends HTMLElement {
     const session = this.sessions.find((candidate) => candidate.id === route.sessionId);
     if (session) {
       if (this.selectedSession?.id !== session.id) this.openSession(session, true, false);
+      else this.render();
       return;
     }
     await this.refresh();
     const refreshedSession = this.sessions.find((candidate) => candidate.id === route.sessionId);
-    if (refreshedSession && this.selectedSession?.id !== refreshedSession.id) this.openSession(refreshedSession, true, false);
+    if (refreshedSession) {
+      if (this.selectedSession?.id !== refreshedSession.id) this.openSession(refreshedSession, true, false);
+      else this.render();
+    }
   }
 
   private connectWebSocket(session: WebSession, state: ConnectionState): void {
@@ -1527,7 +1531,6 @@ class PiWebAgentApp extends HTMLElement {
   private renderSessionSidebar(): string {
     const sidebarOverlayOpen = this.sidebarOverlayOpen();
     const route = parseAppRoute(window.location.pathname);
-    const chatPath = this.selectedSession ? sessionRoutePath(this.selectedSession.id) : "/";
     return `<aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""} ${sidebarOverlayOpen ? "overlay" : ""}">
         <div class="sidebar-titlebar">
           <h1>Pi Web Agent</h1>
@@ -1541,10 +1544,6 @@ class PiWebAgentApp extends HTMLElement {
           ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
         ` : `
           <nav class="sidebar-section sidebar-nav" aria-label="Primary">
-            <button type="button" class="sidebar-nav-item ${route.kind === "session" || route.kind === "home" ? "active" : ""}" data-route-path="${escapeHtml(chatPath)}">
-              <strong>Chat</strong>
-              <span>${this.selectedSession ? "Return to current session" : "Create or open a session"}</span>
-            </button>
             <button type="button" class="sidebar-nav-item ${route.kind === "sessions" ? "active" : ""}" data-route-path="${sessionsRoutePath()}">
               <strong>Sessions</strong>
               <span>Find and resume work</span>
