@@ -1872,11 +1872,10 @@ class PiWebAgentApp extends HTMLElement {
     </div>`;
   }
 
-  private renderSessionSummary(expanded: boolean, showSuggestion = !this.mobileLayout): string {
+  private renderSessionSummary(showSuggestion = !this.mobileLayout): string {
     if (!this.selectedSession) return "";
     return renderSessionSummaryHtml({
       session: this.selectedSession,
-      expanded,
       suggestion: this.metadataSuggestion,
       draft: this.metadataSuggestionDraft,
       error: this.metadataSuggestionError,
@@ -1886,7 +1885,7 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
-  private renderSessionDetails(expanded: boolean): string {
+  private renderSessionDetails(): string {
     if (!this.selectedSession || !this.sessionDetailsOpen) return "";
     return `<div class="session-details-popover" role="dialog" aria-label="Session details">
       <div class="session-details-header">
@@ -1898,7 +1897,7 @@ class PiWebAgentApp extends HTMLElement {
         <code title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(this.selectedSession.cwd)}</code>
         <button id="copyWorkspacePath" type="button">Copy path</button>
       </div>
-      ${this.renderSessionSummary(expanded, !this.mobileLayout)}
+      ${this.renderSessionSummary(!this.mobileLayout)}
       <button id="generateMetadata" class="session-details-generate" type="button" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>${this.metadataGenerating ? "Generating…" : "Suggest title and summary"}</button>
     </div>`;
   }
@@ -2468,7 +2467,6 @@ class PiWebAgentApp extends HTMLElement {
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
-    const summaryExpanded = this.selectedSession ? this.summaryExpanded(this.selectedSession.id) : false;
     const headerClasses = [
       this.modelThinkingPickerOpen ? "model-picker-open" : "",
       this.mobileHeaderHidden && !this.sessionDetailsOpen && !this.modelThinkingPickerOpen ? "mobile-header-hidden" : "",
@@ -2490,7 +2488,7 @@ class PiWebAgentApp extends HTMLElement {
             ${this.selectedSession ? `<div class="session-title-row"><input id="sessionTitle" class="session-title-input" size="${Math.min(52, Math.max(12, selectedTitle.length || selectedTitlePlaceholder.length))}" value="${escapeHtml(selectedTitle)}" placeholder="${escapeHtml(selectedTitlePlaceholder)}" aria-label="Session title" title="Edit session title" />
               <button id="toggleSessionDetails" class="session-details-button ${this.sessionDetailsOpen ? "active" : ""}" type="button" title="Session details" aria-label="Session details" aria-expanded="${this.sessionDetailsOpen}">Details</button></div>
               <span class="session-workspace" title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>
-              ${this.renderSessionDetails(summaryExpanded)}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
+              ${this.renderSessionDetails()}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
           </div>
           <div class="header-status ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
