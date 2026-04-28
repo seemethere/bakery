@@ -2198,6 +2198,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderJumpToLatest(): string {
+    if (this.transcript.length === 0) return "";
     return this.transcriptFollow.renderJumpToLatest();
   }
 

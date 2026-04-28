@@ -186,6 +186,68 @@
     padding: 14px 10px 18px;
   }
 
+  .empty-transcript {
+    align-self: start;
+    gap: 7px;
+    max-width: 100%;
+    padding: 14px 4px 10px;
+  }
+
+  .empty-transcript-kicker {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  .empty-transcript > strong {
+    font-size: 20px;
+  }
+
+  .empty-transcript > span {
+    max-width: 34ch;
+    justify-self: center;
+    font-size: 14px;
+  }
+
+  .empty-quick-starts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    width: min(100%, 360px);
+    margin-top: 8px;
+  }
+
+  .empty-quick-start {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    min-height: 0;
+    padding: 10px 12px;
+    border-radius: 15px;
+  }
+
+  .empty-quick-start-label {
+    min-width: 72px;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+
+  .empty-quick-start-copy {
+    gap: 1px;
+  }
+
+  .empty-quick-start-copy strong {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  .empty-quick-start-copy small {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .message.user,
   .message.assistant {
     max-width: min(84%, 620px);
