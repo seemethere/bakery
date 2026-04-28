@@ -497,8 +497,10 @@ async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown
 async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
-    localStorage.setItem("piWebSessionSidebarCollapsed", "true");
-    localStorage.setItem("piWebSessionSidebarPinned", "false");
+    // Seed a desktop-open sidebar preference; mobile should still start with the drawer closed
+    // and should not overwrite the desktop pin preference while using the temporary drawer.
+    localStorage.setItem("piWebSessionSidebarCollapsed", "false");
+    localStorage.setItem("piWebSessionSidebarPinned", "true");
     localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
   await prepareSession(page);
@@ -520,7 +522,9 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (!emptyComposerSendDisabled) throw new Error("Mobile composer send should be disabled before the user enters text or attaches images.");
   await page.screenshot({ path: join(artifactDir, "mobile-empty-quick-starts.png"), fullPage: true });
   const app = page.locator("pi-web-agent");
-  if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) await page.locator("#toggleSessionSidebar").click();
+  if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
+    throw new Error("Mobile initial render should ignore desktop-open sidebar persistence and start with the drawer closed.");
+  }
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".context-usage", { hasText: "Ctx" }).waitFor({ timeout: 5_000 });
@@ -562,6 +566,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
   await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  const preservedDesktopPin = await page.evaluate(() => localStorage.getItem("piWebSessionSidebarPinned"));
+  if (preservedDesktopPin !== "true") throw new Error(`Mobile drawer interactions should not overwrite desktop pin preference; saw ${preservedDesktopPin}`);
   await page.evaluate(() => {
     const app = document.querySelector("pi-web-agent") as unknown as { selectedSession?: Record<string, unknown>; sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
     if (!app?.selectedSession) return;

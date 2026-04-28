@@ -115,11 +115,11 @@ class PiWebAgentApp extends HTMLElement {
   private readonly transcriptFollow = new TranscriptFollowController();
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
   private themePreference: ThemePreference = storedThemePreference();
-  private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
-  private sessionSidebarPinned = localStorage.getItem("piWebSessionSidebarPinned") === "true";
+  private mobileLayout = window.matchMedia(mobileLayoutMediaQuery).matches;
+  private sessionSidebarCollapsed = this.mobileLayout ? true : localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
+  private sessionSidebarPinned = this.mobileLayout ? false : localStorage.getItem("piWebSessionSidebarPinned") === "true";
   private collapsedSessionGroups = storedCollapsedSessionGroups();
   private sessionsSearch = "";
-  private mobileLayout = window.matchMedia(mobileLayoutMediaQuery).matches;
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
   private transcriptExpansion = new Map<string, boolean>();
@@ -159,7 +159,15 @@ class PiWebAgentApp extends HTMLElement {
     if (this.themePreference === "system") applyThemePreference(this.themePreference);
   };
   private readonly mobileLayoutHandler = () => {
+    const wasMobileLayout = this.mobileLayout;
     this.mobileLayout = this.mobileLayoutMedia.matches;
+    if (this.mobileLayout) {
+      this.sessionSidebarCollapsed = true;
+      this.sessionSidebarPinned = false;
+    } else if (wasMobileLayout) {
+      this.sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
+      this.sessionSidebarPinned = localStorage.getItem("piWebSessionSidebarPinned") === "true";
+    }
     this.render();
   };
   private readonly viewportResizeHandler = () => {
@@ -212,7 +220,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     if (this.sessionSidebarCollapsed || this.sessionSidebarPinned) return;
     this.sessionSidebarCollapsed = true;
-    localStorage.setItem("piWebSessionSidebarCollapsed", "true");
+    if (!this.mobileLayout) localStorage.setItem("piWebSessionSidebarCollapsed", "true");
     this.render();
   };
 
@@ -1606,19 +1614,25 @@ class PiWebAgentApp extends HTMLElement {
 
   private toggleSessionSidebar(buttonId: string): void {
     this.sessionSidebarCollapsed = !this.sessionSidebarCollapsed;
-    if (!this.mobileLayout && buttonId === "toggleSessionSidebar") this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
+    if (this.mobileLayout) {
+      this.sessionSidebarPinned = false;
+      this.patchMobileSessionSidebar();
+      return;
+    }
+    if (buttonId === "toggleSessionSidebar") this.sessionSidebarPinned = !this.sessionSidebarCollapsed;
     localStorage.setItem("piWebSessionSidebarCollapsed", String(this.sessionSidebarCollapsed));
     localStorage.setItem("piWebSessionSidebarPinned", String(this.sessionSidebarPinned));
-    if (!this.mobileLayout && this.sessionSidebarPinned) this.notice = "";
-    if (this.mobileLayout) this.patchMobileSessionSidebar();
-    else this.render();
+    if (this.sessionSidebarPinned) this.notice = "";
+    this.render();
   }
 
   private hideSessionSidebarFromBackdrop(): void {
     this.sessionSidebarCollapsed = true;
-    localStorage.setItem("piWebSessionSidebarCollapsed", "true");
     if (this.mobileLayout) this.patchMobileSessionSidebar();
-    else this.render();
+    else {
+      localStorage.setItem("piWebSessionSidebarCollapsed", "true");
+      this.render();
+    }
   }
 
   private bindSessionSidebarEvents(): void {
