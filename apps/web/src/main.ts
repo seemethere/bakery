@@ -3,7 +3,7 @@ import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAut
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
 import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
-import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { isSessionRecencyGroupId, persistCollapsedSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
@@ -13,8 +13,9 @@ import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscript
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
-import { parseAppRoute, sessionRoutePath } from "./router";
+import { parseAppRoute, sessionsRoutePath, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfSample } from "./utils";
+import { renderSessionsPage } from "./sessions-page";
 import "./styles.css";
 
 declare global {
@@ -117,6 +118,7 @@ class PiWebAgentApp extends HTMLElement {
   private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
   private sessionSidebarPinned = localStorage.getItem("piWebSessionSidebarPinned") === "true";
   private collapsedSessionGroups = storedCollapsedSessionGroups();
+  private sessionsSearch = "";
   private mobileLayout = window.matchMedia(mobileLayoutMediaQuery).matches;
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
@@ -395,7 +397,7 @@ class PiWebAgentApp extends HTMLElement {
       if (!this.selectedSession) {
         const route = parseAppRoute(window.location.pathname);
         const routeSessionId = route.kind === "session" ? route.sessionId : "";
-        const targetSessionId = routeSessionId || this.lastSelectedSessionId;
+        const targetSessionId = route.kind === "home" ? this.lastSelectedSessionId : routeSessionId;
         if (targetSessionId) {
           const session = sessions.find((candidate) => candidate.id === targetSessionId);
           if (session) {
@@ -467,6 +469,12 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
+  private navigateToPath(path: string): void {
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    if (!this.sessionSidebarPinned) this.sessionSidebarCollapsed = true;
+    void this.openRouteFromLocation();
+  }
+
   private pushSessionRoute(sessionId: string): void {
     const nextPath = sessionRoutePath(sessionId);
     if (window.location.pathname === nextPath) return;
@@ -499,6 +507,10 @@ class PiWebAgentApp extends HTMLElement {
     const route = parseAppRoute(window.location.pathname);
     if (route.kind === "home") {
       this.closeSelectedSessionForHomeRoute();
+      return;
+    }
+    if (route.kind === "sessions") {
+      this.render();
       return;
     }
     if (route.kind !== "session") return;
@@ -1514,19 +1526,30 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderSessionSidebar(): string {
     const sidebarOverlayOpen = this.sidebarOverlayOpen();
-    const sessionGroups = groupedSessions(this.sessions);
+    const route = parseAppRoute(window.location.pathname);
+    const chatPath = this.selectedSession ? sessionRoutePath(this.selectedSession.id) : "/";
     return `<aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""} ${sidebarOverlayOpen ? "overlay" : ""}">
         <div class="sidebar-titlebar">
           <h1>Pi Web Agent</h1>
           <div class="sidebar-titlebar-actions">
             ${sidebarOverlayOpen && !this.mobileLayout ? `<button id="pinSessionSidebar" class="pin-sidebar" type="button" title="Pin sessions as a left column">Pin</button>` : ""}
-            <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show sessions" : this.sessionSidebarPinned ? "Hide sessions and unpin auto-collapse" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
+            <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show navigation" : this.sessionSidebarPinned ? "Hide navigation and unpin auto-collapse" : "Hide navigation"}" aria-label="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
           </div>
         </div>
         ${this.sessionSidebarCollapsed ? `
-          <span class="collapsed-sidebar-label">Sessions</span>
+          <span class="collapsed-sidebar-label">Nav</span>
           ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
         ` : `
+          <nav class="sidebar-section sidebar-nav" aria-label="Primary">
+            <button type="button" class="sidebar-nav-item ${route.kind === "session" || route.kind === "home" ? "active" : ""}" data-route-path="${escapeHtml(chatPath)}">
+              <strong>Chat</strong>
+              <span>${this.selectedSession ? "Return to current session" : "Create or open a session"}</span>
+            </button>
+            <button type="button" class="sidebar-nav-item ${route.kind === "sessions" ? "active" : ""}" data-route-path="${sessionsRoutePath()}">
+              <strong>Sessions</strong>
+              <span>Find and resume work</span>
+            </button>
+          </nav>
           <div class="sidebar-section sidebar-session-section">
             <label>Workspace
               <select id="workspace">
@@ -1536,12 +1559,6 @@ class PiWebAgentApp extends HTMLElement {
             <div class="new-session-actions">
               <button id="newSession">New session</button>
               <button id="newIsolatedSession" title="Create a Git worktree session on its own branch">New isolated session</button>
-            </div>
-            <div class="sessions-heading">
-              <h2>Recent sessions</h2>
-            </div>
-            <div class="session-groups">
-              ${renderSessionGroups({ groups: sessionGroups, selectedSessionId: this.selectedSession?.id, collapsedGroups: this.collapsedSessionGroups, status: this.status })}
             </div>
           </div>
           <div class="sidebar-section sidebar-settings-section">
@@ -1620,6 +1637,13 @@ class PiWebAgentApp extends HTMLElement {
       this.token = token;
       localStorage.setItem("piWebAuthToken", token);
       void this.refresh();
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-route-path]").forEach((button) => {
+      button.addEventListener("click", () => this.navigateToPath(button.dataset.routePath || "/"));
+    });
+    this.querySelector<HTMLInputElement>("#sessionsSearch")?.addEventListener("input", (event) => {
+      this.sessionsSearch = (event.currentTarget as HTMLInputElement).value;
+      this.render();
     });
     this.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void this.createSession());
     this.querySelector<HTMLButtonElement>("#newIsolatedSession")?.addEventListener("click", () => void this.createSession(undefined, "git_worktree"));
@@ -2507,6 +2531,24 @@ class PiWebAgentApp extends HTMLElement {
     </span>`;
   }
 
+  private renderSessionsMain(): string {
+    const chatPath = this.selectedSession ? sessionRoutePath(this.selectedSession.id) : "/";
+    return `<main class="sessions-main">
+      <header>
+        <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}" aria-label="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}">☰</button>
+        <div class="session-identity">
+          <strong>Sessions</strong>
+          <span>Find and resume prior work across local Bakery sessions.</span>
+        </div>
+        <div class="header-status">
+          <button type="button" data-route-path="${escapeHtml(chatPath)}">${this.selectedSession ? "Current chat" : "Chat"}</button>
+        </div>
+      </header>
+      ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
+      ${renderSessionsPage({ sessions: this.sessions, selectedSessionId: this.selectedSession?.id, collapsedGroups: this.collapsedSessionGroups, status: this.status, searchQuery: this.sessionsSearch })}
+    </main>`;
+  }
+
   private render(): void {
     this.syncRunningElapsedTimer();
     const renderStart = performance.now();
@@ -2514,12 +2556,16 @@ class PiWebAgentApp extends HTMLElement {
     this.transcriptFollow.captureScrollTop(existingTranscript);
     const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
     const titleInput = this.querySelector<HTMLInputElement>("#sessionTitle");
+    const sessionsSearchInput = this.querySelector<HTMLInputElement>("#sessionsSearch");
     const restorePromptFocus = document.activeElement === prompt;
     const restoreTitleFocus = document.activeElement === titleInput;
+    const restoreSessionsSearchFocus = document.activeElement === sessionsSearchInput;
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
     const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
     const titleSelectionStart = titleInput?.selectionStart ?? (this.editingTitleDraft?.length ?? 0);
     const titleSelectionEnd = titleInput?.selectionEnd ?? titleSelectionStart;
+    const sessionsSearchSelectionStart = sessionsSearchInput?.selectionStart ?? this.sessionsSearch.length;
+    const sessionsSearchSelectionEnd = sessionsSearchInput?.selectionEnd ?? sessionsSearchSelectionStart;
     const isRunning = this.status === "running";
     const activePlanActionItem = this.activePlanActionItem();
     const sidebarOverlayOpen = this.sidebarOverlayOpen();
@@ -2544,6 +2590,28 @@ class PiWebAgentApp extends HTMLElement {
     const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
     const followUpIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h7a4 4 0 0 1 0 8H5" /><path d="m8 12-3 4 3 4" /></svg>`;
     const stopIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>`;
+    if (parseAppRoute(window.location.pathname).kind === "sessions") {
+      this.innerHTML = `
+        ${this.renderSessionSidebarBackdrop()}
+        ${this.renderSessionSidebar()}
+        ${this.renderSessionsMain()}
+      `;
+      this.forceFullRender = false;
+      this.transcriptStructureDirty = false;
+      this.dirtyTranscriptIds.clear();
+      this.bindEvents();
+      if (restoreSessionsSearchFocus) {
+        const nextSearch = this.querySelector<HTMLInputElement>("#sessionsSearch");
+        if (nextSearch) {
+          nextSearch.focus();
+          const max = nextSearch.value.length;
+          nextSearch.setSelectionRange(Math.min(sessionsSearchSelectionStart, max), Math.min(sessionsSearchSelectionEnd, max));
+        }
+      }
+      this.syncAutocompleteScroll();
+      recordPerfSample("render", performance.now() - renderStart);
+      return;
+    }
     this.innerHTML = `
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}

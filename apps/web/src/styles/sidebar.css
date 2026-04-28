@@ -67,6 +67,33 @@
   gap: 8px;
 }
 
+.sidebar-nav {
+  margin-bottom: 12px;
+}
+
+.sidebar-nav-item {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.sidebar-nav-item strong {
+  color: var(--color-text);
+}
+
+.sidebar-nav-item span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-nav-item.active {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 14%, var(--color-bg-elevated));
+}
+
 .mobile-menu-button {
   display: inline-grid;
   place-items: center;
