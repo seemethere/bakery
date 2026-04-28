@@ -167,14 +167,12 @@
   }
 
   .plan-action-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 6px;
   }
 
   .plan-action-button {
-    min-height: 42px;
-    padding: 8px 10px;
+    min-height: 36px;
+    padding: 6px 10px;
   }
 
   .status,

@@ -1781,6 +1781,7 @@ class PiWebAgentApp extends HTMLElement {
       if (planButton) {
         event.preventDefault();
         event.stopPropagation();
+        planButton.blur();
         const action = planButton.dataset.planAction;
         if (action === "accept" || action === "feedback" || action === "cancel" || action === "chat") this.handlePlanAction(action);
         return;
