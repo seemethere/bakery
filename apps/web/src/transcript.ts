@@ -461,7 +461,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
         const content = showThinking ? renderMarkdown(segment.text) : "<p>Thinking...</p>";
         return `<div class="markdown-body thinking-trace">${content}</div>`;
       }
-      if (segment.kind === "toolCall") return `<div class="inline-tool-call">${escapeHtml(segment.label)}</div>`;
+      if (segment.kind === "toolCall") return "";
       if (segment.kind === "image") {
         return segment.src
           ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
