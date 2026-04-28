@@ -942,6 +942,16 @@ class PiWebAgentApp extends HTMLElement {
     else this.metadataSuggestion = next;
   }
 
+  private hasComposerSendContent(value = this.promptDraft): boolean {
+    return value.trim().length > 0 || this.promptImages.length > 0;
+  }
+
+  private patchComposerSendAvailability(input = this.querySelector<HTMLTextAreaElement>("#prompt")): void {
+    const canSend = Boolean(input && !input.disabled && this.hasComposerSendContent(input.value));
+    this.querySelector<HTMLButtonElement>("#send")?.toggleAttribute("disabled", !canSend);
+    this.querySelector<HTMLButtonElement>("#followUp")?.toggleAttribute("disabled", !canSend);
+  }
+
   private sendClientMessage(type: ClientMessageType): void {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = promptTextFromInput(input?.value, this.promptImages.length);
@@ -1221,6 +1231,7 @@ class PiWebAgentApp extends HTMLElement {
     const wasBashDraft = this.isBashPromptDraft();
     this.promptDraft = input.value;
     this.schedulePromptDraftSave();
+    this.patchComposerSendAvailability(input);
     if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerBashMode();
     const commandToken = this.getCommandToken(input);
     if (commandToken) {
@@ -2604,6 +2615,8 @@ class PiWebAgentApp extends HTMLElement {
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = this.promptDraft.trimStart().startsWith("!!");
     const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
+    const canSendFromComposer = isController && this.hasComposerSendContent();
+    const promptSendDisabled = canSendFromComposer ? "" : "disabled";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
     const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
     const followUpIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h7a4 4 0 0 1 0 8H5" /><path d="m8 12-3 4 3 4" /></svg>`;
@@ -2675,8 +2688,8 @@ class PiWebAgentApp extends HTMLElement {
               ${renderFileAutocomplete(this.fileAutocomplete)}
               <div class="controls ${isRunning ? "running" : ""}">
                 <button id="attachImages" class="icon-button" data-tooltip="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>${attachIcon}</button>
-                <button id="send" class="primary-action icon-send" data-tooltip="${isRunning ? "Guide active run · Enter" : "Send · Enter"}" aria-label="${isRunning ? "Guide active run" : "Send"}" ${isController ? "" : "disabled"}>${sendIcon}<span class="running-action-label" aria-hidden="true">Guide</span><span class="sr-only">${isRunning ? "Guide active run" : "Send"}</span></button>
-                <button id="followUp" class="secondary-action icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Queue follow-up · Alt+Enter" aria-label="Queue follow-up" ${isController ? "" : "disabled"}>${followUpIcon}<span class="running-action-label" aria-hidden="true">Follow up</span></button>
+                <button id="send" class="primary-action icon-send" data-tooltip="${isRunning ? "Guide active run · Enter" : "Send · Enter"}" aria-label="${isRunning ? "Guide active run" : "Send"}" ${promptSendDisabled}>${sendIcon}<span class="running-action-label" aria-hidden="true">Guide</span><span class="sr-only">${isRunning ? "Guide active run" : "Send"}</span></button>
+                <button id="followUp" class="secondary-action icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Queue follow-up · Alt+Enter" aria-label="Queue follow-up" ${promptSendDisabled}>${followUpIcon}<span class="running-action-label" aria-hidden="true">Follow up</span></button>
                 <button id="abort" class="danger icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Stop run" aria-label="Stop run" ${isController ? "" : "disabled"}>${stopIcon}</button>
               </div>
             </div>

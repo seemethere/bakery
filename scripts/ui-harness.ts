@@ -497,6 +497,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (mobileEmptyLayout.hasJumpToLatest) throw new Error("Empty mobile session should not show Jump to latest");
   if ((mobileEmptyLayout.quickStarts?.height ?? 999) > 310) throw new Error(`Mobile quick starts are too tall: ${mobileEmptyLayout.quickStarts?.height}px`);
   if ((mobileEmptyLayout.quickStarts?.width ?? 0) > (mobileEmptyLayout.transcript?.width ?? 0)) throw new Error(`Mobile quick starts overflow transcript: ${JSON.stringify(mobileEmptyLayout)}`);
+  const emptyComposerSendDisabled = await page.locator("#send").evaluate((button: HTMLButtonElement) => button.disabled);
+  if (!emptyComposerSendDisabled) throw new Error("Mobile composer send should be disabled before the user enters text or attaches images.");
   await page.screenshot({ path: join(artifactDir, "mobile-empty-quick-starts.png"), fullPage: true });
   const app = page.locator("pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) await page.locator("#toggleSessionSidebar").click();
@@ -504,6 +506,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".context-usage", { hasText: "Ctx" }).waitFor({ timeout: 5_000 });
   await page.locator("#prompt").fill("Mobile layout regression draft");
+  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   const originalSessionId = await selectedSessionId(page);
@@ -660,16 +663,20 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       sendText: visibleText("#send"),
       followUpText: visibleText("#followUp"),
       abortText: visibleText("#abort"),
+      sendDisabled: document.querySelector<HTMLButtonElement>("#send")?.disabled ?? null,
+      followUpDisabled: document.querySelector<HTMLButtonElement>("#followUp")?.disabled ?? null,
       send: rectOf("#send"),
       followUp: rectOf("#followUp"),
       abort: rectOf("#abort"),
     };
   });
   if (!runningControls.sendText.includes("Guide") || !runningControls.followUpText.includes("Follow up")) throw new Error(`Mobile running controls should label guidance and follow-up actions: ${JSON.stringify(runningControls)}`);
+  if (!runningControls.sendDisabled || !runningControls.followUpDisabled) throw new Error(`Mobile running prompt actions should be disabled again after sending clears the composer: ${JSON.stringify(runningControls)}`);
   if (runningControls.abortText) throw new Error(`Mobile stop control should remain icon-only: ${JSON.stringify(runningControls)}`);
   if ((runningControls.send?.width ?? 0) < 58 || (runningControls.followUp?.width ?? 0) < 82 || (runningControls.abort?.width ?? 999) > 42) throw new Error(`Mobile running controls should expose labels while keeping stop compact: ${JSON.stringify(runningControls)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-running-composer-controls.png"), fullPage: true });
   await page.locator("#prompt").fill("mobile queued steer should start collapsed");
+  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
   await page.locator("#send").click();
   const collapsedQueue = page.locator(".running-queue.collapsed", { hasText: "1 pending" });
   await collapsedQueue.waitFor({ timeout: 5_000 });
