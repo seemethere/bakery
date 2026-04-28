@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "ansi-to-html": "^0.7.2",
     "playwright": "^1.59.1",
     "typescript": "^5.9.2"
   }

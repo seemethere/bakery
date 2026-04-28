@@ -1,3 +1,4 @@
+import ConvertAnsi from "ansi-to-html";
 import { marked } from "marked";
 import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
 
@@ -44,6 +45,31 @@ export function isDeveloperBashNoContextItem(item: TranscriptItem): boolean {
 }
 
 const imageFailureHandlerAttr = ` onerror="window.__piWebImageFailed?.(this.currentSrc||this.src);this.closest('figure')?.remove();this.remove()"`;
+const ansiConverter = new ConvertAnsi({
+  escapeXML: true,
+  newline: false,
+  stream: false,
+  fg: "var(--terminal-fg)",
+  bg: "transparent",
+  colors: {
+    0: "#000000",
+    1: "#c91b00",
+    2: "#00c200",
+    3: "#c7c400",
+    4: "#0225c7",
+    5: "#ca30c7",
+    6: "#00c5c7",
+    7: "#c7c7c7",
+    8: "#676767",
+    9: "#ff6e67",
+    10: "#5ffa68",
+    11: "#fffc67",
+    12: "#6871ff",
+    13: "#ff77ff",
+    14: "#5ffdff",
+    15: "#ffffff",
+  },
+});
 
 function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) {
   const renderer = new marked.Renderer();
@@ -467,7 +493,8 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
           ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
-      return `${item.kind === "tool" ? '<div class="terminal-window" aria-label="Terminal output">' : ""}<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${escapeHtml(segment.text)}</pre>${item.kind === "tool" ? "</div>" : ""}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
+      const terminalText = item.kind === "tool" ? ansiConverter.toHtml(segment.text) : escapeHtml(segment.text);
+      return `${item.kind === "tool" ? '<div class="terminal-window" aria-label="Terminal output">' : ""}<pre class="${item.kind === "tool" ? "terminal-output" : ""}">${terminalText}</pre>${item.kind === "tool" ? "</div>" : ""}${renderLocalImageArtifacts(segment.text, context.localImageUrl, context.suppressLocalImageArtifactPaths)}`;
     })
     .join("");
   if (context.cache) {

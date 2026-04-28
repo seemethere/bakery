@@ -19,6 +19,27 @@ beforeAll(async () => {
   ({ renderTranscriptSegments } = await import("./transcript"));
 });
 
+describe("transcript terminal rendering", () => {
+  test("renders ANSI color output as safe terminal HTML", () => {
+    const item: TranscriptItem = {
+      id: "tool-ansi",
+      kind: "tool",
+      title: "$ test",
+      body: "\u001b[31mfailed <script>\u001b[0m ok",
+      segments: [{ kind: "pre", text: "\u001b[31mfailed <script>\u001b[0m ok" }],
+      status: "done",
+    };
+
+    const html = renderTranscriptSegments(item, false);
+
+    expect(html).toContain("terminal-window");
+    expect(html).toContain("color:#c91b00");
+    expect(html).toContain("failed &lt;script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("\u001b[31m");
+  });
+});
+
 describe("transcript image rendering", () => {
   test("rewrites workspace-relative markdown images to local raw file URLs without duplicate artifact cards", () => {
     const item: TranscriptItem = {
