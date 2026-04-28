@@ -217,6 +217,63 @@
     display: flex;
   }
 
+  .settings-page {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .settings-page-hero {
+    gap: 6px;
+  }
+
+  .settings-page h1 {
+    font-size: 28px;
+    line-height: 1.08;
+  }
+
+  .settings-page p {
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .settings-page-kicker {
+    font-size: 12px;
+    letter-spacing: 0.11em;
+  }
+
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .settings-card {
+    gap: 12px;
+    border-radius: 18px;
+    padding: 16px;
+  }
+
+  .settings-card-heading {
+    gap: 4px;
+  }
+
+  .settings-card h2 {
+    font-size: 20px;
+    line-height: 1.15;
+  }
+
+  .settings-card label {
+    gap: 6px;
+    font-size: 14px;
+  }
+
+  .settings-card input,
+  .settings-card select,
+  .settings-card button {
+    min-height: 46px;
+    padding: 10px 12px;
+    font-size: 16px;
+  }
+
   .header-status > * {
     flex: 0 0 auto;
   }

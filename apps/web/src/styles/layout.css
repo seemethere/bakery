@@ -115,7 +115,9 @@ main {
 }
 
 .settings-card input,
-.settings-card select {
+.settings-card select,
+.settings-card button {
+  box-sizing: border-box;
   width: 100%;
 }
 
