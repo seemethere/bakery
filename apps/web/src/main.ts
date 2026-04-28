@@ -2675,8 +2675,8 @@ class PiWebAgentApp extends HTMLElement {
               ${renderFileAutocomplete(this.fileAutocomplete)}
               <div class="controls ${isRunning ? "running" : ""}">
                 <button id="attachImages" class="icon-button" data-tooltip="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>${attachIcon}</button>
-                <button id="send" class="primary-action icon-send" data-tooltip="${isRunning ? "Send guidance · Enter" : "Send · Enter"}" aria-label="${isRunning ? "Send guidance to active run" : "Send"}" ${isController ? "" : "disabled"}>${sendIcon}<span class="sr-only">${isRunning ? "Send guidance to active run" : "Send"}</span></button>
-                <button id="followUp" class="secondary-action icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Queue follow-up · Alt+Enter" aria-label="Queue follow-up" ${isController ? "" : "disabled"}>${followUpIcon}</button>
+                <button id="send" class="primary-action icon-send" data-tooltip="${isRunning ? "Guide active run · Enter" : "Send · Enter"}" aria-label="${isRunning ? "Guide active run" : "Send"}" ${isController ? "" : "disabled"}>${sendIcon}<span class="running-action-label" aria-hidden="true">Guide</span><span class="sr-only">${isRunning ? "Guide active run" : "Send"}</span></button>
+                <button id="followUp" class="secondary-action icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Queue follow-up · Alt+Enter" aria-label="Queue follow-up" ${isController ? "" : "disabled"}>${followUpIcon}<span class="running-action-label" aria-hidden="true">Follow up</span></button>
                 <button id="abort" class="danger icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Stop run" aria-label="Stop run" ${isController ? "" : "disabled"}>${stopIcon}</button>
               </div>
             </div>

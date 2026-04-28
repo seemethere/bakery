@@ -644,6 +644,31 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#send").click();
   await page.locator("#followUp:not(.hidden)").waitFor({ timeout: 5_000 });
   await waitForAgentRunning(page);
+  const runningControls = await page.evaluate(() => {
+    const visibleText = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element || getComputedStyle(element).display === "none") return "";
+      return element.innerText.trim().replace(/\s+/g, " ");
+    };
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    return {
+      sendText: visibleText("#send"),
+      followUpText: visibleText("#followUp"),
+      abortText: visibleText("#abort"),
+      send: rectOf("#send"),
+      followUp: rectOf("#followUp"),
+      abort: rectOf("#abort"),
+    };
+  });
+  if (!runningControls.sendText.includes("Guide") || !runningControls.followUpText.includes("Follow up")) throw new Error(`Mobile running controls should label guidance and follow-up actions: ${JSON.stringify(runningControls)}`);
+  if (runningControls.abortText) throw new Error(`Mobile stop control should remain icon-only: ${JSON.stringify(runningControls)}`);
+  if ((runningControls.send?.width ?? 0) < 58 || (runningControls.followUp?.width ?? 0) < 82 || (runningControls.abort?.width ?? 999) > 42) throw new Error(`Mobile running controls should expose labels while keeping stop compact: ${JSON.stringify(runningControls)}`);
+  await page.screenshot({ path: join(artifactDir, "mobile-running-composer-controls.png"), fullPage: true });
   await page.locator("#prompt").fill("mobile queued steer should start collapsed");
   await page.locator("#send").click();
   const collapsedQueue = page.locator(".running-queue.collapsed", { hasText: "1 pending" });

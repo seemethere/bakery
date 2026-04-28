@@ -612,6 +612,18 @@
     padding-inline: 0;
   }
 
+  .controls.running #send,
+  .controls.running #followUp {
+    width: auto;
+    min-width: max-content;
+    padding-inline: 8px;
+  }
+
+  .controls.running .running-action-label {
+    display: inline;
+    font-weight: 800;
+  }
+
   .controls button small {
     display: none;
   }
@@ -699,10 +711,21 @@
     min-width: 32px;
   }
 
+  .controls.running #send,
+  .controls.running #followUp {
+    flex: 1 0 auto;
+    min-width: max-content;
+  }
+
   .controls .primary-action,
   .controls .secondary-action,
   .controls .danger {
     min-width: 0;
+  }
+
+  .controls.running #send,
+  .controls.running #followUp {
+    min-width: max-content;
   }
 
   .question-custom {

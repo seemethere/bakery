@@ -1089,6 +1089,11 @@ header.model-picker-open {
   line-height: 1.05;
 }
 
+.running-action-label {
+  display: none;
+  line-height: 1;
+}
+
 .controls button svg {
   width: 16px;
   height: 16px;
