@@ -318,7 +318,7 @@ body {
 
 pi-web-agent {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr) minmax(360px, 28vw);
+  grid-template-columns: 340px minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -326,16 +326,7 @@ pi-web-agent {
 
 pi-web-agent.session-sidebar-collapsed,
 pi-web-agent.session-sidebar-overlay-open {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 28vw);
-}
-
-pi-web-agent.inspector-collapsed {
-  grid-template-columns: 340px minmax(0, 1fr) 44px;
-}
-
-pi-web-agent.session-sidebar-collapsed.inspector-collapsed,
-pi-web-agent.session-sidebar-overlay-open.inspector-collapsed {
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 aside {

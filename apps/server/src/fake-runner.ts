@@ -74,7 +74,7 @@ function responseFor(text: string, cwd = ""): string {
     "",
   ].join("\n");
   const paragraph = [
-    "The quick brown fox checks whether prompt typing, inspector controls, transcript selection, and auto-scroll remain responsive while the assistant message grows.",
+    "The quick brown fox checks whether prompt typing, header controls, transcript selection, and auto-scroll remain responsive while the assistant message grows.",
     "Every few sentences the fake runner crosses **Markdown emphasis**, `inline code`, list boundaries, and fenced code blocks in awkwardly sized chunks.",
     "\n\n- streamed bullet one\n- streamed bullet two with a [local link](./README.md)\n\n```ts\nconst partialFence = true;\nconsole.log({ partialFence });\n```\n\n",
   ].join(" ");
@@ -315,7 +315,6 @@ class FakeSessionHandle implements SessionHandle {
 
   getCommands(): CommandInfo[] {
     return [
-      { name: "tree", description: "Open the web session tree", source: "builtin" },
       { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
       ...WORKFLOW_SKILL_COMMANDS,
       { name: "session", description: "Show session info", source: "builtin" },
@@ -327,7 +326,6 @@ class FakeSessionHandle implements SessionHandle {
     const trimmed = text.trim();
     if (trimmed === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
     if (trimmed === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
-    if (trimmed === "/tree") return { handled: true, title: "/tree", body: "Open the Tree tab or wide tree drawer." };
     const workflowMatch = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(trimmed);
     const workflowSkill = workflowMatch ? getWorkflowSkill(workflowMatch[1] ?? "") : undefined;
     if (workflowSkill) {

@@ -1,7 +1,7 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
-import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
+import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
@@ -14,7 +14,7 @@ import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactIm
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker } from "./model-thinking-picker";
 import { parseAppRoute, sessionRoutePath } from "./router";
-import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
+import { escapeHtml, isRecord, recordPerfSample } from "./utils";
 import "./styles.css";
 
 declare global {
@@ -26,8 +26,7 @@ declare global {
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
-type RightPanelTab = "details" | "preview" | "tree";
-type TranscriptRowAction = "copy" | "details" | "preview" | "fork" | "toggle-output";
+type TranscriptRowAction = "copy" | "fork" | "toggle-output";
 type PlanAction = "accept" | "chat";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
@@ -109,10 +108,6 @@ class PiWebAgentApp extends HTMLElement {
   private metadataGenerating = false;
   private editingTitleDraft: string | null = null;
   private sessionTree: SessionTreeResponse | null = null;
-  private treeDrawerOpen = false;
-  private treeActiveEntryId = "";
-  private focusTreeOnNextRender = false;
-  private scrollTreeCurrentAfterRefresh = false;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
   private readonly transcriptFollow = new TranscriptFollowController();
   private showThinking = localStorage.getItem("piWebShowThinking") === "true";
@@ -120,8 +115,6 @@ class PiWebAgentApp extends HTMLElement {
   private sessionSidebarCollapsed = localStorage.getItem("piWebSessionSidebarCollapsed") === "true";
   private sessionSidebarPinned = localStorage.getItem("piWebSessionSidebarPinned") === "true";
   private collapsedSessionGroups = storedCollapsedSessionGroups();
-  private rightPanelTab: RightPanelTab = (localStorage.getItem("piWebRightPanelTab") as RightPanelTab | null) ?? "details";
-  private rightPanelCollapsed = localStorage.getItem("piWebRightPanelCollapsed") === "true";
   private mobileLayout = window.matchMedia(mobileLayoutMediaQuery).matches;
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
@@ -450,10 +443,6 @@ class PiWebAgentApp extends HTMLElement {
     this.pendingQuestion = null;
     this.dismissedPlanActionTranscriptId = "";
     this.sessionTree = null;
-    this.treeDrawerOpen = false;
-    this.treeActiveEntryId = "";
-    this.focusTreeOnNextRender = false;
-    this.scrollTreeCurrentAfterRefresh = false;
     this.transcriptFollow.resetToLatest();
     this.selectedTranscriptId = "";
     localStorage.setItem("piWebSelectedTranscriptId", this.selectedTranscriptId);
@@ -714,93 +703,8 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private selectedTranscriptItem(): TranscriptItem | null {
-    return this.transcript.find((item) => item.id === this.selectedTranscriptId) ?? this.transcript[this.transcript.length - 1] ?? null;
-  }
-
   private treeNodes(nodes = this.sessionTree?.tree ?? []): SessionTreeNode[] {
     return flattenSessionTree(nodes);
-  }
-
-  private currentTreePath(): SessionTreeNode[] {
-    return currentSessionTreePath(this.sessionTree);
-  }
-
-  private currentTreeEntryId(): string {
-    return currentSessionTreeEntryId(this.sessionTree);
-  }
-
-  private ensureTreeActiveEntryId(): string {
-    this.treeActiveEntryId = nextSessionTreeActiveEntryId(this.sessionTree, this.treeActiveEntryId);
-    return this.treeActiveEntryId;
-  }
-
-  private visibleTreeContainer(source?: HTMLElement | null): HTMLElement | null {
-    return source?.closest<HTMLElement>(".session-tree")
-      ?? (this.treeDrawerOpen ? this.querySelector<HTMLElement>(".tree-drawer .session-tree") : null)
-      ?? this.querySelector<HTMLElement>(".right-panel .session-tree")
-      ?? this.querySelector<HTMLElement>(".session-tree");
-  }
-
-  private setActiveTreeEntry(entryId: string, sourceRow?: HTMLElement | null, focus = true): void {
-    if (!entryId) return;
-    this.treeActiveEntryId = entryId;
-    this.querySelectorAll<HTMLElement>("[data-tree-entry-id]").forEach((row) => {
-      const active = row.dataset.treeEntryId === entryId;
-      row.tabIndex = active ? 0 : -1;
-      row.classList.toggle("keyboard-active", active);
-    });
-    if (!focus) return;
-    const tree = this.visibleTreeContainer(sourceRow);
-    const target = tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(entryId)}"]`) ?? this.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(entryId)}"]`);
-    target?.focus({ preventScroll: true });
-  }
-
-  private handleTreeRowKeydown(event: KeyboardEvent, row: HTMLElement): void {
-    const tree = row.closest(".session-tree");
-    if (!tree) return;
-    const rows = Array.from(tree.querySelectorAll<HTMLElement>("[data-tree-entry-id]"));
-    if (!rows.length) return;
-    const index = Math.max(0, rows.indexOf(row));
-    let nextRow: HTMLElement | undefined;
-    if (event.key === "ArrowDown") nextRow = rows[Math.min(rows.length - 1, index + 1)];
-    else if (event.key === "ArrowUp") nextRow = rows[Math.max(0, index - 1)];
-    else if (event.key === "Home") nextRow = rows[0];
-    else if (event.key === "End") nextRow = rows[rows.length - 1];
-    else if (event.key === "Enter") {
-      event.preventDefault();
-      const entryId = row.dataset.treeEntryId ?? "";
-      this.setActiveTreeEntry(entryId, row, true);
-      void this.navigateToTreeEntry(entryId);
-      return;
-    } else if (event.key.toLowerCase() === "c") {
-      event.preventDefault();
-      this.focusCurrentTreeEntry(row);
-      return;
-    } else if (event.key.toLowerCase() === "f") {
-      if (row.dataset.treeForkable !== "true") return;
-      event.preventDefault();
-      const entryId = row.dataset.treeEntryId ?? "";
-      this.setActiveTreeEntry(entryId, row, true);
-      void this.forkFromEntry(entryId);
-      return;
-    } else {
-      return;
-    }
-    event.preventDefault();
-    if (nextRow) this.setActiveTreeEntry(nextRow.dataset.treeEntryId ?? "", nextRow, true);
-  }
-
-  private focusCurrentTreeEntry(source?: HTMLElement | null): void {
-    const currentId = this.currentTreeEntryId();
-    if (!currentId) return;
-    this.setActiveTreeEntry(currentId, source, true);
-    const tree = this.visibleTreeContainer(source);
-    tree?.querySelector<HTMLElement>(`[data-tree-entry-id="${CSS.escape(currentId)}"]`)?.scrollIntoView({ block: "start" });
-  }
-
-  private renderCurrentTreePath(path: SessionTreeNode[]): string {
-    return renderCurrentSessionTreePath(this.sessionTree, path);
   }
 
   private forkEntryIdForTranscriptItem(item: TranscriptItem): string | null {
@@ -811,12 +715,6 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     try {
       this.sessionTree = await this.api<SessionTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree`);
-      if (this.focusTreeOnNextRender || this.scrollTreeCurrentAfterRefresh) {
-        this.treeActiveEntryId = this.currentTreeEntryId();
-        this.focusTreeOnNextRender = true;
-        this.scrollTreeCurrentAfterRefresh = false;
-      }
-      this.ensureTreeActiveEntryId();
       this.requestRender(0);
     } catch (error) {
       this.notice = `Tree refresh failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -837,42 +735,6 @@ class PiWebAgentApp extends HTMLElement {
       this.notice = `Fork failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
     }
-  }
-
-  private async navigateToTreeEntry(entryId: string): Promise<void> {
-    if (!this.selectedSession) return;
-    try {
-      const result = await this.api<NavigateTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree/navigate`, {
-        method: "POST",
-        body: JSON.stringify({ entryId, summarize: false }),
-      });
-      this.applySnapshot(result.snapshot);
-      if (result.editorText) {
-        this.promptDraft = result.editorText;
-        this.savePromptDraft();
-      }
-      this.notice = "";
-      this.render();
-    } catch (error) {
-      this.notice = `Tree navigation failed: ${error instanceof Error ? error.message : String(error)}`;
-      this.render();
-    }
-  }
-
-  private openTreeDrawer(): void {
-    if (!this.selectedSession) return;
-    this.treeDrawerOpen = true;
-    this.rightPanelTab = "tree";
-    this.focusTreeOnNextRender = true;
-    this.scrollTreeCurrentAfterRefresh = true;
-    localStorage.setItem("piWebRightPanelTab", "tree");
-    void this.refreshTree();
-    this.render();
-  }
-
-  private closeTreeDrawer(): void {
-    this.treeDrawerOpen = false;
-    this.render();
   }
 
   private async copyText(value: string): Promise<void> {
@@ -946,22 +808,6 @@ class PiWebAgentApp extends HTMLElement {
     this.openActionMenuId = "";
     if (action === "copy") {
       await this.copyText(item.body);
-      return;
-    }
-    if (action === "details" || action === "preview") {
-      if (this.mobileLayout) {
-        this.notice = "Inspector is hidden on mobile.";
-        this.render();
-        return;
-      }
-      this.selectedTranscriptId = transcriptId;
-      localStorage.setItem("piWebSelectedTranscriptId", transcriptId);
-      this.rightPanelTab = action;
-      this.rightPanelCollapsed = false;
-      localStorage.setItem("piWebRightPanelTab", action);
-      localStorage.setItem("piWebRightPanelCollapsed", "false");
-      this.transcriptFollow.preserveNextSync();
-      this.render();
       return;
     }
     if (action === "fork") {
@@ -1070,15 +916,6 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = promptTextFromInput(input?.value, this.promptImages.length);
     if (!input || !text) return;
-    if (type === "prompt" && /^\/tree(?:\s|$)/i.test(text)) {
-      this.promptDraft = "";
-      this.savePromptDraft();
-      this.closeFileAutocomplete();
-      this.closeCommandAutocomplete();
-      input.value = "";
-      this.openTreeDrawer();
-      return;
-    }
     const bash = type === "prompt" ? parseBashPrompt(text) : null;
     if (bash && this.promptImages.length > 0) {
       this.notice = "Remove image attachments before running a bash command.";
@@ -1918,30 +1755,6 @@ class PiWebAgentApp extends HTMLElement {
       localStorage.setItem("piWebShowThinking", String(this.showThinking));
       this.render();
     });
-    this.querySelector<HTMLButtonElement>("#toggleRightPanel")?.addEventListener("click", () => {
-      this.rightPanelCollapsed = !this.rightPanelCollapsed;
-      localStorage.setItem("piWebRightPanelCollapsed", String(this.rightPanelCollapsed));
-      this.render();
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-right-tab]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const tab = button.dataset.rightTab === "preview" ? "preview" : button.dataset.rightTab === "tree" ? "tree" : "details";
-        this.rightPanelTab = tab;
-        this.rightPanelCollapsed = false;
-        if (tab === "tree") this.focusTreeOnNextRender = true;
-        localStorage.setItem("piWebRightPanelTab", tab);
-        localStorage.setItem("piWebRightPanelCollapsed", "false");
-        this.render();
-      });
-    });
-    this.querySelector<HTMLButtonElement>("#copySelectedBody")?.addEventListener("click", () => {
-      const item = this.selectedTranscriptItem();
-      if (item) void this.copyText(item.body);
-    });
-    this.querySelector<HTMLButtonElement>("#copySelectedJson")?.addEventListener("click", () => {
-      const item = this.selectedTranscriptItem();
-      if (item) void this.copyText(stringify(item.raw ?? item));
-    });
     this.querySelector<HTMLButtonElement>("#modelThinkingToggle")?.addEventListener("click", (event) => {
       event.stopPropagation();
       this.modelThinkingPickerOpen = !this.modelThinkingPickerOpen;
@@ -2000,24 +1813,6 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("click", () => this.useEmptyQuickStart(button.dataset.emptyQuickStart ?? ""));
     });
 
-    this.querySelectorAll<HTMLButtonElement>("[data-tree-refresh]").forEach((button) => {
-      button.addEventListener("click", () => void this.refreshTree());
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-open-tree-drawer]").forEach((button) => {
-      button.addEventListener("click", () => this.openTreeDrawer());
-    });
-    this.querySelector<HTMLButtonElement>("#closeTreeDrawer")?.addEventListener("click", () => this.closeTreeDrawer());
-    this.querySelectorAll<HTMLButtonElement>("[data-tree-current]").forEach((button) => {
-      button.addEventListener("click", () => this.focusCurrentTreeEntry(button));
-    });
-    this.querySelectorAll<HTMLElement>("[data-tree-entry-id]").forEach((element) => {
-      element.addEventListener("click", () => {
-        this.setActiveTreeEntry(element.dataset.treeEntryId ?? "", element, false);
-        void this.navigateToTreeEntry(element.dataset.treeEntryId ?? "");
-      });
-      element.addEventListener("focus", () => this.setActiveTreeEntry(element.dataset.treeEntryId ?? "", element, false));
-      element.addEventListener("keydown", (event) => this.handleTreeRowKeydown(event, element));
-    });
     this.querySelectorAll<HTMLButtonElement>("[data-fork-entry-id]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -2206,114 +2001,6 @@ class PiWebAgentApp extends HTMLElement {
     return rendered.html;
   }
 
-  private renderRightPanel(): string {
-    const item = this.selectedTranscriptItem();
-    const detailsActive = this.rightPanelTab === "details";
-    const previewActive = this.rightPanelTab === "preview";
-    if (this.rightPanelCollapsed) {
-      return `
-        <aside class="right-panel collapsed" aria-label="Collapsed inspector">
-          <button id="toggleRightPanel" title="Show inspector" aria-label="Show inspector">◀</button>
-          <span>Inspector</span>
-        </aside>`;
-    }
-    return `
-      <aside class="right-panel">
-        <div class="right-tabs">
-          <button id="toggleRightPanel" class="collapse-panel" title="Hide inspector" aria-label="Hide inspector">▶</button>
-          <button data-right-tab="details" class="${detailsActive ? "active" : ""}">Details</button>
-          <button data-right-tab="preview" class="${previewActive ? "active" : ""}">Preview</button>
-          <button data-right-tab="tree" class="${this.rightPanelTab === "tree" ? "active" : ""}">Tree</button>
-        </div>
-        ${this.rightPanelTab === "tree" ? this.renderTreePanel() : item ? `
-          <div class="right-panel-heading">
-            <div>
-              <strong>${escapeHtml(item.title)}</strong>
-              <small>${escapeHtml(item.kind)}${item.status ? ` · ${escapeHtml(item.status)}` : ""}</small>
-            </div>
-            <div class="right-actions">
-              <button id="copySelectedBody">Copy text</button>
-              <button id="copySelectedJson">Copy JSON</button>
-            </div>
-          </div>
-          ${detailsActive ? this.renderDetailsPanel(item) : this.renderPreviewPanel(item)}
-        ` : `<p class="empty-panel">Select a message or tool to inspect it.</p>`}
-      </aside>`;
-  }
-
-  private renderTreeNodes(nodes: SessionTreeNode[], currentPathIds = new Set<string>(), activeEntryId = this.ensureTreeActiveEntryId()): string {
-    return renderSessionTreeNodes(nodes, currentPathIds, activeEntryId);
-  }
-
-  private renderTreePanel(options: { drawer?: boolean } = {}): string {
-    if (!this.selectedSession) return `<p class="empty-panel">Open a session to inspect its tree.</p>`;
-    const currentPath = this.currentTreePath();
-    const currentPathIds = new Set(currentPath.map((node) => node.id));
-    const activeEntryId = this.ensureTreeActiveEntryId();
-    return `
-      <div class="tree-panel tui-tree ${options.drawer ? "drawer-tree" : ""}">
-        <div class="tree-toolbar">
-          <strong>Session Tree</strong>
-          <span>Type <b>/tree</b> to open this wide view. Click a row to navigate; <b>fork</b> creates a new session branch.</span>
-          <div class="tree-toolbar-actions">
-            <button data-tree-current title="Jump to the current leaf row">Current</button>
-            ${options.drawer ? `<button id="closeTreeDrawer">Close</button>` : `<button data-open-tree-drawer>Wide</button>`}
-            <button data-tree-refresh>Refresh</button>
-          </div>
-        </div>
-        <div class="tree-hints">Newest first · arrows move up/down · Enter navigates · F forks · C jumps current · ${this.sessionTree?.leafId ? `leaf ${escapeHtml(this.sessionTree.leafId)}` : "no leaf yet"}</div>
-        ${this.renderCurrentTreePath(currentPath)}
-        ${this.sessionTree?.tree.length
-          ? `<div class="session-tree" role="tree" aria-label="Session tree entries">${this.renderTreeNodes(this.sessionTree.tree, currentPathIds, activeEntryId)}</div>`
-          : `<p class="empty-panel">No tree entries yet. Send a prompt first.</p>`}
-      </div>`;
-  }
-
-  private renderTreeDrawer(): string {
-    if (!this.treeDrawerOpen) return "";
-    return `<div class="tree-drawer" role="dialog" aria-label="Session tree">${this.renderTreePanel({ drawer: true })}</div>`;
-  }
-
-  private renderDetailsPanel(item: TranscriptItem): string {
-    const raw = item.raw ?? item;
-    const rawText = stringify(raw);
-    const bodyPreview = item.body.trim();
-    return `
-      <div class="details-panel">
-        <dl class="detail-grid">
-          <dt>ID</dt><dd><code>${escapeHtml(item.id)}</code></dd>
-          <dt>Kind</dt><dd>${escapeHtml(item.kind)}</dd>
-          <dt>Status</dt><dd>${escapeHtml(item.status ?? "—")}</dd>
-          <dt>Content</dt><dd>${escapeHtml(String(item.body.length))} chars</dd>
-          <dt>Raw</dt><dd>${escapeHtml(String(rawText.length))} chars</dd>
-        </dl>
-        ${bodyPreview ? `
-          <section class="detail-section">
-            <h3>Content</h3>
-            <pre>${escapeHtml(bodyPreview)}</pre>
-          </section>` : ""}
-        <details class="detail-section raw-detail">
-          <summary>Raw event/message JSON</summary>
-          <pre>${escapeHtml(rawText)}</pre>
-        </details>
-      </div>`;
-  }
-
-  private renderPreviewPanel(item: TranscriptItem): string {
-    const body = item.body.trim();
-    if (!body) return `<p class="empty-panel">No previewable content.</p>`;
-    if (looksLikeHtml(body) || looksLikeSvg(body)) {
-      return `<iframe class="preview-frame" sandbox srcdoc="${escapeHtml(body)}"></iframe>`;
-    }
-    if (item.kind === "assistant" || item.kind === "user") {
-      return `<div class="preview-markdown markdown-body">${renderTranscriptSegments(item, this.showThinking, { cache: this.renderedSegmentCache, localImageUrl: (path) => this.localImageUrl(path) })}</div>`;
-    }
-    if (looksLikeMarkdown(body)) {
-      return `<div class="preview-markdown markdown-body">${renderMarkdown(body)}</div>`;
-    }
-    return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
-  }
-
   private activePlanActionItem(): TranscriptItem | null {
     const latestItem = this.transcript.at(-1);
     if (!latestItem || latestItem.kind !== "assistant" || !hasPlanActionsMarker(latestItem)) return null;
@@ -2465,7 +2152,6 @@ class PiWebAgentApp extends HTMLElement {
       openActionMenuId: this.openActionMenuId,
       canFork: (item) => Boolean(this.forkEntryIdForTranscriptItem(item)),
       renderedSegmentCache: this.renderedSegmentCache,
-      hideInspectorActions: this.mobileLayout,
       localImageUrl: (path) => this.localImageUrl(path),
     };
   }
@@ -2692,7 +2378,6 @@ class PiWebAgentApp extends HTMLElement {
     const sidebarOverlayOpen = this.sidebarOverlayOpen();
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("session-sidebar-overlay-open", sidebarOverlayOpen);
-    this.classList.toggle("inspector-collapsed", this.mobileLayout || this.rightPanelCollapsed);
     this.classList.toggle("mobile-layout", this.mobileLayout);
     const isController = this.controller?.isController ?? true;
     const takeoverRequest = this.controller?.takeoverRequest;
@@ -2765,9 +2450,7 @@ class PiWebAgentApp extends HTMLElement {
           `}
         </footer>
       </main>
-      ${this.mobileLayout ? "" : this.renderRightPanel()}
       ${this.renderMobileMetadataSuggestion()}
-      ${this.renderTreeDrawer()}
     `;
     this.forceFullRender = false;
     this.transcriptStructureDirty = false;
@@ -2797,23 +2480,6 @@ class PiWebAgentApp extends HTMLElement {
     if (this.focusPendingQuestionOnNextRender) {
       this.focusPendingQuestionOnNextRender = false;
       this.focusQuestionPanel();
-    }
-    if (this.focusTreeOnNextRender && this.rightPanelTab === "tree") {
-      const tree = this.visibleTreeContainer();
-      const currentId = this.currentTreeEntryId();
-      if (currentId) this.treeActiveEntryId = currentId;
-      const treeRow = tree?.querySelector<HTMLElement>(currentId ? `[data-tree-entry-id="${CSS.escape(currentId)}"]` : "[tabindex='0']");
-      if (treeRow) {
-        this.focusTreeOnNextRender = false;
-        this.setActiveTreeEntry(treeRow.dataset.treeEntryId ?? "", treeRow, false);
-        treeRow.focus({ preventScroll: true });
-        const panel = treeRow.closest<HTMLElement>(".tree-panel");
-        const scrollToCurrent = () => {
-          if (panel) panel.scrollTop = 0;
-        };
-        scrollToCurrent();
-        requestAnimationFrame(scrollToCurrent);
-      }
     }
     recordPerfSample("render", performance.now() - renderStart);
   }

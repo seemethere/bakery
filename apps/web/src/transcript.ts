@@ -552,7 +552,6 @@ export class PiTranscriptRow extends HTMLElement {
   private collapsed = false;
   private actionMenuOpen = false;
   private canFork = false;
-  private hideInspectorActions = false;
   private afterRunningTool = false;
   private toolGroupPosition: ToolGroupPosition = "single";
   private lastRenderKey = "";
@@ -571,14 +570,13 @@ export class PiTranscriptRow extends HTMLElement {
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; expanded?: boolean | undefined; actionMenuOpen?: boolean; canFork?: boolean; hideInspectorActions?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; expanded?: boolean | undefined; actionMenuOpen?: boolean; canFork?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
     this.item = item;
     this.showThinking = options.showThinking;
     this.selected = options.selected;
     this.actionMenuOpen = options.actionMenuOpen ?? false;
     this.canFork = options.canFork ?? false;
-    this.hideInspectorActions = options.hideInspectorActions ?? false;
     this.afterRunningTool = options.afterRunningTool ?? false;
     this.toolGroupPosition = options.toolGroupPosition ?? "single";
     const isCollapsible = this.isCollapsible();
@@ -595,7 +593,7 @@ export class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && this.querySelector(".streaming-plain pre"));
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.hideInspectorActions}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
     if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
       this.querySelector<HTMLElement>(".streaming-plain pre")!.textContent = streamingText ?? "";
       this.lastStreamingText = streamingText ?? "";
@@ -638,25 +636,17 @@ export class PiTranscriptRow extends HTMLElement {
   }
 
   private renderConversationActionBar(item: TranscriptItem): string {
-    const hasSecondaryActions = !this.hideInspectorActions;
     return `
       <div class="message-action-bar">
         <button class="message-action-button" type="button" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}" aria-label="Copy message" title="Copy message">${copyIconSvg()}</button>
         ${this.canFork ? `<button class="message-action-button" type="button" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}" aria-label="Fork from here" title="Fork from here">${forkIconSvg()}</button>` : ""}
-        ${hasSecondaryActions ? `<div class="message-action-area">
-          <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="More message actions">${ellipsisIconSvg()}</button>
-          ${this.actionMenuOpen ? this.renderActionMenu(item, { secondaryOnly: true }) : ""}
-        </div>` : ""}
       </div>`;
   }
 
   private renderActionMenu(item: TranscriptItem, options: { secondaryOnly?: boolean } = {}): string {
-    const previewable = item.body.trim().length > 0;
     return `
       <div class="message-action-menu" role="menu">
         ${options.secondaryOnly ? "" : `<button type="button" role="menuitem" data-row-action="copy" data-transcript-id="${escapeHtml(item.id)}">Copy</button>`}
-        ${this.hideInspectorActions ? "" : `<button type="button" role="menuitem" data-row-action="details" data-transcript-id="${escapeHtml(item.id)}">Details</button>`}
-        ${previewable && !this.hideInspectorActions ? `<button type="button" role="menuitem" data-row-action="preview" data-transcript-id="${escapeHtml(item.id)}">Preview</button>` : ""}
         ${!options.secondaryOnly && this.canFork ? `<button type="button" role="menuitem" data-row-action="fork" data-transcript-id="${escapeHtml(item.id)}">Fork from here</button>` : ""}
       </div>`;
   }

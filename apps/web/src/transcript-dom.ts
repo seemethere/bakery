@@ -19,7 +19,6 @@ export type TranscriptRowStateOptions = {
   openActionMenuId: string;
   canFork: (item: TranscriptItem) => boolean;
   renderedSegmentCache: Map<string, string>;
-  hideInspectorActions: boolean;
   localImageUrl: (path: string) => string | null;
 };
 
@@ -81,7 +80,6 @@ export function updateTranscriptRow(row: PiTranscriptRow, transcript: Transcript
     afterRunningTool: isAfterRunningTool(transcript, item),
     toolGroupPosition: toolGroupPositionFor(transcript, item),
     cache: options.renderedSegmentCache,
-    hideInspectorActions: options.hideInspectorActions,
     localImageUrl: options.localImageUrl,
   });
 }

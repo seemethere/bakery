@@ -123,9 +123,8 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
       status: document.querySelector(".status")?.textContent ?? null,
       connectionBanner: document.querySelector(".connection-banner")?.textContent?.replace(/\s+/g, " ").trim() ?? null,
       promptValue: (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value ?? null,
-      rightPanelCollapsed: document.querySelector("pi-web-agent")?.classList.contains("inspector-collapsed") ?? null,
       renderedImages: document.querySelectorAll(".message img").length,
-      selectedTitle: document.querySelector(".right-panel-heading strong")?.textContent ?? null,
+      inspectorPanels: document.querySelectorAll(".right-panel, .tree-drawer").length,
       treeRows: document.querySelectorAll(".tree-line").length,
       sessionButtons: document.querySelectorAll("[data-session-id]").length,
       longTaskCount: longTasks.length,
@@ -430,7 +429,6 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     localStorage.setItem("piWebSessionSidebarCollapsed", "true");
-    localStorage.setItem("piWebRightPanelCollapsed", "true");
     localStorage.setItem("piWebSessionSidebarPinned", "false");
     localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
@@ -545,7 +543,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       modelThinkingText: document.querySelector("#modelThinkingToggle")?.textContent?.trim() ?? "",
       mobileMenu: rectOf("#toggleSessionSidebarMobile"),
       closedSidebar: rectOf(".session-sidebar.collapsed"),
-      rightPanel: rectOf(".right-panel"),
+      inspectorPanels: document.querySelectorAll(".right-panel, .tree-drawer").length,
       drawerOrder,
     };
   }, drawerOrder);
@@ -554,7 +552,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.documentWidth > viewportWidth + 2) throw new Error(`Mobile layout has horizontal overflow: document ${layout.documentWidth}px, viewport ${viewportWidth}px`);
   if ((layout.mobileMenu?.width ?? 0) < 30) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
-  if (layout.rightPanel !== null) throw new Error(`Mobile inspector should be detached, saw ${JSON.stringify(layout.rightPanel)}`);
+  if (layout.inspectorPanels !== 0) throw new Error(`Mobile inspector/tree panels should be detached, saw ${layout.inspectorPanels}`);
   if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
   if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.firstGroupIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.firstGroupIndex || layout.drawerOrder.firstGroupIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put session creation/groups before settings: new=${layout.drawerOrder.newSessionIndex}, group=${layout.drawerOrder.firstGroupIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
@@ -632,7 +630,7 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   const responsiveness: Array<{ label: string; ms: number }> = [];
   for (let i = 0; i < 12; i++) {
     responsiveness.push(await timed(`fill-prompt-${i}`, () => page.locator("#prompt").fill(`steer while streaming ${i}`)));
-    if (i % 3 === 0) responsiveness.push(await timed(`toggle-inspector-${i}`, () => page.locator("#toggleRightPanel").click()));
+    if (i % 3 === 0) responsiveness.push(await timed(`toggle-autoscroll-${i}`, () => page.locator("#autoScroll").click()));
     if (i % 4 === 0) responsiveness.push(await timed(`toggle-thinking-${i}`, () => page.locator("#showThinking").click()));
     await page.waitForTimeout(75);
   }
@@ -827,22 +825,21 @@ async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> 
 
 async function runInspectorPreview(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector validation.");
+  await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector removal validation.");
+  await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   const assistant = page.locator(".message.assistant:has(img)").last();
   await assistant.click();
   await page.waitForFunction(() => document.querySelector(".message.assistant.selected img"));
-  await assistant.locator('[data-row-action="menu"]').click();
-  await assistant.locator('.message-action-menu [data-row-action="preview"]').click();
-  await page.locator(".preview-markdown img").first().waitFor({ timeout: 5_000 });
-  await assistant.locator('[data-row-action="menu"]').click();
-  await assistant.locator('.message-action-menu [data-row-action="details"]').click();
-  await page.locator(".raw-detail").waitFor({ state: "visible" });
+  await assistant.locator('[data-row-action="preview"]').waitFor({ state: "detached", timeout: 5_000 });
+  await assistant.locator('[data-row-action="details"]').waitFor({ state: "detached", timeout: 5_000 });
+  await assistant.locator('[data-row-action="copy"]').first().click();
   const tool = page.locator(".message.tool").first();
   await tool.locator(".message-header").click();
   await tool.locator(".message-body").waitFor({ state: "hidden", timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();
-  await tool.locator(".message-body").click();
-  await page.locator(".right-panel-heading", { hasText: "echo fake tool" }).waitFor({ timeout: 5_000 });
+  await tool.locator(".message-body").waitFor({ state: "visible", timeout: 5_000 });
+  await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   return collectMetrics(page);
 }
 
@@ -883,11 +880,10 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await ensureSidebarSettingsVisible(page);
   await page.locator(".session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
-  await page.locator("#prompt").fill("/tree");
-  await page.locator("#send").click();
-  await page.locator(".tree-drawer", { hasText: "Session Tree" }).waitFor({ timeout: 5_000 });
-  await page.locator(".tree-drawer", { hasText: "Question discipline:" }).waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator("#closeTreeDrawer").click();
+  await page.locator("#prompt").fill("/");
+  await page.locator(".command-autocomplete", { hasText: "/tree" }).waitFor({ state: "detached", timeout: 1_500 });
+  await page.locator("#prompt").fill("");
+  await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   const beforeNewSessions = await page.locator("pi-web-agent").evaluate((element) => ((element as unknown as { sessions?: unknown[] }).sessions ?? []).length);
   await page.locator("#prompt").fill("/new with args");
   await page.locator("#send").click();
@@ -898,10 +894,7 @@ async function runSlashCommands(page: Page): Promise<Record<string, unknown>> {
   await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeNewSessions, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator("#prompt").fill("/tree");
-  await page.locator("#send").click();
-  await page.locator(".tree-drawer").waitFor({ timeout: 5_000 });
-  await page.locator("#closeTreeDrawer").click();
+  await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   return collectMetrics(page);
 }
 
@@ -935,49 +928,18 @@ async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
 
 async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  for (let index = 0; index < 12; index += 1) {
-    await sendPromptAndWaitIdle(page, `Create tree navigation row ${index + 1}.`);
-  }
-  await page.locator("#prompt").fill("/tree");
-  await page.locator("#prompt").press("Enter");
-  await page.locator(".tree-drawer").waitFor({ timeout: 5_000 });
-  await page.locator(".tree-line").first().waitFor({ timeout: 5_000 });
-  const drawer = page.locator(".tree-drawer");
-  await drawer.locator(".tree-current-path", { hasText: "Current path" }).waitFor({ timeout: 5_000 });
-  await drawer.locator(".tree-path-segment.leaf").waitFor({ timeout: 5_000 });
-  await drawer.locator(".tree-line.current").waitFor({ timeout: 5_000 });
-  await drawer.locator(".tree-line.current-path").first().waitFor({ timeout: 5_000 });
-  await drawer.locator('.tree-line[tabindex="0"]').waitFor({ timeout: 5_000 });
-  await page.locator(".tree-drawer .tree-panel").evaluate((element) => {
-    const maxScroll = element.scrollHeight - element.clientHeight;
-    if (maxScroll <= 0) throw new Error("Tree drawer is not tall enough to validate scroll behavior");
-    if (element.scrollTop > maxScroll / 2) throw new Error(`Newest-first tree opened too far from the current leaf; scrollTop=${element.scrollTop}, max=${maxScroll}`);
-  });
-  await drawer.locator(".tree-line").first().evaluate((element) => {
-    if (!element.classList.contains("current")) throw new Error("Newest-first tree did not render the current leaf first");
-    const rect = element.getBoundingClientRect();
-    const panel = element.closest(".tree-panel")?.getBoundingClientRect();
-    if (!panel || rect.bottom < panel.top || rect.top > panel.bottom) throw new Error("Current leaf row is not visible after opening /tree");
-  });
-  await drawer.locator(".tree-line").first().focus();
-  await page.keyboard.press("ArrowDown");
-  await drawer.locator(".tree-line").nth(1).evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("ArrowDown did not move tree focus to the next row");
-  });
-  await page.keyboard.press("Home");
-  await drawer.locator(".tree-line").first().evaluate((element) => {
-    if (document.activeElement !== element) throw new Error("Home did not move tree focus to the first row");
-  });
-  await page.screenshot({ path: join(artifactDir, "tree-current-path.png"), fullPage: true });
-  await page.keyboard.press("Enter");
-  await page.locator(".notice", { hasText: /Navigated|Tree navigation failed/ }).waitFor({ timeout: 5_000 }).catch(() => undefined);
-  const forkableRow = page.locator('.tree-line[data-tree-forkable="true"]').first();
-  await forkableRow.waitFor({ timeout: 5_000 });
-  await forkableRow.focus();
-  await page.keyboard.press("f");
+  const beforeSessions = await page.locator("pi-web-agent").evaluate((element) => ((element as unknown as { sessions?: unknown[] }).sessions ?? []).length);
+  await sendPromptAndWaitIdle(page, "Create a transcript fork row without showing tree navigation UI.");
+  await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
+  const userRow = page.locator(".message.user", { hasText: "Create a transcript fork row" }).last();
+  await userRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
+  await userRow.locator('[data-row-action="fork"]').click();
+  await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeSessions, { timeout: 5_000 });
   await page.locator(".status.idle").waitFor({ timeout: 5_000 });
   await ensureSidebarSettingsVisible(page);
   await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "transcript-fork-no-tree-ui.png"), fullPage: true });
   return collectMetrics(page);
 }
 
@@ -1455,7 +1417,7 @@ async function runModelThinking(page: Page): Promise<Record<string, unknown>> {
 
 async function runManual(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, a prompt asking for an image/screenshot preview, /session, /reload, /tree, @README.md, inspector tabs, and narrow-window resizing.");
+  await page.locator("#prompt").fill("Manual fake-agent session ready. Try a long prompt, a prompt mentioning tool, a prompt asking for an image/screenshot preview, /session, /reload, @README.md, transcript fork actions, and narrow-window resizing.");
   return collectMetrics(page);
 }
 

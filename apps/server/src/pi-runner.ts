@@ -89,7 +89,6 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
   { name: "hotkeys", description: "Show all keyboard shortcuts", source: "builtin", unsupported: true },
   { name: "fork", description: "Create a new fork from a previous user message", source: "builtin", unsupported: true },
   { name: "clone", description: "Duplicate the current session at the current position", source: "builtin", unsupported: true },
-  { name: "tree", description: "Open the web session tree", source: "builtin" },
   { name: "login", description: "Configure provider authentication", source: "builtin", unsupported: true },
   { name: "logout", description: "Remove provider authentication", source: "builtin", unsupported: true },
   { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
@@ -413,10 +412,6 @@ class InProcessSessionHandle implements SessionHandle {
     if (parsed.name === "changelog") {
       return { handled: true, title: "/changelog", body: await readChangelog() };
     }
-    if (parsed.name === "tree") {
-      return { handled: true, title: "/tree", body: "Open the Tree tab or type /tree in the web prompt to show the wide session tree." };
-    }
-
     return {
       handled: true,
       title: `/${parsed.name}`,
