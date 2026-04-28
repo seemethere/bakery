@@ -346,7 +346,7 @@ async function runQuestionAnswer(page: Page): Promise<Record<string, unknown>> {
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
   const viewerPage = await page.context().newPage();
   await viewerPage.goto(webBase, { waitUntil: "domcontentloaded" });
-  await viewerPage.locator(".controller.viewer", { hasText: "viewer" }).waitFor({ timeout: 10_000 });
+  await viewerPage.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 10_000 });
   await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
   await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
   await viewerPage.screenshot({ path: join(artifactDir, "question-answer-viewer-disabled-light.png"), fullPage: true });
@@ -958,12 +958,12 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   const viewer = await context.newPage();
   await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
   await viewer.locator("#prompt").waitFor({ state: "visible" });
-  await viewer.locator(".controller.viewer").waitFor({ timeout: 5_000 });
+  await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await viewer.locator("#takeControl").click();
   await viewer.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
   await page.locator(".control-request", { hasText: "Another tab wants control" }).waitFor({ timeout: 5_000 });
   await page.locator("#approveControl").click();
-  await viewer.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
+  await viewer.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
   await viewer.locator("#prompt").fill("controller handoff smoke");
   await viewer.locator("#send").click();
   await waitForAgentIdle(viewer, 8_000);
@@ -979,7 +979,7 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   const context = page.context();
   const viewer = await context.newPage();
   await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
-  await viewer.locator(".controller.viewer").waitFor({ timeout: 5_000 });
+  await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
 
   await viewer.locator("#takeControl").click();
   await page.locator(".control-request", { hasText: "Another tab wants control" }).waitFor({ timeout: 5_000 });
@@ -998,11 +998,11 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   await prepareSession(owner);
   const requester = await isolated.newPage();
   await requester.goto(webBase, { waitUntil: "domcontentloaded" });
-  await requester.locator(".controller.viewer").waitFor({ timeout: 5_000 });
+  await requester.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await requester.locator("#takeControl").click();
   await requester.locator("#takeControl", { hasText: "Control requested" }).waitFor({ timeout: 5_000 });
   await owner.close();
-  await requester.locator(".controller:not(.viewer)").waitFor({ timeout: 5_000 });
+  await requester.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
   await requester.locator("#prompt").fill("disconnected controller handoff smoke");
   await requester.locator("#send").click();
   await waitForAgentIdle(requester, 8_000);

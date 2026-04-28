@@ -2472,6 +2472,16 @@ class PiWebAgentApp extends HTMLElement {
     </div>`;
   }
 
+  private renderViewerCount(): string {
+    const viewers = Math.max(0, (this.controller?.connectedClients ?? 1) - 1);
+    if (!this.selectedSession || viewers < 1) return "";
+    const label = `${viewers} viewer${viewers === 1 ? "" : "s"}`;
+    return `<span class="viewer-count" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></svg>
+      <span>${viewers}</span>
+    </span>`;
+  }
+
   private render(): void {
     this.syncRunningElapsedTimer();
     const renderStart = performance.now();
@@ -2495,9 +2505,6 @@ class PiWebAgentApp extends HTMLElement {
     const takeoverRequest = this.controller?.takeoverRequest;
     const takeoverPending = takeoverRequest?.state === "requested";
     const takeoverIncoming = takeoverRequest?.state === "incoming";
-    const controllerLabel = this.controller
-      ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
-      : "";
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
     const selectedMeta = this.selectedSession ? sessionMetadataLabel(this.selectedSession) : "";
@@ -2524,7 +2531,6 @@ class PiWebAgentApp extends HTMLElement {
               ${this.renderSessionDetails()}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
           </div>
           <div class="header-status">
-            ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button>` : ""}
             ${takeoverIncoming ? `<span class="control-request">Another tab wants control <button id="approveControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Approve</button><button id="denyControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Deny</button></span>` : ""}
             ${this.renderStatusPill()}
@@ -2547,6 +2553,7 @@ class PiWebAgentApp extends HTMLElement {
                 <strong>${escapeHtml(composerModeLabel)}</strong>
                 <span class="composer-mode-spacer" aria-hidden="true"></span>
                 ${this.settings ? renderModelThinkingPicker({ settings: this.settings, isController, open: this.modelThinkingPickerOpen, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel, showThinking: this.showThinking, includeShowThinking: true, renderPopover: !this.mobileLayout }) : ""}
+                ${this.renderViewerCount()}
                 ${this.renderContextUsageNotice()}
               </div>
               <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>

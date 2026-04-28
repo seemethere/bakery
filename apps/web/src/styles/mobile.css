@@ -429,6 +429,16 @@
     font-size: 10px;
   }
 
+  .viewer-count {
+    padding: 1px 6px 1px 5px;
+    font-size: 10px;
+  }
+
+  .viewer-count svg {
+    width: 13px;
+    height: 13px;
+  }
+
   .context-usage-full {
     display: none;
   }
