@@ -201,6 +201,20 @@ async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await waitForAgentIdle(page, 30_000);
 }
 
+async function waitForPromptEnabled(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
+    return Boolean(prompt && !prompt.disabled);
+  }, undefined, { timeout: 5_000 });
+}
+
+async function waitForPromptDisabled(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
+    return Boolean(prompt?.disabled);
+  }, undefined, { timeout: 5_000 });
+}
+
 async function runSessionsPage(page: Page): Promise<Record<string, unknown>> {
   const firstSessionId = await prepareSession(page);
   await page.locator("pi-web-agent").evaluate(async (element) => {
@@ -1051,7 +1065,9 @@ async function runReconnectController(page: Page): Promise<Record<string, unknow
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await viewer.locator("#takeControl").click();
   await viewer.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await waitForPromptEnabled(viewer);
   await page.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
+  await waitForPromptDisabled(page);
   await viewer.locator("#prompt").fill("controller handoff smoke");
   await viewer.locator("#send").click();
   await waitForAgentIdle(viewer, 8_000);
@@ -1069,13 +1085,21 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
 
+  await page.locator("#prompt").fill("Please produce a long streaming takeover response.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
   await viewer.locator("#takeControl").click();
   await viewer.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await waitForPromptEnabled(viewer);
   await page.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
+  await waitForPromptDisabled(page);
+  await waitForAgentIdle(viewer, 30_000);
 
   await page.locator("#takeControl").click();
   await page.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await waitForPromptEnabled(page);
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
+  await waitForPromptDisabled(viewer);
   await viewer.close();
 
   const isolated = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -1086,6 +1110,7 @@ async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<
   await requester.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await requester.locator("#takeControl").click();
   await requester.locator("#takeControl").waitFor({ state: "detached", timeout: 5_000 });
+  await waitForPromptEnabled(requester);
   await owner.close();
   await requester.locator("#prompt").fill("disconnected controller handoff smoke");
   await requester.locator("#send").click();

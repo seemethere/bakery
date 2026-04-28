@@ -640,6 +640,9 @@ class PiWebAgentApp extends HTMLElement {
       this.applyAgentEvent(eventData);
     } else if (payload.type === "controller_update") {
       this.controller = payload.controller;
+      this.forceFullRender = true;
+      this.requestRender(0);
+      return;
     } else if (payload.type === "settings_update") {
       this.settings = payload.settings;
     } else if (payload.type === "question_update") {
