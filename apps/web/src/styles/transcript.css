@@ -456,9 +456,9 @@
 .message.tool.developer-bash {
   margin-right: 0;
   margin-left: auto;
-  padding-left: 16px;
+  padding-right: 16px;
   border: 0;
-  border-left: 2px solid color-mix(in srgb, var(--color-developer-bash-border) 74%, transparent);
+  border-right: 2px solid color-mix(in srgb, var(--color-developer-bash-border) 74%, transparent);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -489,7 +489,7 @@
 }
 
 .message.tool.developer-bash .message-body {
-  margin: 0 0 8px 28px;
+  margin: 0 28px 8px 0;
   border: 1px solid color-mix(in srgb, var(--color-developer-bash-border) 42%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-developer-bash-body-bg) 72%, transparent);
@@ -497,7 +497,7 @@
 }
 
 .message.tool.developer-bash.no-context {
-  border-left-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 74%, transparent);
+  border-right-color: color-mix(in srgb, var(--color-developer-bash-no-context-border) 74%, transparent);
 }
 
 .message.tool.developer-bash.no-context .message-header {
