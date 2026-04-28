@@ -435,7 +435,8 @@ export function formatToolDuration(durationMs: number | undefined): string {
 
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
-  const source = item.body || item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") || "";
+  const segmentText = item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") ?? "";
+  const source = segmentText || item.body || "";
   const rawLines = source
     .split(/\r?\n/)
     .map((part) => part.trim())
@@ -497,7 +498,11 @@ export function mergeDuplicateToolResult(previous: TranscriptItem, current: Tran
 
 export function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, context: RenderContext = {}): string {
   const suppressedKey = context.suppressLocalImageArtifactPaths ? Array.from(context.suppressLocalImageArtifactPaths).join("|") : "";
-  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}:${context.localImageUrl ? "assets" : ""}:${suppressedKey}`;
+  const segmentKey = item.segments?.map((segment) => {
+    if ("text" in segment) return `${segment.kind}:${segment.text}`;
+    return `${segment.kind}:${segment.label}:${segment.kind === "image" ? segment.src ?? "" : ""}`;
+  }).join("|") ?? "";
+  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}:${segmentKey}:${context.localImageUrl ? "assets" : ""}:${suppressedKey}`;
   const cached = context.cache?.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -595,11 +600,17 @@ export class PiTranscriptRow extends HTMLElement {
     const streamingTextTarget = streamingText !== null ? this.querySelector<HTMLElement>(this.item?.kind === "tool" ? ".tool-streaming-output" : ".streaming-plain pre") : null;
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && streamingTextTarget);
     const compactSummary = this.collapsed ? compactToolSummary(item) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.selected}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${this.afterRunningTool}:${this.toolGroupPosition}:${streamingText !== null ? "streaming" : item.body}`;
-    if (canPatchText && renderKey === this.lastRenderKey && streamingText !== this.lastStreamingText) {
-      streamingTextTarget!.textContent = streamingText ?? "";
-      this.pinRunningToolOutputToBottom(item);
-      this.lastStreamingText = streamingText ?? "";
+    const segmentKey = item.segments?.map((segment) => {
+      if ("text" in segment) return `${segment.kind}:${segment.text}`;
+      return `${segment.kind}:${segment.label}:${segment.kind === "image" ? segment.src ?? "" : ""}`;
+    }).join("|") ?? "";
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
+    if (renderKey === this.lastRenderKey) {
+      if (canPatchText && streamingText !== this.lastStreamingText) {
+        streamingTextTarget!.textContent = streamingText ?? "";
+        this.pinRunningToolOutputToBottom(item);
+        this.lastStreamingText = streamingText ?? "";
+      }
       recordPerfSample("rowUpdate", performance.now() - start);
       return;
     }

@@ -9,13 +9,14 @@ declare global {
   interface Window {
     __piWebLongTasks?: Array<{ name: string; startTime: number; duration: number }>;
     __piWebPerf?: { renderCount: number; renderMs: number[]; patchCount: number; patchMs: number[]; rowUpdateCount?: number; rowUpdateMs?: number[] };
+    __piWebStableImage?: HTMLImageElement;
   }
 }
 
 const root = resolve(import.meta.dir, "..");
 const scenario = process.argv.includes("--scenario") ? process.argv[process.argv.indexOf("--scenario") + 1] : "streaming-responsiveness";
 const scenarios = scenario === "all"
-  ? ["empty-session-layout", "mobile-layout", "session-routing", "sessions-page", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
+  ? ["empty-session-layout", "mobile-layout", "session-routing", "sessions-page", "streaming-responsiveness", "queued-follow-up", "transcript-scroll-stability", "transcript-text-selection", "session-metadata", "inspector-preview", "slash-commands", "bash-commands", "question-answer", "tree-fork-navigation", "reconnect-controller", "controller-handoff-edges", "reconnect-draft", "backend-restart", "narrow-tool-stream", "tool-grouping", "tool-image-heavy-transcript", "mobile-long-transcript-controls", "mobile-image-stream-stability", "file-autocomplete", "image-attachments", "image-artifact-drop-upload", "image-artifact-paths", "repeated-image-artifact-paths", "artifact-path-formats", "remote-image-artifact-paths", "remote-image-artifact-upload", "missing-remote-image-artifact", "model-thinking", "context-usage", "themes", "theme-gallery"]
   : [scenario];
 const keep = process.argv.includes("--keep");
 const headed = process.argv.includes("--headed") || scenario === "manual";
@@ -1221,6 +1222,42 @@ async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, u
   };
 }
 
+async function runMobileImageStreamStability(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for mobile image stability measurement.");
+  await page.waitForFunction(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img, .rendered-image img, .transcript-markdown-image"));
+    return images.length >= 1 && images[0]!.complete && images[0]!.naturalWidth > 0;
+  }, null, { timeout: 15_000 });
+  const before = await page.evaluate(() => {
+    const image = document.querySelector<HTMLImageElement>(".artifact-image img, .rendered-image img, .transcript-markdown-image");
+    if (!image) throw new Error("Expected a loaded transcript image before streaming");
+    window.__piWebStableImage = image;
+    return { src: image.currentSrc || image.src, width: image.naturalWidth, height: image.naturalHeight, toolRows: document.querySelectorAll(".message.tool").length };
+  });
+
+  await page.locator("#prompt").fill("Please run multiple tools while streaming a long mobile image stability response.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.waitForFunction((toolRows) => document.querySelectorAll(".message.tool").length > toolRows, before.toolRows, { timeout: 10_000 });
+  await delay(700);
+  const during = await page.evaluate(() => {
+    const image = window.__piWebStableImage;
+    return {
+      stillConnected: Boolean(image?.isConnected),
+      stillComplete: Boolean(image?.complete && image.naturalWidth > 0),
+      sameFirstImage: document.querySelector(".artifact-image img, .rendered-image img, .transcript-markdown-image") === image,
+      failedImageCount: window.__piWebFailedImageCount ?? 0,
+    };
+  });
+  if (!during.stillConnected || !during.stillComplete || !during.sameFirstImage) throw new Error(`Transcript image was replaced or unloaded during streaming: ${JSON.stringify(during)}`);
+  await waitForAgentIdle(page, 30_000);
+  await page.screenshot({ path: join(artifactDir, "mobile-image-stream-stability.png"), fullPage: true });
+  return { before, during, ...(await collectMetrics(page)) };
+}
+
 async function runMobileLongTranscriptControls(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareSession(page);
@@ -1566,6 +1603,7 @@ async function runScenario(name: string, page: Page, browser: Browser, runtime: 
   if (name === "tool-grouping") return runToolGrouping(page);
   if (name === "tool-image-heavy-transcript") return runToolImageHeavyTranscript(page);
   if (name === "mobile-long-transcript-controls") return runMobileLongTranscriptControls(page);
+  if (name === "mobile-image-stream-stability") return runMobileImageStreamStability(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);
   if (name === "image-attachments") return runImageAttachments(page);
   if (name === "image-artifact-drop-upload") return runImageArtifactDropUpload(page);

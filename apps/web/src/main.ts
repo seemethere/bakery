@@ -2367,8 +2367,37 @@ class PiWebAgentApp extends HTMLElement {
     shell.style.setProperty("--running-queue-height", `${Math.ceil(queue.getBoundingClientRect().height)}px`);
   }
 
+  private existingTranscriptRows(): Map<string, HTMLElement> {
+    const existingRows = new Map<string, HTMLElement>();
+    this.querySelectorAll<HTMLElement>("pi-transcript-row[data-transcript-id]").forEach((row) => {
+      const id = row.dataset.transcriptId;
+      if (id) existingRows.set(id, row);
+    });
+    return existingRows;
+  }
+
+  private restoreTranscriptRows(root: ParentNode, existingRows: Map<string, HTMLElement>): void {
+    root.querySelectorAll<HTMLElement>("pi-transcript-row[data-transcript-id]").forEach((placeholder) => {
+      const id = placeholder.dataset.transcriptId;
+      const existing = id ? existingRows.get(id) : undefined;
+      if (existing) placeholder.replaceWith(existing);
+    });
+  }
+
+  private replaceHtmlPreservingTranscript(html: string): void {
+    const existingRows = this.existingTranscriptRows();
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    this.restoreTranscriptRows(template.content, existingRows);
+    this.replaceChildren(template.content);
+  }
+
   private patchTranscriptStructure(transcript: HTMLElement): void {
-    transcript.innerHTML = this.renderTranscript();
+    const existingRows = this.existingTranscriptRows();
+    const template = document.createElement("template");
+    template.innerHTML = this.renderTranscript();
+    this.restoreTranscriptRows(template.content, existingRows);
+    transcript.replaceChildren(template.content);
     this.hydrateTranscriptRows();
     this.transcriptStructureDirty = false;
     this.dirtyTranscriptIds.clear();
@@ -2613,6 +2642,7 @@ class PiWebAgentApp extends HTMLElement {
     const restoreSessionsSearchFocus = document.activeElement === sessionsSearchInput;
     const restoreApiBaseFocus = document.activeElement === apiBaseInput;
     const restoreTokenFocus = document.activeElement === tokenInput;
+    const activeQuestionOptionIndex = (document.activeElement as HTMLElement | null)?.getAttribute("data-question-option-index");
     const promptSelectionStart = prompt?.selectionStart ?? this.promptDraft.length;
     const promptSelectionEnd = prompt?.selectionEnd ?? promptSelectionStart;
     const titleSelectionStart = titleInput?.selectionStart ?? (this.editingTitleDraft?.length ?? 0);
@@ -2685,7 +2715,7 @@ class PiWebAgentApp extends HTMLElement {
       recordPerfSample("render", performance.now() - renderStart);
       return;
     }
-    this.innerHTML = `
+    this.replaceHtmlPreservingTranscript(`
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}
       <main>
@@ -2739,7 +2769,7 @@ class PiWebAgentApp extends HTMLElement {
       </main>
       ${this.renderMobileMetadataSuggestion()}
       ${this.renderMobileModelThinkingPopover(isController)}
-    `;
+    `);
     this.forceFullRender = false;
     this.transcriptStructureDirty = false;
     this.dirtyTranscriptIds.clear();
@@ -2762,6 +2792,8 @@ class PiWebAgentApp extends HTMLElement {
         nextPrompt.setSelectionRange(start, end);
         if (!this.focusPromptOnNextReadyRender || this.connectionState === "connected") this.focusPromptOnNextReadyRender = false;
       }
+    } else if (activeQuestionOptionIndex) {
+      this.querySelector<HTMLElement>(`[data-question-option-index="${CSS.escape(activeQuestionOptionIndex)}"]`)?.focus();
     }
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
