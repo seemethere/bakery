@@ -32,9 +32,9 @@
   align-items: center;
   width: 100%;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
   border-radius: 14px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-bg-elevated) 86%, transparent), color-mix(in srgb, var(--color-bg-surface) 72%, transparent));
+  background: linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-surface));
   color: var(--color-text-secondary);
   padding: 9px 11px;
   text-align: left;
@@ -44,7 +44,7 @@
 .session-summary-toggle:hover,
 .session-summary-toggle:focus-visible {
   border-color: color-mix(in srgb, var(--color-accent-soft) 42%, var(--color-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-bg-elevated) 92%, var(--color-accent-soft) 4%), color-mix(in srgb, var(--color-bg-surface) 76%, transparent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-accent-soft) 6%), var(--color-bg-surface));
   color: var(--color-text);
 }
 
@@ -87,7 +87,7 @@
   height: 24px;
   border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-input) 62%, transparent);
+  background: var(--color-bg-input);
   color: var(--color-text-muted);
   font-size: 11px;
 }
@@ -96,9 +96,9 @@
 .metadata-suggestion {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--color-bg-input) 58%, transparent);
+  background: var(--color-bg-input);
   line-height: 1.45;
 }
 

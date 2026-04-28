@@ -109,12 +109,11 @@ header:has(.session-details-popover) {
   width: min(520px, calc(100vw - 32px));
   max-height: min(72dvh, 560px);
   overflow: auto;
-  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--color-popover-bg) 92%, transparent);
+  background: var(--color-popover-bg);
   padding: 12px;
   box-shadow: var(--color-popover-shadow);
-  backdrop-filter: blur(16px);
 }
 
 .session-details-header,
@@ -141,7 +140,7 @@ header:has(.session-details-popover) {
   flex-wrap: wrap;
   border: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--color-bg-elevated) 50%, transparent);
+  background: var(--color-bg-elevated);
   color: var(--color-text-muted);
   padding: 9px 10px;
   font-size: 12px;
@@ -165,7 +164,7 @@ header:has(.session-details-popover) {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-bg-input) 72%, transparent);
+  background: var(--color-bg-input);
   color: var(--color-text-secondary);
   padding: 5px 9px;
   text-overflow: ellipsis;
