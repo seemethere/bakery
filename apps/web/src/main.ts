@@ -2526,7 +2526,7 @@ class PiWebAgentApp extends HTMLElement {
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
             ${this.selectedSession ? `<div class="session-title-row"><input id="sessionTitle" class="session-title-input" size="${Math.min(52, Math.max(12, selectedTitle.length || selectedTitlePlaceholder.length))}" value="${escapeHtml(selectedTitle)}" placeholder="${escapeHtml(selectedTitlePlaceholder)}" aria-label="Session title" title="Edit session title" />
-              <button id="toggleSessionDetails" class="session-details-button ${this.sessionDetailsOpen ? "active" : ""}" type="button" title="Session details" aria-label="Session details" aria-expanded="${this.sessionDetailsOpen}">Details</button></div>
+              <button id="toggleSessionDetails" class="session-details-button ${this.sessionDetailsOpen ? "active" : ""}" type="button" title="Session details" aria-label="Session details" aria-expanded="${this.sessionDetailsOpen}"><span class="session-details-label">Details</span><span class="session-details-icon" aria-hidden="true">i</span></button></div>
               <span class="session-workspace" title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>
               ${this.renderSessionDetails()}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
           </div>

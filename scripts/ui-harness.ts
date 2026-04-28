@@ -185,10 +185,17 @@ async function waitForAgentIdle(page: Page, timeout = 30_000): Promise<void> {
   }, undefined, { timeout });
 }
 
+async function waitForAgentRunning(page: Page, timeout = 5_000): Promise<void> {
+  await page.waitForFunction(() => {
+    const app = document.querySelector("pi-web-agent") as unknown as { status?: string } | null;
+    return app?.status === "running";
+  }, undefined, { timeout });
+}
+
 async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#prompt").fill(text);
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
   await waitForAgentIdle(page, 30_000);
 }
 
@@ -228,7 +235,7 @@ async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
 
   await page.locator("#prompt").fill("Please produce a long narrow running tool stream for the theme component gallery.");
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
   await page.locator(".message.tool.running").waitFor({ timeout: 10_000 });
   await page.locator("#prompt").fill("Queued follow-up visible in the theme gallery");
   await page.locator("#followUp").click();
@@ -549,6 +556,11 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       modelThinkingTrigger: rectOf("#modelThinkingToggle"),
       modelThinkingText: document.querySelector("#modelThinkingToggle")?.textContent?.trim() ?? "",
       mobileMenu: rectOf("#toggleSessionSidebarMobile"),
+      mobileDetails: rectOf("#toggleSessionDetails"),
+      mobileDetailsLabelDisplay: getComputedStyle(document.querySelector(".session-details-label") ?? document.body).display,
+      mobileDetailsIconDisplay: getComputedStyle(document.querySelector(".session-details-icon") ?? document.body).display,
+      workspaceLine: rectOf(".session-workspace"),
+      headerStatus: rectOf(".header-status"),
       closedSidebar: rectOf(".session-sidebar.collapsed"),
       inspectorPanels: document.querySelectorAll(".right-panel, .tree-drawer").length,
       drawerOrder,
@@ -558,12 +570,15 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   const viewportWidth = layout.viewport.width;
   if (layout.documentWidth > viewportWidth + 2) throw new Error(`Mobile layout has horizontal overflow: document ${layout.documentWidth}px, viewport ${viewportWidth}px`);
   if ((layout.mobileMenu?.width ?? 0) < 30) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
+  if (!layout.mobileDetails || layout.mobileDetails.width > 34 || layout.mobileDetailsLabelDisplay !== "none" || layout.mobileDetailsIconDisplay === "none") throw new Error(`Mobile details affordance should be compact and icon-only: ${JSON.stringify({ rect: layout.mobileDetails, labelDisplay: layout.mobileDetailsLabelDisplay, iconDisplay: layout.mobileDetailsIconDisplay })}`);
+  if (layout.workspaceLine !== null) throw new Error(`Mobile workspace metadata should move out of the persistent header: ${JSON.stringify(layout.workspaceLine)}`);
+  if (layout.headerStatus !== null) throw new Error(`Mobile header should hide passive status pills: ${JSON.stringify(layout.headerStatus)}`);
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
   if (layout.inspectorPanels !== 0) throw new Error(`Mobile inspector/tree panels should be detached, saw ${layout.inspectorPanels}`);
   if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
   if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.firstGroupIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.firstGroupIndex || layout.drawerOrder.firstGroupIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put session creation/groups before settings: new=${layout.drawerOrder.newSessionIndex}, group=${layout.drawerOrder.firstGroupIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
-  if ((layout.header?.height ?? 999) > 140) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
+  if ((layout.header?.height ?? 999) > 64) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
   await page.locator("#modelThinkingToggle").click();
@@ -601,7 +616,7 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   await page.locator("#prompt").fill("Please produce a very long streaming performance response for mobile queued section collapse smoke.");
   await page.locator("#send").click();
   await page.locator("#followUp:not(.hidden)").waitFor({ timeout: 5_000 });
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
   await page.locator("#prompt").fill("mobile queued steer should start collapsed");
   await page.locator("#send").click();
   const collapsedQueue = page.locator(".running-queue.collapsed", { hasText: "1 pending" });
@@ -633,7 +648,7 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
 
   await page.locator("#prompt").fill("Please produce a long streaming performance response with markdown and code.");
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
 
   const responsiveness: Array<{ label: string; ms: number }> = [];
   for (let i = 0; i < 12; i++) {
@@ -657,7 +672,7 @@ async function runQueuedFollowUp(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.locator("#prompt").fill("Please produce a long streaming response and consume queued follow-up before transcript so queued follow-up cancellation and editing can be tested.");
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
 
   await page.locator("#prompt").fill("queued follow-up consumed before transcript row");
   await page.locator("#followUp").click();
@@ -717,7 +732,7 @@ async function runTranscriptScrollStability(page: Page): Promise<Record<string, 
   await prepareSession(page);
   await page.locator("#prompt").fill("Please produce a very long streaming performance response with many paragraphs, markdown, code, and enough text to overflow the transcript while still streaming.");
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
   await page.waitForFunction(() => {
     const transcript = document.querySelector(".transcript");
     return Boolean(transcript && transcript.scrollHeight > transcript.clientHeight + 180 && document.querySelector(".message.assistant"));
@@ -926,7 +941,7 @@ async function runBashCommands(page: Page): Promise<Record<string, unknown>> {
 
   await page.locator("#prompt").fill("Please produce a long streaming performance response while bash is blocked.");
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
   await page.locator("#prompt").fill("!echo blocked while running");
   await page.locator("#send").click();
   await page.waitForFunction(() => document.querySelector(".notice")?.textContent?.includes("Bash commands are available when the session is idle"), null, { timeout: 5_000 });
@@ -1058,7 +1073,7 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await prepareSession(page);
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
-  await page.locator(".status.running").waitFor({ timeout: 5_000 });
+  await waitForAgentRunning(page);
   await page.locator(".message.tool").waitFor({ timeout: 15_000 });
   await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
   await waitForAgentIdle(page, 30_000);

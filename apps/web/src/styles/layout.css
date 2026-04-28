@@ -21,9 +21,9 @@ header {
   gap: 12px;
   min-width: 0;
   overflow: hidden;
-  border-bottom-color: color-mix(in srgb, var(--color-border) 42%, transparent);
-  background: color-mix(in srgb, var(--color-bg-surface) 68%, transparent);
-  box-shadow: 0 1px 0 color-mix(in srgb, #fff 4%, transparent), 0 12px 30px color-mix(in srgb, #000 10%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--color-border-strong) 58%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-bg-elevated) 72%, var(--color-bg-surface)), var(--color-bg-surface));
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 7%, transparent), 0 10px 26px color-mix(in srgb, #000 16%, transparent), 0 0 0 1px color-mix(in srgb, var(--color-bg-surface) 62%, transparent);
   backdrop-filter: blur(14px);
 }
 
@@ -89,6 +89,10 @@ header:has(.session-details-popover) {
   padding: 4px 9px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.session-details-icon {
+  display: none;
 }
 
 .session-details-button.active,

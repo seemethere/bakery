@@ -73,8 +73,8 @@
     position: relative;
     min-height: 0;
     max-height: 180px;
-    padding: 8px 8px 7px 48px;
-    gap: 6px;
+    padding: 6px 8px 6px 48px;
+    gap: 0;
     flex-direction: column;
     align-items: stretch;
   }
@@ -91,18 +91,54 @@
 
   .session-title-row {
     max-width: 100%;
+    min-height: 34px;
+    gap: 6px;
   }
 
   .session-title-input {
     width: 100%;
     max-width: 100%;
     min-width: 0;
+    padding: 1px 0;
     font-size: 14px;
+    line-height: 1.2;
+  }
+
+  .session-title-input:hover,
+  .session-title-input:focus {
+    padding: 1px 7px;
+  }
+
+  .session-workspace {
+    display: none;
   }
 
   .session-details-button {
-    padding: 3px 8px;
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .session-details-label {
+    display: none;
+  }
+
+  .session-details-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid currentColor;
+    border-radius: 999px;
     font-size: 11px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1;
   }
 
   .session-details-popover {
@@ -154,12 +190,18 @@
   }
 
   .header-status {
+    display: none;
     justify-content: flex-start;
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
     padding-bottom: 2px;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .header-status:has(#takeControl),
+  .header-status:has(.control-request) {
+    display: flex;
   }
 
   .header-status > * {
