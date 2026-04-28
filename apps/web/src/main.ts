@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
@@ -308,6 +308,15 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     const index = this.transcript.findIndex((candidate) => candidate.id === nextItem.id);
+    if (index === -1) {
+      for (let runningBashIndex = this.transcript.length - 1; runningBashIndex >= 0; runningBashIndex -= 1) {
+        const candidate = this.transcript[runningBashIndex];
+        if (candidate && mergeDuplicateDeveloperBash(candidate, nextItem)) {
+          this.dirtyTranscriptIds.add(candidate.id);
+          return;
+        }
+      }
+    }
     const previousForMerge = index === -1 ? this.transcript.at(-1) : this.transcript[index - 1];
     if (previousForMerge && mergeDuplicateToolResult(previousForMerge, nextItem)) {
       this.dirtyTranscriptIds.add(previousForMerge.id);
@@ -594,7 +603,15 @@ class PiWebAgentApp extends HTMLElement {
       const command = bashEventCommand(event);
       if (type !== "bash_execution_end") this.status = "running";
       else this.status = "idle";
-      if (type === "bash_execution_start") this.transcript = this.transcript.filter((item) => !(item.id.startsWith("bash:pending:") && isRecord(item.raw) && item.raw.command === command));
+      if (type === "bash_execution_start") {
+        const pendingIds = this.transcript
+          .filter((item) => item.id.startsWith("bash:pending:") && isRecord(item.raw) && item.raw.command === command)
+          .map((item) => item.id);
+        if (pendingIds.length > 0) {
+          this.transcript = this.transcript.filter((item) => !pendingIds.includes(item.id));
+          for (const id of pendingIds) this.dirtyTranscriptIds.add(id);
+        }
+      }
       const item = bashEventToTranscriptItem(event);
       if (item) this.upsertTranscript(item);
       if (type === "bash_execution_end") void this.refreshTree();

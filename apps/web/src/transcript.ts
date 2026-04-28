@@ -448,6 +448,21 @@ function normalizeToolTextForDedupe(value: string): string {
     .toLowerCase();
 }
 
+export function mergeDuplicateDeveloperBash(previous: TranscriptItem, current: TranscriptItem): boolean {
+  if (!isDeveloperBashItem(previous) || !isDeveloperBashItem(current)) return false;
+  if (previous.title !== current.title) return false;
+  if (previous.status !== "running") return false;
+
+  previous.body = current.body || previous.body;
+  if (current.segments) previous.segments = current.segments;
+  if (current.status) previous.status = current.status;
+  if (current.startedAt) previous.startedAt = current.startedAt;
+  if (current.endedAt) previous.endedAt = current.endedAt;
+  if (current.durationMs !== undefined) previous.durationMs = current.durationMs;
+  previous.raw = { previous: previous.raw, duplicateBashExecution: current.raw };
+  return true;
+}
+
 export function mergeDuplicateToolResult(previous: TranscriptItem, current: TranscriptItem): boolean {
   if (previous.kind !== "tool" || current.kind !== "tool" || previous.status !== "done" || current.status !== "done") return false;
   if (!/^(?:tool result(?::|$)|result(?::|$))/i.test(current.title.trim())) return false;

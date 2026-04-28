@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import type { TranscriptItem } from "./transcript";
 
 let renderTranscriptSegments: typeof import("./transcript").renderTranscriptSegments;
+let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDeveloperBash;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, "HTMLElement", {
@@ -16,10 +17,39 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ renderTranscriptSegments } = await import("./transcript"));
+  ({ renderTranscriptSegments, mergeDuplicateDeveloperBash } = await import("./transcript"));
 });
 
 describe("transcript terminal rendering", () => {
+  test("merges SDK bashExecution messages into the optimistic local bash row", () => {
+    const previous: TranscriptItem = {
+      id: "bash:local",
+      kind: "tool",
+      title: "$ lsd",
+      body: "Starting…",
+      segments: [{ kind: "pre", text: "Starting…" }],
+      status: "running",
+      raw: { type: "bash_execution_start", command: "lsd" },
+    };
+    const current: TranscriptItem = {
+      id: "bashExecution:t1",
+      kind: "tool",
+      title: "$ lsd",
+      body: "/bin/bash: lsd: command not found",
+      segments: [{ kind: "pre", text: "/bin/bash: lsd: command not found" }],
+      status: "error",
+      raw: { role: "bashExecution", command: "lsd", exitCode: 127 },
+    };
+
+    expect(mergeDuplicateDeveloperBash(previous, current)).toBe(true);
+    expect(previous).toMatchObject({
+      id: "bash:local",
+      title: "$ lsd",
+      body: "/bin/bash: lsd: command not found",
+      status: "error",
+    });
+  });
+
   test("renders ANSI color output as safe terminal HTML", () => {
     const item: TranscriptItem = {
       id: "tool-ansi",
