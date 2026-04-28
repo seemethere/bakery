@@ -173,10 +173,6 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  .header-status.model-picker-open {
-    overflow: visible;
-  }
-
   .header-status > * {
     flex: 0 0 auto;
   }
@@ -186,16 +182,16 @@
   }
 
   .model-thinking-trigger {
-    max-width: min(42vw, 170px);
-    min-height: 28px;
-    padding: 4px 8px;
+    max-width: min(38vw, 150px);
+    min-height: 24px;
+    padding: 3px 7px;
     font-size: 11px;
   }
 
   .model-thinking-popover {
     position: fixed;
-    top: calc(104px + env(safe-area-inset-top, 0px));
     right: 8px;
+    bottom: calc(122px + env(safe-area-inset-bottom, 0px));
     left: 8px;
     width: auto;
     max-width: none;
@@ -557,6 +553,7 @@
   }
 
   .composer-mode {
+    gap: 6px;
     font-size: 10px;
   }
 

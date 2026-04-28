@@ -631,8 +631,8 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   const responsiveness: Array<{ label: string; ms: number }> = [];
   for (let i = 0; i < 12; i++) {
     responsiveness.push(await timed(`fill-prompt-${i}`, () => page.locator("#prompt").fill(`steer while streaming ${i}`)));
-    if (i % 3 === 0) responsiveness.push(await timed(`toggle-autoscroll-${i}`, () => page.locator("#autoScroll").click()));
-    if (i % 4 === 0) responsiveness.push(await timed(`toggle-thinking-${i}`, () => page.locator("#showThinking").click()));
+    if (i % 3 === 0) responsiveness.push(await timed(`toggle-model-menu-${i}`, () => page.locator("#modelThinkingToggle").click()));
+    if (i % 4 === 0 && await page.locator("#showThinking").count()) responsiveness.push(await timed(`toggle-thinking-${i}`, () => page.locator("#showThinking").click()));
     await page.waitForTimeout(75);
   }
 

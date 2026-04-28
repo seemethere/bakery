@@ -6,6 +6,8 @@ export type ModelThinkingPickerOptions = {
   isController: boolean;
   open: boolean;
   defaultThinkingLevel?: string | undefined;
+  showThinking?: boolean | undefined;
+  includeShowThinking?: boolean | undefined;
 };
 
 function trimProviderPrefix(value: string): string {
@@ -55,12 +57,14 @@ export function modelThinkingTriggerLabel(settings: SessionRuntimeSettings, defa
 }
 
 export function renderModelThinkingPicker(options: ModelThinkingPickerOptions): string {
-  const { settings, isController, open, defaultThinkingLevel } = options;
+  const { settings, isController, open, defaultThinkingLevel, showThinking = false, includeShowThinking = false } = options;
   const currentModelId = settings.model?.id ?? "";
   const label = modelThinkingTriggerLabel(settings, defaultThinkingLevel);
   const disabled = isController ? "" : "disabled";
+  const brainIcon = `<svg class="model-thinking-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5a3 3 0 0 0-3 3 3.2 3.2 0 0 0 .2 1.1A3.5 3.5 0 0 0 7 15.5V17a3 3 0 0 0 5 2.24A3 3 0 0 0 17 17v-1.5a3.5 3.5 0 0 0 .8-6.9A3.2 3.2 0 0 0 18 7.5a3 3 0 0 0-5.2-2.03A3 3 0 0 0 9 4.5Z"/><path d="M12 5.5v14"/><path d="M8.5 9.5H12"/><path d="M12 9.5h3.5"/><path d="M8.5 14H12"/><path d="M12 14h3.5"/></svg>`;
   return `<div class="model-thinking-picker ${open ? "open" : ""}">
     <button id="modelThinkingToggle" class="model-thinking-trigger" type="button" aria-haspopup="dialog" aria-expanded="${open ? "true" : "false"}" ${disabled} title="Change model and thinking level">
+      ${brainIcon}
       <span class="model-thinking-trigger-label">${escapeHtml(label)}</span>
       <span class="model-thinking-trigger-caret" aria-hidden="true">▾</span>
     </button>
@@ -75,6 +79,7 @@ export function renderModelThinkingPicker(options: ModelThinkingPickerOptions): 
           ${settings.availableThinkingLevels.map((level) => `<option value="${escapeHtml(level)}" ${level === settings.thinkingLevel ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
         </select>
       </label>
+      ${includeShowThinking ? `<label class="model-thinking-checkbox"><input id="showThinking" type="checkbox" ${showThinking ? "checked" : ""} /> Show thinking in transcript</label>` : ""}
     </div>` : ""}
   </div>`;
 }
