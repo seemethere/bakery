@@ -100,6 +100,7 @@ class PiWebAgentApp extends HTMLElement {
   private settings: SessionRuntimeSettings | null = null;
   private config: AppConfig | null = null;
   private modelThinkingPickerOpen = false;
+  private modelThinkingAnchor: { left: number; bottom: number; arrowLeft: number } | null = null;
   private sessionDetailsOpen = false;
   private mobileHeaderHidden = false;
   private lastTranscriptScrollTop = 0;
@@ -1783,7 +1784,14 @@ class PiWebAgentApp extends HTMLElement {
     });
     this.querySelector<HTMLButtonElement>("#modelThinkingToggle")?.addEventListener("click", (event) => {
       event.stopPropagation();
+      const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const popoverWidth = Math.min(360, Math.max(280, viewportWidth - 16));
+      const left = Math.max(8, Math.min(rect.right - popoverWidth, viewportWidth - popoverWidth - 8));
+      const arrowLeft = Math.max(22, Math.min(rect.left + rect.width / 2 - left, popoverWidth - 22));
+      this.modelThinkingAnchor = { left, bottom: Math.max(96, window.innerHeight - rect.top + 10), arrowLeft };
       this.modelThinkingPickerOpen = !this.modelThinkingPickerOpen;
+      if (!this.modelThinkingPickerOpen) this.modelThinkingAnchor = null;
       this.render();
     });
     this.querySelector<HTMLDivElement>(".model-thinking-mobile-popover")?.addEventListener("click", (event) => {
@@ -1945,7 +1953,9 @@ class PiWebAgentApp extends HTMLElement {
 
   private renderMobileModelThinkingPopover(isController: boolean): string {
     if (!this.mobileLayout || !this.modelThinkingPickerOpen || !this.settings) return "";
-    return `<div class="model-thinking-mobile-popover">
+    const anchor = this.modelThinkingAnchor;
+    const style = anchor ? ` style="--model-menu-left: ${anchor.left}px; --model-menu-bottom: ${anchor.bottom}px; --model-menu-arrow-left: ${anchor.arrowLeft}px;"` : "";
+    return `<div class="model-thinking-mobile-popover"${style}>
       ${renderModelThinkingPopover({ settings: this.settings, isController, open: true, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel, showThinking: this.showThinking, includeShowThinking: true })}
     </div>`;
   }

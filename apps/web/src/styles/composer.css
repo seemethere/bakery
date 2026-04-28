@@ -819,10 +819,10 @@ header.model-picker-open {
 
 .model-thinking-mobile-popover {
   position: fixed;
-  right: max(8px, env(safe-area-inset-right, 0px));
-  bottom: calc(114px + env(safe-area-inset-bottom, 0px));
-  left: max(8px, env(safe-area-inset-left, 0px));
+  bottom: var(--model-menu-bottom, calc(114px + env(safe-area-inset-bottom, 0px)));
+  left: var(--model-menu-left, max(8px, env(safe-area-inset-left, 0px)));
   z-index: 12000;
+  width: min(360px, calc(100vw - 16px));
 }
 
 .model-thinking-mobile-popover .model-thinking-popover {
@@ -830,7 +830,7 @@ header.model-picker-open {
   right: auto;
   bottom: auto;
   z-index: 1;
-  width: auto;
+  width: 100%;
   max-width: none;
   border-radius: 18px 18px 8px 18px;
 }
@@ -838,11 +838,11 @@ header.model-picker-open {
 .model-thinking-mobile-popover::after {
   content: "";
   position: absolute;
-  right: min(92px, 24vw);
+  left: var(--model-menu-arrow-left, 50%);
   bottom: -7px;
   width: 14px;
   height: 14px;
-  transform: rotate(45deg);
+  transform: translateX(-50%) rotate(45deg);
   border-right: 1px solid var(--color-popover-border);
   border-bottom: 1px solid var(--color-popover-border);
   background: var(--color-popover-bg);
