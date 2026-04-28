@@ -1069,6 +1069,13 @@ async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   await group.locator("summary").click();
   await page.waitForFunction(() => document.querySelectorAll(".tool-run-group[open] .message.tool").length >= 4);
   await page.locator(".tool-run-group[open] .message.tool", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
+  const overflowButtons = page.locator('.tool-run-group[open] .message.tool [data-row-action="menu"]');
+  await overflowButtons.nth(0).click();
+  await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1);
+  await overflowButtons.nth(1).click();
+  await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1);
+  await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
+  await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0);
   await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
   await group.locator("summary").click();
   await page.waitForFunction(() => !document.querySelector(".tool-run-group")?.hasAttribute("open"));

@@ -2351,6 +2351,15 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
   }
 
+  private syncOpenActionMenus(root: ParentNode = this): void {
+    root.querySelectorAll<HTMLElement>("pi-transcript-row[data-transcript-id]").forEach((row) => {
+      const isOpenRow = Boolean(this.openActionMenuId) && row.dataset.transcriptId === this.openActionMenuId;
+      if (isOpenRow) return;
+      row.querySelectorAll<HTMLElement>(".message-action-menu").forEach((menu) => menu.remove());
+      row.querySelectorAll<HTMLButtonElement>('.message-overflow[aria-expanded="true"]').forEach((button) => button.setAttribute("aria-expanded", "false"));
+    });
+  }
+
   private patchLiveRender(): boolean {
     const start = performance.now();
     const transcript = this.querySelector<HTMLElement>(".transcript");
@@ -2364,6 +2373,7 @@ class PiWebAgentApp extends HTMLElement {
       this.patchComposerActivity();
       this.patchRunningQueue();
       this.patchJumpToLatest();
+      this.syncOpenActionMenus(transcript);
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
       recordPerfSample("patch", performance.now() - start);
@@ -2377,6 +2387,7 @@ class PiWebAgentApp extends HTMLElement {
     this.patchComposerActivity();
     this.patchRunningQueue();
     this.patchJumpToLatest();
+    this.syncOpenActionMenus(transcript);
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
     recordPerfSample("patch", performance.now() - start);
