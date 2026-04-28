@@ -486,10 +486,37 @@
   background: var(--color-developer-bash-no-context-body-bg);
 }
 
-.message.error,
-.message.tool.error {
+.message.error {
   border-color: var(--c-6e3438);
   background: var(--c-3a2023);
+}
+
+.message.tool.error:not(.developer-bash) {
+  padding-left: 16px;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--color-error) 72%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.message.tool.error:not(.developer-bash) .message-header {
+  min-height: 32px;
+  padding: 5px 0;
+  border-bottom: 0;
+}
+
+.message.tool.error:not(.developer-bash) .message-body {
+  margin: 0 0 8px 28px;
+  border: 1px solid color-mix(in srgb, var(--color-error) 44%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-error) 10%, var(--color-bg-muted));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 45%, transparent);
+}
+
+.message.tool.error:not(.developer-bash) .message-status {
+  color: var(--color-error);
+  font-weight: 750;
 }
 
 .message.tool .message-header {
