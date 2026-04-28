@@ -400,10 +400,6 @@
     min-width: 0;
   }
 
-  .composer-activity {
-    display: none;
-  }
-
   .context-usage {
     flex: 0 0 auto;
     gap: 6px;
@@ -453,7 +449,8 @@
 
   .controls .icon-button {
     min-width: 32px;
-    padding-inline: 6px;
+    width: 32px;
+    padding-inline: 0;
   }
 
   .controls button small {
@@ -569,12 +566,4 @@
     min-width: 0;
   }
 
-  #followUp {
-    font-size: 0;
-  }
-
-  #followUp::before {
-    content: "Follow-up";
-    font-size: 12px;
-  }
 }

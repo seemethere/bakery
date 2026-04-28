@@ -70,7 +70,7 @@ footer {
   border-top: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
   border-bottom: 0;
   display: grid;
-  grid-template-columns: minmax(0, 860px) auto;
+  grid-template-columns: minmax(0, 860px);
   justify-content: center;
   gap: 8px;
   padding-block: 8px;

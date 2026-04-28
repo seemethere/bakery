@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
-import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { groupedSessions, isSessionRecencyGroupId, persistCollapsedSessionGroups, renderSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
@@ -11,7 +11,7 @@ import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscriptHtml } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
-import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
+import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker } from "./model-thinking-picker";
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
@@ -1097,6 +1097,15 @@ class PiWebAgentApp extends HTMLElement {
     }
     const images = this.promptImages.map((image) => image.dataUrl);
     this.ws.send(JSON.stringify(buildComposerSendPayload(type, text, images)));
+    const shouldOptimisticallyShowRunning = type === "prompt" && !bash && !text.trimStart().startsWith("/");
+    if (shouldOptimisticallyShowRunning) {
+      this.status = "running";
+      if (this.selectedSession) {
+        const optimistic = { ...this.selectedSession, status: "running" as const, lastActivityAt: new Date().toISOString() };
+        this.selectedSession = optimistic;
+        this.sessions = this.sessions.map((session) => session.id === optimistic.id ? optimistic : session);
+      }
+    }
     const queuedItem = composerQueueItem(text, images.length);
     if (type === "steer") this.runningQueue = addRunningQueueItem(this.runningQueue, "steering", queuedItem);
     if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", queuedItem);
@@ -2305,22 +2314,6 @@ class PiWebAgentApp extends HTMLElement {
     return `<div class="preview-code"><pre>${escapeHtml(body)}</pre></div>`;
   }
 
-  private currentActivity(): { label: string; detail: string; queued: number } | null {
-    if (this.status !== "running") return null;
-    const runningTool = [...this.transcript].reverse().find((item) => item.kind === "tool" && item.status === "running");
-    const queued = runningQueueCount(this.runningQueue);
-    if (runningTool) {
-      const detail = runningTool.body
-        .split(/\r?\n/)
-        .map(compactToolSummaryLine)
-        .filter((line): line is string => Boolean(line))
-        .at(-1) ?? "tool is running";
-      return { label: runningTool.title, detail, queued };
-    }
-    const runningAssistant = [...this.transcript].reverse().find((item) => item.kind === "assistant" && item.status === "running");
-    return { label: runningAssistant ? "Pi is responding" : "Pi is working", detail: queued > 0 ? "Queued input will be applied during this run." : "Waiting for the next agent update…", queued };
-  }
-
   private activePlanActionItem(): TranscriptItem | null {
     const latestItem = this.transcript.at(-1);
     if (!latestItem || latestItem.kind !== "assistant" || !hasPlanActionsMarker(latestItem)) return null;
@@ -2338,16 +2331,6 @@ class PiWebAgentApp extends HTMLElement {
         <button type="button" data-plan-action="chat" data-transcript-id="${escapeHtml(item.id)}">Back to chat</button>
       </div>
     </section>`;
-  }
-
-  private renderComposerActivity(): string {
-    const activity = this.currentActivity();
-    if (!activity) return "";
-    return `<span class="composer-activity" title="${escapeHtml(`${activity.label} — ${activity.detail}`)}">
-      <span>${escapeHtml(activity.label)}</span>
-      <small>${escapeHtml(activity.detail)}</small>
-      ${activity.queued > 0 ? `<b>${activity.queued} queued</b>` : ""}
-    </span>`;
   }
 
   private renderAttentionNeeded(): string {
@@ -2540,19 +2523,6 @@ class PiWebAgentApp extends HTMLElement {
       ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
   }
 
-  private patchComposerActivity(): void {
-    const mode = this.querySelector<HTMLElement>(".composer-mode");
-    if (!mode) return;
-    const existing = mode.querySelector<HTMLElement>(".composer-activity");
-    const html = this.renderComposerActivity();
-    if (!html) {
-      existing?.remove();
-      return;
-    }
-    if (existing) existing.outerHTML = html;
-    else mode.querySelector("strong")?.insertAdjacentHTML("afterend", html);
-  }
-
   private patchJumpToLatest(): void {
     this.transcriptFollow.patchJumpToLatest(this, () => this.jumpToLatest());
   }
@@ -2622,7 +2592,6 @@ class PiWebAgentApp extends HTMLElement {
       this.patchTranscriptStructure(transcript);
       this.patchHeaderStatus();
       this.patchConnectionBanner();
-      this.patchComposerActivity();
       this.patchRunningQueue();
       this.patchJumpToLatest();
       this.syncOpenActionMenus(transcript);
@@ -2636,7 +2605,6 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
-    this.patchComposerActivity();
     this.patchRunningQueue();
     this.patchJumpToLatest();
     this.syncOpenActionMenus(transcript);
@@ -2742,6 +2710,8 @@ class PiWebAgentApp extends HTMLElement {
     const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
     const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
+    const followUpIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h7a4 4 0 0 1 0 8H5" /><path d="m8 12-3 4 3 4" /></svg>`;
+    const stopIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>`;
     this.innerHTML = `
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}
@@ -2779,19 +2749,18 @@ class PiWebAgentApp extends HTMLElement {
               ${renderPromptImages(this.promptImages)}
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""}">
                 <strong>${escapeHtml(composerModeLabel)}</strong>
-                ${this.renderComposerActivity()}
                 ${this.renderContextUsageNotice()}
               </div>
               <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
               ${this.renderComposerNotice()}
               ${renderCommandAutocomplete(this.commandAutocomplete)}
               ${renderFileAutocomplete(this.fileAutocomplete)}
-            </div>
-            <div class="controls ${isRunning ? "running" : ""}">
-              <button id="attachImages" class="icon-button" title="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>${attachIcon}</button>
-              <button id="send" class="primary-action ${isRunning ? "" : "icon-send"}" aria-label="${isRunning ? "Steer" : "Send"}" ${isController ? "" : "disabled"}>${isRunning ? "Steer<small>Enter</small>" : `${sendIcon}<span class="sr-only">Send</span>`}</button>
-              <button id="followUp" class="secondary-action ${isRunning ? "" : "hidden"}" ${isController ? "" : "disabled"}>Follow-up<small>Alt+Enter</small></button>
-              <button id="abort" class="${isRunning ? "danger" : "hidden"}" ${isController ? "" : "disabled"}>Stop</button>
+              <div class="controls ${isRunning ? "running" : ""}">
+                <button id="attachImages" class="icon-button" data-tooltip="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>${attachIcon}</button>
+                <button id="send" class="primary-action icon-send" data-tooltip="${isRunning ? "Send guidance · Enter" : "Send · Enter"}" aria-label="${isRunning ? "Send guidance to active run" : "Send"}" ${isController ? "" : "disabled"}>${sendIcon}<span class="sr-only">${isRunning ? "Send guidance to active run" : "Send"}</span></button>
+                <button id="followUp" class="secondary-action icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Queue follow-up · Alt+Enter" aria-label="Queue follow-up" ${isController ? "" : "disabled"}>${followUpIcon}</button>
+                <button id="abort" class="danger icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Stop run" aria-label="Stop run" ${isController ? "" : "disabled"}>${stopIcon}</button>
+              </div>
             </div>
           `}
         </footer>

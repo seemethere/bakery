@@ -391,46 +391,6 @@ footer.plan-takeover-footer {
   box-shadow: 0 12px 34px color-mix(in srgb, #000 18%, transparent), 0 0 0 3px color-mix(in srgb, var(--color-developer-bash-no-context-border) 18%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
 }
 
-.composer-activity {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  border-left: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
-  color: color-mix(in srgb, var(--color-accent-soft) 78%, var(--color-text-secondary));
-  padding-left: 8px;
-  font-size: 11px;
-}
-
-.composer-activity span,
-.composer-activity small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-activity span {
-  max-width: min(34vw, 420px);
-  color: var(--c-dce6ff);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-weight: 700;
-}
-
-.composer-activity small {
-  max-width: min(28vw, 360px);
-  color: var(--c-8fa4d3);
-}
-
-.composer-activity b {
-  flex: 0 0 auto;
-  border: 1px solid rgba(243, 217, 107, 0.35);
-  border-radius: 999px;
-  background: rgba(87, 67, 21, 0.32);
-  color: var(--c-f7df86);
-  padding: 1px 6px;
-  font-size: 10px;
-}
-
 .composer-hint {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -875,25 +835,26 @@ header.model-picker-open {
 }
 
 .controls {
-  grid-column: 2;
   position: relative;
   z-index: 2;
   display: flex;
-  align-self: end;
-  align-items: end;
+  align-items: center;
   gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .controls.running {
-  align-self: end;
-  align-items: end;
+  align-items: center;
 }
 
 .controls button {
   display: grid;
+  grid-auto-flow: column;
   place-content: center;
-  gap: 0;
-  min-width: 58px;
+  align-items: center;
+  gap: 5px;
+  min-width: 34px;
   height: 32px;
   min-height: 0;
   border-color: color-mix(in srgb, var(--color-border) 70%, transparent);
@@ -910,6 +871,34 @@ header.model-picker-open {
   border-color: color-mix(in srgb, var(--color-accent-soft) 58%, var(--color-border));
   background: color-mix(in srgb, var(--color-accent-soft) 9%, var(--color-bg-surface));
   color: var(--color-text);
+}
+
+.controls button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: max-content;
+  max-width: 220px;
+  pointer-events: none;
+  border-radius: 8px;
+  background: rgba(3, 7, 18, 0.96);
+  color: #f8fafc;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+
+.controls button[data-tooltip]:hover::after,
+.controls button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .controls button small {
@@ -936,6 +925,10 @@ header.model-picker-open {
   padding-inline: 0;
 }
 
+.controls #send {
+  margin-left: auto;
+}
+
 .controls .primary-action {
   border-color: color-mix(in srgb, var(--color-accent-soft) 46%, var(--color-border));
   background: color-mix(in srgb, var(--color-accent-soft) 18%, var(--color-bg-surface));
@@ -952,9 +945,9 @@ header.model-picker-open {
 }
 
 .controls .secondary-action {
-  border-color: color-mix(in srgb, var(--color-warning) 44%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning-bg) 42%, var(--color-bg-surface));
-  color: color-mix(in srgb, var(--color-warning) 82%, var(--color-text-secondary));
+  border-color: color-mix(in srgb, var(--color-warning) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-bg) 22%, var(--color-bg-surface));
+  color: color-mix(in srgb, var(--color-warning) 72%, var(--color-text-secondary));
 }
 
 .running-queue {
