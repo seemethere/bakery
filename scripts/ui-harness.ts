@@ -465,6 +465,8 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
       controls: rectOf(".controls"),
       contextUsage: rectOf(".context-usage"),
       contextUsageText: document.querySelector(".context-usage")?.textContent?.trim() ?? "",
+      modelThinkingTrigger: rectOf("#modelThinkingToggle"),
+      modelThinkingText: document.querySelector("#modelThinkingToggle")?.textContent?.trim() ?? "",
       mobileMenu: rectOf("#toggleSessionSidebarMobile"),
       closedSidebar: rectOf(".session-sidebar.collapsed"),
       rightPanel: rectOf(".right-panel"),
@@ -478,10 +480,14 @@ async function runMobileLayout(page: Page): Promise<Record<string, unknown>> {
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
   if (layout.rightPanel !== null) throw new Error(`Mobile inspector should be detached, saw ${JSON.stringify(layout.rightPanel)}`);
   if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
+  if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
   if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.firstGroupIndex < 0 || layout.drawerOrder.apiBaseIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.firstGroupIndex || layout.drawerOrder.firstGroupIndex > layout.drawerOrder.apiBaseIndex) throw new Error(`Mobile drawer should put session creation/groups before settings: new=${layout.drawerOrder.newSessionIndex}, group=${layout.drawerOrder.firstGroupIndex}, api=${layout.drawerOrder.apiBaseIndex}`);
   if ((layout.header?.height ?? 999) > 140) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
   if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
+  await page.locator("#modelThinkingToggle").click();
+  await page.locator("#thinking").selectOption("high");
+  await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"), null, { timeout: 5_000 });
   if (layout.prompt && layout.controls && layout.prompt.bottom > layout.controls.top) {
     throw new Error(`Mobile controls overlap prompt: prompt bottom ${layout.prompt.bottom}px, controls top ${layout.controls.top}px`);
   }
@@ -1221,13 +1227,15 @@ async function runArtifactPathFormats(page: Page): Promise<Record<string, unknow
 
 async function runModelThinking(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
+  await page.locator("#modelThinkingToggle").click();
   await page.locator("#model").selectOption("fake/slow");
-  await page.waitForFunction(() => (document.querySelector("#model") as HTMLSelectElement | null)?.value === "fake/slow");
+  await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("Slow"));
+  await page.locator("#modelThinkingToggle").click();
   await page.locator("#thinking").selectOption("high");
-  await page.waitForFunction(() => (document.querySelector("#thinking") as HTMLSelectElement | null)?.value === "high");
-  await sendPromptAndWaitIdle(page, "Confirm model and thinking selectors remain usable after settings updates.");
-  await page.waitForFunction(() => (document.querySelector("#model") as HTMLSelectElement | null)?.value === "fake/slow");
-  await page.waitForFunction(() => (document.querySelector("#thinking") as HTMLSelectElement | null)?.value === "high");
+  await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"));
+  await sendPromptAndWaitIdle(page, "Confirm model and thinking picker remains usable after settings updates.");
+  await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("Slow"));
+  await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"));
   return collectMetrics(page);
 }
 

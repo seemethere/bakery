@@ -603,9 +603,66 @@ textarea {
 }
 
 .header-status button,
-.inline-control select {
+.inline-control select,
+.model-thinking-popover select {
   padding: 5px 9px;
   font-size: 12px;
+}
+
+.header-status.model-picker-open {
+  overflow: visible;
+}
+
+.model-thinking-picker {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.model-thinking-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  border-radius: 999px;
+}
+
+.model-thinking-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-thinking-trigger-caret {
+  color: var(--c-aab2c0);
+  font-size: 10px;
+}
+
+.model-thinking-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 24;
+  display: grid;
+  gap: 8px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid var(--c-343b49);
+  border-radius: 12px;
+  background: var(--color-popover-bg);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+}
+
+.model-thinking-popover label {
+  display: grid;
+  gap: 4px;
+  color: var(--c-aab2c0);
+  font-size: 11px;
+}
+
+.model-thinking-popover select {
+  width: 100%;
+  max-width: 100%;
 }
 
 .inline-control {

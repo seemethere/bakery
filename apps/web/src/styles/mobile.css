@@ -133,12 +133,29 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  .header-status.model-picker-open {
+    overflow: visible;
+  }
+
   .header-status > * {
     flex: 0 0 auto;
   }
 
   .header-status .inline-control {
     display: none;
+  }
+
+  .model-thinking-trigger {
+    max-width: min(42vw, 170px);
+    min-height: 28px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .model-thinking-popover {
+    right: auto;
+    left: 0;
+    width: min(320px, calc(100vw - 16px));
   }
 
   .inline-control select {
@@ -348,6 +365,10 @@
 
   header {
     padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  }
+
+  .model-thinking-trigger {
+    max-width: 136px;
   }
 
   .header-status .controller,

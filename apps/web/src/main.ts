@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type NavigateTreeResponse, type PendingQuestion, type ServerEnvelope, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, currentSessionTreeEntryId, currentSessionTreePath, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem, nextSessionTreeActiveEntryId, renderCurrentSessionTreePath, renderSessionTreeNodes } from "./session-tree";
 import { compactSnapshotTranscript, compactToolSummaryLine, compactWorkflowLaunchSummary, isRenderableTranscriptItem, isToolCallOnlyAssistant, looksLikeHtml, looksLikeMarkdown, looksLikeSvg, mergeDuplicateToolResult, messageToTranscriptItem, renderMarkdown, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
@@ -12,6 +12,7 @@ import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscript
 import { defaultTranscriptExpanded, renderTranscriptHtml } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueCount, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
+import { renderModelThinkingPicker } from "./model-thinking-picker";
 import { escapeHtml, isRecord, recordPerfSample, stringify } from "./utils";
 import "./styles.css";
 
@@ -96,6 +97,8 @@ class PiWebAgentApp extends HTMLElement {
   private notice = "";
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
+  private config: AppConfig | null = null;
+  private modelThinkingPickerOpen = false;
   private pendingQuestion: PendingQuestion | null = null;
   private appSettings: AppSettings | null = null;
   private metadataSuggestion: SessionMetadataSuggestion | null = null;
@@ -354,14 +357,16 @@ class PiWebAgentApp extends HTMLElement {
 
   private async refresh(): Promise<void> {
     try {
-      const [workspaces, sessions, appSettings] = await Promise.all([
+      const [workspaces, sessions, appSettings, config] = await Promise.all([
         this.api<Workspace[]>("/api/workspaces"),
         this.api<WebSession[]>("/api/sessions"),
         this.api<AppSettings>("/api/settings"),
+        this.api<AppConfig>("/api/config"),
       ]);
       this.workspaces = workspaces;
       this.sessions = sessions;
       this.appSettings = appSettings;
+      this.config = config;
       if (this.selectedSession) {
         const updated = sessions.find((candidate) => candidate.id === this.selectedSession?.id);
         if (updated) this.selectedSession = updated;
@@ -416,6 +421,7 @@ class PiWebAgentApp extends HTMLElement {
     this.autoScroll = true;
     this.controller = null;
     this.settings = null;
+    this.modelThinkingPickerOpen = false;
     this.pendingQuestion = null;
     this.sessionTree = null;
     this.treeDrawerOpen = false;
@@ -1507,10 +1513,12 @@ class PiWebAgentApp extends HTMLElement {
 
   private setModel(model: string): void {
     if (model && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_model", model }));
+    this.render();
   }
 
   private setThinking(level: string): void {
     if (level && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "set_thinking", level }));
+    this.render();
   }
 
   private markTranscriptUserScrollIntent(): void {
@@ -1713,8 +1721,19 @@ class PiWebAgentApp extends HTMLElement {
       const item = this.selectedTranscriptItem();
       if (item) void this.copyText(stringify(item.raw ?? item), "Copied selected JSON");
     });
-    this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => this.setModel((event.currentTarget as HTMLSelectElement).value));
-    this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => this.setThinking((event.currentTarget as HTMLSelectElement).value));
+    this.querySelector<HTMLButtonElement>("#modelThinkingToggle")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.modelThinkingPickerOpen = !this.modelThinkingPickerOpen;
+      this.render();
+    });
+    this.querySelector<HTMLSelectElement>("#model")?.addEventListener("change", (event) => {
+      this.modelThinkingPickerOpen = false;
+      this.setModel((event.currentTarget as HTMLSelectElement).value);
+    });
+    this.querySelector<HTMLSelectElement>("#thinking")?.addEventListener("change", (event) => {
+      this.modelThinkingPickerOpen = false;
+      this.setThinking((event.currentTarget as HTMLSelectElement).value);
+    });
 
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
@@ -2412,7 +2431,6 @@ class PiWebAgentApp extends HTMLElement {
     const controllerLabel = this.controller
       ? `${this.controller.isController ? "controller" : "viewer"} · ${this.controller.connectedClients} client${this.controller.connectedClients === 1 ? "" : "s"}`
       : "";
-    const currentModelId = this.settings?.model?.id ?? "";
     const sessionGroups = groupedSessions(this.sessions);
     const selectedTitle = this.selectedSession ? (this.editingTitleDraft ?? this.selectedSession.title ?? "") : "";
     const selectedTitlePlaceholder = this.selectedSession ? sessionTitlePlaceholder(this.selectedSession) : "";
@@ -2477,22 +2495,13 @@ class PiWebAgentApp extends HTMLElement {
               <span title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(selectedMeta)}</span>
               ${this.renderSessionSummary(summaryExpanded)}` : `<strong>Create or open a session</strong><span>Select a workspace on the left to start.</span>`}
           </div>
-          <div class="header-status">
+          <div class="header-status ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
             ${controllerLabel ? `<span class="controller ${isController ? "" : "viewer"}">${escapeHtml(controllerLabel)}</span>` : ""}
             ${!isController ? `<button id="takeControl" ${takeoverPending ? "disabled" : ""}>${takeoverPending ? "Control requested" : "Take control"}</button>` : ""}
             ${takeoverIncoming ? `<span class="control-request">Another tab wants control <button id="approveControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Approve</button><button id="denyControl" data-requester-client-id="${escapeHtml(takeoverRequest?.requesterClientId ?? "")}">Deny</button></span>` : ""}
             <label class="inline-control autoscroll"><input id="autoScroll" type="checkbox" ${this.autoScroll ? "checked" : ""} /> Auto-scroll</label>
             <label class="inline-control"><input id="showThinking" type="checkbox" ${this.showThinking ? "checked" : ""} /> Show thinking</label>
-            ${this.settings ? `<label class="inline-control">Model
-              <select id="model" ${isController ? "" : "disabled"}>
-                ${this.settings.availableModels.map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === currentModelId ? "selected" : ""}>${escapeHtml(model.name ?? model.id)} [${escapeHtml(model.provider)}]</option>`).join("")}
-              </select>
-            </label>
-            <label class="inline-control">Thinking
-              <select id="thinking" ${isController ? "" : "disabled"}>
-                ${this.settings.availableThinkingLevels.map((level) => `<option value="${escapeHtml(level)}" ${level === this.settings?.thinkingLevel ? "selected" : ""}>${escapeHtml(level)}</option>`).join("")}
-              </select>
-            </label>` : ""}
+            ${this.settings ? renderModelThinkingPicker({ settings: this.settings, isController, open: this.modelThinkingPickerOpen, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel }) : ""}
             <span class="status ${escapeHtml(this.status)}">${escapeHtml(this.status)}</span>
           </div>
         </header>
