@@ -371,27 +371,36 @@
 }
 
 .message.question {
-  border-color: color-mix(in srgb, var(--color-accent-soft) 34%, var(--color-border));
-  background: color-mix(in srgb, var(--color-accent-soft) 7%, var(--color-bg-surface));
+  padding-left: 16px;
+  border: 0;
+  border-left: 2px solid color-mix(in srgb, var(--color-accent-soft) 58%, transparent);
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
 .message.question .message-header {
+  min-height: 28px;
+  border-bottom: 0;
   color: var(--color-text-secondary);
-  padding: 9px 12px 6px;
+  padding: 4px 0;
 }
 
 .message.question .message-header strong::before {
   content: "✓";
   display: inline-grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   margin-right: 7px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-accent-soft) 22%, transparent);
+  background: color-mix(in srgb, var(--color-accent-soft) 20%, transparent);
   color: var(--color-accent-soft);
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.message.question.error {
+  border-left-color: color-mix(in srgb, var(--color-error) 58%, transparent);
 }
 
 .message.question.error .message-header strong::before {
@@ -401,7 +410,7 @@
 }
 
 .message.question .message-body {
-  padding: 0 12px 10px 36px;
+  padding: 2px 0 8px 29px;
 }
 
 .message.question pre {
