@@ -200,7 +200,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: PR screenshot rendering follow-up copied the selected isolated-header/mobile screenshots into tracked `docs/pr-artifacts/pr-1/` assets, updated PR #1 to embed them with Markdown image links, and clarified `AGENTS.md` that GitHub-rendered screenshots need tracked artifact files or GitHub attachment URLs rather than ignored local `test-results/...` paths. Validation used `bun run check`; full `bun run test:web-perf` was intentionally skipped because this was docs/artifact/process-only.
+Latest: PR screenshot handoff follow-up removed the tracked PR PNG artifacts again to avoid committing transient screenshots to repo history, updated PR #1 back to local screenshot artifact paths, and clarified `AGENTS.md` to list `test-results/...` paths by default unless the operator chooses a GitHub attachment upload flow. Validation used `bun run check`; full `bun run test:web-perf` was intentionally skipped because this was docs/process-only.
 
 Previous latest: PR handoff guidance now asks agents to create/update GitHub PRs with a human-readable title/body derived from the final handoff, including summary, validation, manual test notes, and screenshot artifact paths instead of relying on `gh pr create --fill`. Validation used `bun run check`; full `bun run test:web-perf` was intentionally skipped because this was docs/process-only.
 
