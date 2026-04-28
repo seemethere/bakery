@@ -1,16 +1,18 @@
-# Local network access: lot.local / bakery.lot.local
+# Local network access
 
-The app is local-first. When you expose it beyond loopback, run the API with an auth token and bind both dev servers to the LAN interface.
+The default install path is local-only; start with the root [`README.md`](../README.md) quickstart if you have not run Bakery on this machine yet.
+
+When you expose Bakery beyond loopback, run the API with an auth token, bind both dev servers to the LAN interface, and keep `PI_WEB_WORKSPACE_ROOT` scoped to the project you want the agent to edit.
 
 ## 1. Make the hostname resolve
 
-Point `lot.local` at this machine's LAN IP using your router/DNS, or add a hosts-file entry on each client device:
+The simplest LAN URL is this machine's IP address, which `bun run doctor --lan` prints for you.
+
+If you prefer a hostname, point your own DNS name at this machine's LAN IP using your router/DNS, or add a hosts-file entry on each client device:
 
 ```text
-192.168.1.123 lot.local
+192.168.1.123 bakery.local
 ```
-
-`bakery.lot.local` is also accepted by the Vite dev server, so you can add/swap that DNS record later without changing the app config.
 
 Replace `192.168.1.123` with this machine's current LAN IP. On macOS you can usually find it with:
 
@@ -18,41 +20,55 @@ Replace `192.168.1.123` with this machine's current LAN IP. On macOS you can usu
 ipconfig getifaddr en0
 ```
 
-Note: plain `.local` hostnames are often handled by mDNS/Bonjour. A nested name like `bakery.lot.local` generally needs router DNS or hosts-file configuration unless your network already provides it.
+Note: plain `.local` hostnames are often handled by mDNS/Bonjour. Nested names generally need router DNS or hosts-file configuration unless your network already provides them.
 
-## 2. Start the API for LAN access
+If you use a custom hostname with Vite, allow it explicitly:
+
+```bash
+PI_WEB_VITE_ALLOWED_HOSTS=bakery.local bun run dev:web:lan
+```
+
+For the single-command LAN script, export the variable first:
+
+```bash
+export PI_WEB_VITE_ALLOWED_HOSTS=bakery.local
+```
+
+## 2. Check the LAN setup
 
 Choose a token and keep it out of shell history if needed:
 
 ```bash
 export PI_WEB_AUTH_TOKEN="change-me"
-PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan
+PI_WEB_WORKSPACE_ROOT="$PWD" bun run doctor --lan
 ```
 
-`dev:server:lan` binds the Fastify API to `0.0.0.0:3141`. Without `PI_WEB_AUTH_TOKEN`, non-localhost requests are intentionally rejected.
+The doctor prints detected LAN URLs and fails if LAN mode would be exposed without a token.
 
-## 3. Start the web dev server for lot.local
+## 3. Start the LAN dev servers
 
-In a second terminal:
+The single-command LAN path restarts the managed backend with `PI_WEB_HOST=0.0.0.0`, then starts Vite on the LAN interface:
 
 ```bash
-bun run dev:web:lan
+PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:lan
 ```
 
-`dev:web:lan` binds Vite to `0.0.0.0:5173` and allows the `lot.local` and `bakery.lot.local` host headers.
+Without `PI_WEB_AUTH_TOKEN`, non-localhost API requests are intentionally rejected.
+
+If you need separate terminals, run `PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:server:lan` for the API and `bun run dev:web:lan` for Vite.
 
 ## 4. Open the app
 
-Open:
+Open one of the LAN URLs printed by the doctor, for example:
 
 ```text
-http://lot.local:5173
+http://192.168.1.123:5173
 ```
 
-In the app settings, enter the same API token. On first load from `lot.local`, the browser defaults the API URL to:
+In the app settings, enter the same API token. On first load from a LAN host, the browser defaults the API URL to the same host on port `3141`, for example:
 
 ```text
-http://lot.local:3141
+http://192.168.1.123:3141
 ```
 
 If you previously saved a different API URL in settings, update it manually.

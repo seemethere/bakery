@@ -18,7 +18,7 @@ From this repository checkout on the remote machine, run:
 
 ```bash
 bun run artifact:upload -- \
-  --api http://bakery.lot.local:3141 \
+  --api http://192.168.1.123:3141 \
   --session <bakery-session-id> \
   --path /remote/agent/workspace/screenshots/final.png \
   /remote/agent/workspace/screenshots/final.png
@@ -27,7 +27,7 @@ bun run artifact:upload -- \
 You can also use environment variables:
 
 ```bash
-export PI_WEB_API_BASE=http://bakery.lot.local:3141
+export PI_WEB_API_BASE=http://192.168.1.123:3141
 export PI_WEB_SESSION_ID=<bakery-session-id>
 bun run artifact:upload -- --path /remote/agent/workspace/screenshots/final.png /remote/agent/workspace/screenshots/final.png
 ```
