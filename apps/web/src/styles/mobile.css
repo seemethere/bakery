@@ -345,6 +345,12 @@
     border-radius: 12px;
   }
 
+  .rendered-image:not(.expanded),
+  .artifact-image:not(.expanded) {
+    contain: layout paint;
+    overflow: hidden;
+  }
+
   .message.user .rendered-image.expanded {
     width: auto;
     border-radius: 0;
@@ -377,8 +383,22 @@
     padding: 12px 16px 8px;
   }
 
-  .message.user .rendered-image img {
-    max-height: 220px;
+  .message.user .rendered-image:not(.expanded) img,
+  .rendered-image:not(.expanded) img,
+  .artifact-image:not(.expanded) img,
+  .message.tool .artifact-image:not(.expanded) img,
+  .markdown-body img.transcript-markdown-image {
+    width: 100%;
+    height: clamp(150px, 42vw, 220px);
+    max-height: none;
+    aspect-ratio: auto;
+    border-radius: 8px;
+    background: var(--color-bg-surface);
+    object-fit: contain;
+  }
+
+  .message.user .rendered-image:not(.expanded) img {
+    height: clamp(140px, 38vw, 200px);
   }
 
   .message.user .rendered-image.expanded img,
@@ -420,6 +440,13 @@
   .markdown-body img,
   .rendered-image img {
     max-height: min(54vh, 520px);
+  }
+
+  .rendered-image:not(.expanded) img,
+  .artifact-image:not(.expanded) img,
+  .message.tool .artifact-image:not(.expanded) img,
+  .markdown-body img.transcript-markdown-image {
+    max-height: none;
   }
 
   footer {

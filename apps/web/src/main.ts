@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
-import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, formatToolDuration, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { isSessionRecencyGroupId, persistCollapsedSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
@@ -2410,13 +2410,32 @@ class PiWebAgentApp extends HTMLElement {
           this.syncRunningElapsedTimer();
           return;
         }
-        this.transcriptStructureDirty = true;
-        this.requestRender(0);
+        if (!this.patchRunningToolGroupElapsed()) this.requestRender(0);
       }, 1_000);
     } else if (!shouldTick && this.runningElapsedTimer) {
       clearInterval(this.runningElapsedTimer);
       this.runningElapsedTimer = undefined;
     }
+  }
+
+  private patchRunningToolGroupElapsed(): boolean {
+    const groupId = latestGroupableToolGroupId(this.transcript);
+    if (!groupId) return false;
+    const details = Array.from(this.querySelectorAll<HTMLElement>("details[data-tool-run-group]"))
+      .find((element) => element.dataset.toolRunGroup === groupId);
+    const summary = details?.querySelector<HTMLElement>("summary strong");
+    if (!summary) return false;
+
+    const groupIds = new Set(groupId.split("|"));
+    const items = this.transcript.filter((item) => groupIds.has(item.id));
+    if (items.length === 0) return false;
+    const starts = items
+      .map((item) => item.startedAt ? Date.parse(item.startedAt) : Number.NaN)
+      .filter(Number.isFinite);
+    const durationMs = starts.length > 0 ? Math.max(0, Date.now() - Math.min(...starts)) : undefined;
+    const duration = formatToolDuration(durationMs);
+    summary.textContent = `Ran ${items.length} tools${duration ? ` · ${duration}` : ""}`;
+    return true;
   }
 
   private syncOpenActionMenus(root: ParentNode = this): void {

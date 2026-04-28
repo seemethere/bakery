@@ -99,7 +99,7 @@ function createMarkdownRenderer(localImageUrl?: RenderContext["localImageUrl"]) 
     const safeHref = resolveImageHref(href, localImageUrl);
     if (!safeHref) return escapeHtml(text || "image");
     const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-    return `<img src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy"${imageFailureHandlerAttr} />`;
+    return `<img class="transcript-markdown-image" src="${escapeHtml(safeHref)}" alt="${escapeHtml(text)}"${titleAttr} loading="lazy" decoding="async"${imageFailureHandlerAttr} />`;
   };
   return renderer;
 }
@@ -201,7 +201,7 @@ function renderLocalImageArtifacts(text: string, localImageUrl?: RenderContext["
     const showParent = parent && parent !== artifact.path && parent !== fileName;
     return `
     <figure class="artifact-image">
-      <img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.path)}" loading="lazy"${imageFailureHandlerAttr} />
+      <img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.path)}" loading="lazy" decoding="async"${imageFailureHandlerAttr} />
       <figcaption title="${escapeHtml(artifact.path)}">${showParent ? `<small>${escapeHtml(parent)}/</small>` : ""}<strong>${escapeHtml(fileName)}</strong></figcaption>
     </figure>`;
   }).join("")}</div>`;
@@ -520,7 +520,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
       if (segment.kind === "toolCall") return "";
       if (segment.kind === "image") {
         return segment.src
-          ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
+          ? `<figure class="inline-image rendered-image"><img src="${escapeHtml(segment.src)}" alt="${escapeHtml(segment.label)}" loading="lazy" decoding="async"${imageFailureHandlerAttr} /><figcaption>${escapeHtml(segment.label)}</figcaption></figure>`
           : `<div class="inline-image">${escapeHtml(segment.label)}</div>`;
       }
       const terminalText = item.kind === "tool" && !usePlainStreamingToolOutput ? ansiConverter.toHtml(segment.text) : escapeHtml(segment.text);
