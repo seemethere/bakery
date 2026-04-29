@@ -175,6 +175,19 @@ describe("transcript renderer", () => {
     expect(renderHelpers.renderTranscriptHtml(second)).toContain("Bash");
   });
 
+  test("preserves expanded tool activity state across transcript rerenders", () => {
+    const transcript = [
+      item({ id: "t1", kind: "tool", title: "Read" }),
+      item({ id: "t2", kind: "tool", title: "Bash" }),
+    ];
+
+    const html = renderHelpers.renderTranscriptHtml(transcript, { expandedToolActivityIds: new Set(["activity:t1"]) });
+
+    expect(html).toContain('class="tool-activity-run expanded"');
+    expect(html).toContain('data-tool-activity-expanded="true"');
+    expect(html).toContain('aria-expanded="true"');
+  });
+
   test("keeps developer bash outside activity summaries", () => {
     const transcript = [
       item({ id: "bash:local", kind: "tool", title: "$ pwd", status: "running" }),

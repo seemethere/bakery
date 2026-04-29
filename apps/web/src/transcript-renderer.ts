@@ -20,6 +20,7 @@ function hasRunningTool(items: readonly TranscriptItem[]): boolean {
 export type TranscriptRenderOptions = {
   activeToolGroupId?: string | undefined;
   nowMs?: number | undefined;
+  expandedToolActivityIds?: ReadonlySet<string> | undefined;
 };
 
 export function toolRunGroupId(items: readonly TranscriptItem[]): string {
@@ -163,9 +164,10 @@ export function toolRunSummaryText(items: readonly TranscriptItem[], options: Tr
 
 export function renderToolActivity(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): string {
   const model = toolActivityRenderModel(items, options);
+  const expanded = options.expandedToolActivityIds?.has(model.id) ?? false;
   const detailsLabel = `Tool details for ${model.itemIds.length} ${model.itemIds.length === 1 ? "tool" : "tools"}`;
   const gearIcon = `<svg class="tool-activity-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.9 1.5h2.2l.35 1.65c.42.14.82.31 1.18.52l1.42-.91 1.56 1.56-.91 1.42c.21.36.38.76.52 1.18l1.65.35v2.2l-1.65.35c-.14.42-.31.82-.52 1.18l.91 1.42-1.56 1.56-1.42-.91c-.36.21-.76.38-1.18.52l-.35 1.65H6.9l-.35-1.65a5.1 5.1 0 0 1-1.18-.52l-1.42.91-1.56-1.56.91-1.42a5.1 5.1 0 0 1-.52-1.18l-1.65-.35v-2.2l1.65-.35c.14-.42.31-.82.52-1.18l-.91-1.42 1.56-1.56 1.42.91c.36-.21.76-.38 1.18-.52L6.9 1.5Z" /><circle cx="8" cy="8.35" r="2.05" /></svg>`;
-  return `<button type="button" class="tool-activity-card" aria-expanded="false" aria-label="Show ${escapeHtml(detailsLabel)}" data-tool-activity="${escapeHtml(model.id)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}" data-tool-activity-expanded="false" data-tool-activity-status="${escapeHtml(model.status)}" data-default-mode="${escapeHtml(model.defaultMode)}">
+  return `<button type="button" class="tool-activity-card" aria-expanded="${expanded ? "true" : "false"}" aria-label="${expanded ? "Hide" : "Show"} ${escapeHtml(detailsLabel)}" data-tool-activity="${escapeHtml(model.id)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}" data-tool-activity-expanded="${expanded ? "true" : "false"}" data-tool-activity-status="${escapeHtml(model.status)}" data-default-mode="${escapeHtml(model.defaultMode)}">
       ${gearIcon}
       <span class="tool-activity-receipt" title="${escapeHtml(model.receiptLabel)}">${escapeHtml(model.receiptLabel)}</span>
       <svg class="tool-activity-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
@@ -174,7 +176,8 @@ export function renderToolActivity(items: readonly TranscriptItem[], options: Tr
 
 function renderToolActivityRun(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): string {
   const groupId = toolRunGroupId(items);
-  return `<div class="tool-activity-run" data-tool-activity-run="${escapeHtml(groupId)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}">
+  const expanded = options.expandedToolActivityIds?.has(groupId) ?? false;
+  return `<div class="tool-activity-run${expanded ? " expanded" : ""}" data-tool-activity-run="${escapeHtml(groupId)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}">
     ${renderToolActivity(items, options)}
     ${items.map((item) => renderTranscriptItemShell(item, { toolActivityMemberId: groupId })).join("")}
   </div>`;

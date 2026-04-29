@@ -123,6 +123,7 @@ class PiWebAgentApp extends HTMLElement {
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
   private transcriptExpansion = new Map<string, boolean>();
+  private expandedToolActivityIds = new Set<string>();
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private pendingToolCallTitles: string[] = [];
   private dismissedPlanActionTranscriptId = "";
@@ -1857,7 +1858,12 @@ class PiWebAgentApp extends HTMLElement {
       if (activity) {
         event.preventDefault();
         const run = activity.closest<HTMLElement>(".tool-activity-run");
+        const groupId = activity.dataset.toolActivity ?? "";
         const expanded = activity.dataset.toolActivityExpanded === "true";
+        if (groupId) {
+          if (expanded) this.expandedToolActivityIds.delete(groupId);
+          else this.expandedToolActivityIds.add(groupId);
+        }
         activity.dataset.toolActivityExpanded = expanded ? "false" : "true";
         activity.setAttribute("aria-expanded", expanded ? "false" : "true");
         activity.setAttribute("aria-label", `${expanded ? "Show" : "Hide"} tool details`);
@@ -2193,10 +2199,11 @@ class PiWebAgentApp extends HTMLElement {
     return "";
   }
 
-  private transcriptRenderOptions(): { activeToolGroupId?: string | undefined; nowMs: number } {
+  private transcriptRenderOptions(): { activeToolGroupId?: string | undefined; nowMs: number; expandedToolActivityIds: ReadonlySet<string> } {
     return {
       activeToolGroupId: this.status === "running" ? latestGroupableToolGroupId(this.transcript) : undefined,
       nowMs: Date.now(),
+      expandedToolActivityIds: this.expandedToolActivityIds,
     };
   }
 
