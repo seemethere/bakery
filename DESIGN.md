@@ -189,7 +189,7 @@ Use `AgentSessionRuntime` where session replacement is needed, e.g. new/resume/f
 
 ## Resources: extensions, skills, templates, context
 
-Use backend policy-controlled resource loading.
+Use backend policy-controlled resource loading. Bakery-specific web extension architecture is tracked in [`docs/extensions-design.md`](docs/extensions-design.md); the first implementation should keep pi SDK extensions as the agent/runtime layer and add typed Bakery extension points for browser UI, workflow commands, and local backend actions.
 
 ```ts
 type ResourcePolicy = {
