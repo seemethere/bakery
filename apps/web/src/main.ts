@@ -19,7 +19,8 @@ import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { latestGroupableToolGroupId } from "./transcript-renderer";
 import { patchRunningToolGroupElapsed as patchRunningToolGroupElapsedReceipt, patchTranscriptStructure as patchTranscriptStructureHtml, recordTranscriptPatchSample, replaceHtmlPreservingTranscript as replaceHtmlPreservingTranscriptRows, syncOpenActionMenus as syncTranscriptOpenActionMenus } from "./transcript-live-controller";
-import { activePlanActionItem as findActivePlanActionItem, renderPlanComposerTakeover as renderPlanComposerTakeoverHtml, renderTranscriptShell } from "./transcript-shell";
+import { renderTranscriptShell } from "./transcript-shell";
+import { PlanActionController, type PlanAction } from "./plan-action-controller";
 import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
@@ -38,7 +39,6 @@ declare global {
   }
 }
 
-type PlanAction = "accept" | "chat";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
@@ -133,7 +133,23 @@ class PiWebAgentApp extends HTMLElement {
   private openActionMenuId = "";
   private expandedToolActivityIds = new Set<string>();
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
-  private dismissedPlanActionTranscriptId = "";
+  private readonly planActions = new PlanActionController({
+    transcript: () => this.transcript,
+    status: () => this.status,
+    socket: () => this.ws,
+    promptDraft: () => this.promptDraft,
+    setPromptDraft: (value) => { this.promptDraft = value; },
+    clearPromptImages: () => { this.promptImages = []; },
+    updateRunningQueue: (updater) => { this.runningQueue = updater(this.runningQueue); },
+    savePromptDraft: () => this.savePromptDraft(),
+    closeAutocompletes: () => {
+      this.closeCommandAutocomplete();
+      this.closeFileAutocomplete();
+    },
+    focusPromptOnNextReadyRender: () => { this.focusPromptOnNextReadyRender = true; },
+    setNotice: (notice) => { this.notice = notice; },
+    render: () => this.render(),
+  });
   private promptDraft = "";
   private promptImages: PromptImage[] = [];
   private runningQueue: RunningQueueState = emptyRunningQueue();
@@ -445,7 +461,7 @@ class PiWebAgentApp extends HTMLElement {
     this.modelThinkingPickerOpen = false;
     this.sessionDetailsOpen = false;
     this.pendingQuestion = null;
-    this.dismissedPlanActionTranscriptId = "";
+    this.planActions.resetDismissed();
     this.sessionTree = null;
     this.transcriptFollow.resetToLatest();
     this.transcriptController.select("");
@@ -701,32 +717,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private handlePlanAction(action: PlanAction, transcriptId = this.activePlanActionItem()?.id ?? ""): void {
-    if (transcriptId) this.dismissedPlanActionTranscriptId = transcriptId;
-    if (action === "chat") {
-      this.fillPromptDraft("");
-      return;
-    }
-    this.submitPlanActionText("Proceed with the recommended plan.");
-  }
-
-  private submitPlanActionText(text: string): void {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.fillPromptDraft(text);
-      this.notice = "Not connected. Your plan response is saved in the composer.";
-      return;
-    }
-    const type: ClientMessageType = this.status === "running" ? "follow_up" : "prompt";
-    this.ws.send(JSON.stringify(buildComposerSendPayload(type, trimmed, [])));
-    if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", composerQueueItem(trimmed, 0));
-    this.promptDraft = "";
-    this.promptImages = [];
-    this.savePromptDraft();
-    this.closeCommandAutocomplete();
-    this.closeFileAutocomplete();
-    this.notice = "";
-    this.render();
+    this.planActions.handle(action, transcriptId);
   }
 
   private async handleTranscriptRowAction(action: TranscriptRowMenuAction, transcriptId: string): Promise<void> {
@@ -1573,11 +1564,11 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private activePlanActionItem(): TranscriptItem | null {
-    return findActivePlanActionItem(this.transcript, this.dismissedPlanActionTranscriptId);
+    return this.planActions.activeItem();
   }
 
   private renderPlanComposerTakeover(item: TranscriptItem): string {
-    return renderPlanComposerTakeoverHtml(item);
+    return this.planActions.renderTakeover(item);
   }
 
   private renderAttentionNeeded(): string {
