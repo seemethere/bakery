@@ -140,7 +140,7 @@ export function toolActivityRenderModel(items: readonly TranscriptItem[], option
   const status = isRunning ? "running" : failedCount > 0 ? "error" : "done";
   const failedLabel = failedCount > 0 ? `${failedCount} failed` : "";
   const meta = [duration, countLabel].filter(Boolean).join(" · ");
-  const receiptLabel = [meta || countLabel, failedLabel, isRunning ? label : ""].filter(Boolean).join(" · ");
+  const receiptLabel = [meta || countLabel, failedLabel].filter(Boolean).join(" · ");
   return {
     id: groupId,
     itemIds: items.map((item) => item.id),

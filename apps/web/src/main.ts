@@ -608,6 +608,7 @@ class PiWebAgentApp extends HTMLElement {
     const previous = this.status;
     this.status = status;
     if (previous !== status) {
+      if (previous === "running" && status !== "running") this.expandedToolActivityIds.clear();
       this.shellPatchDirty = true;
       this.patchComposerMode();
     }

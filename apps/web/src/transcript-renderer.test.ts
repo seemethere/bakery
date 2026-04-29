@@ -77,8 +77,8 @@ describe("transcript renderer", () => {
     expect(html).toContain('data-default-mode="summary-only"');
     expect(html).toContain('data-tool-activity-status="running"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain("Read 6");
-    expect(html).toContain("6 tools");
+    expect(html).not.toContain("Read 6");
+    expect(html).toContain("6 calls");
     expect(html).not.toContain("Tool activity");
     expect(html).not.toContain("earlier");
     expect(html).toContain('data-transcript-id="t1" data-tool-activity-member="activity:t1"');
@@ -100,7 +100,7 @@ describe("transcript renderer", () => {
       countLabel: "2 calls",
       durationLabel: "4s",
       currentLabel: "Bash",
-      receiptLabel: "4s · 2 calls · Bash",
+      receiptLabel: "4s · 2 calls",
       failedLabel: "",
       status: "running",
       defaultMode: "summary-only",
@@ -133,7 +133,7 @@ describe("transcript renderer", () => {
     });
 
     expect(model.durationLabel).toBe("1m 1s");
-    expect(model.receiptLabel).toBe("1m 1s · 2 calls · Bash current command");
+    expect(model.receiptLabel).toBe("1m 1s · 2 calls");
   });
 
   test("full render and timer patch summary use the same live activity receipt", () => {
@@ -148,8 +148,9 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderToolActivity(items, options);
 
     expect(summary.receiptLabel).toBe(model.receiptLabel);
-    expect(summary.receiptLabel).toBe("12s · 2 calls · 1 failed · Bash running");
-    expect(html).toContain(">12s · 2 calls · 1 failed · Bash running</span>");
+    expect(summary.receiptLabel).toBe("12s · 2 calls · 1 failed");
+    expect(html).toContain(">12s · 2 calls · 1 failed</span>");
+    expect(html).not.toContain(">12s · 2 calls · 1 failed · Bash running</span>");
   });
 
   test("renders a single running tool with a stable activity id", () => {
@@ -161,7 +162,7 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderTranscriptHtml(transcript, { activeToolGroupId: "activity:t1", nowMs: Date.parse("2026-04-27T00:00:03.000Z") });
 
     expect(html).toContain('data-tool-activity="activity:t1" data-tool-activity-ids="t1"');
-    expect(html).toContain("Read");
+    expect(html).not.toContain("Read");
     expect(html).toContain("3s · 1 call");
     expect(html).toContain('data-transcript-id="t1" data-tool-activity-member="activity:t1"');
   });
@@ -172,7 +173,9 @@ describe("transcript renderer", () => {
 
     expect(renderHelpers.latestGroupableToolGroupId(first)).toBe("activity:t1");
     expect(renderHelpers.latestGroupableToolGroupId(second)).toBe("activity:t1");
-    expect(renderHelpers.renderTranscriptHtml(second)).toContain("Bash");
+    const html = renderHelpers.renderTranscriptHtml(second);
+    expect(html).toContain('data-tool-activity="activity:t1" data-tool-activity-ids="t1|t2"');
+    expect(html).not.toContain("Bash");
   });
 
   test("preserves expanded tool activity state across transcript rerenders", () => {

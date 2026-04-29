@@ -1271,7 +1271,14 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
     return Boolean(body && body.scrollHeight > body.clientHeight && body.clientHeight < 460);
   });
   await page.locator('.tool-activity-run .message.tool:not(.collapsed) [data-row-action="toggle-output"]').first().click();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]')).every((row) => getComputedStyle(row).display === "none"));
+  await page.waitForFunction(() => {
+    const run = document.querySelector<HTMLElement>(".tool-activity-run");
+    const memberRows = Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]'));
+    const visibleMembers = memberRows.filter((row) => getComputedStyle(row).display !== "none");
+    const collapsedVisibleTools = Array.from(document.querySelectorAll<HTMLElement>(".message.tool.collapsed"))
+      .filter((row) => getComputedStyle(row).display !== "none");
+    return Boolean(run?.classList.contains("expanded") && visibleMembers.length > 0 && collapsedVisibleTools.length > 0);
+  });
   await page.locator("#prompt").waitFor({ state: "visible" });
 
   // Leave this scenario in a screenshot-friendly state: the narrow-width assertions
