@@ -13,7 +13,7 @@ import { TranscriptController, toolCallIdForTranscriptItem } from "./transcript-
 import { applyTranscriptAgentEvent } from "./transcript-event-controller";
 import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
-import { defaultTranscriptExpanded, latestGroupableToolGroupId } from "./transcript-renderer";
+import { latestGroupableToolGroupId } from "./transcript-renderer";
 import { patchRunningToolGroupElapsed as patchRunningToolGroupElapsedReceipt, patchTranscriptStructure as patchTranscriptStructureHtml, recordTranscriptPatchSample, replaceHtmlPreservingTranscript as replaceHtmlPreservingTranscriptRows, syncOpenActionMenus as syncTranscriptOpenActionMenus } from "./transcript-live-controller";
 import { activePlanActionItem as findActivePlanActionItem, renderPlanComposerTakeover as renderPlanComposerTakeoverHtml, renderTranscriptShell } from "./transcript-shell";
 import { renderPromptImages, type PromptImage } from "./prompt-images";
@@ -21,6 +21,7 @@ import { addRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRun
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
 import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, renderQuestionPanel as renderQuestionPanelHtml, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
 import { connectSessionWebSocket, type SessionConnectionContext } from "./session-connection-controller";
+import { handleTranscriptRowAction as handleTranscriptRowActionWithContext, type TranscriptRowAction, type TranscriptRowMenuAction } from "./transcript-row-actions";
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
@@ -35,7 +36,6 @@ declare global {
 
 type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
-type TranscriptRowAction = "copy" | "fork" | "toggle-output";
 type PlanAction = "accept" | "chat";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
@@ -722,38 +722,22 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private async handleTranscriptRowAction(action: TranscriptRowAction | "menu", transcriptId: string): Promise<void> {
-    const item = this.transcript.find((candidate) => candidate.id === transcriptId);
-    if (!item) return;
-    if (action === "toggle-output") {
-      const currentExpanded = this.transcriptExpansion.get(transcriptId) ?? defaultTranscriptExpanded(item);
-      this.transcriptExpansion.set(transcriptId, !currentExpanded);
-      this.dirtyTranscriptIds.add(transcriptId);
-      this.transcriptFollow.preserveNextSync();
-      this.render();
-      return;
-    }
-    if (action === "menu") {
-      this.openActionMenuId = this.openActionMenuId === transcriptId ? "" : transcriptId;
-      this.selectTranscriptItem(transcriptId, false);
-      if (item.kind === "user" && !this.forkEntryIdForTranscriptItem(item)) await this.refreshTree();
-      this.render();
-      return;
-    }
-
-    this.openActionMenuId = "";
-    if (action === "copy") {
-      await this.copyText(item.body);
-      return;
-    }
-    if (action === "fork") {
-      const entryId = this.forkEntryIdForTranscriptItem(item);
-      if (entryId) await this.forkFromEntry(entryId);
-      else {
-        this.notice = "Fork is only available after this user message appears in the session tree.";
-        this.render();
-      }
-    }
+  private async handleTranscriptRowAction(action: TranscriptRowMenuAction, transcriptId: string): Promise<void> {
+    await handleTranscriptRowActionWithContext({
+      items: this.transcript,
+      expansion: this.transcriptExpansion,
+      dirtyIds: this.dirtyTranscriptIds,
+      openActionMenuId: this.openActionMenuId,
+      setOpenActionMenuId: (id) => { this.openActionMenuId = id; },
+      selectItem: (id, shouldRender) => this.selectTranscriptItem(id, shouldRender),
+      preserveNextScrollSync: () => this.transcriptFollow.preserveNextSync(),
+      render: () => this.render(),
+      copyText: (value) => this.copyText(value),
+      forkEntryIdForItem: (item) => this.forkEntryIdForTranscriptItem(item),
+      forkFromEntry: (entryId) => this.forkFromEntry(entryId),
+      refreshTree: () => this.refreshTree(),
+      setNotice: (message) => { this.notice = message; },
+    }, action, transcriptId);
   }
 
   private async updateSessionTitle(title: string): Promise<void> {
@@ -1550,7 +1534,7 @@ class PiWebAgentApp extends HTMLElement {
       }
       event.preventDefault();
       event.stopPropagation();
-      const action = button.dataset.rowAction as TranscriptRowAction | "menu";
+      const action = button.dataset.rowAction as TranscriptRowMenuAction;
       void this.handleTranscriptRowAction(action, button.dataset.transcriptId ?? "");
     });
     const transcriptElement = this.querySelector<HTMLElement>(".transcript");
