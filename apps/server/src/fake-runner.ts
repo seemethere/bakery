@@ -182,8 +182,9 @@ class FakeSessionHandle implements SessionHandle {
 
       if (!emittedTool && offset >= toolAtOffset) {
         emittedTool = true;
+        const shouldEmitFailedTool = /failed tools?|tool failures?|alignment/i.test(text);
         for (let toolIndex = 0; toolIndex < toolRunCount; toolIndex++) {
-          await this.emitFakeToolRun(/(?:long|narrow)/i.test(text), toolIndex + 1);
+          await this.emitFakeToolRun(/(?:long|narrow)/i.test(text), toolIndex + 1, shouldEmitFailedTool && toolIndex === 2);
         }
       }
 
@@ -505,7 +506,7 @@ class FakeSessionHandle implements SessionHandle {
     }
   }
 
-  private async emitFakeToolRun(longOutput = false, runIndex = 1): Promise<void> {
+  private async emitFakeToolRun(longOutput = false, runIndex = 1, fail = false): Promise<void> {
     const toolCallId = crypto.randomUUID();
     const startedAt = new Date(Date.now() - 40).toISOString();
     if (!longOutput && runIndex === 2) {
@@ -545,9 +546,10 @@ class FakeSessionHandle implements SessionHandle {
       args,
       startedAt,
       endedAt,
+      isError: fail,
       result: {
-        content: [{ type: "text", text: outputLines }],
-        details: { stdout: `${outputLines}\n`, stderr: longOutput ? "" : "delayed diagnostic\n", exitCode: 0 },
+        content: [{ type: "text", text: fail ? `${outputLines}\nsynthetic failure` : outputLines }],
+        details: { stdout: `${outputLines}\n`, stderr: fail ? "synthetic failure\n" : longOutput ? "" : "delayed diagnostic\n", exitCode: fail ? 1 : 0 },
       },
     });
   }

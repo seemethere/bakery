@@ -384,8 +384,15 @@
   .message.question,
   .message.system,
   .message.error,
-  .tool-activity-strip {
+  .tool-activity-card {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .tool-activity-run {
+    width: min(94%, 820px);
+    min-width: 0;
     max-width: 100%;
   }
 
@@ -419,8 +426,8 @@
   }
 
   .message + .message,
-  .message + .tool-activity-strip,
-  .tool-activity-strip + .message {
+  .message + .tool-activity-run,
+  .tool-activity-run + .message {
     margin-top: 14px;
   }
 
@@ -490,7 +497,11 @@
     padding: 2px 0;
   }
 
-  .message.tool.done.collapsed .message-expand-toggle {
+  .tool-activity-run.expanded .message.tool.collapsed .message-header {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .tool-activity-run.expanded .message.tool.collapsed .message-expand-toggle {
     width: 24px;
     min-width: 24px;
     height: 24px;
@@ -516,22 +527,21 @@
     display: none;
   }
 
-  .tool-activity-strip {
+  .tool-activity-run.expanded .message.tool.collapsed .message-action-area {
+    display: flex;
+  }
+
+  .tool-activity-card {
     gap: 8px;
-    min-height: 36px;
-    padding: 7px 10px;
+    padding: 9px 11px 9px 12px;
   }
 
-  .tool-activity-strip strong {
-    max-width: 48vw;
+  .tool-activity-run.expanded .tool-activity-card {
+    padding: 9px 11px 9px 12px;
   }
 
-  .tool-activity-strip[data-mobile-default="summary-only"]:not([data-tool-activity-expanded="true"]) ~ pi-transcript-row[data-tool-activity-member] {
-    display: none;
-  }
-
-  .tool-activity-disclosure {
-    display: inline;
+  .tool-activity-receipt {
+    font-size: 12px;
   }
 
   .message-action-bar {

@@ -384,8 +384,8 @@
 }
 
 .message + .message,
-.message + .tool-activity-strip,
-.tool-activity-strip + .message {
+.message + .tool-activity-run,
+.tool-activity-run + .message {
   margin-top: 18px;
 }
 
@@ -650,69 +650,173 @@
   margin-top: 2px;
 }
 
-.tool-activity-strip {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  box-sizing: border-box;
-  width: min(100%, 820px);
-  min-height: 34px;
+.tool-activity-run {
+  width: min(75%, 820px);
+  min-width: min(100%, 520px);
   margin-right: auto;
-  padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 34%, var(--color-tool-border));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-tool-bg) 86%, var(--color-accent) 14%);
+}
+
+.tool-activity-run.expanded {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border) 36%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--color-accent) 54%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 62%, var(--color-tool-bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border) 20%, transparent);
+}
+
+.tool-activity-run:not(.expanded) > pi-transcript-row[data-tool-activity-member] {
+  display: none;
+}
+
+.tool-activity-run.expanded > pi-transcript-row[data-tool-activity-member],
+.tool-activity-run:has(> pi-transcript-row:not(.collapsed)) > pi-transcript-row[data-tool-activity-member] {
+  display: block;
+  margin-top: 0;
+}
+
+.tool-activity-card {
+  appearance: none;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px 9px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 36%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--color-accent) 54%, transparent);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 62%, var(--color-tool-bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border) 22%, transparent);
   color: var(--color-text-secondary);
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--color-shadow) 20%, transparent);
   font: inherit;
-  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 
-.tool-activity-strip:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 58%, transparent);
+.tool-activity-card:hover,
+.tool-activity-card:focus-visible {
+  border-color: color-mix(in srgb, var(--color-border-strong) 44%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 76%, var(--color-tool-bg));
+}
+
+.tool-activity-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 36%, transparent);
   outline-offset: 2px;
 }
 
-.tool-activity-disclosure {
-  display: none;
+.tool-activity-card[data-tool-activity-status="error"] {
+  border-left-color: color-mix(in srgb, var(--color-error) 42%, transparent);
+}
+
+.tool-activity-run.expanded .tool-activity-card {
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 28%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tool-activity-icon {
   flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 700;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-text-muted) 82%, transparent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.45;
 }
 
-.tool-activity-strip[data-tool-activity-expanded="true"] .tool-activity-disclosure::after {
-  content: " shown";
-}
-
-.tool-activity-strip::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--color-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent);
-}
-
-.tool-activity-strip strong {
+.tool-activity-receipt {
   min-width: 0;
   overflow: hidden;
-  color: var(--color-text-primary);
-  font-weight: 750;
+  color: color-mix(in srgb, var(--color-text-secondary) 84%, transparent);
+  font-size: 13px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tool-activity-strip em {
+.tool-activity-card[data-tool-activity-status="error"] .tool-activity-receipt {
+  color: color-mix(in srgb, var(--color-text-secondary) 82%, var(--color-error));
+  font-weight: 500;
+}
+
+.tool-activity-chevron {
   flex: 0 0 auto;
-  color: var(--color-text-muted);
-  font-style: normal;
-  font-weight: 650;
+  justify-self: end;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-text-muted) 78%, transparent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  transition: transform 120ms ease;
+}
+
+.tool-activity-card[data-tool-activity-expanded="true"] .tool-activity-chevron {
+  transform: rotate(180deg);
+}
+
+.tool-activity-run.expanded .message.tool.collapsed:not(.developer-bash) {
+  width: 100%;
+  padding: 0 10px 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.92;
+}
+
+.tool-activity-run.expanded .message.tool.collapsed:not(.developer-bash) + .message.tool.collapsed:not(.developer-bash) {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 18%, transparent);
+}
+
+.tool-activity-run.expanded .message.tool.collapsed .tool-summary,
+.tool-activity-run.expanded .message.tool.collapsed .tool-duration,
+.tool-activity-run.expanded .message.tool.collapsed .message-status {
+  display: none;
+}
+
+.tool-activity-run.expanded .message.tool.collapsed .message-header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 0;
+  border-bottom: 0;
+  gap: 8px;
+  color: var(--color-text-secondary);
+}
+
+.tool-activity-run.expanded .message.tool.collapsed .message-expand-toggle {
+  grid-column: 1;
+  justify-self: center;
+}
+
+.tool-activity-run.expanded .message.tool.collapsed .message-header strong {
+  grid-column: 2;
+  max-width: none;
+  color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tool-activity-run.expanded .message.tool.collapsed .message-header-spacer {
+  display: none;
+}
+
+.tool-activity-run.expanded .message.tool.collapsed .message-action-area {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.tool-activity-run.expanded .message.tool.collapsed.error .message-expand-toggle {
+  color: color-mix(in srgb, var(--color-error) 72%, var(--color-text-muted));
 }
 
 .message.tool.done.collapsed .message-header {

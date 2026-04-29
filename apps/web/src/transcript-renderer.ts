@@ -9,6 +9,7 @@ export function renderTranscriptItemShell(item: TranscriptItem, options: { toolA
 function isToolActivityItem(item: TranscriptItem): boolean {
   return item.kind === "tool"
     && (item.status === "running" || item.status === "done" || item.status === "error")
+    && item.title !== "Question"
     && !isDeveloperBashItem(item);
 }
 
@@ -33,18 +34,27 @@ function groupDurationMs(items: readonly TranscriptItem[], activeNowMs?: number)
   const starts = items
     .map((item) => item.startedAt ? Date.parse(item.startedAt) : Number.NaN)
     .filter(Number.isFinite);
-  if (starts.length === 0) return undefined;
-  const firstStart = Math.min(...starts);
-  if (activeNowMs !== undefined && Number.isFinite(activeNowMs)) return Math.max(0, activeNowMs - firstStart);
-  const ends = items
-    .map((item) => item.endedAt ? Date.parse(item.endedAt) : Number.NaN)
-    .filter(Number.isFinite);
-  if (ends.length > 0) return Math.max(0, Math.max(...ends) - firstStart);
+  if (activeNowMs !== undefined && Number.isFinite(activeNowMs) && starts.length > 0) {
+    return Math.max(0, activeNowMs - Math.min(...starts));
+  }
+
+  const durations = items
+    .map((item) => item.durationMs)
+    .filter((duration): duration is number => duration !== undefined && Number.isFinite(duration) && duration >= 0);
+  if (durations.length > 0) return durations.reduce((total, duration) => total + duration, 0);
+
+  if (starts.length > 0) {
+    const firstStart = Math.min(...starts);
+    const ends = items
+      .map((item) => item.endedAt ? Date.parse(item.endedAt) : Number.NaN)
+      .filter(Number.isFinite);
+    if (ends.length > 0) return Math.max(0, Math.max(...ends) - firstStart);
+  }
   return undefined;
 }
 
-function latestRunningToolRun(transcript: readonly TranscriptItem[]): TranscriptItem[] {
-  let latest: TranscriptItem[] = [];
+function toolActivityRuns(transcript: readonly TranscriptItem[]): TranscriptItem[][] {
+  const groups: TranscriptItem[][] = [];
   for (let index = 0; index < transcript.length;) {
     if (!isRenderableTranscriptItem(transcript[index]!) || !isToolActivityItem(transcript[index]!)) {
       index++;
@@ -55,9 +65,21 @@ function latestRunningToolRun(transcript: readonly TranscriptItem[]): Transcript
       group.push(transcript[index]!);
       index++;
     }
+    groups.push(group);
+  }
+  return groups;
+}
+
+function latestRunningToolRun(transcript: readonly TranscriptItem[]): TranscriptItem[] {
+  let latest: TranscriptItem[] = [];
+  for (const group of toolActivityRuns(transcript)) {
     if (hasRunningTool(group)) latest = group;
   }
   return latest;
+}
+
+function toolActivityRunFor(transcript: readonly TranscriptItem[], item: TranscriptItem): TranscriptItem[] {
+  return toolActivityRuns(transcript).find((group) => group.some((candidate) => candidate.id === item.id)) ?? [];
 }
 
 export function latestGroupableToolGroupId(transcript: readonly TranscriptItem[]): string | undefined {
@@ -66,14 +88,18 @@ export function latestGroupableToolGroupId(transcript: readonly TranscriptItem[]
 }
 
 export function activeToolActivityMemberIdFor(transcript: readonly TranscriptItem[], item: TranscriptItem): string | undefined {
-  const latest = latestRunningToolRun(transcript);
-  if (!latest.some((candidate) => candidate.id === item.id)) return undefined;
-  return toolRunGroupId(latest);
+  const group = toolActivityRunFor(transcript, item);
+  return group.length > 0 ? toolRunGroupId(group) : undefined;
 }
 
 export function primaryToolLabel(items: readonly TranscriptItem[]): string {
   const primary = [...items].reverse().find((item) => item.status === "running") ?? items[items.length - 1];
-  return primary?.title.replace(/^\$\s*/, "") ?? "tool";
+  return toolCallDisplayLabel(primary);
+}
+
+function toolCallDisplayLabel(item: TranscriptItem | undefined): string {
+  if (!item) return "tool";
+  return item.title.replace(/^\$\s*/, "bash ");
 }
 
 export type ToolActivityRenderModel = {
@@ -82,26 +108,39 @@ export type ToolActivityRenderModel = {
   title: string;
   meta: string;
   label: string;
-  mobileDefault: "summary-only";
+  countLabel: string;
+  durationLabel: string;
+  currentLabel: string;
+  receiptLabel: string;
+  failedLabel: string;
+  status: "running" | "done" | "error";
+  defaultMode: "summary-only";
 };
 
 export function toolActivityRenderModel(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): ToolActivityRenderModel {
   const groupId = toolRunGroupId(items);
-  const duration = formatToolDuration(groupDurationMs(items, options.activeToolGroupId === groupId ? options.nowMs : undefined));
+  const isRunning = hasRunningTool(items);
+  const duration = formatToolDuration(groupDurationMs(items, isRunning && options.activeToolGroupId === groupId ? options.nowMs : undefined));
   const label = primaryToolLabel(items);
   const failedCount = items.filter((item) => item.status === "error").length;
-  const meta = [
-    `${items.length} ${items.length === 1 ? "tool" : "tools"}`,
-    duration,
-    failedCount > 0 ? `${failedCount} failed` : "",
-  ].filter(Boolean).join(" · ");
+  const countLabel = `${items.length} ${items.length === 1 ? "call" : "calls"}`;
+  const status = isRunning ? "running" : failedCount > 0 ? "error" : "done";
+  const failedLabel = failedCount > 0 ? `${failedCount} failed` : "";
+  const meta = [duration, countLabel].filter(Boolean).join(" · ");
+  const receiptLabel = [meta || countLabel, failedLabel, isRunning ? label : ""].filter(Boolean).join(" · ");
   return {
     id: groupId,
     itemIds: items.map((item) => item.id),
-    title: `Running ${label}`,
+    title: label,
     meta,
     label,
-    mobileDefault: "summary-only",
+    countLabel,
+    durationLabel: duration,
+    currentLabel: isRunning ? label : "",
+    receiptLabel,
+    failedLabel,
+    status,
+    defaultMode: "summary-only",
   };
 }
 
@@ -113,23 +152,42 @@ export function toolRunSummaryText(items: readonly TranscriptItem[], options: Tr
 export function renderToolActivity(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): string {
   const model = toolActivityRenderModel(items, options);
   const detailsLabel = `Tool details for ${model.itemIds.length} ${model.itemIds.length === 1 ? "tool" : "tools"}`;
-  return `<button type="button" class="tool-activity-strip" aria-expanded="false" aria-label="Show ${escapeHtml(detailsLabel)}" data-tool-activity="${escapeHtml(model.id)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}" data-tool-activity-expanded="false" data-mobile-default="${escapeHtml(model.mobileDefault)}">
-      <strong>${escapeHtml(model.title)}</strong>
-      ${model.meta ? `<em>${escapeHtml(model.meta)}</em>` : ""}
-      <span class="tool-activity-disclosure" aria-hidden="true">Details</span>
+  const gearIcon = `<svg class="tool-activity-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.9 1.5h2.2l.35 1.65c.42.14.82.31 1.18.52l1.42-.91 1.56 1.56-.91 1.42c.21.36.38.76.52 1.18l1.65.35v2.2l-1.65.35c-.14.42-.31.82-.52 1.18l.91 1.42-1.56 1.56-1.42-.91c-.36.21-.76.38-1.18.52l-.35 1.65H6.9l-.35-1.65a5.1 5.1 0 0 1-1.18-.52l-1.42.91-1.56-1.56.91-1.42a5.1 5.1 0 0 1-.52-1.18l-1.65-.35v-2.2l1.65-.35c.14-.42.31-.82.52-1.18l-.91-1.42 1.56-1.56 1.42.91c.36-.21.76-.38 1.18-.52L6.9 1.5Z" /><circle cx="8" cy="8.35" r="2.05" /></svg>`;
+  return `<button type="button" class="tool-activity-card" aria-expanded="false" aria-label="Show ${escapeHtml(detailsLabel)}" data-tool-activity="${escapeHtml(model.id)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}" data-tool-activity-expanded="false" data-tool-activity-status="${escapeHtml(model.status)}" data-default-mode="${escapeHtml(model.defaultMode)}">
+      ${gearIcon}
+      <span class="tool-activity-receipt" title="${escapeHtml(model.receiptLabel)}">${escapeHtml(model.receiptLabel)}</span>
+      <svg class="tool-activity-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
     </button>`;
+}
+
+function renderToolActivityRun(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): string {
+  const groupId = toolRunGroupId(items);
+  return `<div class="tool-activity-run" data-tool-activity-run="${escapeHtml(groupId)}" data-tool-activity-ids="${escapeHtml(toolRunGroupItemIds(items))}">
+    ${renderToolActivity(items, options)}
+    ${items.map((item) => renderTranscriptItemShell(item, { toolActivityMemberId: groupId })).join("")}
+  </div>`;
 }
 
 export function renderTranscriptHtml(transcript: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): string {
   const parts: string[] = [];
   const activeToolGroupId = latestGroupableToolGroupId(transcript);
-  const activeToolItems = latestRunningToolRun(transcript);
-  const firstActiveToolId = activeToolItems[0]?.id;
-  const activeToolIds = new Set(activeToolItems.map((item) => item.id));
-  for (const item of transcript) {
-    if (!isRenderableTranscriptItem(item)) continue;
-    if (activeToolGroupId && item.id === firstActiveToolId) parts.push(renderToolActivity(activeToolItems, { ...options, activeToolGroupId }));
-    parts.push(renderTranscriptItemShell(item, { toolActivityMemberId: activeToolIds.has(item.id) ? activeToolGroupId : undefined }));
+  for (let index = 0; index < transcript.length;) {
+    const item = transcript[index]!;
+    if (!isRenderableTranscriptItem(item)) {
+      index++;
+      continue;
+    }
+    if (isToolActivityItem(item)) {
+      const group: TranscriptItem[] = [];
+      while (index < transcript.length && isRenderableTranscriptItem(transcript[index]!) && isToolActivityItem(transcript[index]!)) {
+        group.push(transcript[index]!);
+        index++;
+      }
+      parts.push(renderToolActivityRun(group, { ...options, activeToolGroupId }));
+      continue;
+    }
+    parts.push(renderTranscriptItemShell(item));
+    index++;
   }
   return parts.join("");
 }

@@ -1856,10 +1856,12 @@ class PiWebAgentApp extends HTMLElement {
       const activity = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-tool-activity]");
       if (activity) {
         event.preventDefault();
+        const run = activity.closest<HTMLElement>(".tool-activity-run");
         const expanded = activity.dataset.toolActivityExpanded === "true";
         activity.dataset.toolActivityExpanded = expanded ? "false" : "true";
         activity.setAttribute("aria-expanded", expanded ? "false" : "true");
         activity.setAttribute("aria-label", `${expanded ? "Show" : "Hide"} tool details`);
+        run?.classList.toggle("expanded", !expanded);
         return;
       }
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
@@ -2462,16 +2464,17 @@ class PiWebAgentApp extends HTMLElement {
     if (!groupId) return false;
     const activity = Array.from(this.querySelectorAll<HTMLElement>("[data-tool-activity]"))
       .find((element) => element.dataset.toolActivity === groupId);
-    const title = activity?.querySelector<HTMLElement>("strong");
-    const meta = activity?.querySelector<HTMLElement>("em");
-    if (!title) return false;
+    const card = activity?.closest<HTMLElement>(".tool-activity-card");
+    const receipt = card?.querySelector<HTMLElement>(".tool-activity-receipt");
+    if (!receipt) return false;
 
     const itemIds = new Set((activity?.dataset.toolActivityIds ?? "").split("|").filter(Boolean));
     const items = this.transcript.filter((item) => itemIds.has(item.id));
     if (items.length === 0) return false;
     const summary = toolRunSummaryText(items, { activeToolGroupId: groupId, nowMs: Date.now() });
-    title.textContent = summary.title;
-    if (meta) meta.textContent = summary.meta;
+    const receiptText = [summary.meta, summary.label].filter(Boolean).join(" · ");
+    if (receipt.textContent !== receiptText) receipt.textContent = receiptText;
+    receipt.title = receiptText;
     return true;
   }
 
