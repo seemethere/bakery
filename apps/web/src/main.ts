@@ -4,6 +4,7 @@ import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForT
 import { compactSnapshotTranscript, compactWorkflowLaunchSummary, hasPlanActionsMarker, isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, messageToTranscriptItem, renderTranscriptSegments, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { isSessionRecencyGroupId, persistCollapsedSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionSidebarHtml, renderSessionSidebarBackdrop as renderSessionSidebarBackdropHtml, sessionSidebarOverlayOpen } from "./session-sidebar-controller";
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
@@ -15,7 +16,7 @@ import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
 import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, renderQuestionPanel as renderQuestionPanelHtml, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
-import { parseAppRoute, sessionsRoutePath, sessionRoutePath, settingsRoutePath } from "./router";
+import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
 import "./styles.css";
@@ -1453,54 +1454,22 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private sidebarOverlayOpen(): boolean {
-    return !this.sessionSidebarPinned && !this.sessionSidebarCollapsed;
+    return sessionSidebarOverlayOpen({ collapsed: this.sessionSidebarCollapsed, pinned: this.sessionSidebarPinned });
   }
 
   private renderSessionSidebarBackdrop(): string {
-    return this.sidebarOverlayOpen() ? `<button id="sessionSidebarBackdrop" class="session-sidebar-backdrop" type="button" aria-label="Hide sessions"></button>` : "";
+    return renderSessionSidebarBackdropHtml({ collapsed: this.sessionSidebarCollapsed, pinned: this.sessionSidebarPinned });
   }
 
   private renderSessionSidebar(): string {
-    const sidebarOverlayOpen = this.sidebarOverlayOpen();
-    const route = parseAppRoute(window.location.pathname);
-    return `<aside class="session-sidebar ${this.sessionSidebarCollapsed ? "collapsed" : ""} ${sidebarOverlayOpen ? "overlay" : ""}">
-        <div class="sidebar-titlebar">
-          <h1>Pi Web Agent</h1>
-          <div class="sidebar-titlebar-actions">
-            ${sidebarOverlayOpen && !this.mobileLayout ? `<button id="pinSessionSidebar" class="pin-sidebar" type="button" title="Pin sessions as a left column">Pin</button>` : ""}
-            <button id="toggleSessionSidebar" class="collapse-sidebar" title="${this.sessionSidebarCollapsed ? "Show navigation" : this.sessionSidebarPinned ? "Hide navigation and unpin auto-collapse" : "Hide navigation"}" aria-label="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}">${this.sessionSidebarCollapsed ? "▶" : "◀"}</button>
-          </div>
-        </div>
-        ${this.sessionSidebarCollapsed ? `
-          <span class="collapsed-sidebar-label">Nav</span>
-          ${this.selectedSession ? `<span class="collapsed-sidebar-session" title="${escapeHtml(this.selectedSession.title ?? this.selectedSession.cwd)}">●</span>` : ""}
-        ` : `
-          <nav class="sidebar-section sidebar-nav" aria-label="Primary">
-            <button type="button" class="sidebar-nav-item ${route.kind === "sessions" ? "active" : ""}" data-route-path="${sessionsRoutePath()}">
-              <strong>Sessions</strong>
-              <span>Find and resume work</span>
-            </button>
-          </nav>
-          <div class="sidebar-section sidebar-session-section">
-            <label>Workspace
-              <select id="workspace">
-                ${this.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
-              </select>
-            </label>
-            <div class="new-session-actions">
-              <button id="newSession">New session</button>
-              <button id="newIsolatedSession" title="Create a Git worktree session on its own branch">New isolated session</button>
-            </div>
-          </div>
-          <div class="sidebar-section sidebar-settings-nav-section">
-            <hr />
-            <button type="button" class="sidebar-nav-item ${route.kind === "settings" ? "active" : ""}" data-route-path="${settingsRoutePath()}">
-              <strong>Settings</strong>
-              <span>API, theme, metadata</span>
-            </button>
-          </div>
-        `}
-      </aside>`;
+    return renderSessionSidebarHtml({
+      collapsed: this.sessionSidebarCollapsed,
+      pinned: this.sessionSidebarPinned,
+      mobileLayout: this.mobileLayout,
+      selectedSession: this.selectedSession,
+      workspaces: this.workspaces,
+      route: parseAppRoute(window.location.pathname),
+    });
   }
 
   private patchMobileSessionSidebar(): void {
@@ -1517,7 +1486,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     const mobileToggle = this.querySelector<HTMLButtonElement>("#toggleSessionSidebarMobile");
     if (mobileToggle) {
-      const label = this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions";
+      const label = mobileSessionSidebarToggleLabel(this.sessionSidebarCollapsed);
       mobileToggle.title = label;
       mobileToggle.setAttribute("aria-label", label);
     }
