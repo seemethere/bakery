@@ -16,6 +16,7 @@ import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
 import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, renderQuestionPanel as renderQuestionPanelHtml, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
+import { connectSessionWebSocket, type SessionConnectionContext } from "./session-connection-controller";
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
@@ -571,70 +572,32 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
+  private sessionConnectionContext(): SessionConnectionContext {
+    return {
+      apiBase: () => this.apiBase,
+      token: () => this.token,
+      status: () => this.status,
+      selectedSessionId: () => this.selectedSession?.id,
+      nextSocketGeneration: () => ++this.socketGeneration,
+      isCurrentSocketGeneration: (generation) => generation === this.socketGeneration,
+      setSocket: (socket) => { this.ws = socket; },
+      clearReconnectTimer: () => {
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
+      },
+      setReconnectTimer: (timer) => { this.reconnectTimer = timer; },
+      incrementReconnectAttempt: () => ++this.reconnectAttempt,
+      resetReconnectAttempt: () => { this.reconnectAttempt = 0; },
+      setConnectionState: (state) => { this.connectionState = state; },
+      setConnectionMessage: (message) => { this.connectionMessage = message; },
+      setAgentStatus: (status) => this.setAgentStatus(status),
+      handleSocketMessage: (raw) => this.handleSocketMessage(raw),
+      requestRender: (delayMs = this.status === "running" ? 150 : 0) => this.requestRender(delayMs),
+    };
+  }
+
   private connectWebSocket(session: WebSession, state: ConnectionState): void {
-    const generation = ++this.socketGeneration;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = undefined;
-    }
-    this.connectionState = state;
-    this.connectionMessage = state === "reconnecting" ? `Reconnecting to ${session.id}...` : `Connecting to ${session.id}...`;
-    this.setAgentStatus(this.status === "running" ? this.status : "connecting");
-
-    const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    if (this.token) url.searchParams.set("token", this.token);
-    const rememberedClientId = localStorage.getItem(`piWebClientId:${session.id}`);
-    if (rememberedClientId) url.searchParams.set("clientId", rememberedClientId);
-
-    const socket = new WebSocket(url);
-    this.ws = socket;
-    socket.addEventListener("open", () => {
-      if (generation !== this.socketGeneration) return;
-      this.connectionState = state === "reconnecting" ? "reconnecting" : "connecting";
-      this.connectionMessage = "Socket opened; waiting for session snapshot...";
-      this.requestRender(0);
-    });
-    socket.addEventListener("message", (event) => {
-      if (generation !== this.socketGeneration) return;
-      this.handleSocketMessage(event.data as string);
-    });
-    socket.addEventListener("close", () => {
-      if (generation !== this.socketGeneration) return;
-      this.handleSocketClose(session);
-    });
-    socket.addEventListener("error", () => {
-      if (generation !== this.socketGeneration) return;
-      this.connectionMessage = "Connection error; retrying if possible.";
-      this.requestRender(0);
-    });
-  }
-
-  private handleSocketClose(session: WebSession): void {
-    if (this.selectedSession?.id !== session.id) return;
-    this.setAgentStatus("disconnected");
-    this.connectionState = "disconnected";
-    this.connectionMessage = "Connection lost. Retrying shortly...";
-    this.scheduleReconnect(session);
-    this.requestRender(0);
-  }
-
-  private scheduleReconnect(session: WebSession): void {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectAttempt++;
-    if (this.reconnectAttempt > 8) {
-      this.connectionState = "retry_failed";
-      this.connectionMessage = "Reconnect failed. Check whether the backend is running, then use Save / Refresh or reopen the session.";
-      return;
-    }
-    const delay = Math.min(8_000, 500 * 2 ** Math.max(0, this.reconnectAttempt - 1));
-    this.connectionState = "reconnecting";
-    this.connectionMessage = `Connection lost. Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempt}/8)...`;
-    this.reconnectTimer = setTimeout(() => {
-      if (this.selectedSession?.id !== session.id) return;
-      this.connectWebSocket(session, "reconnecting");
-      this.requestRender(0);
-    }, delay);
+    connectSessionWebSocket(this.sessionConnectionContext(), session, state);
   }
 
   private setAgentStatus(status: AgentStatus): void {
