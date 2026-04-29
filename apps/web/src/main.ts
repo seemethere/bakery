@@ -8,6 +8,7 @@ import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionS
 import { mergeSessionMetadataUpdate } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
+import { composerModeLabel, hasComposerSendContent as composerHasSendContent, isBashPromptDraft as isComposerBashPromptDraft, isComposerNotice as isComposerNoticeMessage, isNoContextBashPromptDraft, patchComposerMode as patchComposerModeWithState, patchComposerSendAvailability as patchComposerSendAvailabilityWithState, renderComposerNotice as renderComposerNoticeHtml } from "./composer-mode-controller";
 import { handleComposerImageFiles, removePromptImage as removePromptImageWithContext, type ComposerImageControllerContext } from "./composer-images-controller";
 import { TranscriptController, toolCallIdForTranscriptItem } from "./transcript-controller";
 import { applyTranscriptAgentEvent } from "./transcript-event-controller";
@@ -833,13 +834,11 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private hasComposerSendContent(value = this.promptDraft): boolean {
-    return value.trim().length > 0 || this.promptImages.length > 0;
+    return composerHasSendContent(value, this.promptImages.length);
   }
 
   private patchComposerSendAvailability(input = this.querySelector<HTMLTextAreaElement>("#prompt")): void {
-    const canSend = Boolean(input && !input.disabled && this.hasComposerSendContent(input.value));
-    this.querySelector<HTMLButtonElement>("#send")?.toggleAttribute("disabled", !canSend);
-    this.querySelector<HTMLButtonElement>("#followUp")?.toggleAttribute("disabled", !canSend);
+    patchComposerSendAvailabilityWithState(this, input, this.promptImages.length);
   }
 
   private sendClientMessage(type: ClientMessageType): void {
@@ -2105,63 +2104,24 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private isComposerNotice(): boolean {
-    return this.notice === "Bash commands are available when the session is idle."
-      || this.notice === "Remove image attachments before running a bash command."
-      || this.notice === "Not connected. Your draft is saved locally; sending will be available after reconnect."
-      || this.notice === "Drop image files here to attach them to the prompt."
-      || this.notice.startsWith("No supported image files found.")
-      || this.notice.startsWith("Could not attach image:")
-      || this.notice.startsWith("Attached image to prompt,")
-      || this.notice.startsWith("Unsupported image type:")
-      || this.notice.includes("is larger than");
+    return isComposerNoticeMessage(this.notice);
   }
 
   private renderComposerNotice(): string {
-    return this.notice && this.isComposerNotice() ? `<p class="notice composer-notice">${escapeHtml(this.notice)}</p>` : "";
+    return renderComposerNoticeHtml(this.notice);
   }
 
   private isBashPromptDraft(): boolean {
-    return this.promptDraft.trimStart().startsWith("!");
+    return isComposerBashPromptDraft(this.promptDraft);
   }
 
   private patchComposerMode(): void {
-    const isBash = this.isBashPromptDraft();
-    const isNoContext = this.promptDraft.trimStart().startsWith("!!");
-    const isRunning = this.status === "running";
-    const label = isBash ? (isNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
-    const promptShell = this.querySelector<HTMLElement>(".prompt-shell");
-    const footer = this.querySelector<HTMLElement>("footer");
-    const composerMode = this.querySelector<HTMLElement>(".composer-mode");
-    const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const controls = this.querySelector<HTMLElement>(".controls");
-    const send = this.querySelector<HTMLButtonElement>("#send");
-    const followUp = this.querySelector<HTMLButtonElement>("#followUp");
-    const abort = this.querySelector<HTMLButtonElement>("#abort");
-
-    promptShell?.classList.toggle("bash-mode", isBash);
-    promptShell?.classList.toggle("no-context", isNoContext);
-    footer?.classList.toggle("running-footer", isRunning);
-    composerMode?.classList.toggle("bash-mode", isBash);
-    composerMode?.classList.toggle("running", !isBash && isRunning);
-    composerMode?.classList.toggle("idle", !isBash && !isRunning);
-    composerMode?.classList.toggle("no-context", isNoContext);
-    controls?.classList.toggle("running", isRunning);
-    followUp?.classList.toggle("hidden", !isRunning);
-    abort?.classList.toggle("hidden", !isRunning);
-
-    if (prompt) {
-      const isController = this.controller?.isController ?? true;
-      prompt.placeholder = isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send";
-    }
-    const modeLabel = composerMode?.querySelector<HTMLElement>("strong");
-    if (modeLabel) modeLabel.textContent = label;
-    if (send) {
-      send.dataset.tooltip = isRunning ? "Guide active run · Enter" : "Send · Enter";
-      send.setAttribute("aria-label", isRunning ? "Guide active run" : "Send");
-      const srOnly = send.querySelector<HTMLElement>(".sr-only");
-      if (srOnly) srOnly.textContent = isRunning ? "Guide active run" : "Send";
-    }
-    this.patchComposerSendAvailability(prompt);
+    patchComposerModeWithState(this, {
+      promptDraft: this.promptDraft,
+      imageCount: this.promptImages.length,
+      status: this.status,
+      isController: this.controller?.isController ?? true,
+    });
   }
 
   private renderContextUsageNotice(): string {
@@ -2306,8 +2266,8 @@ class PiWebAgentApp extends HTMLElement {
       this.modelThinkingPickerOpen ? "model-picker-open" : "",
     ].filter(Boolean).join(" ");
     const isBashDraft = this.isBashPromptDraft();
-    const bashNoContext = this.promptDraft.trimStart().startsWith("!!");
-    const composerModeLabel = isBashDraft ? (bashNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
+    const bashNoContext = isNoContextBashPromptDraft(this.promptDraft);
+    const currentComposerModeLabel = composerModeLabel(this.promptDraft, this.status);
     const canSendFromComposer = isController && this.hasComposerSendContent();
     const promptSendDisabled = canSendFromComposer ? "" : "disabled";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
@@ -2385,7 +2345,7 @@ class PiWebAgentApp extends HTMLElement {
             <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
               ${renderPromptImages(this.promptImages)}
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
-                <strong>${escapeHtml(composerModeLabel)}</strong>
+                <strong>${escapeHtml(currentComposerModeLabel)}</strong>
                 <span class="composer-mode-spacer" aria-hidden="true"></span>
                 ${this.settings ? renderModelThinkingPicker({ settings: this.settings, isController, open: this.modelThinkingPickerOpen, defaultThinkingLevel: this.config?.modelPolicy.defaultThinkingLevel, showThinking: this.showThinking, includeShowThinking: true, renderPopover: !this.mobileLayout }) : ""}
                 ${this.renderViewerCount()}
