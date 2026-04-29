@@ -1,40 +1,26 @@
 import { mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import {
   PROTOCOL_VERSION,
   clientMessageSchema,
-  commandQuerySchema,
-  createSessionRequestSchema,
-  fileCompleteQuerySchema,
-  fileSearchQuerySchema,
-  forkSessionRequestSchema,
-  generateSessionMetadataRequestSchema,
-  navigateTreeRequestSchema,
   updateAppSettingsRequestSchema,
-  updateSessionRequestSchema,
   type ControllerInfo,
-  type SessionMetadataSuggestion,
   type HelloMessage,
   type ServerEnvelope,
   type ServerMessage,
-  type SessionTreeNode,
   type WebSession,
 } from "@pi-web-agent/protocol";
-import { completeSimple, type Message, type Model, type SimpleStreamOptions, type ThinkingLevel } from "@mariozechner/pi-ai";
-import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
+import { cleanMetadataText, firstPromptTitle, registerMetadataRoutes } from "./metadata-routes.js";
+import { registerSearchRoutes } from "./search-routes.js";
+import { registerSessionRoutes } from "./session-routes.js";
 import { loadConfig } from "./config.js";
 import { MetadataStore } from "./metadata-store.js";
-import { completeFiles, searchFiles } from "./file-search.js";
 import { FakePiSessionRunner } from "./fake-runner.js";
-import { createGitWorktreeSession } from "./git-worktrees.js";
 import { InProcessPiSessionRunner, type ImageContent } from "./pi-runner.js";
-import { compactWorkflowLaunchText } from "./workflow-skills.js";
-import { assertAllowedCwd, resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
+import { resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
 
 const config = loadConfig();
 const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
@@ -108,480 +94,9 @@ app.patch("/api/settings", async (request, reply) => {
   return store.updateSettings(parsed.data);
 });
 
-type PiSessionTreeNode = ReturnType<SessionManager["getTree"]>[number];
-
-function flattenTree(nodes: PiSessionTreeNode[]): PiSessionTreeNode[] {
-  return nodes.flatMap((node) => [node, ...flattenTree(node.children)]);
-}
-
-function messageText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : "")
-    .filter(Boolean)
-    .join(" ");
-}
-
-function cleanMetadataText(value: string, max: number): string {
-  return value
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/(?:bearer\s+)[a-z0-9._~+/-]+=*/gi, "bearer [redacted]")
-    .replace(/[a-z0-9]{32,}/gi, "[redacted]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
-}
-
-function isGenericPrompt(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/[’]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
-  if (/^(?:ok(?:ay)?|sure|sounds good|let'?s do it|go on|continue|next|next up|next thing)(?: please)?$/.test(normalized)) return true;
-  if (/^(?:give me (?:a )?sense of )?(?:what'?s|what is|what) next\??$/.test(normalized)) return true;
-  if (/^(?:nice|okay|alright|ok) (?:what'?s|what is|what) next\??$/.test(normalized)) return true;
-  return false;
-}
-
-function titleFromPrompt(text: string): string | null {
-  let cleaned = cleanMetadataText(text, 120)
-    .replace(/^(?:i think|i want to|can we|could we|let'?s|please)\s+/i, "")
-    .replace(/\b(?:kind of|maybe|even|still|a bit)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned || isGenericPrompt(cleaned) || cleaned.length < 8) return null;
-
-  const lower = cleaned.toLowerCase();
-  if (/session/.test(lower) && /summar/.test(lower) && /title|naming|name/.test(lower)) return "Improve session titles and summaries";
-  if (/session/.test(lower) && /title|naming|name/.test(lower)) return "Fix session title naming";
-  if (/summary|summar/.test(lower)) return "Improve session summaries";
-  if (/queued|follow.?up|steer/.test(lower)) return "Refine queued follow-up controls";
-  if (/tool/.test(lower) && /output|terminal|viewport/.test(lower)) return "Tune tool output ergonomics";
-  if (/context/.test(lower) && /usage|availability|window/.test(lower)) return "Add context usage indicator";
-
-  cleaned = cleaned.replace(/[.!?]+$/, "");
-  return cleaned.slice(0, 60);
-}
-
-function firstPromptTitle(text: string): string | null {
-  return titleFromPrompt(text);
-}
-
-function sessionEntries(session: WebSession): SessionEntry[] {
-  const handle = runner.getSession(session.id);
-  const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, config.sessionDir, session.cwd);
-  return flattenTree(manager.getTree()).map((node) => node.entry).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-}
-
-function transcriptSignals(session: WebSession): { users: string[]; assistants: string[]; compactions: string[] } {
-  const users: string[] = [];
-  const assistants: string[] = [];
-  const compactions: string[] = [];
-  for (const entry of sessionEntries(session)) {
-    if (entry.type === "message") {
-      const message = entry.message as { role?: string; content?: unknown };
-      const text = cleanMetadataText(messageText(message.content), 360);
-      if (!text) continue;
-      if (message.role === "user") users.push(text);
-      if (message.role === "assistant") assistants.push(text);
-    } else if (entry.type === "compaction" || entry.type === "branch_summary") {
-      compactions.push(cleanMetadataText(entry.summary, 360));
-    }
-  }
-  return { users, assistants, compactions };
-}
-
-function generateHeuristicMetadata(session: WebSession): SessionMetadataSuggestion {
-  let signals: ReturnType<typeof transcriptSignals>;
-  try {
-    signals = transcriptSignals(session);
-  } catch (error) {
-    return { confidence: "low", deferred: true, reason: error instanceof Error ? error.message : String(error) };
-  }
-  const meaningfulUsers = signals.users.filter((text) => !isGenericPrompt(text));
-  const basis = meaningfulUsers[0] ?? "";
-  const title = basis ? titleFromPrompt(basis)?.replace(/[.!?]+$/, "") || undefined : undefined;
-
-  // The local heuristic is intentionally title-only. Prompt concatenation made poor summaries
-  // that looked authoritative; useful summaries should come from the model-backed generator.
-  if (!title) return { confidence: "low", deferred: true, reason: "Not enough specific session context for a useful title yet." };
-  return { title, confidence: "medium", reason: "Summary generation needs the model-backed generator." };
-}
-
-function metadataPromptMessages(session: WebSession): Message[] {
-  const messages = sessionEntries(session)
-    .filter((entry) => entry.type === "message")
-    .map((entry) => {
-      const message = entry.message as { role?: string; content?: unknown; timestamp?: unknown };
-      const role = message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : null;
-      if (!role) return null;
-      const text = cleanMetadataText(messageText(message.content), role === "user" ? 800 : 1200);
-      if (!text) return null;
-      return { role, text, timestamp: Date.parse(entry.timestamp) || Date.now() };
-    })
-    .filter((message): message is { role: "user" | "assistant"; text: string; timestamp: number } => Boolean(message));
-
-  return messages.slice(-24).map((message) => {
-    if (message.role === "user") return { role: "user", content: message.text, timestamp: message.timestamp } satisfies Message;
-    return {
-      role: "assistant",
-      content: [{ type: "text", text: message.text }],
-      api: "metadata" as const,
-      provider: "metadata" as const,
-      model: "metadata",
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: "stop" as const,
-      timestamp: message.timestamp,
-    } satisfies Message;
-  });
-}
-
-function parseMetadataJson(text: string): { title?: string; summary?: string } {
-  const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  const firstBrace = stripped.indexOf("{");
-  const lastBrace = stripped.lastIndexOf("}");
-  const jsonText = firstBrace >= 0 && lastBrace > firstBrace ? stripped.slice(firstBrace, lastBrace + 1) : stripped;
-  const parsed = JSON.parse(jsonText) as { title?: unknown; summary?: unknown };
-  const title = typeof parsed.title === "string" ? cleanMetadataText(parsed.title, 60).replace(/[.!?]+$/, "") : undefined;
-  const summary = typeof parsed.summary === "string" ? cleanMetadataText(parsed.summary, 600) : undefined;
-  return {
-    ...(title ? { title } : {}),
-    ...(summary ? { summary } : {}),
-  };
-}
-
-async function resolveMetadataModel(handle: Awaited<ReturnType<typeof runner.createSession>>): Promise<{ model: Model<any>; apiKey?: string; headers?: Record<string, string> }> {
-  const settings = store.getSettings();
-  const available = (await handle.session.modelRegistry.getAvailable()).filter((model) => !config.modelPolicy.allowedModels || config.modelPolicy.allowedModels.includes(`${model.provider}/${model.id}`));
-  const selectedModelId = settings.sessionMetadataModel?.model ?? config.modelPolicy.defaultModel ?? (handle.session.model ? `${handle.session.model.provider}/${handle.session.model.id}` : undefined);
-  const selected = selectedModelId ? available.find((model) => `${model.provider}/${model.id}` === selectedModelId) : undefined;
-  const model = selected ?? (handle.session.model && available.find((candidate) => candidate.provider === handle.session.model?.provider && candidate.id === handle.session.model?.id)) ?? available[0];
-  if (!model) throw new Error("No authenticated metadata model is available. Configure a model, then try ✨ again.");
-  const auth = await handle.session.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) throw new Error(auth.error);
-  return {
-    model,
-    ...(auth.apiKey ? { apiKey: auth.apiKey } : {}),
-    ...(auth.headers ? { headers: auth.headers } : {}),
-  };
-}
-
-async function generateModelBackedMetadata(session: WebSession): Promise<SessionMetadataSuggestion> {
-  const heuristic = generateHeuristicMetadata(session);
-  const messages = metadataPromptMessages(session);
-  const meaningfulUsers = messages.filter((message) => message.role === "user" && !isGenericPrompt(messageText(message.content))).length;
-  if (messages.length < 2 || meaningfulUsers === 0) return heuristic.deferred ? heuristic : { ...heuristic, deferred: true, reason: "Not enough session context for a useful summary yet." };
-
-  const handle = await runner.createSession({ id: session.id, cwd: session.cwd, piSessionFile: session.piSessionFile });
-  const { model, apiKey, headers } = await resolveMetadataModel(handle);
-  const abort = AbortSignal.timeout(60_000);
-  const completionOptions: SimpleStreamOptions = {
-    maxTokens: 450,
-    signal: abort,
-    ...(apiKey ? { apiKey } : {}),
-    ...(headers ? { headers } : {}),
-    ...(model.reasoning && config.modelPolicy.defaultThinkingLevel !== "off" ? { reasoning: config.modelPolicy.defaultThinkingLevel as ThinkingLevel } : {}),
-  };
-  const response = await completeSimple(model, {
-    systemPrompt: "You generate concise metadata for a coding-agent web session. Return only valid JSON. Do not mention that you are an AI. Do not add markdown.",
-    messages: [
-      ...messages,
-      {
-        role: "user",
-        content: "Create session metadata for the preceding transcript. Return JSON exactly in this shape: {\"title\":\"3-7 words, <=60 chars\",\"summary\":\"1-3 plain-text sentences, <=600 chars, specific accomplishments and current state\"}. If the transcript is generic, still summarize only concrete context present.",
-        timestamp: Date.now(),
-      },
-    ],
-  }, completionOptions);
-  if (response.stopReason === "error") throw new Error(response.errorMessage || "Metadata generation failed");
-  const text = response.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
-  const parsed = parseMetadataJson(text);
-  const title = parsed.title || heuristic.title;
-  if (!title && !parsed.summary) return { confidence: "low", deferred: true, reason: "The metadata model did not return a usable suggestion." };
-  return {
-    ...(title ? { title } : {}),
-    ...(parsed.summary ? { summary: parsed.summary } : {}),
-    confidence: parsed.summary ? "high" : heuristic.confidence,
-    reason: `Generated with ${model.provider}/${model.id}. Review before applying.`,
-  };
-}
-
-async function enrichSession(session: WebSession): Promise<WebSession> {
-  const handle = runner.getSession(session.id);
-  let status: WebSession["status"] | undefined;
-  if (handle) status = (await handle.snapshot(session)).status;
-
-  try {
-    const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, config.sessionDir, session.cwd);
-    const entries = flattenTree(manager.getTree())
-      .map((node) => node.entry)
-      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const last = entries.at(-1);
-    const lastUser = [...entries].reverse().find((entry: SessionEntry) => {
-      if (entry.type !== "message") return false;
-      const message = entry.message as { role?: string };
-      return message.role === "user";
-    });
-    const lastUserText = lastUser?.type === "message" ? messageText((lastUser.message as { content?: unknown }).content) : "";
-    const lastUserPrompt = lastUserText ? (compactWorkflowLaunchText(lastUserText) ?? lastUserText.replace(/\s+/g, " ").trim().slice(0, 160)) : undefined;
-    return {
-      ...session,
-      lastActivityAt: last?.timestamp ?? session.lastOpenedAt,
-      lastUserPrompt: lastUserPrompt || undefined,
-      status: status ?? "idle",
-    };
-  } catch {
-    return { ...session, lastActivityAt: session.lastOpenedAt, status: status ?? "idle" };
-  }
-}
-
-app.get("/api/sessions", async () => Promise.all(store.listSessions().map(enrichSession)));
-
-function entryTitle(entry: SessionEntry): { title: string; role?: string } {
-  if (entry.type === "message") {
-    const message = entry.message as { role?: string; content?: unknown };
-    const role = String(message.role ?? "message");
-    const content = message.content;
-    const text = typeof content === "string"
-      ? content
-      : Array.isArray(content)
-        ? content.map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : "").join(" ")
-        : "";
-    const titleText = compactWorkflowLaunchText(text, 80) ?? text.replace(/\s+/g, " ").trim().slice(0, 80);
-    return { role, title: `${role}: ${titleText || "(empty)"}` };
-  }
-  if (entry.type === "compaction") return { title: `compaction: ${entry.summary.slice(0, 80)}` };
-  if (entry.type === "branch_summary") return { title: `branch summary: ${entry.summary.slice(0, 80)}` };
-  if (entry.type === "model_change") return { title: `model: ${entry.provider}/${entry.modelId}` };
-  if (entry.type === "thinking_level_change") return { title: `thinking: ${entry.thinkingLevel}` };
-  if (entry.type === "session_info") return { title: `name: ${entry.name ?? "unnamed"}` };
-  if (entry.type === "label") return { title: `label: ${entry.label ?? "cleared"}` };
-  return { title: entry.type };
-}
-
-function mapTreeNode(node: PiSessionTreeNode, leafId: string | null): SessionTreeNode {
-  const formatted = entryTitle(node.entry);
-  return {
-    id: node.entry.id,
-    parentId: node.entry.parentId,
-    type: node.entry.type,
-    timestamp: node.entry.timestamp,
-    role: formatted.role,
-    title: node.label ? `${formatted.title} · ${node.label}` : formatted.title,
-    label: node.label,
-    current: node.entry.id === leafId,
-    children: node.children.map((child) => mapTreeNode(child, leafId)),
-  };
-}
-
-async function createForkFile(sourceFile: string, cwd: string, entryId: string): Promise<string> {
-  const manager = SessionManager.open(sourceFile, config.sessionDir, cwd);
-  const branch = manager.getBranch(entryId);
-  if (branch.length === 0) throw new Error(`Entry not found: ${entryId}`);
-  const timestamp = new Date().toISOString();
-  const piSessionId = crypto.randomUUID();
-  const targetFile = resolve(config.sessionDir, `${piSessionId}.jsonl`);
-  const header = {
-    type: "session",
-    version: 3,
-    id: piSessionId,
-    timestamp,
-    cwd,
-    parentSession: sourceFile,
-  };
-  const lines = [header, ...branch].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
-  await writeFile(targetFile, lines, "utf8");
-  return targetFile;
-}
-
-app.post("/api/sessions", async (request, reply) => {
-  const parsed = createSessionRequestSchema.safeParse(request.body);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-  try {
-    const sourceCwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
-    const id = crypto.randomUUID();
-    const piSessionFile = resolve(config.sessionDir, `${id}.jsonl`);
-    if (parsed.data.isolation === "git_worktree") {
-      const worktree = await createGitWorktreeSession({ sourceCwd, sessionId: id, worktreeDir: config.worktreeDir });
-      const session = store.createSession({
-        id,
-        cwd: worktree.cwd,
-        piSessionFile,
-        title: parsed.data.title ?? null,
-        titleSource: parsed.data.title ? "manual" : "unset",
-        isolationKind: "git_worktree",
-        sourceCwd: worktree.sourceCwd,
-        worktreePath: worktree.worktreePath,
-        worktreeBranch: worktree.worktreeBranch,
-        worktreeBaseCommit: worktree.worktreeBaseCommit,
-        worktreeSourceDirty: worktree.worktreeSourceDirty,
-      });
-      return reply.code(201).send(session);
-    }
-    const session = store.createSession({ id, cwd: sourceCwd, piSessionFile, title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
-    return reply.code(201).send(session);
-  } catch (error) {
-    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.get<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
-  const session = store.getSession(request.params.id);
-  if (!session) return reply.code(404).send({ error: "session not found" });
-  store.touchSession(session.id);
-  return store.getSession(session.id) ?? session;
-});
-
-app.patch<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
-  const parsed = updateSessionRequestSchema.safeParse(request.body);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-  const existing = store.getSession(request.params.id);
-  if (!existing) return reply.code(404).send({ error: "session not found" });
-
-  if (Object.hasOwn(parsed.data, "title")) store.updateSession(existing.id, { title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
-  if (Object.hasOwn(parsed.data, "summary")) store.updateSession(existing.id, { summary: parsed.data.summary ?? null, summarySource: parsed.data.summary ? "manual" : "unset" });
-  if (parsed.data.autoGenerateMetadataOverride) store.updateSession(existing.id, { autoGenerateMetadataOverride: parsed.data.autoGenerateMetadataOverride });
-  const updatedAfterMetadata = store.getSession(existing.id);
-  const handle = runner.getSession(existing.id);
-  if (handle && Object.hasOwn(parsed.data, "title") && parsed.data.title) handle.setSessionName(parsed.data.title);
-  const hub = sessionHubs.get(existing.id);
-  if (hub && updatedAfterMetadata) hub.broadcastMetadataUpdate(updatedAfterMetadata);
-  store.updatePreferences(existing.id, {
-    ...(parsed.data.toolPermissionMode ? { toolPermissionMode: parsed.data.toolPermissionMode } : {}),
-    ...(parsed.data.uiStateJson ? { uiStateJson: parsed.data.uiStateJson } : {}),
-  });
-  return store.getSession(existing.id);
-});
-
-app.post<{ Params: { id: string } }>("/api/sessions/:id/metadata/generate", async (request, reply) => {
-  const parsed = generateSessionMetadataRequestSchema.safeParse(request.body ?? {});
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-  const session = store.getSession(request.params.id);
-  if (!session) return reply.code(404).send({ error: "session not found" });
-  const handle = runner.getSession(session.id);
-  if (handle && (await handle.snapshot(session)).status !== "idle") return reply.code(409).send({ error: "metadata generation is available when the session is idle" });
-  try {
-    const suggestion = config.fakeAgent ? generateHeuristicMetadata(session) : await generateModelBackedMetadata(session);
-    if (!suggestion.deferred) {
-      const updated = store.updateSession(session.id, { incrementGenerationCount: true });
-      const hub = sessionHubs.get(session.id);
-      if (updated && hub) hub.broadcastMetadataUpdate(updated);
-    }
-    return suggestion;
-  } catch (error) {
-    request.log.warn({ error }, "metadata generation failed");
-    return reply.code(502).send({ error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
-  if (!store.deleteSession(request.params.id)) return reply.code(404).send({ error: "session not found" });
-  const hub = sessionHubs.get(request.params.id);
-  if (hub) {
-    sessionHubs.delete(request.params.id);
-    await hub.dispose();
-  } else {
-    await runner.disposeSession(request.params.id);
-  }
-  return reply.code(204).send();
-});
-
-app.get<{ Params: { id: string } }>("/api/sessions/:id/tree", async (request, reply) => {
-  const webSession = store.getSession(request.params.id);
-  if (!webSession) return reply.code(404).send({ error: "session not found" });
-  try {
-    const handle = runner.getSession(webSession.id);
-    const manager = handle?.session.sessionManager ?? SessionManager.open(webSession.piSessionFile, config.sessionDir, webSession.cwd);
-    const leafId = manager.getLeafId();
-    return { sessionId: webSession.id, leafId, tree: manager.getTree().map((node) => mapTreeNode(node, leafId)) };
-  } catch (error) {
-    return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.post<{ Params: { id: string } }>("/api/sessions/:id/tree/navigate", async (request, reply) => {
-  const parsed = navigateTreeRequestSchema.safeParse(request.body);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-  const webSession = store.getSession(request.params.id);
-  if (!webSession) return reply.code(404).send({ error: "session not found" });
-  try {
-    const handle = await runner.createSession({
-      id: webSession.id,
-      cwd: webSession.cwd,
-      piSessionFile: webSession.piSessionFile,
-    });
-    if (handle.session.isStreaming) return reply.code(409).send({ error: "cannot navigate while agent is running" });
-    const result = await handle.session.navigateTree(parsed.data.entryId, { summarize: parsed.data.summarize });
-    if (result.cancelled) return reply.code(409).send({ error: "navigation cancelled" });
-    const snapshot = await handle.snapshot(webSession);
-    return { snapshot, editorText: result.editorText };
-  } catch (error) {
-    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.post<{ Params: { id: string } }>("/api/sessions/:id/fork", async (request, reply) => {
-  const parsed = forkSessionRequestSchema.safeParse(request.body);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-  const source = store.getSession(request.params.id);
-  if (!source) return reply.code(404).send({ error: "session not found" });
-  try {
-    const id = crypto.randomUUID();
-    const piSessionFile = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId);
-    const title = parsed.data.title ?? `Fork of ${source.title ?? source.cwd}`;
-    const session = store.createSession({ id, cwd: source.cwd, piSessionFile, title, titleSource: parsed.data.title ? "manual" : "derived", summary: source.summary, summarySource: source.summary ? "derived" : "unset" });
-    return reply.code(201).send(session);
-  } catch (error) {
-    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string | number } }>("/api/sessions/:id/commands", async (request, reply) => {
-  const session = store.getSession(request.params.id);
-  if (!session) return reply.code(404).send({ error: "session not found" });
-  const parsed = commandQuerySchema.safeParse(request.query);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-
-  try {
-    const handle = await runner.createSession({
-      id: session.id,
-      cwd: session.cwd,
-      piSessionFile: session.piSessionFile,
-    });
-    const query = parsed.data.q.toLowerCase();
-    const commands = handle.getCommands()
-      .filter((command) => !query || command.name.toLowerCase().includes(query) || command.description?.toLowerCase().includes(query))
-      .sort((a, b) => {
-        const aStarts = query && a.name.toLowerCase().startsWith(query) ? 0 : 1;
-        const bStarts = query && b.name.toLowerCase().startsWith(query) ? 0 : 1;
-        return aStarts - bStarts || a.name.localeCompare(b.name);
-      })
-      .slice(0, parsed.data.limit);
-    return { query: parsed.data.q, commands };
-  } catch (error) {
-    return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
-  }
-});
-
-app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string | number } }>("/api/sessions/:id/files/search", async (request, reply) => {
-  const session = store.getSession(request.params.id);
-  if (!session) return reply.code(404).send({ error: "session not found" });
-  const parsed = fileSearchQuerySchema.safeParse(request.query);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-  const files = await searchFiles(session.cwd, parsed.data.q, parsed.data.limit);
-  return { query: parsed.data.q, files };
-});
-
-app.get<{ Params: { id: string }; Querystring: { prefix?: string; limit?: string | number } }>("/api/sessions/:id/files/complete", async (request, reply) => {
-  const session = store.getSession(request.params.id);
-  if (!session) return reply.code(404).send({ error: "session not found" });
-  const parsed = fileCompleteQuerySchema.safeParse(request.query);
-  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-  const files = await completeFiles(session.cwd, parsed.data.prefix, parsed.data.limit);
-  return { prefix: parsed.data.prefix, files };
-});
-
 registerArtifactRoutes(app, { artifactDir: config.artifactDir, authToken: config.authToken, store });
+
+
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
   return { seq, time: new Date().toISOString(), payload };
@@ -906,6 +421,27 @@ class SessionHub {
 }
 
 const sessionHubs = new Map<string, SessionHub>();
+
+registerMetadataRoutes(app, {
+  config,
+  store,
+  runner,
+  getBroadcaster: (sessionId) => sessionHubs.get(sessionId),
+});
+registerSearchRoutes(app, { store, runner });
+registerSessionRoutes(app, {
+  config,
+  workspaceRoots,
+  store,
+  runner,
+  disposeHub: async (sessionId) => {
+    const hub = sessionHubs.get(sessionId);
+    if (!hub) return false;
+    sessionHubs.delete(sessionId);
+    await hub.dispose();
+    return true;
+  },
+});
 
 app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true }, async (socket, request) => {
   const existingSession = store.getSession(request.params.id);
