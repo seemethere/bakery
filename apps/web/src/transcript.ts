@@ -671,11 +671,9 @@ export class PiTranscriptRow extends HTMLElement {
 
   private classNames(): string {
     if (!this.item) return "message";
-    const groupClass = this.item.kind === "tool" && this.item.status === "done" ? `tool-group-${this.toolGroupPosition}` : "";
-    const afterRunningClass = this.item.kind === "tool" && this.item.status === "done" && this.afterRunningTool ? "after-running-tool" : "";
     const developerBashClass = isDeveloperBashItem(this.item) ? "developer-bash" : "";
     const noContextClass = isDeveloperBashNoContextItem(this.item) ? "no-context" : "";
-    return ["message", this.item.kind, this.item.status ?? "", groupClass, afterRunningClass, developerBashClass, noContextClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    return ["message", this.item.kind, this.item.status ?? "", developerBashClass, noContextClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {

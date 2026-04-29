@@ -384,7 +384,7 @@
   .message.question,
   .message.system,
   .message.error,
-  .tool-run-group {
+  .tool-activity-strip {
     width: 100%;
     max-width: 100%;
   }
@@ -419,9 +419,8 @@
   }
 
   .message + .message,
-  .message + .tool-run-group,
-  .tool-run-group + .message,
-  .tool-run-group + .tool-run-group {
+  .message + .tool-activity-strip,
+  .tool-activity-strip + .message {
     margin-top: 14px;
   }
 
@@ -474,8 +473,14 @@
     max-width: min(42ch, 46vw);
   }
 
-  .tool-run-group summary span {
-    max-width: 44vw;
+  .tool-activity-strip {
+    gap: 8px;
+    min-height: 36px;
+    padding: 7px 10px;
+  }
+
+  .tool-activity-strip strong {
+    max-width: 48vw;
   }
 
   .message-action-bar {

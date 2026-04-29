@@ -8,7 +8,7 @@ import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessi
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
 import { TranscriptFollowController } from "./transcript-follow";
-import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyToolRunGroups, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
+import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscriptHtml, toolRunSummaryText } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
@@ -123,7 +123,6 @@ class PiWebAgentApp extends HTMLElement {
   private selectedTranscriptId = localStorage.getItem("piWebSelectedTranscriptId") ?? "";
   private openActionMenuId = "";
   private transcriptExpansion = new Map<string, boolean>();
-  private expandedToolGroupIds = new Set<string>();
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private pendingToolCallTitles: string[] = [];
   private dismissedPlanActionTranscriptId = "";
@@ -353,6 +352,7 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
 
+    const previousStatus = index === -1 ? undefined : this.transcript[index]?.status;
     if (index === -1) this.transcript.push(nextItem);
     else this.transcript[index] = { ...this.transcript[index], ...nextItem };
     const nextIndex = index === -1 ? this.transcript.length - 1 : index;
@@ -361,7 +361,7 @@ class PiWebAgentApp extends HTMLElement {
     const next = this.transcript[nextIndex + 1];
     if (previous?.kind === "tool") this.dirtyTranscriptIds.add(previous.id);
     if (next?.kind === "tool") this.dirtyTranscriptIds.add(next.id);
-    if (nextItem.kind === "tool" && nextItem.status === "done") this.transcriptStructureDirty = true;
+    if (nextItem.kind === "tool" && (index === -1 || previousStatus !== nextItem.status || nextItem.status === "done" || nextItem.status === "error")) this.transcriptStructureDirty = true;
     this.transcriptFollow.markUnread(nextItem.id);
     if (!this.selectedTranscriptId) this.selectTranscriptItem(nextItem.id, false);
   }
@@ -2182,11 +2182,10 @@ class PiWebAgentApp extends HTMLElement {
     return "";
   }
 
-  private transcriptRenderOptions(): { activeToolGroupId?: string | undefined; nowMs: number; compactLiveToolGroups: boolean } {
+  private transcriptRenderOptions(): { activeToolGroupId?: string | undefined; nowMs: number } {
     return {
       activeToolGroupId: this.status === "running" ? latestGroupableToolGroupId(this.transcript) : undefined,
       nowMs: Date.now(),
-      compactLiveToolGroups: this.mobileLayout,
     };
   }
 
@@ -2210,7 +2209,7 @@ class PiWebAgentApp extends HTMLElement {
         </div>
       </div>`;
     }
-    return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds, this.transcriptRenderOptions());
+    return renderTranscriptHtml(this.transcript, this.transcriptRenderOptions());
   }
 
   private useEmptyQuickStart(action: string): void {
@@ -2289,7 +2288,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private hydrateTranscriptRows(): void {
-    hydrateTranscriptDomRows(this, this.transcript, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions(), { expandedToolGroupIds: this.expandedToolGroupIds });
+    hydrateTranscriptDomRows(this, this.transcript, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
   }
 
   private renderStatusPill(): string {
@@ -2452,13 +2451,13 @@ class PiWebAgentApp extends HTMLElement {
   private patchRunningToolGroupElapsed(): boolean {
     const groupId = latestGroupableToolGroupId(this.transcript);
     if (!groupId) return false;
-    const details = Array.from(this.querySelectorAll<HTMLElement>("details[data-tool-run-group]"))
-      .find((element) => element.dataset.toolRunGroup === groupId);
-    const title = details?.querySelector<HTMLElement>("summary strong");
-    const meta = details?.querySelector<HTMLElement>("summary em");
+    const activity = Array.from(this.querySelectorAll<HTMLElement>("[data-tool-activity]"))
+      .find((element) => element.dataset.toolActivity === groupId);
+    const title = activity?.querySelector<HTMLElement>("strong");
+    const meta = activity?.querySelector<HTMLElement>("em");
     if (!title) return false;
 
-    const itemIds = new Set((details?.dataset.toolRunItemIds ?? groupId).split("|"));
+    const itemIds = new Set((activity?.dataset.toolActivityIds ?? "").split("|").filter(Boolean));
     const items = this.transcript.filter((item) => itemIds.has(item.id));
     if (items.length === 0) return false;
     const summary = toolRunSummaryText(items, { activeToolGroupId: groupId, nowMs: Date.now() });
@@ -2498,9 +2497,7 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     const rowOptions = this.transcriptRowStateOptions();
-    const patchedToolIds = patchDirtyToolRunGroups(this, transcript, this.transcript, this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions(), { expandedToolGroupIds: this.expandedToolGroupIds, renderOptions: this.transcriptRenderOptions() });
-    const remainingDirtyIds = new Set([...this.dirtyTranscriptIds].filter((id) => !patchedToolIds.has(id)));
-    patchDirtyTranscriptRows(this, transcript, this.transcript, remainingDirtyIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
+    patchDirtyTranscriptRows(this, transcript, this.transcript, this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();

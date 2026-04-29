@@ -384,9 +384,8 @@
 }
 
 .message + .message,
-.message + .tool-run-group,
-.tool-run-group + .message,
-.tool-run-group + .tool-run-group {
+.message + .tool-activity-strip,
+.tool-activity-strip + .message {
   margin-top: 18px;
 }
 
@@ -651,205 +650,47 @@
   margin-top: 2px;
 }
 
-.message.tool.done.collapsed.after-running-tool:not(.developer-bash) {
-  margin-top: 2px;
-  border-left-style: dashed;
-  opacity: 0.72;
-}
-
-.message.tool.done.collapsed.after-running-tool:not(.developer-bash) .message-header::before {
-  content: "also ran";
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--color-tool-done-border) 52%, transparent);
-  border-radius: 999px;
-  color: var(--color-text-muted);
-  padding: 1px 6px;
-  font-size: 10px;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.tool-run-group {
-  position: relative;
-  box-sizing: border-box;
-  width: min(100%, 820px);
-  margin-right: auto;
-  padding-left: 16px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  overflow: visible;
-  opacity: 0.9;
-}
-
-.tool-run-group::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 0;
-  width: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-tool-done-border) 58%, transparent);
-}
-
-.tool-run-group summary {
+.tool-activity-strip {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 32px;
-  padding: 4px 0;
-  color: var(--c-aab7cf);
-  cursor: pointer;
-  font-size: 12px;
-  list-style: none;
-  outline: none;
-}
-
-.tool-run-group summary:focus-visible {
-  border-radius: 6px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-selected-ring) 32%, transparent);
-}
-
-.tool-run-group summary::-webkit-details-marker {
-  display: none;
-}
-
-.tool-run-group summary::before {
-  content: "▸";
-  flex: 0 0 auto;
-  color: var(--c-7e8fad);
-  font-size: 10px;
-}
-
-.tool-run-group[open] summary::before {
-  content: "▾";
-}
-
-.tool-run-group summary strong {
-  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: min(100%, 820px);
+  min-height: 34px;
+  margin-right: auto;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 34%, var(--color-tool-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-tool-bg) 86%, var(--color-accent) 14%);
   color: var(--color-text-secondary);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-weight: 700;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--color-shadow) 20%, transparent);
+  font-size: 12px;
 }
 
-.tool-run-group summary em {
+.tool-activity-strip::before {
+  content: "";
   flex: 0 0 auto;
-  color: var(--color-text-muted);
-  font-style: normal;
-  font-weight: 650;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 
-.tool-run-group.has-failed-tool summary em {
-  color: color-mix(in srgb, var(--color-error) 76%, var(--color-text-secondary));
-}
-
-.tool-run-group summary span {
-  flex: 0 1 auto;
+.tool-activity-strip strong {
   min-width: 0;
-  max-width: min(62ch, 52vw);
   overflow: hidden;
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
+  font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tool-run-group.live-tool-stack {
-  opacity: 1;
-}
-
-.tool-run-group.live-tool-stack::before {
-  background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--color-info) 46%, transparent) 38%, color-mix(in srgb, var(--color-info) 70%, transparent) 100%);
-}
-
-.tool-run-group.live-tool-stack.has-failed-tool::before {
-  background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--color-tool-done-border) 42%, transparent) 38%, color-mix(in srgb, var(--color-error) 70%, transparent) 100%);
-}
-
-.tool-run-items {
-  display: grid;
-  gap: 0;
-  padding: 0 0 2px 18px;
-  border-top: 0;
-  background: transparent;
-}
-
-.tool-run-stack-slot {
-  transition: opacity 160ms ease, transform 160ms ease;
-}
-
-.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(5) { opacity: 0.38; }
-.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(4) { opacity: 0.52; }
-.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(3) { opacity: 0.68; }
-.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(2) { opacity: 0.84; }
-.tool-run-group.live-tool-stack .tool-run-stack-slot:nth-last-child(1) { opacity: 1; }
-
-.tool-run-group.live-tool-stack .tool-run-stack-slot.failed {
-  opacity: 1;
-}
-
-.tool-run-items .message.tool.done.collapsed:not(.developer-bash) {
-  width: 100%;
-  margin: 0;
-  padding-left: 0;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-tool-done-border) 26%, transparent);
-  background: transparent;
-  box-shadow: none;
-  opacity: 0.86;
-}
-
-.tool-run-items .message.tool.done.collapsed:not(.developer-bash) .message-header {
-  min-height: 34px;
-  padding: 5px 0;
-  border-bottom: 0;
-}
-
-.tool-run-items .message.tool.done.collapsed:not(.developer-bash) .message-header strong {
-  color: var(--color-text-secondary);
-}
-
-.tool-run-items .message-header .tool-summary {
+.tool-activity-strip em {
+  flex: 0 0 auto;
   color: var(--color-text-muted);
-}
-
-.tool-run-items .message.tool.done.collapsed:not(.developer-bash) .message-status {
-  display: none;
-}
-
-.tool-run-items .message.tool.done:not(.collapsed):not(.developer-bash) {
-  width: 100%;
-  margin: 0;
-  padding-left: 0;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-tool-done-border) 26%, transparent);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.tool-run-items .message.tool.done:not(.collapsed):not(.developer-bash) .message-header {
-  min-height: 34px;
-  padding: 5px 0;
-  border-bottom: 0;
-}
-
-.tool-run-items .message.tool.done:not(.collapsed):not(.developer-bash) .message-body {
-  margin: 0 0 10px 28px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-}
-
-.tool-run-items .message.tool.done:not(.collapsed):not(.developer-bash) .message-status {
-  display: none;
-}
-
-.message.tool.done.collapsed.tool-group-start,
-.message.tool.done.collapsed.tool-group-middle,
-.message.tool.done.collapsed.tool-group-end {
-  box-shadow: none;
+  font-style: normal;
+  font-weight: 650;
 }
 
 .message.tool.done.collapsed .message-header {

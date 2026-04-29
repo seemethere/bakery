@@ -24,7 +24,7 @@ function item(partial: Partial<TranscriptItem> & Pick<TranscriptItem, "id" | "ki
 }
 
 describe("transcript renderer", () => {
-  test("groups adjacent completed non-image tool rows", () => {
+  test("renders completed tool rows flat instead of nesting them in groups", () => {
     const transcript = [
       item({ id: "u1", kind: "user", title: "You", body: "hello" }),
       item({ id: "t1", kind: "tool", title: "$ ls", startedAt: "2026-04-27T00:00:00.000Z", endedAt: "2026-04-27T00:00:00.400Z", durationMs: 400 }),
@@ -32,31 +32,30 @@ describe("transcript renderer", () => {
       item({ id: "a1", kind: "assistant", title: "Pi", body: "done" }),
     ];
 
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(["t1|t2"]));
+    const html = renderHelpers.renderTranscriptHtml(transcript);
 
     expect(html).toContain('data-transcript-id="u1"');
-    expect(html).toContain('class="tool-run-group"');
-    expect(html).toContain('data-tool-run-group="t1|t2" data-tool-run-item-ids="t1|t2" open');
-    expect(html).toContain("Ran 2 tools");
-    expect(html).toContain("1.5s");
-    expect(html).toContain(">Read</span>");
+    expect(html).not.toContain("tool-run-group");
+    expect(html).not.toContain("tool-activity-strip");
+    expect(html).toContain('data-transcript-id="t1"');
+    expect(html).toContain('data-transcript-id="t2"');
     expect(html).toContain('data-transcript-id="a1"');
   });
 
-  test("uses wall-clock elapsed time for the active tool group", () => {
+  test("does not treat completed tools as an active elapsed group", () => {
     const transcript = [
       item({ id: "t1", kind: "tool", title: "$ ls", startedAt: "2026-04-27T00:00:00.000Z", endedAt: "2026-04-27T00:00:00.400Z", durationMs: 400 }),
       item({ id: "t2", kind: "tool", title: "Read", startedAt: "2026-04-27T00:00:00.500Z", endedAt: "2026-04-27T00:00:01.500Z", durationMs: 1000 }),
     ];
 
-    expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBe("t1|t2");
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(), { activeToolGroupId: "t1|t2", nowMs: Date.parse("2026-04-27T00:00:05.000Z") });
+    expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBeUndefined();
+    const html = renderHelpers.renderTranscriptHtml(transcript, { nowMs: Date.parse("2026-04-27T00:00:05.000Z") });
 
-    expect(html).toContain("Ran 2 tools");
-    expect(html).toContain("5s");
+    expect(html).not.toContain("Ran 2 tools");
+    expect(html.match(/data-transcript-id=/g)?.length).toBe(2);
   });
 
-  test("groups live tools around the current tool with only the five most recent receipts", () => {
+  test("renders one flat activity strip for the current running tool run", () => {
     const transcript = [
       item({ id: "t1", kind: "tool", title: "Read 1" }),
       item({ id: "t2", kind: "tool", title: "Read 2" }),
@@ -66,94 +65,82 @@ describe("transcript renderer", () => {
       item({ id: "t6", kind: "tool", title: "Read 6", status: "running" }),
     ];
 
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+    const html = renderHelpers.renderTranscriptHtml(transcript);
 
-    expect(html).toContain('class="tool-run-group live-tool-stack"');
-    expect(html).toContain('data-tool-run-group="live:t1" data-tool-run-item-ids="t1|t2|t3|t4|t5|t6" data-live-tool-stack="true" open');
+    expect(html).toContain('class="tool-activity-strip"');
+    expect(html).toContain('data-tool-activity="activity:t1" data-tool-activity-ids="t1|t2|t3|t4|t5|t6"');
     expect(html).toContain("Running Read 6");
     expect(html).toContain("6 tools");
     expect(html).not.toContain("Tool activity");
-    expect(html).toContain("1 earlier");
-    expect(html).not.toContain('data-transcript-id="t1"');
-    expect(html).toContain('data-transcript-id="t2"');
+    expect(html).not.toContain("earlier");
+    expect(html).toContain('data-transcript-id="t1"');
     expect(html).toContain('data-transcript-id="t6"');
   });
 
-  test("renders a single running tool as a stable live group", () => {
+  test("renders a single running tool with a stable activity id", () => {
     const transcript = [
       item({ id: "t1", kind: "tool", title: "Read", status: "running", startedAt: "2026-04-27T00:00:00.000Z" }),
     ];
 
-    expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBe("live:t1");
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(), { activeToolGroupId: "live:t1", nowMs: Date.parse("2026-04-27T00:00:03.000Z") });
+    expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBe("activity:t1");
+    const html = renderHelpers.renderTranscriptHtml(transcript, { activeToolGroupId: "activity:t1", nowMs: Date.parse("2026-04-27T00:00:03.000Z") });
 
-    expect(html).toContain('data-tool-run-group="live:t1" data-tool-run-item-ids="t1" data-live-tool-stack="true" open');
+    expect(html).toContain('data-tool-activity="activity:t1" data-tool-activity-ids="t1"');
     expect(html).toContain("Running Read");
     expect(html).toContain("1 tool · 3s");
+    expect(html).toContain('data-transcript-id="t1"');
   });
 
-  test("keeps the live tool group id stable as tools are appended", () => {
+  test("keeps the activity id stable as tools are appended", () => {
     const first = [item({ id: "t1", kind: "tool", title: "Read", status: "running" })];
     const second = [item({ id: "t1", kind: "tool", title: "Read" }), item({ id: "t2", kind: "tool", title: "Bash", status: "running" })];
 
-    expect(renderHelpers.latestGroupableToolGroupId(first)).toBe("live:t1");
-    expect(renderHelpers.latestGroupableToolGroupId(second)).toBe("live:t1");
-    expect(renderHelpers.renderTranscriptHtml(second, new Set())).toContain("Running Bash");
+    expect(renderHelpers.latestGroupableToolGroupId(first)).toBe("activity:t1");
+    expect(renderHelpers.latestGroupableToolGroupId(second)).toBe("activity:t1");
+    expect(renderHelpers.renderTranscriptHtml(second)).toContain("Running Bash");
   });
 
-  test("renders live tool groups compact when requested", () => {
+  test("keeps developer bash outside activity summaries", () => {
     const transcript = [
-      item({ id: "t1", kind: "tool", title: "Read" }),
-      item({ id: "t2", kind: "tool", title: "Bash", status: "running" }),
-    ];
-
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(), { compactLiveToolGroups: true });
-
-    expect(html).toContain('data-live-tool-stack="true" ');
-    expect(html).toContain('data-tool-run-group="live:t1"');
-    expect(html).not.toContain('data-live-tool-stack="true" open');
-    expect(html).toContain("Running Bash");
-  });
-
-  test("keeps developer bash and single tools outside live grouping", () => {
-    const transcript = [
-      item({ id: "bash:local", kind: "tool", title: "$ pwd" }),
+      item({ id: "bash:local", kind: "tool", title: "$ pwd", status: "running" }),
       item({ id: "single", kind: "tool", title: "Read" }),
     ];
 
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+    const html = renderHelpers.renderTranscriptHtml(transcript);
 
-    expect(html).not.toContain("tool-run-group");
+    expect(html).not.toContain("tool-activity-strip");
     expect(html.match(/data-transcript-id=/g)?.length).toBe(2);
   });
 
-  test("keeps failed tools quiet in completed groups", () => {
+  test("summarizes failed tools in an active flat activity strip", () => {
     const transcript = [
-      item({ id: "t1", kind: "tool", title: "Read" }),
-      item({ id: "t2", kind: "tool", title: "Bash", status: "error" }),
+      item({ id: "t1", kind: "tool", title: "Read", status: "error" }),
+      item({ id: "t2", kind: "tool", title: "Bash", status: "running" }),
     ];
 
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+    const html = renderHelpers.renderTranscriptHtml(transcript);
 
-    expect(html).toContain('class="tool-run-group"');
-    expect(html).not.toContain("live-tool-stack");
-    expect(html).not.toContain("failed</em>");
-    expect(html).toContain('tool-run-stack-slot tool-run-stack-slot-2 failed');
+    expect(html).toContain('class="tool-activity-strip"');
+    expect(html).toContain("2 tools");
+    expect(html).toContain("1 failed");
+    expect(html).toContain('data-transcript-id="t1"');
+    expect(html).toContain('data-transcript-id="t2"');
   });
 
-  test("groups completed image tools with adjacent background tools", () => {
+  test("renders completed image tools as flat rows", () => {
     const transcript = [
       item({ id: "t1", kind: "tool", title: "$ ls" }),
       item({ id: "image", kind: "tool", title: "read screenshots/fixture.png", segments: [{ kind: "image", label: "image", src: "data:image/png;base64,abc=" }] }),
     ];
 
-    const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
+    const html = renderHelpers.renderTranscriptHtml(transcript);
 
-    expect(html).toContain('class="tool-run-group"');
-    expect(html).toContain('data-tool-run-group="t1|image"');
+    expect(html).not.toContain("tool-run-group");
+    expect(html).toContain('data-transcript-id="t1"');
+    expect(html).toContain('data-transcript-id="image"');
   });
 
-  test("calculates tool grouping positions and running adjacency", () => {
+  test("keeps tool rows visually flat without adjacent grouping positions", () => {
     const transcript = [
       item({ id: "running", kind: "tool", title: "Bash", status: "running" }),
       item({ id: "done1", kind: "tool", title: "Read" }),
@@ -161,9 +148,9 @@ describe("transcript renderer", () => {
       item({ id: "user", kind: "user", title: "You" }),
     ];
 
-    expect(renderHelpers.isAfterRunningTool(transcript, transcript[1]!)).toBe(true);
-    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[1]!)).toBe("middle");
-    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[2]!)).toBe("end");
+    expect(renderHelpers.isAfterRunningTool(transcript, transcript[1]!)).toBe(false);
+    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[1]!)).toBe("single");
+    expect(renderHelpers.toolGroupPositionFor(transcript, transcript[2]!)).toBe("single");
     expect(renderHelpers.toolGroupPositionFor(transcript, transcript[3]!)).toBe("single");
   });
 

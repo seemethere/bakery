@@ -306,9 +306,9 @@ async function runSessionRouting(page: Page): Promise<Record<string, unknown>> {
 
 async function runThemeGallery(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await sendPromptAndWaitIdle(page, "Please create a theme gallery baseline with a local image path, screenshot artifact path, and multiple tools for grouped tool activity.");
+  await sendPromptAndWaitIdle(page, "Please create a theme gallery baseline with a local image path, screenshot artifact path, and multiple tools for flat tool activity.");
   await page.locator(".artifact-image img").first().waitFor({ timeout: 5_000 });
-  await page.locator(".tool-run-group").first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.tool").first().waitFor({ timeout: 5_000 });
 
   await page.locator("#prompt").fill("Please produce a long narrow running tool stream for the theme component gallery.");
   await page.locator("#send").click();
@@ -1209,7 +1209,7 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
-  await page.locator(".tool-run-group").waitFor({ timeout: 15_000 });
+  await page.locator(".tool-activity-strip").waitFor({ timeout: 15_000 });
   await page.evaluate(() => {
     if (window.__piWebPerf) {
       window.__piWebPerf.renderCount = 0;
@@ -1255,15 +1255,15 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
 async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please run multiple tools for compact grouping validation.");
-  const group = page.locator(".tool-run-group").first();
-  await group.waitFor({ timeout: 5_000 });
-  await page.locator(".tool-run-group summary", { hasText: /Ran 4 tools/ }).waitFor({ timeout: 5_000 });
-  const visibleToolRowsBefore = await page.locator(".tool-run-group .message.tool:visible").count();
-  if (visibleToolRowsBefore !== 0) throw new Error(`Expected grouped tool rows to be hidden before expansion, saw ${visibleToolRowsBefore}`);
-  await group.locator("summary").click();
-  await page.waitForFunction(() => document.querySelectorAll(".tool-run-group[open] .message.tool").length >= 4);
-  await page.locator(".tool-run-group[open] .message.tool", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
-  const overflowButtons = page.locator('.tool-run-group[open] .message.tool [data-row-action="menu"]');
+  await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 4, null, { timeout: 5_000 });
+  const groups = await page.locator(".tool-run-group").count();
+  if (groups !== 0) throw new Error(`Expected flat tool receipts with no nested groups, saw ${groups} groups`);
+  const visibleToolRows = await page.locator(".message.tool:visible").count();
+  if (visibleToolRows < 4) throw new Error(`Expected flat visible tool rows, saw ${visibleToolRows}`);
+  await page.locator(".message.tool", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
+  const collapsedBefore = await page.locator(".message.tool.collapsed").count();
+  if (collapsedBefore < 3) throw new Error(`Expected completed flat tool receipts to be collapsed, saw ${collapsedBefore}`);
+  const overflowButtons = page.locator('.message.tool [data-row-action="menu"]');
   await overflowButtons.nth(0).click();
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1);
   await overflowButtons.nth(1).click();
@@ -1271,9 +1271,7 @@ async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0);
   await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
-  await group.locator("summary").click();
-  await page.waitForFunction(() => !document.querySelector(".tool-run-group")?.hasAttribute("open"));
-  return { groups: await page.locator(".tool-run-group").count(), ...(await collectMetrics(page)) };
+  return { groups, toolRows: await page.locator(".message.tool").count(), ...(await collectMetrics(page)) };
 }
 
 async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {
@@ -1397,19 +1395,19 @@ async function runMobileLongTranscriptControls(page: Page): Promise<Record<strin
   }));
   responsiveness.push(await timed("mobile-fill-prompt-after-heavy-transcript", () => page.locator("#prompt").fill("typing after mobile heavy transcript")));
 
-  const group = page.locator(".tool-run-group").first();
-  await group.waitFor({ timeout: 5_000 });
-  responsiveness.push(await timed("mobile-open-completed-tool-group", async () => {
-    await group.locator("summary").click();
-    await page.waitForFunction(() => Boolean(document.querySelector(".tool-run-group[open]")), null, { timeout: 5_000 });
+  const firstTool = page.locator(".message.tool").first();
+  await firstTool.waitFor({ timeout: 5_000 });
+  responsiveness.push(await timed("mobile-focus-flat-tool-receipt", async () => {
+    await firstTool.scrollIntoViewIfNeeded();
+    await firstTool.waitFor({ state: "visible", timeout: 5_000 });
   }));
-  const firstToolToggle = page.locator('.tool-run-group[open] .message.tool [data-row-action="toggle-output"]').first();
+  const firstToolToggle = page.locator('.message.tool [data-row-action="toggle-output"]').first();
   responsiveness.push(await timed("mobile-expand-tool-output", async () => {
     await firstToolToggle.click();
-    await page.locator(".tool-run-group[open] .message.tool:not(.collapsed) .message-body").first().waitFor({ state: "visible", timeout: 5_000 });
+    await page.locator(".message.tool:not(.collapsed) .message-body").first().waitFor({ state: "visible", timeout: 5_000 });
   }));
   responsiveness.push(await timed("mobile-open-tool-action-menu", async () => {
-    await page.locator('.tool-run-group[open] .message.tool [data-row-action="menu"]').first().click();
+    await page.locator('.message.tool [data-row-action="menu"]').first().click();
     await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1, null, { timeout: 5_000 });
   }));
 
