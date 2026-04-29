@@ -14,7 +14,7 @@ import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactIm
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
 import { parseAppRoute, sessionsRoutePath, sessionRoutePath, settingsRoutePath } from "./router";
-import { escapeHtml, isRecord, recordPerfSample } from "./utils";
+import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
 import "./styles.css";
 
@@ -2248,7 +2248,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private scrollTranscriptToBottom(): void {
-    this.transcriptFollow.scrollToBottom(this);
+    this.transcriptFollow.scrollToBottom(this, "app-scroll-bottom");
   }
 
   private jumpToLatest(): void {
@@ -2257,7 +2257,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private scheduleTranscriptFollow(): void {
-    this.transcriptFollow.scheduleFollow(this);
+    this.transcriptFollow.scheduleFollow(this, "app-scheduled-follow");
   }
 
   private syncTranscriptScroll(): void {
@@ -2401,10 +2401,14 @@ class PiWebAgentApp extends HTMLElement {
     if (!shell) return;
     const queue = shell.querySelector<HTMLElement>(".running-queue");
     if (!queue) {
+      if (shell.style.getPropertyValue("--running-queue-height")) recordPerfEvent("queueHeight", "removed", { height: 0 });
       shell.style.removeProperty("--running-queue-height");
       return;
     }
-    shell.style.setProperty("--running-queue-height", `${Math.ceil(queue.getBoundingClientRect().height)}px`);
+    const height = Math.ceil(queue.getBoundingClientRect().height);
+    const nextValue = `${height}px`;
+    if (shell.style.getPropertyValue("--running-queue-height") !== nextValue) recordPerfEvent("queueHeight", "changed", { height });
+    shell.style.setProperty("--running-queue-height", nextValue);
   }
 
   private existingTranscriptRows(): Map<string, HTMLElement> {
@@ -2433,6 +2437,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private patchTranscriptStructure(transcript: HTMLElement): void {
+    recordPerfEvent("structurePatch", "transcript-structure-dirty", { transcriptItems: this.transcript.length, dirtyRows: this.dirtyTranscriptIds.size });
     const existingRows = this.existingTranscriptRows();
     const template = document.createElement("template");
     template.innerHTML = this.renderTranscript();
@@ -2473,8 +2478,10 @@ class PiWebAgentApp extends HTMLElement {
     if (items.length === 0) return false;
     const summary = toolRunSummaryText(items, { activeToolGroupId: groupId, nowMs: Date.now() });
     const receiptText = summary.receiptLabel;
-    if (receipt.textContent !== receiptText) receipt.textContent = receiptText;
+    const changed = receipt.textContent !== receiptText;
+    if (changed) receipt.textContent = receiptText;
     receipt.title = receiptText;
+    recordPerfEvent("receiptPatch", changed ? "changed" : "unchanged", { itemCount: items.length });
     return true;
   }
 
@@ -2504,7 +2511,7 @@ class PiWebAgentApp extends HTMLElement {
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
       this.shellPatchDirty = false;
-      recordPerfSample("patch", performance.now() - start);
+      recordPerfSample("patch", performance.now() - start, "structure");
       return true;
     }
 
@@ -2520,7 +2527,7 @@ class PiWebAgentApp extends HTMLElement {
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
     this.shellPatchDirty = false;
-    recordPerfSample("patch", performance.now() - start);
+    recordPerfSample("patch", performance.now() - start, "dirty-rows");
     return true;
   }
 
@@ -2536,6 +2543,7 @@ class PiWebAgentApp extends HTMLElement {
       this.renderScheduled = false;
       this.renderTimer = undefined;
       if ((delayMs > 0 || this.shellPatchDirty || this.transcriptStructureDirty || this.dirtyTranscriptIds.size > 0) && this.patchLiveRender()) return;
+      recordPerfEvent("renderFallback", "request-render", { delayMs, shellPatchDirty: this.shellPatchDirty, transcriptStructureDirty: this.transcriptStructureDirty, dirtyRows: this.dirtyTranscriptIds.size, forceFullRender: this.forceFullRender });
       this.render();
     }, delayMs);
   }
@@ -2786,7 +2794,7 @@ class PiWebAgentApp extends HTMLElement {
         }
       }
       this.syncAutocompleteScroll();
-      recordPerfSample("render", performance.now() - renderStart);
+      recordPerfSample("render", performance.now() - renderStart, "route");
       return;
     }
     this.replaceHtmlPreservingTranscript(`
@@ -2875,7 +2883,7 @@ class PiWebAgentApp extends HTMLElement {
       this.focusPendingQuestionOnNextRender = false;
       this.focusQuestionPanel();
     }
-    recordPerfSample("render", performance.now() - renderStart);
+    recordPerfSample("render", performance.now() - renderStart, "session");
   }
 }
 

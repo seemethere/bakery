@@ -135,6 +135,9 @@ async function collectMetrics(page: Page): Promise<Record<string, unknown>> {
         renderCount: perf.renderCount,
         patchCount: perf.patchCount,
         rowUpdateCount: perf.rowUpdateCount ?? 0,
+        eventCounts: perf.eventCounts ?? {},
+        reasonCounts: perf.reasonCounts ?? {},
+        recentEvents: perf.recentEvents ?? [],
         render: summarize(perf.renderMs),
         patch: summarize(perf.patchMs),
         rowUpdate: summarize(perf.rowUpdateMs ?? []),
@@ -1236,6 +1239,9 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
       window.__piWebPerf.patchMs = [];
       window.__piWebPerf.rowUpdateCount = 0;
       window.__piWebPerf.rowUpdateMs = [];
+      window.__piWebPerf.eventCounts = {};
+      window.__piWebPerf.reasonCounts = {};
+      window.__piWebPerf.recentEvents = [];
     }
   });
   await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
@@ -1424,6 +1430,9 @@ async function runMobileLongTranscriptControls(page: Page): Promise<Record<strin
       window.__piWebPerf.patchMs = [];
       window.__piWebPerf.rowUpdateCount = 0;
       window.__piWebPerf.rowUpdateMs = [];
+      window.__piWebPerf.eventCounts = {};
+      window.__piWebPerf.reasonCounts = {};
+      window.__piWebPerf.recentEvents = [];
     }
     window.__piWebLongTasks = [];
   });

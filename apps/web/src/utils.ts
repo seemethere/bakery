@@ -1,3 +1,12 @@
+export type BrowserPerfEventKind = "render" | "patch" | "rowUpdate" | "structurePatch" | "receiptPatch" | "scrollCorrection" | "autoScrollTransition" | "queueHeight" | "renderFallback";
+
+export type BrowserPerfEvent = {
+  kind: BrowserPerfEventKind;
+  reason: string;
+  at: number;
+  data?: Record<string, number | string | boolean | null> | undefined;
+};
+
 export type BrowserPerfMetrics = {
   renderCount: number;
   renderMs: number[];
@@ -5,6 +14,9 @@ export type BrowserPerfMetrics = {
   patchMs: number[];
   rowUpdateCount: number;
   rowUpdateMs: number[];
+  eventCounts?: Partial<Record<BrowserPerfEventKind, number>>;
+  reasonCounts?: Record<string, number>;
+  recentEvents?: BrowserPerfEvent[];
 };
 
 declare global {
@@ -13,10 +25,28 @@ declare global {
   }
 }
 
-export function recordPerfSample(kind: "render" | "patch" | "rowUpdate", ms: number): void {
+function ensurePerfMetrics(): BrowserPerfMetrics {
   const perf = window.__piWebPerf ??= { renderCount: 0, renderMs: [], patchCount: 0, patchMs: [], rowUpdateCount: 0, rowUpdateMs: [] };
   perf.rowUpdateCount ??= 0;
   perf.rowUpdateMs ??= [];
+  perf.eventCounts ??= {};
+  perf.reasonCounts ??= {};
+  perf.recentEvents ??= [];
+  return perf;
+}
+
+export function recordPerfEvent(kind: BrowserPerfEventKind, reason: string, data?: BrowserPerfEvent["data"]): void {
+  const perf = ensurePerfMetrics();
+  perf.eventCounts![kind] = (perf.eventCounts![kind] ?? 0) + 1;
+  const reasonKey = `${kind}:${reason}`;
+  perf.reasonCounts![reasonKey] = (perf.reasonCounts![reasonKey] ?? 0) + 1;
+  perf.recentEvents!.push({ kind, reason, at: Math.round(performance.now()), data });
+  if (perf.recentEvents!.length > 80) perf.recentEvents!.shift();
+}
+
+export function recordPerfSample(kind: "render" | "patch" | "rowUpdate", ms: number, reason = "unspecified"): void {
+  const perf = ensurePerfMetrics();
+  recordPerfEvent(kind, reason, { ms: Math.round(ms) });
   if (kind === "render") {
     perf.renderCount++;
     perf.renderMs.push(ms);

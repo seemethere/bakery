@@ -1,3 +1,5 @@
+import { recordPerfEvent } from "./utils";
+
 const autoScrollStorageKey = "piWebAutoScroll";
 const nearBottomThresholdPx = 48;
 const userScrollIntentMs = 1500;
@@ -22,7 +24,8 @@ export class TranscriptFollowController {
     return this.unreadTranscriptIdsValue.size;
   }
 
-  setAutoScroll(value: boolean): void {
+  setAutoScroll(value: boolean, reason = "set"): void {
+    if (this.autoScrollValue !== value) recordPerfEvent("autoScrollTransition", reason, { enabled: value });
     this.autoScrollValue = value;
     localStorage.setItem(autoScrollStorageKey, String(value));
   }
@@ -66,33 +69,42 @@ export class TranscriptFollowController {
     return transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= nearBottomThresholdPx;
   }
 
-  scrollToBottom(root: ParentNode): void {
+  scrollToBottom(root: ParentNode, reason = "scroll-to-bottom"): void {
     const transcript = root.querySelector<HTMLElement>(".transcript");
     if (!transcript) return;
+    const before = transcript.scrollTop;
     transcript.scrollTop = Math.max(0, transcript.scrollHeight - transcript.clientHeight);
     this.scrollTop = transcript.scrollTop;
+    if (Math.abs(transcript.scrollTop - before) >= 1) recordPerfEvent("scrollCorrection", reason, { before: Math.round(before), after: Math.round(transcript.scrollTop), delta: Math.round(transcript.scrollTop - before), autoScroll: this.autoScrollValue });
+  }
+
+  private preserveScrollPosition(transcript: HTMLElement, reason: string): void {
+    const before = transcript.scrollTop;
+    transcript.scrollTop = Math.min(this.scrollTop, Math.max(0, transcript.scrollHeight - transcript.clientHeight));
+    this.scrollTop = transcript.scrollTop;
+    if (Math.abs(transcript.scrollTop - before) >= 1) recordPerfEvent("scrollCorrection", reason, { before: Math.round(before), after: Math.round(transcript.scrollTop), delta: Math.round(transcript.scrollTop - before), autoScroll: this.autoScrollValue });
   }
 
   jumpToLatest(root: ParentNode): void {
-    this.setAutoScroll(true);
+    this.setAutoScroll(true, "jump-to-latest");
     this.clearUnread();
-    this.scrollToBottom(root);
+    this.scrollToBottom(root, "jump-to-latest");
   }
 
-  scheduleFollow(root: ParentNode): void {
-    requestAnimationFrame(() => this.scrollToBottom(root));
+  scheduleFollow(root: ParentNode, reason = "scheduled-follow"): void {
+    requestAnimationFrame(() => this.scrollToBottom(root, reason));
   }
 
   syncScroll(root: ParentNode): void {
     const transcript = root.querySelector<HTMLElement>(".transcript");
     if (!transcript) return;
     if (!this.autoScrollValue || this.preserveScrollOnce) {
-      transcript.scrollTop = Math.min(this.scrollTop, Math.max(0, transcript.scrollHeight - transcript.clientHeight));
+      this.preserveScrollPosition(transcript, this.preserveScrollOnce ? "preserve-once" : "auto-scroll-paused");
       this.preserveScrollOnce = false;
       return;
     }
 
-    this.scheduleFollow(root);
+    this.scheduleFollow(root, "sync-scroll");
   }
 
   patchJumpToLatest(root: ParentNode, onJumpToLatest: () => void): void {
@@ -122,7 +134,7 @@ export class TranscriptFollowController {
   }
 
   disableFollowIfDetached(transcript: HTMLElement | null | undefined): void {
-    if (this.autoScrollValue && transcript && !this.isNearBottom(transcript)) this.autoScrollValue = false;
+    if (this.autoScrollValue && transcript && !this.isNearBottom(transcript)) this.setAutoScroll(false, "detached-during-patch");
   }
 
   handleScroll(event: Event, callbacks: { requestRender: () => void; patchJumpToLatest: () => void; scheduleFollow: () => void }): void {
@@ -130,7 +142,7 @@ export class TranscriptFollowController {
     this.scrollTop = transcript.scrollTop;
     if (this.isNearBottom(transcript)) {
       if (!this.autoScrollValue || this.unreadCount > 0) {
-        this.setAutoScroll(true);
+        this.setAutoScroll(true, "scroll-near-bottom");
         this.clearUnread();
         callbacks.requestRender();
       }
@@ -143,7 +155,7 @@ export class TranscriptFollowController {
         callbacks.scheduleFollow();
         return;
       }
-      this.setAutoScroll(false);
+      this.setAutoScroll(false, "user-scroll-away");
       callbacks.requestRender();
       return;
     }
