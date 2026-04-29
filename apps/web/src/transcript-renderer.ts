@@ -18,7 +18,7 @@ function isLiveToolStackItem(item: TranscriptItem): boolean {
 }
 
 function shouldRenderLiveToolStack(items: readonly TranscriptItem[]): boolean {
-  return items.some((item) => item.status === "running" || item.status === "error");
+  return items.some((item) => item.status === "running");
 }
 
 function visibleLiveToolItems(items: readonly TranscriptItem[]): TranscriptItem[] {
@@ -28,6 +28,7 @@ function visibleLiveToolItems(items: readonly TranscriptItem[]): TranscriptItem[
 export type TranscriptRenderOptions = {
   activeToolGroupId?: string | undefined;
   nowMs?: number | undefined;
+  compactLiveToolGroups?: boolean | undefined;
 };
 
 function toolGroupId(items: readonly TranscriptItem[]): string {
@@ -65,30 +66,42 @@ export function latestGroupableToolGroupId(transcript: readonly TranscriptItem[]
   return latest.length >= 2 ? toolGroupId(latest) : undefined;
 }
 
+export function primaryToolLabel(items: readonly TranscriptItem[], liveStack = shouldRenderLiveToolStack(items)): string {
+  const primary = liveStack ? [...items].reverse().find((item) => item.status === "running") ?? items[items.length - 1] : items[items.length - 1];
+  return primary?.title.replace(/^\$\s*/, "") ?? "tool";
+}
+
+export function toolRunSummaryText(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): { title: string; meta: string; label: string } {
+  const groupId = toolGroupId(items);
+  const liveStack = shouldRenderLiveToolStack(items);
+  const hiddenCount = liveStack ? Math.max(0, items.length - visibleLiveToolItems(items).length) : 0;
+  const duration = formatToolDuration(groupDurationMs(items, options.activeToolGroupId === groupId ? options.nowMs : undefined));
+  const label = primaryToolLabel(items, liveStack);
+  const meta = [
+    liveStack ? `${items.length} ${items.length === 1 ? "tool" : "tools"}` : duration,
+    liveStack ? duration : "",
+    liveStack && hiddenCount > 0 ? `${hiddenCount} earlier` : "",
+  ].filter(Boolean).join(" · ");
+  return {
+    title: liveStack ? `Running ${label}` : `Ran ${items.length} ${items.length === 1 ? "tool" : "tools"}`,
+    meta,
+    label,
+  };
+}
+
 export function renderToolRunGroup(items: TranscriptItem[], expandedToolGroupIds: ReadonlySet<string>, options: TranscriptRenderOptions = {}): string {
   const groupId = toolGroupId(items);
   const liveStack = shouldRenderLiveToolStack(items);
-  const expanded = liveStack || expandedToolGroupIds.has(groupId);
+  const expanded = liveStack ? (!options.compactLiveToolGroups || expandedToolGroupIds.has(groupId)) : expandedToolGroupIds.has(groupId);
   const visibleItems = liveStack ? visibleLiveToolItems(items) : items;
-  const hiddenCount = liveStack ? Math.max(0, items.length - visibleItems.length) : 0;
-  const failedCount = items.filter((item) => item.status === "error").length;
-  const runningCount = items.filter((item) => item.status === "running").length;
-  const labels = visibleItems
-    .slice(-3)
-    .map((item) => item.title.replace(/^\$\s*/, ""))
-    .join(" · ");
-  const duration = formatToolDuration(groupDurationMs(items, options.activeToolGroupId === groupId ? options.nowMs : undefined));
-  const stateParts = [
-    liveStack && runningCount > 0 ? `${runningCount} running` : "",
-    failedCount > 0 ? `${failedCount} failed` : "",
-    hiddenCount > 0 ? `${hiddenCount} earlier` : "",
-  ].filter(Boolean).join(" · ");
+  const summary = toolRunSummaryText(items, options);
+  const label = liveStack ? "" : summary.label;
   const liveAttr = liveStack ? ' data-live-tool-stack="true"' : "";
-  return `<details class="tool-run-group${liveStack ? " live-tool-stack" : ""}${failedCount > 0 ? " has-failed-tool" : ""}" data-tool-run-group="${escapeHtml(groupId)}"${liveAttr} ${expanded ? "open" : ""}>
+  return `<details class="tool-run-group${liveStack ? " live-tool-stack" : ""}" data-tool-run-group="${escapeHtml(groupId)}"${liveAttr} ${expanded ? "open" : ""}>
       <summary>
-        <strong>Ran ${items.length} tools${duration ? ` · ${escapeHtml(duration)}` : ""}</strong>
-        ${stateParts ? `<em>${escapeHtml(stateParts)}</em>` : ""}
-        ${labels ? `<span title="${escapeHtml(labels)}">${escapeHtml(labels)}${items.length > 3 ? " …" : ""}</span>` : ""}
+        <strong>${escapeHtml(summary.title)}</strong>
+        ${summary.meta ? `<em>${escapeHtml(summary.meta)}</em>` : ""}
+        ${label ? `<span title="${escapeHtml(label)}">${escapeHtml(label)}</span>` : ""}
       </summary>
       <div class="tool-run-items">
         ${visibleItems.map((item, visibleIndex) => `<div class="tool-run-stack-slot tool-run-stack-slot-${visibleIndex + 1} ${item.status === "error" ? "failed" : item.status === "running" ? "running" : "done"}">${renderTranscriptItemShell(item)}</div>`).join("")}

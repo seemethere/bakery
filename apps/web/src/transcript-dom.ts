@@ -86,10 +86,19 @@ export function updateTranscriptRow(row: PiTranscriptRow, transcript: Transcript
 
 export function bindToolRunGroups(root: ParentNode, options: ToolRunGroupOptions): void {
   root.querySelectorAll<HTMLDetailsElement>(".tool-run-group[data-tool-run-group]").forEach((group) => {
-    if (group.dataset.liveToolStack === "true") return;
     if (group.dataset.toolRunBound === "true") return;
     group.dataset.toolRunBound = "true";
+    let userToggled = false;
+    const markUserToggle = () => {
+      userToggled = true;
+    };
+    group.querySelector("summary")?.addEventListener("pointerdown", markUserToggle);
+    group.querySelector("summary")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") markUserToggle();
+    });
     group.addEventListener("toggle", () => {
+      if (group.dataset.liveToolStack === "true" && !userToggled) return;
+      userToggled = false;
       const id = group.dataset.toolRunGroup ?? "";
       if (!id) return;
       if (group.open) options.expandedToolGroupIds.add(id);

@@ -1245,8 +1245,7 @@ async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   await sendPromptAndWaitIdle(page, "Please run multiple tools for compact grouping validation.");
   const group = page.locator(".tool-run-group").first();
   await group.waitFor({ timeout: 5_000 });
-  await page.locator(".tool-run-group summary", { hasText: /Ran 4 tools · \d/ }).waitFor({ timeout: 5_000 });
-  await page.locator(".tool-run-group summary", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
+  await page.locator(".tool-run-group summary", { hasText: /Ran 4 tools/ }).waitFor({ timeout: 5_000 });
   const visibleToolRowsBefore = await page.locator(".tool-run-group .message.tool:visible").count();
   if (visibleToolRowsBefore !== 0) throw new Error(`Expected grouped tool rows to be hidden before expansion, saw ${visibleToolRowsBefore}`);
   await group.locator("summary").click();
