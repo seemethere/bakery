@@ -29,6 +29,7 @@ type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
 type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type TranscriptRowAction = "copy" | "fork" | "toggle-output";
 type PlanAction = "accept" | "chat";
+type ToolTimingCacheEntry = { startedAt?: string; endedAt?: string; durationMs?: number };
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
 const themeMediaQuery = "(prefers-color-scheme: light)";
@@ -85,6 +86,34 @@ function browserId(prefix = "id"): string {
   return `${prefix}-${suffix}`;
 }
 
+function toolTimingStorageKey(sessionId: string): string {
+  return `piWebToolTiming:${sessionId}`;
+}
+
+function loadToolTimingCache(sessionId: string): Map<string, ToolTimingCacheEntry> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(toolTimingStorageKey(sessionId)) ?? "{}");
+    if (!isRecord(raw)) return new Map();
+    return new Map(Object.entries(raw).flatMap(([id, value]) => isRecord(value) ? [[id, {
+      ...(typeof value.startedAt === "string" ? { startedAt: value.startedAt } : {}),
+      ...(typeof value.endedAt === "string" ? { endedAt: value.endedAt } : {}),
+      ...(typeof value.durationMs === "number" ? { durationMs: value.durationMs } : {}),
+    } satisfies ToolTimingCacheEntry]] : []));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveToolTimingCache(sessionId: string, cache: ReadonlyMap<string, ToolTimingCacheEntry>): void {
+  const entries = [...cache.entries()].slice(-500);
+  localStorage.setItem(toolTimingStorageKey(sessionId), JSON.stringify(Object.fromEntries(entries)));
+}
+
+function toolCallIdForTranscriptItem(item: TranscriptItem): string | null {
+  if (isRecord(item.raw) && typeof item.raw.toolCallId === "string") return item.raw.toolCallId;
+  return item.id.startsWith("tool:") ? item.id.slice("tool:".length) : null;
+}
+
 class PiWebAgentApp extends HTMLElement {
   private token = localStorage.getItem("piWebAuthToken") ?? "";
   private apiBase = localStorage.getItem("piWebApiBase") ?? defaultApiBase();
@@ -124,6 +153,7 @@ class PiWebAgentApp extends HTMLElement {
   private openActionMenuId = "";
   private transcriptExpansion = new Map<string, boolean>();
   private expandedToolActivityIds = new Set<string>();
+  private toolTimingCache = new Map<string, ToolTimingCacheEntry>();
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private pendingToolCallTitles: string[] = [];
   private dismissedPlanActionTranscriptId = "";
@@ -627,7 +657,8 @@ class PiWebAgentApp extends HTMLElement {
     const previousQuestionId = this.pendingQuestion?.id ?? null;
     this.pendingQuestion = snapshot.pendingQuestion ?? null;
     if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
-    this.transcript = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
+    this.toolTimingCache = loadToolTimingCache(session.id);
+    this.transcript = this.applyCachedToolTimings(compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`))));
     this.runningQueue = emptyRunningQueue();
     this.pendingToolCallTitles = [];
     this.transcriptFollow.clearUnread();
@@ -733,6 +764,7 @@ class PiWebAgentApp extends HTMLElement {
       const existing = this.transcript.find((item) => item.id === id);
       const toolItem = toolExecutionToTranscriptItem(type, event, existing);
       if (!toolItem) return;
+      this.rememberToolTiming(toolItem);
       this.upsertTranscript(toolItem);
       if (type === "tool_execution_start") this.requestRender(0);
       const questionSummary = type === "tool_execution_end" ? questionSummaryForToolItem(toolItem) : null;
@@ -744,6 +776,40 @@ class PiWebAgentApp extends HTMLElement {
       const update = queueUpdateValues(event);
       this.runningQueue = runningQueueFromUpdate(this.runningQueue, update.steering, update.followUp);
     }
+  }
+
+  private rememberToolTiming(item: TranscriptItem): void {
+    if (!this.selectedSession || item.kind !== "tool") return;
+    const toolCallId = toolCallIdForTranscriptItem(item);
+    if (!toolCallId) return;
+    const existing = this.toolTimingCache.get(toolCallId) ?? {};
+    const next = {
+      ...existing,
+      ...(item.startedAt ? { startedAt: item.startedAt } : {}),
+      ...(item.endedAt ? { endedAt: item.endedAt } : {}),
+      ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
+    } satisfies ToolTimingCacheEntry;
+    if (!next.startedAt && !next.endedAt && next.durationMs === undefined) return;
+    this.toolTimingCache.set(toolCallId, next);
+    saveToolTimingCache(this.selectedSession.id, this.toolTimingCache);
+  }
+
+  private applyCachedToolTimings(items: TranscriptItem[]): TranscriptItem[] {
+    return items.map((item) => {
+      if (item.kind !== "tool") return item;
+      const toolCallId = toolCallIdForTranscriptItem(item);
+      const timing = toolCallId ? this.toolTimingCache.get(toolCallId) : undefined;
+      if (!timing) return item;
+      const startedAt = item.startedAt ?? timing.startedAt;
+      const endedAt = item.endedAt ?? timing.endedAt;
+      const durationMs = item.durationMs ?? timing.durationMs;
+      return {
+        ...item,
+        ...(startedAt ? { startedAt } : {}),
+        ...(endedAt ? { endedAt } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      };
+    });
   }
 
   private selectTranscriptItem(id: string, shouldRender = true): void {
