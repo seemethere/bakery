@@ -68,6 +68,8 @@ describe("transcript renderer", () => {
 
     expect(html).toContain('class="tool-run-group live-tool-stack"');
     expect(html).toContain('data-tool-run-group="t1|t2|t3|t4|t5|t6" data-live-tool-stack="true" open');
+    expect(html).toContain("Ran 6 tools");
+    expect(html).not.toContain("Tool activity");
     expect(html).toContain("1 running");
     expect(html).toContain("1 earlier");
     expect(html).not.toContain('data-transcript-id="t1"');
