@@ -1853,6 +1853,15 @@ class PiWebAgentApp extends HTMLElement {
     });
 
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
+      const activity = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-tool-activity]");
+      if (activity) {
+        event.preventDefault();
+        const expanded = activity.dataset.toolActivityExpanded === "true";
+        activity.dataset.toolActivityExpanded = expanded ? "false" : "true";
+        activity.setAttribute("aria-expanded", expanded ? "false" : "true");
+        activity.setAttribute("aria-label", `${expanded ? "Show" : "Hide"} tool details`);
+        return;
+      }
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
       if (!button) {
         if (this.openActionMenuId) {

@@ -69,12 +69,30 @@ describe("transcript renderer", () => {
 
     expect(html).toContain('class="tool-activity-strip"');
     expect(html).toContain('data-tool-activity="activity:t1" data-tool-activity-ids="t1|t2|t3|t4|t5|t6"');
+    expect(html).toContain('data-mobile-default="summary-only"');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Running Read 6");
     expect(html).toContain("6 tools");
     expect(html).not.toContain("Tool activity");
     expect(html).not.toContain("earlier");
-    expect(html).toContain('data-transcript-id="t1"');
-    expect(html).toContain('data-transcript-id="t6"');
+    expect(html).toContain('data-transcript-id="t1" data-tool-activity-member="activity:t1"');
+    expect(html).toContain('data-transcript-id="t6" data-tool-activity-member="activity:t1"');
+  });
+
+  test("builds one adaptive activity model for desktop and mobile", () => {
+    const items = [
+      item({ id: "t1", kind: "tool", title: "Read" }),
+      item({ id: "t2", kind: "tool", title: "Bash", status: "running", startedAt: "2026-04-27T00:00:00.000Z" }),
+    ];
+
+    expect(renderHelpers.toolActivityRenderModel(items, { activeToolGroupId: "activity:t1", nowMs: Date.parse("2026-04-27T00:00:04.000Z") })).toEqual({
+      id: "activity:t1",
+      itemIds: ["t1", "t2"],
+      title: "Running Bash",
+      meta: "2 tools · 4s",
+      label: "Bash",
+      mobileDefault: "summary-only",
+    });
   });
 
   test("renders a single running tool with a stable activity id", () => {

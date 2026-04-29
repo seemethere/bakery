@@ -526,6 +526,14 @@
     max-width: 48vw;
   }
 
+  .tool-activity-strip[data-mobile-default="summary-only"]:not([data-tool-activity-expanded="true"]) ~ pi-transcript-row[data-tool-activity-member] {
+    display: none;
+  }
+
+  .tool-activity-disclosure {
+    display: inline;
+  }
+
   .message-action-bar {
     opacity: 1;
   }

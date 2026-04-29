@@ -651,6 +651,7 @@
 }
 
 .tool-activity-strip {
+  appearance: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -664,7 +665,28 @@
   background: color-mix(in srgb, var(--color-tool-bg) 86%, var(--color-accent) 14%);
   color: var(--color-text-secondary);
   box-shadow: 0 10px 26px color-mix(in srgb, var(--color-shadow) 20%, transparent);
+  font: inherit;
   font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-activity-strip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.tool-activity-disclosure {
+  display: none;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tool-activity-strip[data-tool-activity-expanded="true"] .tool-activity-disclosure::after {
+  content: " shown";
 }
 
 .tool-activity-strip::before {

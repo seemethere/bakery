@@ -1204,12 +1204,29 @@ async function runConnectionDisconnected(page: Page, runtime: { stopServer: () =
 }
 
 async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
-  await page.setViewportSize({ width: 800, height: 900 });
+  await page.setViewportSize({ width: 390, height: 844 });
   await prepareSession(page);
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
-  await page.locator(".tool-activity-strip").waitFor({ timeout: 15_000 });
+  const activityStrip = page.locator(".tool-activity-strip");
+  await activityStrip.waitFor({ timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length >= 1, null, { timeout: 15_000 });
+  const mobileActivityDefault = await page.evaluate(() => {
+    const strip = document.querySelector<HTMLElement>(".tool-activity-strip");
+    const memberRows = Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]'));
+    return {
+      mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
+      expanded: strip?.dataset.toolActivityExpanded ?? "missing",
+      visibleMembers: memberRows.filter((row) => getComputedStyle(row).display !== "none").length,
+      memberRows: memberRows.length,
+    };
+  });
+  if (!mobileActivityDefault.mobile || mobileActivityDefault.expanded !== "false" || mobileActivityDefault.visibleMembers !== 0) {
+    throw new Error(`Expected mobile running tool activity to default to summary-only, saw ${JSON.stringify(mobileActivityDefault)}`);
+  }
+  await activityStrip.click();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]')).some((row) => getComputedStyle(row).display !== "none"), null, { timeout: 5_000 });
   await page.evaluate(() => {
     if (window.__piWebPerf) {
       window.__piWebPerf.renderCount = 0;
