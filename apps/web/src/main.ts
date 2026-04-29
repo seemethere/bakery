@@ -7,10 +7,11 @@ import { isSessionRecencyGroupId, persistCollapsedSessionGroups, storedCollapsed
 import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessionMetadataUpdate, messageEventToTranscriptItem, queueUpdateValues, questionSummaryForToolItem, toolExecutionToTranscriptItem, webCommandResultToTranscriptItem } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
+import { handleComposerImageFiles, removePromptImage as removePromptImageWithContext, type ComposerImageControllerContext } from "./composer-images-controller";
 import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscriptHtml, toolRunSummaryText } from "./transcript-renderer";
-import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
+import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
 import { parseAppRoute, sessionsRoutePath, sessionRoutePath, settingsRoutePath } from "./router";
@@ -1182,114 +1183,29 @@ class PiWebAgentApp extends HTMLElement {
     this.requestRender(0);
   }
 
+  private composerImageContext(): ComposerImageControllerContext {
+    return {
+      promptImages: () => this.promptImages,
+      setPromptImages: (images) => { this.promptImages = images; },
+      selectedSessionId: () => this.selectedSession?.id,
+      promptInput: () => this.querySelector<HTMLTextAreaElement>("#prompt"),
+      promptDraft: () => this.promptDraft,
+      setPromptDraft: (draft) => { this.promptDraft = draft; },
+      createImageId: () => browserId("image"),
+      api: (path, init) => this.api(path, init),
+      setNotice: (notice) => { this.notice = notice; },
+      render: () => this.render(),
+      updatePromptDraft: (input) => this.updatePromptDraft(input),
+      schedulePromptDraftSave: () => this.schedulePromptDraftSave(),
+    };
+  }
+
   private async handleImageFiles(files: FileList | File[]): Promise<void> {
-    const stableFiles = Array.from(files);
-    this.notice = `Processing ${stableFiles.length} selected file${stableFiles.length === 1 ? "" : "s"}…`;
-    this.render();
-    if (stableFiles.length === 0) {
-      this.notice = "No files were provided by the browser. Try the paperclip file picker or paste the image.";
-      this.render();
-      return;
-    }
-    try {
-      const attachedCount = await this.addPromptImageFiles(stableFiles, { quiet: true });
-      if (attachedCount === 0) {
-        this.notice = `No supported image files found. Supported: PNG, JPEG, GIF, WebP. Saw: ${stableFiles.map((file) => `${file.name || "unnamed"}${file.type ? ` (${file.type})` : ""}`).join(", ")}`;
-        this.render();
-        return;
-      }
-      if (!this.selectedSession) {
-        this.notice = "Image attached to the prompt. Open a session to upload a transcript preview artifact.";
-        this.render();
-        return;
-      }
-      try {
-        await this.uploadImageArtifacts(stableFiles);
-      } catch (error) {
-        this.notice = `Attached image to prompt, but transcript preview upload failed: ${error instanceof Error ? error.message : String(error)}`;
-        this.render();
-      }
-    } catch (error) {
-      this.notice = `Could not attach image: ${error instanceof Error ? error.message : String(error)}`;
-      this.render();
-    }
-  }
-
-  private async uploadImageArtifacts(files: FileList | File[]): Promise<void> {
-    if (!this.selectedSession) {
-      this.notice = "Open a session before uploading transcript artifacts.";
-      this.render();
-      return;
-    }
-    const incoming = Array.from(files).filter((file) => isSupportedImageFile(file));
-    if (incoming.length === 0) return;
-    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const uploadedPaths: string[] = [];
-    for (const file of incoming) {
-      const mimeType = imageMimeType(file);
-      if (!supportedPromptImageTypes.has(mimeType)) {
-        this.notice = `Unsupported image type: ${file.type || file.name}`;
-        continue;
-      }
-      if (file.size > maxArtifactImageBytes) {
-        this.notice = `${file.name} is larger than 20 MB.`;
-        continue;
-      }
-      const path = artifactPathForFile(file);
-      const data = await readFileAsBase64(file);
-      await this.api(`/api/sessions/${this.selectedSession.id}/artifacts`, {
-        method: "POST",
-        body: JSON.stringify({ path, mimeType, data }),
-      });
-      uploadedPaths.push(path);
-    }
-    if (uploadedPaths.length > 0) {
-      const insertion = uploadedPaths.map((path) => `Screenshot artifact: ${path}`).join("\n");
-      if (input) {
-        const prefix = input.value.trimEnd();
-        input.value = `${prefix}${prefix ? "\n" : ""}${insertion}`;
-        this.updatePromptDraft(input);
-      } else {
-        this.promptDraft = `${this.promptDraft.trimEnd()}${this.promptDraft.trim() ? "\n" : ""}${insertion}`;
-        this.schedulePromptDraftSave();
-      }
-      this.notice = "";
-    }
-    this.render();
-  }
-
-  private async addPromptImageFiles(files: FileList | File[], options: { render?: boolean; quiet?: boolean } = {}): Promise<number> {
-    const incoming = Array.from(files).filter((file) => isSupportedImageFile(file));
-    if (incoming.length === 0) return 0;
-    const added: PromptImage[] = [];
-    for (const file of incoming) {
-      if (this.promptImages.length + added.length >= maxPromptImages) {
-        this.notice = `Only ${maxPromptImages} images can be attached to one prompt.`;
-        break;
-      }
-      const mimeType = imageMimeType(file);
-      if (!supportedPromptImageTypes.has(mimeType)) {
-        this.notice = `Unsupported image type: ${file.type || file.name}`;
-        continue;
-      }
-      if (file.size > maxPromptImageBytes) {
-        this.notice = `${file.name} is larger than 8 MB.`;
-        continue;
-      }
-      const dataUrl = await readFileAsDataUrl(file);
-      added.push({ id: browserId("image"), name: file.name || "pasted-image", mimeType, dataUrl, size: file.size });
-    }
-    if (added.length > 0) {
-      this.promptImages = [...this.promptImages, ...added];
-      if (!options.quiet) this.notice = "Image attachments are ready for this prompt only and are not preserved across page refreshes.";
-    }
-    if (options.render !== false) this.render();
-    return added.length;
+    await handleComposerImageFiles(this.composerImageContext(), files);
   }
 
   private removePromptImage(id: string): void {
-    this.promptImages = this.promptImages.filter((image) => image.id !== id);
-    this.render();
+    removePromptImageWithContext(this.composerImageContext(), id);
   }
 
   private abort(): void {
