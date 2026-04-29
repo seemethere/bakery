@@ -3,7 +3,8 @@ import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplet
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
 import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, toolResultToText, type TranscriptItem } from "./transcript";
-import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
+import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
+import { renderSelectedSessionSummary, renderSessionDetails as renderSessionDetailsPanel, renderSettingsMain as renderSettingsMainPanel } from "./settings-panel";
 import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionSidebarHtml, renderSessionSidebarBackdrop as renderSessionSidebarBackdropHtml, sessionSidebarOverlayOpen } from "./session-sidebar-controller";
 import { bindSessionShellEvents } from "./session-shell-events";
@@ -1385,27 +1386,12 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private renderAppSettings(): string {
-    const models = this.settings?.availableModels ?? [];
-    const selected = this.appSettings?.sessionMetadataModel?.model ?? "";
-    return `<div class="app-settings">
-      <label>Metadata model
-        <select id="metadataModelSetting">
-          <option value="" ${selected ? "" : "selected"}>Default / active model</option>
-          ${models.map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === selected ? "selected" : ""}>${escapeHtml(model.name ?? model.id)} [${escapeHtml(model.provider)}]</option>`).join("")}
-        </select>
-      </label>
-      <small>Titles and summaries are generated only when you click ✨.</small>
-    </div>`;
-  }
-
   private renderSessionSummary(showSuggestion = !this.mobileLayout): string {
-    if (!this.selectedSession) return "";
-    return renderSessionSummaryHtml({
-      session: this.selectedSession,
-      suggestion: this.metadataSuggestion,
-      draft: this.metadataSuggestionDraft,
-      error: this.metadataSuggestionError,
+    return renderSelectedSessionSummary({
+      selectedSession: this.selectedSession,
+      metadataSuggestion: this.metadataSuggestion,
+      metadataSuggestionDraft: this.metadataSuggestionDraft,
+      metadataSuggestionError: this.metadataSuggestionError,
       metadataGenerating: this.metadataGenerating,
       status: this.status,
       showSuggestion,
@@ -1413,31 +1399,16 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderSessionDetails(): string {
-    if (!this.selectedSession || !this.sessionDetailsOpen) return "";
-    return `<div class="session-details-popover" role="dialog" aria-label="Session details">
-      <div class="session-details-header">
-        <strong>Session details</strong>
-        <button id="closeSessionDetails" type="button" aria-label="Close session details">×</button>
-      </div>
-      <div class="session-details-path">
-        <span>${this.selectedSession.isolationKind === "git_worktree" ? "Worktree" : "Workspace"}</span>
-        <code title="${escapeHtml(this.selectedSession.cwd)}">${escapeHtml(this.selectedSession.cwd)}</code>
-        <button id="copyWorkspacePath" type="button">Copy path</button>
-      </div>
-      ${this.selectedSession.isolationKind === "git_worktree" ? `
-        <div class="session-details-path">
-          <span>Source</span>
-          <code title="${escapeHtml(this.selectedSession.sourceCwd ?? "")}">${escapeHtml(this.selectedSession.sourceCwd ?? "")}</code>
-        </div>
-        <div class="session-details-path">
-          <span>Branch</span>
-          <code title="${escapeHtml(this.selectedSession.worktreeBranch ?? "")}">${escapeHtml(this.selectedSession.worktreeBranch ?? "")}</code>
-        </div>
-        ${this.selectedSession.worktreeSourceDirty ? `<p class="notice">Created from HEAD; source had uncommitted changes that were not copied.</p>` : ""}
-      ` : ""}
-      ${this.renderSessionSummary(!this.mobileLayout)}
-      <button id="generateMetadata" class="session-details-generate" type="button" ${this.metadataGenerating || this.status === "running" ? "disabled" : ""}>${this.metadataGenerating ? "Generating…" : "Suggest title and summary"}</button>
-    </div>`;
+    return renderSessionDetailsPanel({
+      selectedSession: this.selectedSession,
+      sessionDetailsOpen: this.sessionDetailsOpen,
+      mobileLayout: this.mobileLayout,
+      metadataSuggestion: this.metadataSuggestion,
+      metadataSuggestionDraft: this.metadataSuggestionDraft,
+      metadataSuggestionError: this.metadataSuggestionError,
+      metadataGenerating: this.metadataGenerating,
+      status: this.status,
+    });
   }
 
   private copyWorkspacePath(): void {
@@ -1807,62 +1778,17 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderSettingsMain(): string {
-    const chatPath = this.selectedSession ? sessionRoutePath(this.selectedSession.id) : "/";
-    return `<main class="settings-main">
-      <header>
-        <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}" aria-label="${this.sessionSidebarCollapsed ? "Show navigation" : "Hide navigation"}">☰</button>
-        <div class="session-identity">
-          <strong>Settings</strong>
-          <span>Configure this browser's Bakery connection and app preferences.</span>
-        </div>
-        <div class="header-status">
-          <button type="button" data-route-path="${escapeHtml(chatPath)}">${this.selectedSession ? "Current chat" : "Chat"}</button>
-        </div>
-      </header>
-      ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
-      <section class="settings-page" aria-label="Settings">
-        <div class="settings-page-hero">
-          <p class="settings-page-kicker">App settings</p>
-          <h1>Settings</h1>
-          <p>Low-frequency controls live here so the session drawer can stay focused on navigation and starting work.</p>
-        </div>
-        <div class="settings-grid">
-          <section class="settings-card" aria-labelledby="connectionSettingsHeading">
-            <div class="settings-card-heading">
-              <h2 id="connectionSettingsHeading">Connection</h2>
-              <p>Stored locally in this browser. Changing these values reloads server data from the selected API.</p>
-            </div>
-            <label>API base
-              <input id="apiBase" value="${escapeHtml(this.apiBase)}" spellcheck="false" />
-            </label>
-            <label>Token
-              <input id="token" type="password" value="${escapeHtml(this.token)}" autocomplete="off" />
-            </label>
-            <button id="saveSettings" class="primary-action" type="button">Save / Refresh</button>
-          </section>
-          <section class="settings-card" aria-labelledby="appearanceSettingsHeading">
-            <div class="settings-card-heading">
-              <h2 id="appearanceSettingsHeading">Appearance</h2>
-              <p>Theme preference applies immediately and follows system appearance when set to System.</p>
-            </div>
-            <label>Theme
-              <select id="themePreference">
-                <option value="system" ${this.themePreference === "system" ? "selected" : ""}>System</option>
-                <option value="workbench-dark" ${this.themePreference === "workbench-dark" ? "selected" : ""}>Workbench Dark</option>
-                <option value="workbench-light" ${this.themePreference === "workbench-light" ? "selected" : ""}>Workbench Light</option>
-              </select>
-            </label>
-          </section>
-          <section class="settings-card" aria-labelledby="metadataSettingsHeading">
-            <div class="settings-card-heading">
-              <h2 id="metadataSettingsHeading">Session metadata</h2>
-              <p>Titles and summaries are generated only when you click ✨ in session details.</p>
-            </div>
-            ${this.renderAppSettings()}
-          </section>
-        </div>
-      </section>
-    </main>`;
+    return renderSettingsMainPanel({
+      selectedSession: this.selectedSession,
+      sessionSidebarCollapsed: this.sessionSidebarCollapsed,
+      notice: this.notice,
+      composerNotice: this.isComposerNotice(),
+      apiBase: this.apiBase,
+      token: this.token,
+      themePreference: this.themePreference,
+      settings: this.settings,
+      appSettings: this.appSettings,
+    });
   }
 
   private render(): void {
