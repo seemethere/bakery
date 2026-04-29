@@ -8,7 +8,7 @@ import { agentEventType, bashEventCommand, bashEventToTranscriptItem, mergeSessi
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
 import { TranscriptFollowController } from "./transcript-follow";
-import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
+import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyToolRunGroups, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { defaultTranscriptExpanded, latestGroupableToolGroupId, renderTranscriptHtml, toolRunSummaryText } from "./transcript-renderer";
 import { artifactPathForFile, imageMimeType, isSupportedImageFile, maxArtifactImageBytes, maxPromptImageBytes, maxPromptImages, readFileAsBase64, readFileAsDataUrl, renderPromptImages, supportedPromptImageTypes, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem, clearConfirmedRunningQueueItem, emptyRunningQueue, hasRunningQueueItems, removeRunningQueueItem, renderRunningQueue, runningQueueFromUpdate, type RunningQueueName, type RunningQueueState } from "./running-queue";
@@ -149,6 +149,7 @@ class PiWebAgentApp extends HTMLElement {
   private forceFullRender = false;
   private transcriptStructureDirty = false;
   private dirtyTranscriptIds = new Set<string>();
+  private shellPatchDirty = false;
   private focusPromptOnNextReadyRender = false;
   private focusPendingQuestionOnNextRender = false;
   private renderedSegmentCache = new Map<string, string>();
@@ -605,7 +606,10 @@ class PiWebAgentApp extends HTMLElement {
   private setAgentStatus(status: AgentStatus): void {
     const previous = this.status;
     this.status = status;
-    if (previous !== status) this.patchComposerMode();
+    if (previous !== status) {
+      this.shellPatchDirty = true;
+      this.patchComposerMode();
+    }
   }
 
   private applySnapshot(snapshot: SessionSnapshot): void {
@@ -728,6 +732,7 @@ class PiWebAgentApp extends HTMLElement {
       const toolItem = toolExecutionToTranscriptItem(type, event, existing);
       if (!toolItem) return;
       this.upsertTranscript(toolItem);
+      if (type === "tool_execution_start") this.requestRender(0);
       const questionSummary = type === "tool_execution_end" ? questionSummaryForToolItem(toolItem) : null;
       if (questionSummary) this.upsertTranscript(questionSummary);
       return;
@@ -2177,6 +2182,14 @@ class PiWebAgentApp extends HTMLElement {
     return "";
   }
 
+  private transcriptRenderOptions(): { activeToolGroupId?: string | undefined; nowMs: number; compactLiveToolGroups: boolean } {
+    return {
+      activeToolGroupId: this.status === "running" ? latestGroupableToolGroupId(this.transcript) : undefined,
+      nowMs: Date.now(),
+      compactLiveToolGroups: this.mobileLayout,
+    };
+  }
+
   private renderTranscript(): string {
     if (this.selectedSession && this.transcript.length === 0) {
       const quickStarts = [
@@ -2197,11 +2210,7 @@ class PiWebAgentApp extends HTMLElement {
         </div>
       </div>`;
     }
-    return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds, {
-      activeToolGroupId: this.status === "running" ? latestGroupableToolGroupId(this.transcript) : undefined,
-      nowMs: Date.now(),
-      compactLiveToolGroups: this.mobileLayout,
-    });
+    return renderTranscriptHtml(this.transcript, this.expandedToolGroupIds, this.transcriptRenderOptions());
   }
 
   private useEmptyQuickStart(action: string): void {
@@ -2449,8 +2458,8 @@ class PiWebAgentApp extends HTMLElement {
     const meta = details?.querySelector<HTMLElement>("summary em");
     if (!title) return false;
 
-    const groupIds = new Set(groupId.split("|"));
-    const items = this.transcript.filter((item) => groupIds.has(item.id));
+    const itemIds = new Set((details?.dataset.toolRunItemIds ?? groupId).split("|"));
+    const items = this.transcript.filter((item) => itemIds.has(item.id));
     if (items.length === 0) return false;
     const summary = toolRunSummaryText(items, { activeToolGroupId: groupId, nowMs: Date.now() });
     title.textContent = summary.title;
@@ -2483,11 +2492,15 @@ class PiWebAgentApp extends HTMLElement {
       this.syncOpenActionMenus(transcript);
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
+      this.shellPatchDirty = false;
       recordPerfSample("patch", performance.now() - start);
       return true;
     }
 
-    patchDirtyTranscriptRows(this, transcript, this.transcript, this.dirtyTranscriptIds, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
+    const rowOptions = this.transcriptRowStateOptions();
+    const patchedToolIds = patchDirtyToolRunGroups(this, transcript, this.transcript, this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions(), { expandedToolGroupIds: this.expandedToolGroupIds, renderOptions: this.transcriptRenderOptions() });
+    const remainingDirtyIds = new Set([...this.dirtyTranscriptIds].filter((id) => !patchedToolIds.has(id)));
+    patchDirtyTranscriptRows(this, transcript, this.transcript, remainingDirtyIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
@@ -2497,17 +2510,23 @@ class PiWebAgentApp extends HTMLElement {
     this.syncOpenActionMenus(transcript);
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    this.shellPatchDirty = false;
     recordPerfSample("patch", performance.now() - start);
     return true;
   }
 
   private requestRender(delayMs = this.status === "running" ? 150 : 0): void {
-    if (this.renderScheduled) return;
+    if (this.renderScheduled) {
+      if (delayMs !== 0 || !this.renderTimer) return;
+      clearTimeout(this.renderTimer);
+      this.renderScheduled = false;
+      this.renderTimer = undefined;
+    }
     this.renderScheduled = true;
     this.renderTimer = setTimeout(() => {
       this.renderScheduled = false;
       this.renderTimer = undefined;
-      if ((delayMs > 0 || this.transcriptStructureDirty || this.dirtyTranscriptIds.size > 0) && this.patchLiveRender()) return;
+      if ((delayMs > 0 || this.shellPatchDirty || this.transcriptStructureDirty || this.dirtyTranscriptIds.size > 0) && this.patchLiveRender()) return;
       this.render();
     }, delayMs);
   }

@@ -1209,9 +1209,21 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
-  await page.locator(".message.tool").waitFor({ timeout: 15_000 });
+  await page.locator(".tool-run-group").waitFor({ timeout: 15_000 });
+  await page.evaluate(() => {
+    if (window.__piWebPerf) {
+      window.__piWebPerf.renderCount = 0;
+      window.__piWebPerf.renderMs = [];
+      window.__piWebPerf.patchCount = 0;
+      window.__piWebPerf.patchMs = [];
+      window.__piWebPerf.rowUpdateCount = 0;
+      window.__piWebPerf.rowUpdateMs = [];
+    }
+  });
   await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
   await waitForAgentIdle(page, 30_000);
+  const toolStreamPerf = await page.evaluate(() => window.__piWebPerf ? { renderCount: window.__piWebPerf.renderCount, patchCount: window.__piWebPerf.patchCount, rowUpdateCount: window.__piWebPerf.rowUpdateCount ?? 0 } : null);
+  if ((toolStreamPerf?.renderCount ?? 0) > 2) throw new Error(`Expected tool streaming to avoid repeated full renders, saw ${JSON.stringify(toolStreamPerf)}`);
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();
@@ -1237,7 +1249,7 @@ async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>>
   const rightToggle = page.locator("#toggleRightPanel");
   if (await rightToggle.isVisible().catch(() => false)) await rightToggle.click();
   await page.locator(".message.tool").first().scrollIntoViewIfNeeded();
-  return collectMetrics(page);
+  return { toolStreamPerf, ...(await collectMetrics(page)) };
 }
 
 async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {

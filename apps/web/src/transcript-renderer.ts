@@ -17,7 +17,7 @@ function isLiveToolStackItem(item: TranscriptItem): boolean {
     && !isDeveloperBashItem(item);
 }
 
-function shouldRenderLiveToolStack(items: readonly TranscriptItem[]): boolean {
+export function shouldRenderLiveToolStack(items: readonly TranscriptItem[]): boolean {
   return items.some((item) => item.status === "running");
 }
 
@@ -31,7 +31,12 @@ export type TranscriptRenderOptions = {
   compactLiveToolGroups?: boolean | undefined;
 };
 
-function toolGroupId(items: readonly TranscriptItem[]): string {
+export function toolRunGroupId(items: readonly TranscriptItem[]): string {
+  if (shouldRenderLiveToolStack(items)) return `live:${items[0]?.id ?? "tool"}`;
+  return items.map((item) => item.id).join("|");
+}
+
+function toolRunGroupItemIds(items: readonly TranscriptItem[]): string {
   return items.map((item) => item.id).join("|");
 }
 
@@ -61,9 +66,20 @@ export function latestGroupableToolGroupId(transcript: readonly TranscriptItem[]
       group.push(transcript[index]!);
       index++;
     }
-    if (group.length >= 2) latest = group;
+    if (group.length >= 2 || shouldRenderLiveToolStack(group)) latest = group;
   }
-  return latest.length >= 2 ? toolGroupId(latest) : undefined;
+  return latest.length >= 1 ? toolRunGroupId(latest) : undefined;
+}
+
+export function toolRunForItem(transcript: readonly TranscriptItem[], itemId: string): TranscriptItem[] {
+  const itemIndex = transcript.findIndex((item) => item.id === itemId);
+  if (itemIndex < 0 || !isLiveToolStackItem(transcript[itemIndex]!)) return [];
+  let start = itemIndex;
+  while (start > 0 && isRenderableTranscriptItem(transcript[start - 1]!) && isLiveToolStackItem(transcript[start - 1]!)) start -= 1;
+  let end = itemIndex;
+  while (end < transcript.length - 1 && isRenderableTranscriptItem(transcript[end + 1]!) && isLiveToolStackItem(transcript[end + 1]!)) end += 1;
+  const items = transcript.slice(start, end + 1);
+  return items.length >= 2 || shouldRenderLiveToolStack(items) ? items : [];
 }
 
 export function primaryToolLabel(items: readonly TranscriptItem[], liveStack = shouldRenderLiveToolStack(items)): string {
@@ -72,7 +88,7 @@ export function primaryToolLabel(items: readonly TranscriptItem[], liveStack = s
 }
 
 export function toolRunSummaryText(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): { title: string; meta: string; label: string } {
-  const groupId = toolGroupId(items);
+  const groupId = toolRunGroupId(items);
   const liveStack = shouldRenderLiveToolStack(items);
   const hiddenCount = liveStack ? Math.max(0, items.length - visibleLiveToolItems(items).length) : 0;
   const duration = formatToolDuration(groupDurationMs(items, options.activeToolGroupId === groupId ? options.nowMs : undefined));
@@ -90,14 +106,14 @@ export function toolRunSummaryText(items: readonly TranscriptItem[], options: Tr
 }
 
 export function renderToolRunGroup(items: TranscriptItem[], expandedToolGroupIds: ReadonlySet<string>, options: TranscriptRenderOptions = {}): string {
-  const groupId = toolGroupId(items);
+  const groupId = toolRunGroupId(items);
   const liveStack = shouldRenderLiveToolStack(items);
   const expanded = liveStack ? (!options.compactLiveToolGroups || expandedToolGroupIds.has(groupId)) : expandedToolGroupIds.has(groupId);
   const visibleItems = liveStack ? visibleLiveToolItems(items) : items;
   const summary = toolRunSummaryText(items, options);
   const label = liveStack ? "" : summary.label;
   const liveAttr = liveStack ? ' data-live-tool-stack="true"' : "";
-  return `<details class="tool-run-group${liveStack ? " live-tool-stack" : ""}" data-tool-run-group="${escapeHtml(groupId)}"${liveAttr} ${expanded ? "open" : ""}>
+  return `<details class="tool-run-group${liveStack ? " live-tool-stack" : ""}" data-tool-run-group="${escapeHtml(groupId)}" data-tool-run-item-ids="${escapeHtml(toolRunGroupItemIds(items))}"${liveAttr} ${expanded ? "open" : ""}>
       <summary>
         <strong>${escapeHtml(summary.title)}</strong>
         ${summary.meta ? `<em>${escapeHtml(summary.meta)}</em>` : ""}
@@ -127,7 +143,7 @@ export function renderTranscriptHtml(transcript: readonly TranscriptItem[], expa
       group.push(transcript[index]!);
       index++;
     }
-    if (group.length >= 2) parts.push(renderToolRunGroup(group, expandedToolGroupIds, options));
+    if (group.length >= 2 || shouldRenderLiveToolStack(group)) parts.push(renderToolRunGroup(group, expandedToolGroupIds, options));
     else parts.push(renderTranscriptItemShell(group[0]!));
   }
   return parts.join("");
@@ -136,14 +152,14 @@ export function renderTranscriptHtml(transcript: readonly TranscriptItem[], expa
 export function transcriptElementOrderIndex(transcript: readonly TranscriptItem[], element: Element): number {
   const rowId = (element as HTMLElement).dataset.transcriptId;
   if (rowId) return transcript.findIndex((item) => item.id === rowId);
-  const groupIds = (element as HTMLElement).dataset.toolRunGroup?.split("|") ?? [];
+  const groupIds = ((element as HTMLElement).dataset.toolRunItemIds ?? (element as HTMLElement).dataset.toolRunGroup)?.split("|") ?? [];
   const indexes = groupIds.map((id) => transcript.findIndex((item) => item.id === id)).filter((index) => index >= 0);
   return indexes.length ? Math.min(...indexes) : Number.POSITIVE_INFINITY;
 }
 
 export function toolGroupPositionFor(transcript: readonly TranscriptItem[], item: TranscriptItem): ToolGroupPosition {
   const index = transcript.findIndex((candidate) => candidate.id === item.id);
-  if (index === -1 || !isGroupableToolItem(item)) return "single";
+  if (index === -1 || (item.status !== "running" && !isGroupableToolItem(item))) return "single";
   const previousGrouped = index > 0 && isLiveToolStackItem(transcript[index - 1]!);
   const nextGrouped = index < transcript.length - 1 && isLiveToolStackItem(transcript[index + 1]!);
   if (previousGrouped && nextGrouped) return "middle";

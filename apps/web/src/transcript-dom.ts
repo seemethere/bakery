@@ -1,5 +1,5 @@
 import { isRenderableTranscriptItem, PiTranscriptRow, type TranscriptItem } from "./transcript";
-import { isAfterRunningTool, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
+import { isAfterRunningTool, renderToolRunGroup, toolGroupPositionFor, toolRunForItem, toolRunGroupId, transcriptElementOrderIndex, type TranscriptRenderOptions } from "./transcript-renderer";
 
 export type TranscriptPointerDown = { id: string; x: number; y: number } | null;
 
@@ -24,6 +24,7 @@ export type TranscriptRowStateOptions = {
 
 export type ToolRunGroupOptions = {
   expandedToolGroupIds: Set<string>;
+  renderOptions?: TranscriptRenderOptions | undefined;
 };
 
 export function findTranscriptElement(root: ParentNode, id: string): PiTranscriptRow | null {
@@ -114,6 +115,73 @@ export function hydrateTranscriptRows(root: ParentNode, transcript: TranscriptIt
     if (item) updateTranscriptRow(row, transcript, item, rowOptions);
   });
   bindToolRunGroups(root, toolGroupOptions);
+}
+
+function existingToolRunGroupForItems(root: ParentNode, groupId: string, itemIds: Set<string>): HTMLDetailsElement | null {
+  const exact = root.querySelector<HTMLDetailsElement>(`.tool-run-group[data-tool-run-group="${CSS.escape(groupId)}"]`);
+  if (exact) return exact;
+  return Array.from(root.querySelectorAll<HTMLDetailsElement>(".tool-run-group[data-tool-run-item-ids]")).find((group) => {
+    const ids = (group.dataset.toolRunItemIds ?? "").split("|");
+    return ids.some((id) => itemIds.has(id));
+  }) ?? null;
+}
+
+function restoreGroupRows(root: ParentNode, group: HTMLElement): void {
+  group.querySelectorAll<HTMLElement>("pi-transcript-row[data-transcript-id]").forEach((placeholder) => {
+    const id = placeholder.dataset.transcriptId;
+    const existing = id ? findTranscriptElement(root, id) : null;
+    if (existing) {
+      placeholder.replaceWith(existing);
+      return;
+    }
+    const row = document.createElement("pi-transcript-row") as PiTranscriptRow;
+    if (id) row.dataset.transcriptId = id;
+    placeholder.replaceWith(row);
+  });
+}
+
+function insertToolRunGroupInOrder(transcriptElement: HTMLElement, transcript: TranscriptItem[], group: HTMLElement, firstItem: TranscriptItem): void {
+  const itemIndex = transcript.findIndex((candidate) => candidate.id === firstItem.id);
+  const nextSibling = Array.from(transcriptElement.children).find((child) => transcriptElementOrderIndex(transcript, child) > itemIndex);
+  transcriptElement.insertBefore(group, nextSibling ?? null);
+}
+
+export function patchDirtyToolRunGroups(root: ParentNode, transcriptElement: HTMLElement, transcript: TranscriptItem[], dirtyTranscriptIds: Set<string>, rowOptions: TranscriptRowStateOptions, bindingState: TranscriptBindingState, bindingOptions: TranscriptBindingOptions, toolGroupOptions: ToolRunGroupOptions): Set<string> {
+  const patchedIds = new Set<string>();
+  const groups = new Map<string, TranscriptItem[]>();
+  for (const id of dirtyTranscriptIds) {
+    const items = toolRunForItem(transcript, id);
+    if (items.length > 0) groups.set(toolRunGroupId(items), items);
+  }
+
+  for (const [groupId, items] of groups) {
+    const itemIds = new Set(items.map((item) => item.id));
+    const existingGroup = existingToolRunGroupForItems(root, groupId, itemIds);
+    const existingRows = items.map((item) => findTranscriptElement(root, item.id)).filter((row): row is PiTranscriptRow => Boolean(row));
+    const insertionMarker = !existingGroup && existingRows[0]?.parentNode ? document.createComment("tool-run-group") : null;
+    if (insertionMarker && existingRows[0]?.parentNode) existingRows[0].parentNode.insertBefore(insertionMarker, existingRows[0]);
+    const template = document.createElement("template");
+    template.innerHTML = renderToolRunGroup(items, toolGroupOptions.expandedToolGroupIds, toolGroupOptions.renderOptions);
+    const group = template.content.firstElementChild as HTMLDetailsElement | null;
+    if (!group) continue;
+    restoreGroupRows(root, group);
+    for (const row of group.querySelectorAll<PiTranscriptRow>("pi-transcript-row[data-transcript-id]")) {
+      bindTranscriptElement(row, bindingState, bindingOptions);
+      const item = transcript.find((candidate) => candidate.id === row.dataset.transcriptId);
+      if (item) updateTranscriptRow(row, transcript, item, rowOptions);
+    }
+    for (const id of itemIds) patchedIds.add(id);
+    if (existingGroup) {
+      existingGroup.replaceWith(group);
+      insertionMarker?.remove();
+    } else if (insertionMarker) {
+      insertionMarker.replaceWith(group);
+    } else {
+      insertToolRunGroupInOrder(transcriptElement, transcript, group, items[0]!);
+    }
+  }
+  bindToolRunGroups(root, toolGroupOptions);
+  return patchedIds;
 }
 
 export function patchDirtyTranscriptRows(root: ParentNode, transcriptElement: HTMLElement, transcript: TranscriptItem[], dirtyTranscriptIds: Set<string>, rowOptions: TranscriptRowStateOptions, bindingState: TranscriptBindingState, bindingOptions: TranscriptBindingOptions): void {

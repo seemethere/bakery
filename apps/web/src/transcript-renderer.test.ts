@@ -36,7 +36,7 @@ describe("transcript renderer", () => {
 
     expect(html).toContain('data-transcript-id="u1"');
     expect(html).toContain('class="tool-run-group"');
-    expect(html).toContain('data-tool-run-group="t1|t2" open');
+    expect(html).toContain('data-tool-run-group="t1|t2" data-tool-run-item-ids="t1|t2" open');
     expect(html).toContain("Ran 2 tools");
     expect(html).toContain("1.5s");
     expect(html).toContain(">Read</span>");
@@ -69,7 +69,7 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderTranscriptHtml(transcript, new Set());
 
     expect(html).toContain('class="tool-run-group live-tool-stack"');
-    expect(html).toContain('data-tool-run-group="t1|t2|t3|t4|t5|t6" data-live-tool-stack="true" open');
+    expect(html).toContain('data-tool-run-group="live:t1" data-tool-run-item-ids="t1|t2|t3|t4|t5|t6" data-live-tool-stack="true" open');
     expect(html).toContain("Running Read 6");
     expect(html).toContain("6 tools");
     expect(html).not.toContain("Tool activity");
@@ -77,6 +77,28 @@ describe("transcript renderer", () => {
     expect(html).not.toContain('data-transcript-id="t1"');
     expect(html).toContain('data-transcript-id="t2"');
     expect(html).toContain('data-transcript-id="t6"');
+  });
+
+  test("renders a single running tool as a stable live group", () => {
+    const transcript = [
+      item({ id: "t1", kind: "tool", title: "Read", status: "running", startedAt: "2026-04-27T00:00:00.000Z" }),
+    ];
+
+    expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBe("live:t1");
+    const html = renderHelpers.renderTranscriptHtml(transcript, new Set(), { activeToolGroupId: "live:t1", nowMs: Date.parse("2026-04-27T00:00:03.000Z") });
+
+    expect(html).toContain('data-tool-run-group="live:t1" data-tool-run-item-ids="t1" data-live-tool-stack="true" open');
+    expect(html).toContain("Running Read");
+    expect(html).toContain("1 tool · 3s");
+  });
+
+  test("keeps the live tool group id stable as tools are appended", () => {
+    const first = [item({ id: "t1", kind: "tool", title: "Read", status: "running" })];
+    const second = [item({ id: "t1", kind: "tool", title: "Read" }), item({ id: "t2", kind: "tool", title: "Bash", status: "running" })];
+
+    expect(renderHelpers.latestGroupableToolGroupId(first)).toBe("live:t1");
+    expect(renderHelpers.latestGroupableToolGroupId(second)).toBe("live:t1");
+    expect(renderHelpers.renderTranscriptHtml(second, new Set())).toContain("Running Bash");
   });
 
   test("renders live tool groups compact when requested", () => {
@@ -88,6 +110,7 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderTranscriptHtml(transcript, new Set(), { compactLiveToolGroups: true });
 
     expect(html).toContain('data-live-tool-stack="true" ');
+    expect(html).toContain('data-tool-run-group="live:t1"');
     expect(html).not.toContain('data-live-tool-stack="true" open');
     expect(html).toContain("Running Bash");
   });
