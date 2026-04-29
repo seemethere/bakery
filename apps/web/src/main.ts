@@ -6,6 +6,7 @@ import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPr
 import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionSidebarHtml, renderSessionSidebarBackdrop as renderSessionSidebarBackdropHtml, sessionSidebarOverlayOpen } from "./session-sidebar-controller";
 import { bindSessionShellEvents } from "./session-shell-events";
+import { patchConnectionBanner as patchConnectionBannerWithState, patchHeaderStatus as patchHeaderStatusWithHtml, renderAttentionNeeded as renderAttentionNeededHtml, renderConnectionBanner as renderConnectionBannerHtml, renderConnectionBannerContent as renderConnectionBannerContentHtml, renderStatusPill as renderStatusPillHtml, renderViewerCount as renderViewerCountHtml, shouldRenderConnectionBanner as shouldRenderConnectionBannerForState, type AgentStatus, type ConnectionState } from "./session-status-controller";
 import { mergeSessionMetadataUpdate } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
@@ -36,8 +37,6 @@ declare global {
   }
 }
 
-type AgentStatus = SessionSnapshot["status"] | "disconnected" | "connecting";
-type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected" | "retry_failed";
 type PlanAction = "accept" | "chat";
 type ThemePreference = "system" | "workbench-dark" | "workbench-light";
 const themeStorageKey = "piWebThemePreference";
@@ -1769,28 +1768,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderAttentionNeeded(): string {
-    const isController = this.controller?.isController ?? true;
-    if (this.connectionState === "retry_failed") {
-      return `<div class="attention-needed urgent" role="alert">
-        <strong>Reconnect failed</strong>
-        <span>Check whether the backend is running, then refresh or reopen the session. Your prompt draft stays local.</span>
-        <div class="attention-actions"><button type="button" id="attentionRefresh">Save / Refresh</button></div>
-      </div>`;
-    }
-    if (this.connectionState === "disconnected") {
-      return `<div class="attention-needed warning" role="status">
-        <strong>Disconnected</strong>
-        <span>Sending is paused while the browser reconnects. Your prompt draft is saved locally.</span>
-      </div>`;
-    }
-    if (!isController) {
-      return `<div class="attention-needed viewer" role="status">
-        <strong>Viewer mode</strong>
-        <span>Take control to send prompts or steer the active run.</span>
-        <div class="attention-actions"><button type="button" data-control-action="take">Take control</button></div>
-      </div>`;
-    }
-    return "";
+    return renderAttentionNeededHtml({ controller: this.controller, connectionState: this.connectionState });
   }
 
   private renderTranscript(): string {
@@ -1882,68 +1860,37 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderStatusPill(): string {
-    if (!this.selectedSession || this.status === "idle") return "";
-    const labels: Record<AgentStatus, string> = {
-      aborting: "Stopping",
-      connecting: "Connecting",
-      disconnected: "Offline",
-      error: "Error",
-      idle: "Idle",
-      running: "Running",
-    };
-    const label = labels[this.status] ?? this.status;
-    return `<span class="status ${escapeHtml(this.status)}" aria-label="Agent status: ${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    return renderStatusPillHtml(this.selectedSession, this.status);
   }
 
   private patchHeaderStatus(): void {
-    const headerStatus = this.querySelector<HTMLElement>(".header-status");
-    const status = headerStatus?.querySelector<HTMLElement>(".status");
-    const html = this.renderStatusPill();
-    if (!headerStatus) return;
-    if (!html) {
-      status?.remove();
-      return;
-    }
-    if (status) {
-      status.outerHTML = html;
-      return;
-    }
-    headerStatus.insertAdjacentHTML("beforeend", html);
+    patchHeaderStatusWithHtml(this, this.renderStatusPill());
+  }
+
+  private connectionBannerState() {
+    return {
+      selectedSession: this.selectedSession,
+      connectionState: this.connectionState,
+      connectionMessage: this.connectionMessage,
+      promptDraft: this.promptDraft,
+      promptImageCount: this.promptImages.length,
+    };
   }
 
   private patchConnectionBanner(): void {
-    const banner = this.querySelector<HTMLElement>(".connection-banner");
-    if (!this.shouldRenderConnectionBanner()) {
-      banner?.remove();
-      return;
-    }
-    const html = this.renderConnectionBanner();
-    if (banner) {
-      banner.outerHTML = html;
-      return;
-    }
-    this.querySelector("main > header")?.insertAdjacentHTML("afterend", html);
+    patchConnectionBannerWithState(this, this.connectionBannerState());
   }
 
   private shouldRenderConnectionBanner(): boolean {
-    if (!this.selectedSession) return false;
-    return this.connectionState !== "connected" || Boolean(this.promptDraft) || this.promptImages.length > 0;
+    return shouldRenderConnectionBannerForState(this.connectionBannerState());
   }
 
   private renderConnectionBanner(): string {
-    if (!this.shouldRenderConnectionBanner()) return "";
-    return `<div class="connection-banner ${escapeHtml(this.connectionState)}" role="status">${this.renderConnectionBannerContent()}</div>`;
+    return renderConnectionBannerHtml(this.connectionBannerState());
   }
 
   private renderConnectionBannerContent(): string {
-    const stateLabel = this.connectionState.replace("_", " ");
-    const message = this.connectionMessage.trim();
-    const showMessage = message.length > 0 && message.toLowerCase() !== `${stateLabel}.`;
-    return `
-      <strong>${escapeHtml(stateLabel)}</strong>
-      ${showMessage ? `<span>${escapeHtml(message)}</span>` : ""}
-      ${this.promptDraft ? `<small>Draft saved locally for this session.</small>` : ""}
-      ${this.promptImages.length > 0 ? `<small>Attached images will be lost on refresh.</small>` : ""}`;
+    return renderConnectionBannerContentHtml(this.connectionBannerState());
   }
 
   private patchJumpToLatest(): void {
@@ -2123,13 +2070,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private renderViewerCount(): string {
-    const viewers = Math.max(0, (this.controller?.connectedClients ?? 1) - 1);
-    if (!this.selectedSession || viewers < 1) return "";
-    const label = `${viewers} viewer${viewers === 1 ? "" : "s"}`;
-    return `<span class="viewer-count" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></svg>
-      <span>${viewers}</span>
-    </span>`;
+    return renderViewerCountHtml(this.selectedSession, this.controller);
   }
 
   private renderSessionsMain(): string {
