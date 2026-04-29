@@ -3,8 +3,9 @@ import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAut
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
 import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
-import { isSessionRecencyGroupId, persistCollapsedSessionGroups, storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
+import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionSidebarHtml, renderSessionSidebarBackdrop as renderSessionSidebarBackdropHtml, sessionSidebarOverlayOpen } from "./session-sidebar-controller";
+import { bindSessionShellEvents } from "./session-shell-events";
 import { mergeSessionMetadataUpdate } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
@@ -1313,60 +1314,43 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private bindSessionSidebarEvents(): void {
-    this.querySelector<HTMLSelectElement>("#themePreference")?.addEventListener("change", (event) => {
-      const value = (event.currentTarget as HTMLSelectElement).value;
-      this.themePreference = isThemePreference(value) ? value : "system";
-      localStorage.setItem(themeStorageKey, this.themePreference);
-      applyThemePreference(this.themePreference);
-      this.render();
-    });
-    this.querySelector<HTMLButtonElement>("#saveSettings")?.addEventListener("click", () => {
-      const apiBase = this.querySelector<HTMLInputElement>("#apiBase")?.value.trim();
-      const token = this.querySelector<HTMLInputElement>("#token")?.value.trim() ?? "";
-      if (apiBase) {
-        this.apiBase = apiBase;
-        localStorage.setItem("piWebApiBase", apiBase);
-      }
-      this.token = token;
-      localStorage.setItem("piWebAuthToken", token);
-      void this.refresh();
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-route-path]").forEach((button) => {
-      button.addEventListener("click", () => this.navigateToPath(button.dataset.routePath || "/"));
-    });
-    this.querySelector<HTMLInputElement>("#sessionsSearch")?.addEventListener("input", (event) => {
-      this.sessionsSearch = (event.currentTarget as HTMLInputElement).value;
-      this.render();
-    });
-    this.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void this.createSession());
-    this.querySelector<HTMLButtonElement>("#newIsolatedSession")?.addEventListener("click", () => void this.createSession(undefined, "git_worktree"));
-    this.querySelector<HTMLSelectElement>("#metadataModelSetting")?.addEventListener("change", (event) => {
-      const model = (event.currentTarget as HTMLSelectElement).value;
-      void this.api<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify({ sessionMetadataModel: model ? { model } : null }) }).then((settings) => {
-        this.appSettings = settings;
+    bindSessionShellEvents(this, {
+      sessions: this.sessions,
+      collapsedSessionGroups: this.collapsedSessionGroups,
+      setThemePreference: (value) => {
+        this.themePreference = isThemePreference(value) ? value : "system";
+        localStorage.setItem(themeStorageKey, this.themePreference);
+        applyThemePreference(this.themePreference);
         this.render();
-      }).catch((error) => {
-        this.notice = `Settings update failed: ${error instanceof Error ? error.message : String(error)}`;
+      },
+      saveSettings: (apiBase, token) => {
+        if (apiBase) {
+          this.apiBase = apiBase;
+          localStorage.setItem("piWebApiBase", apiBase);
+        }
+        this.token = token;
+        localStorage.setItem("piWebAuthToken", token);
+        void this.refresh();
+      },
+      navigateToPath: (path) => this.navigateToPath(path),
+      setSessionsSearch: (query) => {
+        this.sessionsSearch = query;
         this.render();
-      });
-    });
-    this.querySelector<HTMLButtonElement>("#toggleSessionSidebar")?.addEventListener("click", () => this.toggleSessionSidebar("toggleSessionSidebar"));
-    this.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.addEventListener("click", () => this.hideSessionSidebarFromBackdrop());
-    this.querySelectorAll<HTMLButtonElement>("[data-session-group-toggle]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const group = button.dataset.sessionGroupToggle;
-        if (!group || !isSessionRecencyGroupId(group)) return;
-        if (this.collapsedSessionGroups.has(group)) this.collapsedSessionGroups.delete(group);
-        else this.collapsedSessionGroups.add(group);
-        persistCollapsedSessionGroups(this.collapsedSessionGroups);
-        this.render();
-      });
-    });
-    this.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const session = this.sessions.find((candidate) => candidate.id === button.dataset.sessionId);
-        if (session) this.openSession(session);
-      });
+      },
+      createSession: (workspaceId, isolationKind) => this.createSession(workspaceId, isolationKind),
+      updateMetadataModel: (model) => {
+        void this.api<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify({ sessionMetadataModel: model ? { model } : null }) }).then((settings) => {
+          this.appSettings = settings;
+          this.render();
+        }).catch((error) => {
+          this.notice = `Settings update failed: ${error instanceof Error ? error.message : String(error)}`;
+          this.render();
+        });
+      },
+      toggleSessionSidebar: (buttonId) => this.toggleSessionSidebar(buttonId),
+      hideSessionSidebarFromBackdrop: () => this.hideSessionSidebarFromBackdrop(),
+      openSession: (session) => this.openSession(session),
+      render: () => this.render(),
     });
   }
 
