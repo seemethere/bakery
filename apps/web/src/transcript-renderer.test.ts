@@ -39,7 +39,7 @@ describe("transcript renderer", () => {
     expect(html).toContain('class="tool-activity-run"');
     expect(html).toContain('class="tool-activity-card"');
     expect(html).toContain('data-tool-activity-status="done"');
-    expect(html).toContain("1s · 2 calls");
+    expect(html).toContain("2s · 2 calls");
     expect(html).toContain('data-transcript-id="t1" data-tool-activity-member="activity:t1"');
     expect(html).toContain('data-transcript-id="t2" data-tool-activity-member="activity:t1"');
     expect(html).toContain('data-transcript-id="a1"');
@@ -54,7 +54,7 @@ describe("transcript renderer", () => {
     expect(renderHelpers.latestGroupableToolGroupId(transcript)).toBeUndefined();
     const html = renderHelpers.renderTranscriptHtml(transcript, { nowMs: Date.parse("2026-04-27T00:00:05.000Z") });
 
-    expect(html).toContain("1s · 2 calls");
+    expect(html).toContain("2s · 2 calls");
     expect(html).not.toContain("5s · 2 calls");
     expect(html.match(/data-transcript-id=/g)?.length).toBe(2);
   });
@@ -107,7 +107,7 @@ describe("transcript renderer", () => {
     });
   });
 
-  test("live activity duration follows the current running tool instead of the oldest grouped tool", () => {
+  test("live activity duration follows the whole grouped activity run", () => {
     const items = [
       item({
         id: "old-read",
@@ -132,9 +132,8 @@ describe("transcript renderer", () => {
       nowMs: Date.parse("2026-04-27T00:01:01.000Z"),
     });
 
-    expect(model.durationLabel).toBe("1s");
-    expect(model.receiptLabel).toBe("1s · 2 calls · Bash current command");
-    expect(model.receiptLabel).not.toContain("1m");
+    expect(model.durationLabel).toBe("1m 1s");
+    expect(model.receiptLabel).toBe("1m 1s · 2 calls · Bash current command");
   });
 
   test("full render and timer patch summary use the same live activity receipt", () => {
@@ -149,8 +148,8 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderToolActivity(items, options);
 
     expect(summary.receiptLabel).toBe(model.receiptLabel);
-    expect(summary.receiptLabel).toBe("2s · 2 calls · 1 failed · Bash running");
-    expect(html).toContain(">2s · 2 calls · 1 failed · Bash running</span>");
+    expect(summary.receiptLabel).toBe("12s · 2 calls · 1 failed · Bash running");
+    expect(html).toContain(">12s · 2 calls · 1 failed · Bash running</span>");
   });
 
   test("renders a single running tool with a stable activity id", () => {

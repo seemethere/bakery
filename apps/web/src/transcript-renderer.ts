@@ -36,26 +36,28 @@ function timestampMs(value: string | undefined): number | undefined {
   return Number.isFinite(time) ? time : undefined;
 }
 
+function groupStartedAtMs(items: readonly TranscriptItem[]): number | undefined {
+  const starts = items.map((item) => timestampMs(item.startedAt)).filter((time): time is number => time !== undefined);
+  return starts.length > 0 ? Math.min(...starts) : undefined;
+}
+
 function liveToolDurationMs(items: readonly TranscriptItem[], activeNowMs?: number): number | undefined {
   if (activeNowMs === undefined || !Number.isFinite(activeNowMs)) return undefined;
-  const runningStart = [...items]
-    .reverse()
-    .find((item) => item.status === "running" && timestampMs(item.startedAt) !== undefined)?.startedAt;
-  const startedAt = timestampMs(runningStart);
+  const startedAt = groupStartedAtMs(items);
   return startedAt === undefined ? undefined : Math.max(0, activeNowMs - startedAt);
 }
 
 function completedGroupDurationMs(items: readonly TranscriptItem[]): number | undefined {
+  const startedAt = groupStartedAtMs(items);
+  if (startedAt !== undefined) {
+    const ends = items.map((item) => timestampMs(item.endedAt)).filter((time): time is number => time !== undefined);
+    if (ends.length > 0) return Math.max(0, Math.max(...ends) - startedAt);
+  }
+
   const durations = items
     .map((item) => item.durationMs)
     .filter((duration): duration is number => duration !== undefined && Number.isFinite(duration) && duration >= 0);
   if (durations.length > 0) return durations.reduce((total, duration) => total + duration, 0);
-
-  const starts = items.map((item) => timestampMs(item.startedAt)).filter((time): time is number => time !== undefined);
-  if (starts.length > 0) {
-    const ends = items.map((item) => timestampMs(item.endedAt)).filter((time): time is number => time !== undefined);
-    if (ends.length > 0) return Math.max(0, Math.max(...ends) - Math.min(...starts));
-  }
   return undefined;
 }
 
