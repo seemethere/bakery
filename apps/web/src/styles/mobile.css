@@ -39,8 +39,8 @@
     z-index: 35;
     width: min(92vw, 360px);
     max-width: calc(100vw - 28px);
-    border-right: 1px solid var(--c-2a2f3a);
-    box-shadow: 0 18px 70px rgba(0, 0, 0, 0.52);
+    border-right: 1px solid color-mix(in srgb, var(--color-border-strong) 70%, transparent);
+    box-shadow: var(--shadow-panel);
   }
 
 
@@ -66,7 +66,7 @@
     height: 34px;
     min-width: 34px;
     padding: 0;
-    border-radius: 10px;
+    border-radius: 12px;
   }
 
   header {

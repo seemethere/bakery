@@ -1,3 +1,17 @@
+.session-sidebar {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-accent-soft) 10%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-bg-sidebar) 96%, var(--color-bg-elevated)), var(--color-bg-sidebar));
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, #fff 3%, transparent);
+}
+
+:root[data-theme="workbench-light"] .session-sidebar {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-accent-soft) 9%, transparent), transparent 34%),
+    linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--color-bg-elevated) 86%, #ffffff));
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.84);
+}
 
 .sidebar-titlebar {
   display: flex;
@@ -9,6 +23,8 @@
 
 .sidebar-titlebar h1 {
   margin: 0;
+  color: var(--color-text);
+  letter-spacing: -0.025em;
 }
 
 .sidebar-titlebar-actions {
@@ -17,10 +33,20 @@
   gap: 6px;
 }
 
+.pin-sidebar,
+.collapse-sidebar,
+.mobile-menu-button {
+  border-color: color-mix(in srgb, var(--color-border) 68%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 82%, transparent);
+  color: var(--color-text-secondary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
 .pin-sidebar {
   height: 32px;
   padding: 0 9px;
   font-size: 12px;
+  font-weight: 700;
 }
 
 .collapse-sidebar {
@@ -42,8 +68,8 @@
   z-index: 35;
   width: min(92vw, 380px);
   max-width: calc(100vw - 32px);
-  border-right: 1px solid var(--c-2a2f3a);
-  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.52);
+  border-right: 1px solid color-mix(in srgb, var(--color-border-strong) 70%, transparent);
+  box-shadow: var(--shadow-panel);
 }
 
 .session-sidebar-backdrop {
@@ -53,14 +79,16 @@
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: rgba(0, 0, 0, 0.38);
+  background: color-mix(in srgb, #000 42%, transparent);
   cursor: default;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .session-sidebar-backdrop:hover,
 .session-sidebar-backdrop:focus-visible {
   border: 0;
-  background: rgba(0, 0, 0, 0.38);
+  background: color-mix(in srgb, #000 42%, transparent);
 }
 
 .collapsed-sidebar-label,
@@ -77,27 +105,80 @@
   margin-bottom: 12px;
 }
 
+.sidebar-session-section,
+.sidebar-settings-nav-section {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-bg-surface) 46%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 3%, transparent), 0 12px 32px color-mix(in srgb, #000 9%, transparent);
+}
+
+:root[data-theme="workbench-light"] .sidebar-session-section,
+:root[data-theme="workbench-light"] .sidebar-settings-nav-section {
+  background: color-mix(in srgb, #ffffff 78%, var(--color-bg-elevated));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.86), 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.sidebar-settings-nav-section {
+  margin-top: 10px;
+}
+
+.sidebar-settings-nav-section hr {
+  display: none;
+}
+
 .sidebar-nav-item {
   display: grid;
   gap: 3px;
+  width: 100%;
+  min-width: 0;
+  border-color: color-mix(in srgb, var(--color-border) 58%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 62%, transparent);
+  color: var(--color-text-secondary);
   text-align: left;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 3%, transparent);
 }
 
 .sidebar-nav-item strong {
   color: var(--color-text);
+  font-size: 13px;
+  letter-spacing: -0.01em;
 }
 
 .sidebar-nav-item span {
   overflow: hidden;
   color: var(--color-text-muted);
   font-size: 12px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.sidebar-nav-item:hover,
+.sidebar-nav-item:focus-visible,
 .sidebar-nav-item.active {
-  border-color: color-mix(in srgb, var(--color-accent-soft) 55%, var(--color-border));
-  background: color-mix(in srgb, var(--color-accent-soft) 14%, var(--color-bg-elevated));
+  border-color: color-mix(in srgb, var(--color-accent-soft) 62%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 11%, var(--color-bg-elevated));
+  color: var(--color-text);
+}
+
+.sidebar-nav-item:focus-visible,
+.pin-sidebar:focus-visible,
+.collapse-sidebar:focus-visible,
+.mobile-menu-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent-soft) 15%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.sidebar-nav-item.active {
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--color-accent-soft) 88%, var(--color-accent)),
+    inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent),
+    0 12px 30px color-mix(in srgb, var(--color-accent-soft) 8%, transparent);
 }
 
 .mobile-menu-button {
@@ -108,7 +189,7 @@
   height: 34px;
   min-width: 34px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 pi-web-agent:not(.session-sidebar-collapsed) .mobile-menu-button,
@@ -123,38 +204,56 @@ pi-web-agent.mobile-layout .mobile-menu-button {
 h2 {
   font-size: 14px;
   margin-top: 20px;
-  color: var(--c-aab2c0);
+  color: var(--color-text-secondary);
 }
 
 label {
   display: grid;
   gap: 6px;
   margin: 10px 0;
+  color: var(--color-text-muted);
   font-size: 12px;
-  color: var(--c-aab2c0);
+}
+
+.session-sidebar label {
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 input,
 select,
 textarea,
 button {
-  border: 1px solid var(--c-343b49);
-  border-radius: 8px;
-  background: var(--c-0f1117);
-  color: var(--c-e8eaf0);
+  border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-bg-input) 88%, transparent);
+  color: var(--color-text);
   padding: 9px 10px;
   font: inherit;
 }
 
+select {
+  min-width: 0;
+  color: var(--color-text-secondary);
+}
+
 button {
   cursor: pointer;
-  background: var(--c-202637);
+  background: color-mix(in srgb, var(--color-bg-elevated) 82%, transparent);
+  color: var(--color-text-secondary);
+  font-weight: 700;
 }
 
 button:hover,
-button.active {
-  border-color: var(--c-668cff);
-  background: var(--c-27345f);
+button.active,
+button:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 10%, var(--color-bg-elevated));
+  color: var(--color-text);
 }
 
 .new-session-actions {
@@ -165,6 +264,15 @@ button.active {
 
 .new-session-actions button {
   min-width: 0;
+  min-height: 38px;
+  border-radius: 14px;
+  font-size: 12px;
+}
+
+.new-session-actions button:first-child {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 58%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 14%, var(--color-bg-elevated));
+  color: var(--color-text);
 }
 
 .sessions-heading {
@@ -203,18 +311,19 @@ button.active {
   padding: 6px 8px;
   border-color: transparent;
   background: transparent;
-  color: var(--c-aab2c0);
+  color: var(--color-text-muted);
   font-size: 12px;
   text-align: left;
 }
 
-.session-group-heading:hover {
-  border-color: var(--c-343b49);
-  background: var(--c-202637);
+.session-group-heading:hover,
+.session-group-heading:focus-visible {
+  border-color: color-mix(in srgb, var(--color-border) 62%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, transparent);
 }
 
 .session-group-heading small {
-  color: var(--c-8b94a7);
+  color: var(--color-text-faint);
 }
 
 .sessions {
@@ -225,7 +334,20 @@ button.active {
 .session-card {
   display: grid;
   gap: 5px;
+  border-color: color-mix(in srgb, var(--color-border) 58%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-bg-surface) 74%, transparent);
+  color: var(--color-text-secondary);
   text-align: left;
+  box-shadow: var(--shadow-card);
+}
+
+.session-card:hover,
+.session-card:focus-visible,
+.session-card.active {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 60%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 9%, var(--color-bg-surface));
+  color: var(--color-text);
 }
 
 .session-card-top {
@@ -246,26 +368,27 @@ button.active {
 
 .session-card strong {
   min-width: 0;
-  color: var(--c-e8eaf0);
+  color: var(--color-text);
 }
 
 .session-snippet {
   display: block;
-  color: var(--c-aab2c0);
+  color: var(--color-text-muted);
   font-size: 12px;
 }
 
 .session-card small {
   display: block;
-  color: var(--c-8b94a7);
+  color: var(--color-text-faint);
   font-size: 11px;
 }
 
 .session-indicator {
   flex: 0 0 auto;
-  border: 1px solid var(--c-343b49);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   border-radius: 999px;
-  color: var(--c-aab2c0);
+  background: color-mix(in srgb, var(--color-bg-muted) 72%, transparent);
+  color: var(--color-text-muted);
   font-size: 10px;
   font-style: normal;
   padding: 1px 6px;
@@ -273,32 +396,31 @@ button.active {
 }
 
 .session-indicator.isolated {
-  border-color: var(--c-668cff);
-  background: var(--c-22305a);
-  color: var(--c-b7d4ff);
+  border-color: color-mix(in srgb, var(--color-accent-soft) 62%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 14%, var(--color-bg-elevated));
+  color: var(--color-accent-soft);
 }
 
 .session-indicator.running {
-  border-color: var(--c-315e9d);
-  background: var(--c-162c4f);
-  color: var(--c-b7d4ff);
+  border-color: color-mix(in srgb, var(--color-info) 60%, var(--color-border));
+  background: color-mix(in srgb, var(--color-info-bg) 58%, transparent);
+  color: var(--color-info);
 }
 
 .session-indicator.error,
 .session-indicator.aborting {
-  border-color: var(--c-8b3d3d);
-  background: var(--c-3a1717);
-  color: var(--c-ffb5b5);
+  border-color: color-mix(in srgb, var(--color-error) 58%, var(--color-border));
+  background: color-mix(in srgb, var(--color-error-bg) 72%, transparent);
+  color: var(--color-error);
 }
 
-.empty-sidebar,
-.sidebar-mode {
-  color: var(--c-8b94a7);
+.empty-sidebar {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 66%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-bg-surface) 46%, transparent);
+  color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.4;
 }
-
-.sidebar-mode {
-  margin: 8px 0 0;
-}
-

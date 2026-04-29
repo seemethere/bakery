@@ -1584,9 +1584,6 @@ class PiWebAgentApp extends HTMLElement {
               <span>API, theme, metadata</span>
             </button>
           </div>
-          <div class="sidebar-section sidebar-mode-section">
-            ${this.sessionSidebarPinned ? `<p class="sidebar-mode">Pinned open as a left column</p>` : `<p class="sidebar-mode">Opens as a temporary session menu</p>`}
-          </div>
         `}
       </aside>`;
   }
