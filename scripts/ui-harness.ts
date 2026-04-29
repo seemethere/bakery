@@ -201,6 +201,32 @@ async function waitForAgentRunning(page: Page, timeout = 5_000): Promise<void> {
   }, undefined, { timeout });
 }
 
+async function assertComposerMode(page: Page, expected: "idle" | "running"): Promise<void> {
+  const state = await page.evaluate(() => {
+    const mode = document.querySelector<HTMLElement>(".composer-mode");
+    const footer = document.querySelector<HTMLElement>("footer");
+    const followUp = document.querySelector<HTMLElement>("#followUp");
+    const abort = document.querySelector<HTMLElement>("#abort");
+    const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
+    return {
+      modeText: mode?.querySelector("strong")?.textContent ?? "",
+      modeClass: mode?.className ?? "",
+      footerClass: footer?.className ?? "",
+      followUpHidden: followUp?.classList.contains("hidden") ?? null,
+      abortHidden: abort?.classList.contains("hidden") ?? null,
+      promptPlaceholder: prompt?.placeholder ?? "",
+    };
+  });
+  const running = expected === "running";
+  const expectedText = running ? "Running input" : "Prompt";
+  if (state.modeText !== expectedText) throw new Error(`Expected composer mode ${expectedText}, saw ${JSON.stringify(state)}`);
+  if (!state.modeClass.includes(expected)) throw new Error(`Expected composer mode class ${expected}, saw ${JSON.stringify(state)}`);
+  if (state.footerClass.includes("running-footer") !== running) throw new Error(`Expected footer running=${running}, saw ${JSON.stringify(state)}`);
+  if (state.followUpHidden !== !running || state.abortHidden !== !running) throw new Error(`Expected running controls hidden=${!running}, saw ${JSON.stringify(state)}`);
+  if (running && !state.promptPlaceholder.includes("Steer")) throw new Error(`Expected running placeholder, saw ${JSON.stringify(state)}`);
+  if (!running && !state.promptPlaceholder.includes("Ask pi")) throw new Error(`Expected idle placeholder, saw ${JSON.stringify(state)}`);
+}
+
 async function sendPromptAndWaitIdle(page: Page, text: string): Promise<void> {
   await page.locator("#prompt").fill(text);
   await page.locator("#send").click();
@@ -745,6 +771,7 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   await page.locator("#prompt").fill("Please produce a long streaming performance response with markdown and code.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
+  await assertComposerMode(page, "running");
 
   const responsiveness: Array<{ label: string; ms: number }> = [];
   for (let i = 0; i < 12; i++) {
@@ -755,6 +782,7 @@ async function runStreamingResponsiveness(page: Page): Promise<Record<string, un
   }
 
   await waitForAgentIdle(page, 30_000);
+  await assertComposerMode(page, "idle");
   const maxLatencyMs = Math.max(...responsiveness.map((sample) => sample.ms));
   const slowSamples = responsiveness.filter((sample) => sample.ms > 750);
   if (slowSamples.length > 0) {

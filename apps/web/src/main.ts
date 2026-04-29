@@ -452,7 +452,7 @@ class PiWebAgentApp extends HTMLElement {
     this.lastSelectedSessionId = session.id;
     localStorage.setItem("piWebLastSessionId", session.id);
     this.transcript = [];
-    this.status = "connecting";
+    this.setAgentStatus("connecting");
     const hadLostAttachments = consumePromptAttachmentWarning(localStorage, session.id);
     this.notice = hadLostAttachments ? "Image attachments are not restored after a refresh. Please attach them again before sending." : "";
     this.promptDraft = this.loadPromptDraft(session.id);
@@ -494,7 +494,7 @@ class PiWebAgentApp extends HTMLElement {
     this.persistAttachmentWarningIfNeeded();
     this.selectedSession = null;
     this.transcript = [];
-    this.status = "disconnected";
+    this.setAgentStatus("disconnected");
     this.connectionState = "disconnected";
     this.connectionMessage = "No session connected.";
     this.notice = "";
@@ -544,7 +544,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     this.connectionState = state;
     this.connectionMessage = state === "reconnecting" ? `Reconnecting to ${session.id}...` : `Connecting to ${session.id}...`;
-    this.status = this.status === "running" ? this.status : "connecting";
+    this.setAgentStatus(this.status === "running" ? this.status : "connecting");
 
     const url = new URL(`${this.apiBase}/api/sessions/${session.id}/ws`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -577,7 +577,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private handleSocketClose(session: WebSession): void {
     if (this.selectedSession?.id !== session.id) return;
-    this.status = "disconnected";
+    this.setAgentStatus("disconnected");
     this.connectionState = "disconnected";
     this.connectionMessage = "Connection lost. Retrying shortly...";
     this.scheduleReconnect(session);
@@ -602,8 +602,14 @@ class PiWebAgentApp extends HTMLElement {
     }, delay);
   }
 
+  private setAgentStatus(status: AgentStatus): void {
+    const previous = this.status;
+    this.status = status;
+    if (previous !== status) this.patchComposerMode();
+  }
+
   private applySnapshot(snapshot: SessionSnapshot): void {
-    this.status = snapshot.status;
+    this.setAgentStatus(snapshot.status);
     const previous = this.selectedSession?.id === snapshot.session.id ? this.selectedSession : null;
     const session = previous && previous.titleSource === "manual" && snapshot.session.titleSource !== "manual"
       ? { ...snapshot.session, title: previous.title, titleSource: previous.titleSource }
@@ -676,10 +682,10 @@ class PiWebAgentApp extends HTMLElement {
     this.transcriptFollow.disableFollowIfDetached(transcript);
 
     if (type === "agent_start" || type === "turn_start") {
-      this.status = "running";
+      this.setAgentStatus("running");
     }
     if (type === "agent_end" || type === "turn_end") {
-      this.status = "idle";
+      this.setAgentStatus("idle");
       this.runningQueue = runningQueueFromUpdate(this.runningQueue, [], []);
       void this.refreshTree();
     }
@@ -691,8 +697,8 @@ class PiWebAgentApp extends HTMLElement {
 
     if (type === "bash_execution_start" || type === "bash_execution_update" || type === "bash_execution_end") {
       const command = bashEventCommand(event);
-      if (type !== "bash_execution_end") this.status = "running";
-      else this.status = "idle";
+      if (type !== "bash_execution_end") this.setAgentStatus("running");
+      else this.setAgentStatus("idle");
       if (type === "bash_execution_start") {
         const pendingIds = this.transcript
           .filter((item) => item.id.startsWith("bash:pending:") && isRecord(item.raw) && item.raw.command === command)
@@ -987,7 +993,7 @@ class PiWebAgentApp extends HTMLElement {
     this.ws.send(JSON.stringify(buildComposerSendPayload(type, text, images)));
     const shouldOptimisticallyShowRunning = type === "prompt" && !bash && !text.trimStart().startsWith("/");
     if (shouldOptimisticallyShowRunning) {
-      this.status = "running";
+      this.setAgentStatus("running");
       if (this.selectedSession) {
         const optimistic = { ...this.selectedSession, status: "running" as const, lastActivityAt: new Date().toISOString() };
         this.selectedSession = optimistic;
@@ -998,7 +1004,7 @@ class PiWebAgentApp extends HTMLElement {
     if (type === "steer") this.runningQueue = addRunningQueueItem(this.runningQueue, "steering", queuedItem);
     if (type === "follow_up") this.runningQueue = addRunningQueueItem(this.runningQueue, "followUp", queuedItem);
     if (bash) {
-      this.status = "running";
+      this.setAgentStatus("running");
       this.upsertTranscript({
         id: `bash:pending:${Date.now()}`,
         kind: "tool",
@@ -1238,7 +1244,7 @@ class PiWebAgentApp extends HTMLElement {
     this.promptDraft = input.value;
     this.schedulePromptDraftSave();
     this.patchComposerSendAvailability(input);
-    if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerBashMode();
+    if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerMode();
     const commandToken = this.getCommandToken(input);
     if (commandToken) {
       this.updateCommandAutocomplete(input, commandToken);
@@ -2472,6 +2478,7 @@ class PiWebAgentApp extends HTMLElement {
       this.patchTranscriptStructure(transcript);
       this.patchHeaderStatus();
       this.patchConnectionBanner();
+      this.patchComposerMode();
       this.patchRunningQueue();
       this.patchJumpToLatest();
       this.syncOpenActionMenus(transcript);
@@ -2485,6 +2492,7 @@ class PiWebAgentApp extends HTMLElement {
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
+    this.patchComposerMode();
     this.patchRunningQueue();
     this.patchJumpToLatest();
     this.syncOpenActionMenus(transcript);
@@ -2525,19 +2533,44 @@ class PiWebAgentApp extends HTMLElement {
     return this.promptDraft.trimStart().startsWith("!");
   }
 
-  private patchComposerBashMode(): void {
+  private patchComposerMode(): void {
     const isBash = this.isBashPromptDraft();
     const isNoContext = this.promptDraft.trimStart().startsWith("!!");
     const isRunning = this.status === "running";
     const label = isBash ? (isNoContext ? "Bash · no context" : "Bash command") : isRunning ? "Running input" : "Prompt";
     const promptShell = this.querySelector<HTMLElement>(".prompt-shell");
+    const footer = this.querySelector<HTMLElement>("footer");
     const composerMode = this.querySelector<HTMLElement>(".composer-mode");
+    const prompt = this.querySelector<HTMLTextAreaElement>("#prompt");
+    const controls = this.querySelector<HTMLElement>(".controls");
+    const send = this.querySelector<HTMLButtonElement>("#send");
+    const followUp = this.querySelector<HTMLButtonElement>("#followUp");
+    const abort = this.querySelector<HTMLButtonElement>("#abort");
+
     promptShell?.classList.toggle("bash-mode", isBash);
     promptShell?.classList.toggle("no-context", isNoContext);
+    footer?.classList.toggle("running-footer", isRunning);
     composerMode?.classList.toggle("bash-mode", isBash);
+    composerMode?.classList.toggle("running", !isBash && isRunning);
+    composerMode?.classList.toggle("idle", !isBash && !isRunning);
     composerMode?.classList.toggle("no-context", isNoContext);
+    controls?.classList.toggle("running", isRunning);
+    followUp?.classList.toggle("hidden", !isRunning);
+    abort?.classList.toggle("hidden", !isRunning);
+
+    if (prompt) {
+      const isController = this.controller?.isController ?? true;
+      prompt.placeholder = isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send";
+    }
     const modeLabel = composerMode?.querySelector<HTMLElement>("strong");
     if (modeLabel) modeLabel.textContent = label;
+    if (send) {
+      send.dataset.tooltip = isRunning ? "Guide active run · Enter" : "Send · Enter";
+      send.setAttribute("aria-label", isRunning ? "Guide active run" : "Send");
+      const srOnly = send.querySelector<HTMLElement>(".sr-only");
+      if (srOnly) srOnly.textContent = isRunning ? "Guide active run" : "Send";
+    }
+    this.patchComposerSendAvailability(prompt);
   }
 
   private renderContextUsageNotice(): string {
