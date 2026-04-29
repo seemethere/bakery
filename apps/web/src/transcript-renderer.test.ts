@@ -107,6 +107,52 @@ describe("transcript renderer", () => {
     });
   });
 
+  test("live activity duration follows the current running tool instead of the oldest grouped tool", () => {
+    const items = [
+      item({
+        id: "old-read",
+        kind: "tool",
+        title: "Read old file",
+        status: "done",
+        startedAt: "2026-04-27T00:00:00.000Z",
+        endedAt: "2026-04-27T00:00:00.500Z",
+        durationMs: 500,
+      }),
+      item({
+        id: "current-bash",
+        kind: "tool",
+        title: "Bash current command",
+        status: "running",
+        startedAt: "2026-04-27T00:01:00.000Z",
+      }),
+    ];
+
+    const model = renderHelpers.toolActivityRenderModel(items, {
+      activeToolGroupId: "activity:old-read",
+      nowMs: Date.parse("2026-04-27T00:01:01.000Z"),
+    });
+
+    expect(model.durationLabel).toBe("1s");
+    expect(model.receiptLabel).toBe("1s · 2 calls · Bash current command");
+    expect(model.receiptLabel).not.toContain("1m");
+  });
+
+  test("full render and timer patch summary use the same live activity receipt", () => {
+    const items = [
+      item({ id: "failed", kind: "tool", title: "Read failed", status: "error", startedAt: "2026-04-27T00:00:00.000Z", endedAt: "2026-04-27T00:00:01.000Z", durationMs: 1000 }),
+      item({ id: "running", kind: "tool", title: "Bash running", status: "running", startedAt: "2026-04-27T00:00:10.000Z" }),
+    ];
+    const options = { activeToolGroupId: "activity:failed", nowMs: Date.parse("2026-04-27T00:00:12.000Z") };
+
+    const model = renderHelpers.toolActivityRenderModel(items, options);
+    const summary = renderHelpers.toolRunSummaryText(items, options);
+    const html = renderHelpers.renderToolActivity(items, options);
+
+    expect(summary.receiptLabel).toBe(model.receiptLabel);
+    expect(summary.receiptLabel).toBe("2s · 2 calls · 1 failed · Bash running");
+    expect(html).toContain(">2s · 2 calls · 1 failed · Bash running</span>");
+  });
+
   test("renders a single running tool with a stable activity id", () => {
     const transcript = [
       item({ id: "t1", kind: "tool", title: "Read", status: "running", startedAt: "2026-04-27T00:00:00.000Z" }),

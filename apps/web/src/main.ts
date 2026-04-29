@@ -2472,7 +2472,7 @@ class PiWebAgentApp extends HTMLElement {
     const items = this.transcript.filter((item) => itemIds.has(item.id));
     if (items.length === 0) return false;
     const summary = toolRunSummaryText(items, { activeToolGroupId: groupId, nowMs: Date.now() });
-    const receiptText = [summary.meta, summary.label].filter(Boolean).join(" · ");
+    const receiptText = summary.receiptLabel;
     if (receipt.textContent !== receiptText) receipt.textContent = receiptText;
     receipt.title = receiptText;
     return true;

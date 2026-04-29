@@ -30,27 +30,37 @@ function toolRunGroupItemIds(items: readonly TranscriptItem[]): string {
   return items.map((item) => item.id).join("|");
 }
 
-function groupDurationMs(items: readonly TranscriptItem[], activeNowMs?: number): number | undefined {
-  const starts = items
-    .map((item) => item.startedAt ? Date.parse(item.startedAt) : Number.NaN)
-    .filter(Number.isFinite);
-  if (activeNowMs !== undefined && Number.isFinite(activeNowMs) && starts.length > 0) {
-    return Math.max(0, activeNowMs - Math.min(...starts));
-  }
+function timestampMs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : undefined;
+}
 
+function liveToolDurationMs(items: readonly TranscriptItem[], activeNowMs?: number): number | undefined {
+  if (activeNowMs === undefined || !Number.isFinite(activeNowMs)) return undefined;
+  const runningStart = [...items]
+    .reverse()
+    .find((item) => item.status === "running" && timestampMs(item.startedAt) !== undefined)?.startedAt;
+  const startedAt = timestampMs(runningStart);
+  return startedAt === undefined ? undefined : Math.max(0, activeNowMs - startedAt);
+}
+
+function completedGroupDurationMs(items: readonly TranscriptItem[]): number | undefined {
   const durations = items
     .map((item) => item.durationMs)
     .filter((duration): duration is number => duration !== undefined && Number.isFinite(duration) && duration >= 0);
   if (durations.length > 0) return durations.reduce((total, duration) => total + duration, 0);
 
+  const starts = items.map((item) => timestampMs(item.startedAt)).filter((time): time is number => time !== undefined);
   if (starts.length > 0) {
-    const firstStart = Math.min(...starts);
-    const ends = items
-      .map((item) => item.endedAt ? Date.parse(item.endedAt) : Number.NaN)
-      .filter(Number.isFinite);
-    if (ends.length > 0) return Math.max(0, Math.max(...ends) - firstStart);
+    const ends = items.map((item) => timestampMs(item.endedAt)).filter((time): time is number => time !== undefined);
+    if (ends.length > 0) return Math.max(0, Math.max(...ends) - Math.min(...starts));
   }
   return undefined;
+}
+
+function groupDurationMs(items: readonly TranscriptItem[], activeNowMs?: number): number | undefined {
+  return hasRunningTool(items) ? liveToolDurationMs(items, activeNowMs) : completedGroupDurationMs(items);
 }
 
 function toolActivityRuns(transcript: readonly TranscriptItem[]): TranscriptItem[][] {
@@ -144,9 +154,9 @@ export function toolActivityRenderModel(items: readonly TranscriptItem[], option
   };
 }
 
-export function toolRunSummaryText(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): { title: string; meta: string; label: string } {
+export function toolRunSummaryText(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): { title: string; meta: string; label: string; receiptLabel: string } {
   const model = toolActivityRenderModel(items, options);
-  return { title: model.title, meta: model.meta, label: model.label };
+  return { title: model.title, meta: model.meta, label: model.label, receiptLabel: model.receiptLabel };
 }
 
 export function renderToolActivity(items: readonly TranscriptItem[], options: TranscriptRenderOptions = {}): string {
