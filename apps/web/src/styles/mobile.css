@@ -473,6 +473,49 @@
     max-width: min(42ch, 46vw);
   }
 
+  .message.tool.done.collapsed:not(.developer-bash) {
+    padding-left: 8px;
+    opacity: 0.72;
+  }
+
+  .message.tool.done.collapsed:not(.developer-bash) + .message.tool.done.collapsed:not(.developer-bash) {
+    margin-top: 0;
+  }
+
+  .message.tool.done.collapsed .message-header {
+    display: grid;
+    grid-template-columns: 24px minmax(5ch, 10ch) minmax(0, 1fr);
+    gap: 5px;
+    min-height: 30px;
+    padding: 2px 0;
+  }
+
+  .message.tool.done.collapsed .message-expand-toggle {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    font-size: 11px;
+  }
+
+  .message.tool.done.collapsed .message-header strong {
+    max-width: none;
+    color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
+    font-size: 12px;
+  }
+
+  .message.tool.done.collapsed .tool-summary {
+    min-width: 0;
+    color: color-mix(in srgb, var(--color-text-muted) 82%, transparent);
+    font-size: 12px;
+  }
+
+  .message.tool.done.collapsed .message-header-spacer,
+  .message.tool.done.collapsed .tool-duration,
+  .message.tool.done.collapsed .message-status,
+  .message.tool.done.collapsed .message-action-area {
+    display: none;
+  }
+
   .tool-activity-strip {
     gap: 8px;
     min-height: 36px;
