@@ -1,5 +1,6 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type CommandResponse, type ContextUsage, type ControllerInfo, type FileCompleteResponse, type FileSearchResponse, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
-import { closedCommandAutocompleteState, closedFileAutocompleteState, commandAutocompleteToken, fileAutocompleteToken, renderCommandAutocomplete, renderFileAutocomplete, type AutocompleteToken, type CommandAutocompleteState, type FileAutocompleteState } from "./autocomplete";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
+import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
 import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, renderSessionSummary as renderSessionSummaryHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
@@ -141,12 +142,17 @@ class PiWebAgentApp extends HTMLElement {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private socketGeneration = 0;
-  private fileAutocomplete: FileAutocompleteState = closedFileAutocompleteState();
-  private fileAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
-  private fileAutocompleteRequest = 0;
-  private commandAutocomplete: CommandAutocompleteState = closedCommandAutocompleteState();
-  private commandAutocompleteTimer: ReturnType<typeof setTimeout> | undefined;
-  private commandAutocompleteRequest = 0;
+  private readonly autocomplete = new AutocompleteController({
+    root: () => this,
+    selectedSessionId: () => this.selectedSession?.id ?? null,
+    promptDraft: () => this.promptDraft,
+    setPromptDraft: (value) => { this.promptDraft = value; },
+    savePromptDraft: () => this.savePromptDraft(),
+    api: (path, init) => this.api(path, init),
+    setNotice: (notice) => { this.notice = notice; },
+    render: () => this.render(),
+    syncAutocompleteScroll: () => this.syncAutocompleteScroll(),
+  });
   private promptDraftSaveTimer: ReturnType<typeof setTimeout> | undefined;
   private imagePickerActive = false;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1018,180 +1024,29 @@ class PiWebAgentApp extends HTMLElement {
     }
   }
 
-  private getFileToken(input: HTMLTextAreaElement): AutocompleteToken | null {
-    return fileAutocompleteToken(input.value, input.selectionStart ?? input.value.length);
-  }
-
-  private getCommandToken(input: HTMLTextAreaElement): AutocompleteToken | null {
-    return commandAutocompleteToken(input.value, input.selectionStart ?? input.value.length);
-  }
-
   private updatePromptDraft(input: HTMLTextAreaElement): void {
     const wasBashDraft = this.isBashPromptDraft();
     this.promptDraft = input.value;
     this.schedulePromptDraftSave();
     this.patchComposerSendAvailability(input);
     if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerMode();
-    const commandToken = this.getCommandToken(input);
-    if (commandToken) {
-      this.updateCommandAutocomplete(input, commandToken);
-      if (this.fileAutocomplete.active) {
-        this.closeFileAutocomplete();
-        this.render();
-      }
-      return;
-    }
-    const fileToken = this.getFileToken(input);
-    if (fileToken) {
-      this.updateFileAutocomplete(input, fileToken);
-      if (this.commandAutocomplete.active) {
-        this.closeCommandAutocomplete();
-        this.render();
-      }
-      return;
-    }
-    const hadAutocomplete = this.commandAutocomplete.active || this.fileAutocomplete.active;
-    this.closeCommandAutocomplete();
-    this.closeFileAutocomplete();
-    if (hadAutocomplete) this.render();
-  }
-
-  private updateFileAutocomplete(input: HTMLTextAreaElement, knownToken?: AutocompleteToken): void {
-    const token = knownToken ?? this.getFileToken(input);
-    if (!token || !this.selectedSession) {
-      const wasActive = this.fileAutocomplete.active;
-      this.closeFileAutocomplete();
-      if (wasActive) this.render();
-      return;
-    }
-
-    if (this.commandAutocomplete.active) this.closeCommandAutocomplete();
-    const shouldRenderOpen = !this.fileAutocomplete.active;
-    this.fileAutocomplete = { ...this.fileAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
-    if (shouldRenderOpen) this.render();
-    if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
-    const requestId = ++this.fileAutocompleteRequest;
-    this.fileAutocompleteTimer = setTimeout(() => void this.fetchFileAutocomplete(token, requestId), 120);
-  }
-
-  private async fetchFileAutocomplete(token: AutocompleteToken, requestId: number): Promise<void> {
-    if (!this.selectedSession) return;
-    try {
-      const encoded = encodeURIComponent(token.token);
-      const pathLike = token.token.includes("/") || token.token.startsWith(".");
-      const response = pathLike
-        ? await this.api<FileCompleteResponse>(`/api/sessions/${this.selectedSession.id}/files/complete?prefix=${encoded}&limit=20`)
-        : await this.api<FileSearchResponse>(`/api/sessions/${this.selectedSession.id}/files/search?q=${encoded}&limit=20`);
-      if (requestId !== this.fileAutocompleteRequest) return;
-      this.fileAutocomplete = {
-        active: true,
-        token: token.token,
-        start: token.start,
-        end: token.end,
-        files: response.files,
-        selectedIndex: 0,
-        loading: false,
-      };
-      this.patchFileAutocomplete();
-    } catch (error) {
-      if (requestId !== this.fileAutocompleteRequest) return;
-      this.fileAutocomplete = { ...this.fileAutocomplete, loading: false, files: [] };
-      this.notice = `File autocomplete failed: ${error instanceof Error ? error.message : String(error)}`;
-      this.patchFileAutocomplete();
-    }
+    this.autocomplete.updateForInput(input);
   }
 
   private closeFileAutocomplete(): void {
-    if (this.fileAutocompleteTimer) clearTimeout(this.fileAutocompleteTimer);
-    this.fileAutocompleteRequest++;
-    this.fileAutocomplete = closedFileAutocompleteState();
-  }
-
-  private updateCommandAutocomplete(input: HTMLTextAreaElement, knownToken?: AutocompleteToken): void {
-    const token = knownToken ?? this.getCommandToken(input);
-    if (!token || !this.selectedSession) {
-      const wasActive = this.commandAutocomplete.active;
-      this.closeCommandAutocomplete();
-      if (wasActive) this.render();
-      return;
-    }
-
-    if (this.fileAutocomplete.active) this.closeFileAutocomplete();
-    const shouldRenderOpen = !this.commandAutocomplete.active;
-    this.commandAutocomplete = { ...this.commandAutocomplete, active: true, token: token.token, start: token.start, end: token.end, loading: true };
-    if (shouldRenderOpen) this.render();
-    if (this.commandAutocompleteTimer) clearTimeout(this.commandAutocompleteTimer);
-    const requestId = ++this.commandAutocompleteRequest;
-    this.commandAutocompleteTimer = setTimeout(() => void this.fetchCommandAutocomplete(token, requestId), 120);
-  }
-
-  private async fetchCommandAutocomplete(token: AutocompleteToken, requestId: number): Promise<void> {
-    if (!this.selectedSession) return;
-    try {
-      const encoded = encodeURIComponent(token.token);
-      const response = await this.api<CommandResponse>(`/api/sessions/${this.selectedSession.id}/commands?q=${encoded}&limit=20`);
-      if (requestId !== this.commandAutocompleteRequest) return;
-      this.commandAutocomplete = {
-        active: true,
-        token: token.token,
-        start: token.start,
-        end: token.end,
-        commands: response.commands,
-        selectedIndex: 0,
-        loading: false,
-      };
-      this.patchCommandAutocomplete();
-    } catch (error) {
-      if (requestId !== this.commandAutocompleteRequest) return;
-      this.commandAutocomplete = { ...this.commandAutocomplete, loading: false, commands: [] };
-      this.notice = `Command autocomplete failed: ${error instanceof Error ? error.message : String(error)}`;
-      this.patchCommandAutocomplete();
-    }
+    this.autocomplete.closeFile();
   }
 
   private closeCommandAutocomplete(): void {
-    if (this.commandAutocompleteTimer) clearTimeout(this.commandAutocompleteTimer);
-    this.commandAutocompleteRequest++;
-    this.commandAutocomplete = closedCommandAutocompleteState();
+    this.autocomplete.closeCommand();
   }
 
-  private chooseCommandAutocomplete(index = this.commandAutocomplete.selectedIndex): void {
-    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const choice = this.commandAutocomplete.commands[index];
-    if (!input || !choice) return;
-    const inserted = `/${choice.name}`;
-    const before = this.promptDraft.slice(0, this.commandAutocomplete.start);
-    const after = this.promptDraft.slice(this.commandAutocomplete.end);
-    this.promptDraft = `${before}${inserted} ${after}`;
-    this.savePromptDraft();
-    input.value = this.promptDraft;
-    const cursor = before.length + inserted.length + 1;
-    input.focus();
-    input.setSelectionRange(cursor, cursor);
-    this.closeCommandAutocomplete();
-    this.render();
+  private chooseCommandAutocomplete(index = this.autocomplete.command.selectedIndex): void {
+    this.autocomplete.chooseCommand(index);
   }
 
-  private chooseFileAutocomplete(index = this.fileAutocomplete.selectedIndex): void {
-    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
-    const choice = this.fileAutocomplete.files[index];
-    if (!input || !choice) return;
-    const suffix = choice.type === "directory" && !choice.path.endsWith("/") ? "/" : "";
-    const inserted = `@${choice.path}${suffix}`;
-    const spacer = choice.type === "directory" ? "" : " ";
-    const before = this.promptDraft.slice(0, this.fileAutocomplete.start);
-    const after = this.promptDraft.slice(this.fileAutocomplete.end);
-    this.promptDraft = `${before}${inserted}${spacer}${after}`;
-    this.savePromptDraft();
-    input.value = this.promptDraft;
-    const cursor = before.length + inserted.length + spacer.length;
-    input.focus();
-    input.setSelectionRange(cursor, cursor);
-    if (choice.type === "directory") this.updateFileAutocomplete(input);
-    else {
-      this.closeFileAutocomplete();
-      this.render();
-    }
+  private chooseFileAutocomplete(index = this.autocomplete.file.selectedIndex): void {
+    this.autocomplete.chooseFile(index);
   }
 
   private questionPanelContext(): QuestionPanelContext {
@@ -1355,8 +1210,8 @@ class PiWebAgentApp extends HTMLElement {
 
   private bindComposerControls(): void {
     bindComposerControls(this, {
-      commandAutocomplete: () => this.commandAutocomplete,
-      fileAutocomplete: () => this.fileAutocomplete,
+      commandAutocomplete: () => this.autocomplete.command,
+      fileAutocomplete: () => this.autocomplete.file,
       imagePickerActive: () => this.imagePickerActive,
       setImagePickerActive: (active) => { this.imagePickerActive = active; },
       setNotice: (notice) => { this.notice = notice; },
@@ -1694,57 +1549,15 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private patchAutocompleteSelection(kind: "command" | "file"): void {
-    const selector = kind === "command" ? ".command-autocomplete" : ".file-autocomplete";
-    const indexAttr = kind === "command" ? "commandIndex" : "fileIndex";
-    const selectedIndex = kind === "command" ? this.commandAutocomplete.selectedIndex : this.fileAutocomplete.selectedIndex;
-    const container = this.querySelector<HTMLElement>(selector);
-    if (!container) return;
-    container.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
-      button.classList.toggle("selected", Number(button.dataset[indexAttr]) === selectedIndex);
-    });
-    this.syncAutocompleteScroll();
+    this.autocomplete.patchSelection(kind);
   }
 
   private patchCommandAutocomplete(): void {
-    const existing = this.querySelector<HTMLElement>(".command-autocomplete");
-    if (!existing) {
-      this.render();
-      return;
-    }
-    const template = document.createElement("template");
-    template.innerHTML = renderCommandAutocomplete(this.commandAutocomplete);
-    const next = template.content.firstElementChild;
-    if (!next) {
-      existing.remove();
-      return;
-    }
-    existing.replaceWith(next);
-    next.querySelectorAll<HTMLButtonElement>("[data-command-index]").forEach((button) => {
-      button.addEventListener("mousedown", (event) => event.preventDefault());
-      button.addEventListener("click", () => this.chooseCommandAutocomplete(Number(button.dataset.commandIndex ?? "0")));
-    });
-    this.syncAutocompleteScroll();
+    this.autocomplete.patchCommand();
   }
 
   private patchFileAutocomplete(): void {
-    const existing = this.querySelector<HTMLElement>(".file-autocomplete");
-    if (!existing) {
-      this.render();
-      return;
-    }
-    const template = document.createElement("template");
-    template.innerHTML = renderFileAutocomplete(this.fileAutocomplete);
-    const next = template.content.firstElementChild;
-    if (!next) {
-      existing.remove();
-      return;
-    }
-    existing.replaceWith(next);
-    next.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {
-      button.addEventListener("mousedown", (event) => event.preventDefault());
-      button.addEventListener("click", () => this.chooseFileAutocomplete(Number(button.dataset.fileIndex ?? "0")));
-    });
-    this.syncAutocompleteScroll();
+    this.autocomplete.patchFile();
   }
 
 
@@ -1822,7 +1635,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private syncAutocompleteScroll(): void {
-    const selector = this.commandAutocomplete.active ? ".command-autocomplete" : this.fileAutocomplete.active ? ".file-autocomplete" : null;
+    const selector = this.autocomplete.command.active ? ".command-autocomplete" : this.autocomplete.file.active ? ".file-autocomplete" : null;
     if (!selector) return;
     const container = this.querySelector<HTMLElement>(selector);
     const selected = container?.querySelector<HTMLElement>("button.selected");
@@ -2278,8 +2091,8 @@ class PiWebAgentApp extends HTMLElement {
               </div>
               <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
               ${this.renderComposerNotice()}
-              ${renderCommandAutocomplete(this.commandAutocomplete)}
-              ${renderFileAutocomplete(this.fileAutocomplete)}
+              ${renderCommandAutocomplete(this.autocomplete.command)}
+              ${renderFileAutocomplete(this.autocomplete.file)}
               <div class="controls ${isRunning ? "running" : ""}">
                 <button id="attachImages" class="icon-button" data-tooltip="Attach screenshot" aria-label="Attach screenshot" ${isController ? "" : "disabled"}>${attachIcon}</button>
                 <button id="send" class="primary-action icon-send" data-tooltip="${isRunning ? "Guide active run · Enter" : "Send · Enter"}" aria-label="${isRunning ? "Guide active run" : "Send"}" ${promptSendDisabled}>${sendIcon}<span class="running-action-label" aria-hidden="true">Guide</span><span class="sr-only">${isRunning ? "Guide active run" : "Send"}</span></button>
