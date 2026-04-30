@@ -1,5 +1,5 @@
 import { hasPlanActionsMarker, type TranscriptItem } from "./transcript";
-import { latestGroupableToolGroupId, renderTranscriptHtml } from "./transcript-renderer";
+import { renderTranscriptHtml } from "./transcript-renderer";
 import { escapeHtml } from "./utils";
 
 export function activePlanActionItem(items: readonly TranscriptItem[], dismissedId: string): TranscriptItem | null {
@@ -25,14 +25,9 @@ export function renderTranscriptShell(options: {
   selectedSession: boolean;
   transcript: TranscriptItem[];
   status: string;
-  expandedToolActivityIds: ReadonlySet<string>;
 }): string {
   if (options.selectedSession && options.transcript.length === 0) return renderEmptyTranscript();
-  return renderTranscriptHtml(options.transcript, {
-    activeToolGroupId: options.status === "running" ? latestGroupableToolGroupId(options.transcript) : undefined,
-    nowMs: Date.now(),
-    expandedToolActivityIds: options.expandedToolActivityIds,
-  });
+  return renderTranscriptHtml(options.transcript);
 }
 
 function renderEmptyTranscript(): string {

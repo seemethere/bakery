@@ -18,8 +18,7 @@ import { TranscriptController, toolCallIdForTranscriptItem } from "./transcript-
 import { applyTranscriptAgentEvent } from "./transcript-event-controller";
 import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
-import { latestGroupableToolGroupId } from "./transcript-renderer";
-import { patchRunningToolGroupElapsed as patchRunningToolGroupElapsedReceipt, patchTranscriptStructure as patchTranscriptStructureHtml, recordTranscriptPatchSample, replaceHtmlPreservingTranscript as replaceHtmlPreservingTranscriptRows, syncOpenActionMenus as syncTranscriptOpenActionMenus } from "./transcript-live-controller";
+import { patchTranscriptStructure as patchTranscriptStructureHtml, recordTranscriptPatchSample, replaceHtmlPreservingTranscript as replaceHtmlPreservingTranscriptRows, syncOpenActionMenus as syncTranscriptOpenActionMenus } from "./transcript-live-controller";
 import { renderTranscriptShell } from "./transcript-shell";
 import { PlanActionController, type PlanAction } from "./plan-action-controller";
 import { renderPromptImages, type PromptImage } from "./prompt-images";
@@ -133,7 +132,6 @@ class PiWebAgentApp extends HTMLElement {
   private collapsedSessionGroups = storedCollapsedSessionGroups();
   private sessionsSearch = "";
   private openActionMenuId = "";
-  private expandedToolActivityIds = new Set<string>();
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private readonly planActions = new PlanActionController({
     transcript: () => this.transcript,
@@ -180,7 +178,6 @@ class PiWebAgentApp extends HTMLElement {
   private promptDraftSaveTimer: ReturnType<typeof setTimeout> | undefined;
   private imagePickerActive = false;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
-  private runningElapsedTimer: ReturnType<typeof setInterval> | undefined;
   private renderScheduled = false;
   private forceFullRender = false;
   private shellPatchDirty = false;
@@ -311,7 +308,6 @@ class PiWebAgentApp extends HTMLElement {
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
     this.persistAttachmentWarningIfNeeded();
-    if (this.runningElapsedTimer) clearInterval(this.runningElapsedTimer);
     if (this.renderTimer) clearTimeout(this.renderTimer);
     if (this.promptDraftSaveTimer) clearTimeout(this.promptDraftSaveTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -571,7 +567,6 @@ class PiWebAgentApp extends HTMLElement {
     const previous = this.status;
     this.status = status;
     if (previous !== status) {
-      if (previous === "running" && status !== "running") this.expandedToolActivityIds.clear();
       this.shellPatchDirty = true;
       this.patchComposerMode();
     }
@@ -1309,22 +1304,6 @@ class PiWebAgentApp extends HTMLElement {
     });
 
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
-      const activity = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-tool-activity]");
-      if (activity) {
-        event.preventDefault();
-        const run = activity.closest<HTMLElement>(".tool-activity-run");
-        const groupId = activity.dataset.toolActivity ?? "";
-        const expanded = activity.dataset.toolActivityExpanded === "true";
-        if (groupId) {
-          if (expanded) this.expandedToolActivityIds.delete(groupId);
-          else this.expandedToolActivityIds.add(groupId);
-        }
-        activity.dataset.toolActivityExpanded = expanded ? "false" : "true";
-        activity.setAttribute("aria-expanded", expanded ? "false" : "true");
-        activity.setAttribute("aria-label", `${expanded ? "Show" : "Hide"} tool details`);
-        run?.classList.toggle("expanded", !expanded);
-        return;
-      }
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
       if (!button) {
         if (this.openActionMenuId) {
@@ -1494,7 +1473,6 @@ class PiWebAgentApp extends HTMLElement {
       selectedSession: Boolean(this.selectedSession),
       transcript: this.transcript,
       status: this.status,
-      expandedToolActivityIds: this.expandedToolActivityIds,
     });
   }
 
@@ -1642,26 +1620,6 @@ class PiWebAgentApp extends HTMLElement {
     });
   }
 
-  private syncRunningElapsedTimer(): void {
-    const shouldTick = this.status === "running" && Boolean(latestGroupableToolGroupId(this.transcript));
-    if (shouldTick && !this.runningElapsedTimer) {
-      this.runningElapsedTimer = setInterval(() => {
-        if (this.status !== "running" || !latestGroupableToolGroupId(this.transcript)) {
-          this.syncRunningElapsedTimer();
-          return;
-        }
-        if (!this.patchRunningToolGroupElapsed()) this.requestRender(0);
-      }, 250);
-    } else if (!shouldTick && this.runningElapsedTimer) {
-      clearInterval(this.runningElapsedTimer);
-      this.runningElapsedTimer = undefined;
-    }
-  }
-
-  private patchRunningToolGroupElapsed(): boolean {
-    return patchRunningToolGroupElapsedReceipt(this, this.transcript);
-  }
-
   private syncOpenActionMenus(root: ParentNode = this): void {
     syncTranscriptOpenActionMenus(root, this.openActionMenuId);
   }
@@ -1792,7 +1750,6 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private render(): void {
-    this.syncRunningElapsedTimer();
     const renderStart = performance.now();
     const existingTranscript = this.querySelector<HTMLElement>(".transcript");
     this.transcriptFollow.captureScrollTop(existingTranscript);

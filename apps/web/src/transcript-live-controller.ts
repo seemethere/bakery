@@ -1,4 +1,3 @@
-import { latestGroupableToolGroupId, toolRunSummaryText } from "./transcript-renderer";
 import type { TranscriptItem } from "./transcript";
 import { recordPerfEvent, recordPerfSample } from "./utils";
 
@@ -44,27 +43,6 @@ export function patchTranscriptStructure(options: {
   options.transcript.replaceChildren(template.content);
   options.hydrateRows();
   options.markClean();
-}
-
-export function patchRunningToolGroupElapsed(root: ParentNode, items: TranscriptItem[]): boolean {
-  const groupId = latestGroupableToolGroupId(items);
-  if (!groupId) return false;
-  const activity = Array.from(root.querySelectorAll<HTMLElement>("[data-tool-activity]"))
-    .find((element) => element.dataset.toolActivity === groupId);
-  const card = activity?.closest<HTMLElement>(".tool-activity-card");
-  const receipt = card?.querySelector<HTMLElement>(".tool-activity-receipt");
-  if (!receipt) return false;
-
-  const itemIds = new Set((activity?.dataset.toolActivityIds ?? "").split("|").filter(Boolean));
-  const groupItems = items.filter((item) => itemIds.has(item.id));
-  if (groupItems.length === 0) return false;
-  const summary = toolRunSummaryText(groupItems, { activeToolGroupId: groupId, nowMs: Date.now() });
-  const receiptText = summary.receiptLabel;
-  const changed = receipt.textContent !== receiptText;
-  if (changed) receipt.textContent = receiptText;
-  receipt.title = receiptText;
-  recordPerfEvent("receiptPatch", changed ? "changed" : "unchanged", { itemCount: groupItems.length });
-  return true;
 }
 
 export function syncOpenActionMenus(root: ParentNode, openActionMenuId: string): void {

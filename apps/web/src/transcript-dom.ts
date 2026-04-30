@@ -1,5 +1,5 @@
 import { isRenderableTranscriptItem, PiTranscriptRow, type TranscriptItem } from "./transcript";
-import { activeToolActivityMemberIdFor, isAfterRunningTool, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
+import { isAfterRunningTool, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
 
 export type TranscriptPointerDown = { id: string; x: number; y: number } | null;
 
@@ -67,9 +67,6 @@ export function shouldPreserveTextSelection(element: HTMLElement, event: MouseEv
 }
 
 export function updateTranscriptRow(row: PiTranscriptRow, transcript: TranscriptItem[], item: TranscriptItem, options: TranscriptRowStateOptions): void {
-  const activityMemberId = activeToolActivityMemberIdFor(transcript, item);
-  if (activityMemberId) row.dataset.toolActivityMember = activityMemberId;
-  else delete row.dataset.toolActivityMember;
   row.setState(item, {
     showThinking: options.showThinking,
     selected: item.id === options.selectedTranscriptId,
