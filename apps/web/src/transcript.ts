@@ -432,6 +432,12 @@ export function formatToolDuration(durationMs: number | undefined): string {
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+export function formatRunningToolDuration(durationMs: number | undefined): string {
+  if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) return "";
+  if (durationMs < 10_000) return `${(durationMs / 1_000).toFixed(1)}s`;
+  return formatToolDuration(durationMs);
+}
+
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const segmentText = item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") ?? "";

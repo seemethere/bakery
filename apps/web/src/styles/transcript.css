@@ -719,15 +719,40 @@
   box-shadow: none;
 }
 
+@keyframes tool-activity-gear-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .tool-activity-icon {
   flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: color-mix(in srgb, var(--color-text-muted) 82%, transparent);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.45;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.tool-activity-card[data-tool-activity-status="running"] .tool-activity-icon {
+  animation: tool-activity-gear-spin 900ms linear infinite;
+  animation-delay: var(--tool-activity-spin-delay, 0ms);
+  stroke: color-mix(in srgb, var(--color-accent) 68%, var(--color-text-muted));
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-activity-card[data-tool-activity-status="running"] .tool-activity-icon {
+    animation: none;
+  }
 }
 
 .tool-activity-receipt {

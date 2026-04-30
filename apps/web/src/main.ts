@@ -1651,7 +1651,7 @@ class PiWebAgentApp extends HTMLElement {
           return;
         }
         if (!this.patchRunningToolGroupElapsed()) this.requestRender(0);
-      }, 1_000);
+      }, 250);
     } else if (!shouldTick && this.runningElapsedTimer) {
       clearInterval(this.runningElapsedTimer);
       this.runningElapsedTimer = undefined;

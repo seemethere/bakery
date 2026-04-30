@@ -95,12 +95,12 @@ describe("transcript renderer", () => {
       id: "activity:t1",
       itemIds: ["t1", "t2"],
       title: "Bash",
-      meta: "4s · 2 calls",
+      meta: "4.0s · 2 calls",
       label: "Bash",
       countLabel: "2 calls",
-      durationLabel: "4s",
+      durationLabel: "4.0s",
       currentLabel: "Bash",
-      receiptLabel: "4s · 2 calls",
+      receiptLabel: "4.0s · 2 calls",
       failedLabel: "",
       status: "running",
       defaultMode: "summary-only",
@@ -162,8 +162,9 @@ describe("transcript renderer", () => {
     const html = renderHelpers.renderTranscriptHtml(transcript, { activeToolGroupId: "activity:t1", nowMs: Date.parse("2026-04-27T00:00:03.000Z") });
 
     expect(html).toContain('data-tool-activity="activity:t1" data-tool-activity-ids="t1"');
+    expect(html).toContain('style="--tool-activity-spin-delay: -300ms"');
     expect(html).not.toContain("Read");
-    expect(html).toContain("3s · 1 call");
+    expect(html).toContain("3.0s · 1 call");
     expect(html).toContain('data-transcript-id="t1" data-tool-activity-member="activity:t1"');
   });
 
