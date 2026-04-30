@@ -37,6 +37,11 @@ const planActionMarkers = [PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER];
 const escapedPlanActionMarkers = planActionMarkers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const planActionsMarkerPattern = new RegExp(`(?:\\n\\s*)?(?:${escapedPlanActionMarkers})\\s*$`);
 
+type UiActionContributionMatcher = {
+  contribution: UiActionContribution;
+  matches: (item: TranscriptItem) => boolean;
+};
+
 export const PLAN_UI_ACTION_CONTRIBUTION: UiActionContribution = {
   id: "bakery.workflow.plan.actions",
   placement: "composer_takeover",
@@ -49,13 +54,19 @@ export const PLAN_UI_ACTION_CONTRIBUTION: UiActionContribution = {
   ],
 };
 
+const UI_ACTION_CONTRIBUTION_MATCHERS: UiActionContributionMatcher[] = [
+  {
+    contribution: PLAN_UI_ACTION_CONTRIBUTION,
+    matches: (item) => item.kind === "assistant" && planActionsMarkerPattern.test(item.body),
+  },
+];
+
 export function stripPlanActionsMarker(text: string): string {
   return text.replace(planActionsMarkerPattern, "").trimEnd();
 }
 
 export function uiActionContributionForTranscriptItem(item: TranscriptItem): UiActionContribution | null {
-  if (item.kind !== "assistant" || !planActionsMarkerPattern.test(item.body)) return null;
-  return PLAN_UI_ACTION_CONTRIBUTION;
+  return UI_ACTION_CONTRIBUTION_MATCHERS.find((matcher) => matcher.matches(item))?.contribution ?? null;
 }
 
 export function hasPlanActionsMarker(item: TranscriptItem): boolean {

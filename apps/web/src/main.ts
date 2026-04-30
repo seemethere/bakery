@@ -20,7 +20,7 @@ import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { patchTranscriptStructure as patchTranscriptStructureHtml, recordTranscriptPatchSample, replaceHtmlPreservingTranscript as replaceHtmlPreservingTranscriptRows, syncOpenActionMenus as syncTranscriptOpenActionMenus } from "./transcript-live-controller";
 import { renderTranscriptShell } from "./transcript-shell";
-import { PlanActionController } from "./plan-action-controller";
+import { UiActionController } from "./ui-action-controller";
 import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem } from "./running-queue";
 import { RunningQueueController } from "./running-queue-controller";
@@ -133,11 +133,10 @@ class PiWebAgentApp extends HTMLElement {
   private sessionsSearch = "";
   private openActionMenuId = "";
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
-  private readonly planActions = new PlanActionController({
+  private readonly uiActions = new UiActionController({
     transcript: () => this.transcript,
     status: () => this.status,
     socket: () => this.ws,
-    promptDraft: () => this.promptDraft,
     setPromptDraft: (value) => { this.promptDraft = value; },
     clearPromptImages: () => { this.promptImages = []; },
     updateRunningQueue: (updater) => this.runningQueue.update(updater),
@@ -465,7 +464,7 @@ class PiWebAgentApp extends HTMLElement {
     this.modelThinkingPickerOpen = false;
     this.sessionDetailsOpen = false;
     this.pendingQuestion = null;
-    this.planActions.resetDismissed();
+    this.uiActions.resetDismissed();
     this.sessionTree = null;
     this.transcriptFollow.resetToLatest();
     this.transcriptController.select("");
@@ -719,8 +718,8 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private handlePlanAction(action: string, transcriptId = this.activePlanActionItem()?.id ?? ""): void {
-    this.planActions.handle(action, transcriptId);
+  private handleUiAction(contributionId: string, action: string, transcriptId = this.activeUiActionItem()?.id ?? ""): void {
+    this.uiActions.handle(contributionId, action, transcriptId);
   }
 
   private async handleTranscriptRowAction(action: TranscriptRowMenuAction, transcriptId: string): Promise<void> {
@@ -1331,7 +1330,7 @@ class PiWebAgentApp extends HTMLElement {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         button.blur();
-        this.handlePlanAction(button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
+        this.handleUiAction(button.dataset.uiContributionId ?? "", button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
       });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {
@@ -1455,12 +1454,12 @@ class PiWebAgentApp extends HTMLElement {
     return this.runningQueue.renderHtml();
   }
 
-  private activePlanActionItem(): TranscriptItem | null {
-    return this.planActions.activeItem();
+  private activeUiActionItem(): TranscriptItem | null {
+    return this.uiActions.activeItem();
   }
 
-  private renderPlanComposerTakeover(item: TranscriptItem): string {
-    return this.planActions.renderTakeover(item);
+  private renderUiActionComposerTakeover(item: TranscriptItem): string {
+    return this.uiActions.renderTakeover(item);
   }
 
   private renderAttentionNeeded(): string {
@@ -1774,7 +1773,7 @@ class PiWebAgentApp extends HTMLElement {
     const tokenSelectionStart = tokenInput?.selectionStart ?? this.token.length;
     const tokenSelectionEnd = tokenInput?.selectionEnd ?? tokenSelectionStart;
     const isRunning = this.status === "running";
-    const activePlanActionItem = this.activePlanActionItem();
+    const activeUiActionItem = this.activeUiActionItem();
     const sidebarOverlayOpen = this.sidebarOverlayOpen();
     this.classList.toggle("session-sidebar-collapsed", this.sessionSidebarCollapsed);
     this.classList.toggle("session-sidebar-overlay-open", sidebarOverlayOpen);
@@ -1861,9 +1860,9 @@ class PiWebAgentApp extends HTMLElement {
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
-        <footer class="${isRunning ? "running-footer" : ""} ${activePlanActionItem ? "plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
+        <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
           ${this.renderQuestionPanel(isController)}
-          ${activePlanActionItem ? this.renderPlanComposerTakeover(activePlanActionItem) : `
+          ${activeUiActionItem ? this.renderUiActionComposerTakeover(activeUiActionItem) : `
             <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
               ${renderPromptImages(this.promptImages)}
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">

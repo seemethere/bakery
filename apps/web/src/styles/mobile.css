@@ -564,6 +564,7 @@
 
   .prompt-shell,
   .controls,
+  .ui-action-composer-takeover,
   .plan-composer-takeover {
     grid-column: 1;
   }
@@ -621,22 +622,26 @@
     display: inline-flex;
   }
 
+  .ui-action-composer-takeover,
   .plan-composer-takeover {
     gap: 8px;
     padding: 8px;
   }
 
+  .ui-action-composer-heading,
   .plan-composer-heading {
     display: grid;
     gap: 2px;
   }
 
+  .ui-action-composer-actions,
   .plan-composer-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
   }
 
+  .ui-action-composer-actions button,
   .plan-composer-actions button {
     min-height: 38px;
     padding: 7px 8px;

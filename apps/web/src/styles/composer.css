@@ -38,10 +38,12 @@ footer.model-picker-open .prompt-shell {
   z-index: 11001;
 }
 
+footer.ui-action-takeover-footer,
 footer.plan-takeover-footer {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.ui-action-composer-takeover,
 .plan-composer-takeover {
   grid-column: 1 / -1;
   display: grid;
@@ -53,6 +55,7 @@ footer.plan-takeover-footer {
   box-shadow: 0 10px 28px color-mix(in srgb, var(--color-accent-soft) 9%, transparent);
 }
 
+.ui-action-composer-heading,
 .plan-composer-heading {
   display: flex;
   align-items: baseline;
@@ -60,23 +63,27 @@ footer.plan-takeover-footer {
   min-width: 0;
 }
 
+.ui-action-composer-heading strong,
 .plan-composer-heading strong {
   color: var(--color-text);
   font-size: 13px;
 }
 
+.ui-action-composer-heading span,
 .plan-composer-heading span {
   min-width: 0;
   color: var(--color-text-secondary);
   font-size: 12px;
 }
 
+.ui-action-composer-actions,
 .plan-composer-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
+.ui-action-composer-actions button,
 .plan-composer-actions button {
   flex: 1 1 auto;
   min-height: 34px;
@@ -87,12 +94,15 @@ footer.plan-takeover-footer {
   font-weight: 700;
 }
 
+.ui-action-composer-actions .primary-action,
 .plan-composer-actions .primary-action {
   border-color: var(--c-668cff);
   background: var(--c-263b75);
   color: var(--c-eef3ff);
 }
 
+.ui-action-composer-actions button:hover,
+.ui-action-composer-actions button:focus-visible,
 .plan-composer-actions button:hover,
 .plan-composer-actions button:focus-visible {
   border-color: color-mix(in srgb, var(--color-accent-soft) 70%, var(--color-border));
@@ -100,6 +110,8 @@ footer.plan-takeover-footer {
   color: var(--color-text);
 }
 
+.ui-action-composer-actions .primary-action:hover,
+.ui-action-composer-actions .primary-action:focus-visible,
 .plan-composer-actions .primary-action:hover,
 .plan-composer-actions .primary-action:focus-visible {
   background: color-mix(in srgb, var(--c-263b75) 82%, var(--color-accent-soft));

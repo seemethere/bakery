@@ -1,19 +1,12 @@
 import { buildComposerSendPayload, composerQueueItem, type ClientMessageType } from "./composer-actions";
 import { addRunningQueueItem, type RunningQueueState } from "./running-queue";
-import { activePlanActionItem, renderPlanComposerTakeover } from "./transcript-shell";
-import type { TranscriptItem } from "./transcript";
+import { activeUiActionItem, renderUiActionComposerTakeover } from "./transcript-shell";
+import { PLAN_UI_ACTION_CONTRIBUTION, type TranscriptItem } from "./transcript";
 
-export type PlanAction = "accept" | "chat";
-
-function isPlanAction(value: string): value is PlanAction {
-  return value === "accept" || value === "chat";
-}
-
-export type PlanActionControllerOptions = {
+export type UiActionControllerOptions = {
   transcript: () => TranscriptItem[];
   status: () => string;
   socket: () => WebSocket | null;
-  promptDraft: () => string;
   setPromptDraft: (value: string) => void;
   clearPromptImages: () => void;
   updateRunningQueue: (updater: (queue: RunningQueueState) => RunningQueueState) => void;
@@ -24,31 +17,48 @@ export type PlanActionControllerOptions = {
   render: () => void;
 };
 
-export class PlanActionController {
-  private dismissedTranscriptId = "";
+type UiActionHandler = (actionId: string) => void;
 
-  constructor(private readonly options: PlanActionControllerOptions) {}
+const planContributionId = PLAN_UI_ACTION_CONTRIBUTION.id;
+
+export class UiActionController {
+  private dismissedTranscriptId = "";
+  private readonly actionHandlers: Record<string, UiActionHandler> = {
+    [planContributionId]: (actionId) => this.handlePlanAction(actionId),
+  };
+
+  constructor(private readonly options: UiActionControllerOptions) {}
 
   resetDismissed(): void {
     this.dismissedTranscriptId = "";
   }
 
   activeItem(): TranscriptItem | null {
-    return activePlanActionItem(this.options.transcript(), this.dismissedTranscriptId);
+    return activeUiActionItem(this.options.transcript(), this.dismissedTranscriptId);
   }
 
   renderTakeover(item: TranscriptItem): string {
-    return renderPlanComposerTakeover(item);
+    return renderUiActionComposerTakeover(item);
   }
 
-  handle(action: string, transcriptId = this.activeItem()?.id ?? ""): void {
-    if (!isPlanAction(action)) return;
+  handle(contributionId: string, actionId: string, transcriptId = this.activeItem()?.id ?? ""): void {
+    if (!this.canHandle(contributionId, actionId)) return;
+    const handler = this.actionHandlers[contributionId];
+    if (!handler) return;
     if (transcriptId) this.dismissedTranscriptId = transcriptId;
-    if (action === "chat") {
+    handler(actionId);
+  }
+
+  private canHandle(contributionId: string, actionId: string): boolean {
+    return contributionId === planContributionId && (actionId === "accept" || actionId === "chat");
+  }
+
+  private handlePlanAction(actionId: string): void {
+    if (actionId === "chat") {
       this.fillPromptDraft("");
       return;
     }
-    this.submitText("Proceed with the recommended plan.");
+    if (actionId === "accept") this.submitText("Proceed with the recommended plan.");
   }
 
   private fillPromptDraft(text: string): void {
