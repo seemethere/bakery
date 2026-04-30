@@ -1,5 +1,5 @@
 import type { CommandInfo } from "@pi-web-agent/protocol";
-import { WORKFLOW_SKILLS } from "./workflow-skills.js";
+import { PLAN_BUNDLED_EXTENSION } from "./bundled-extensions/plan/index.js";
 
 export type ExtensionCapability = "commands";
 
@@ -29,28 +29,7 @@ export type BakeryExtension = {
   activate?(ctx: { extensionId: string }): void | Promise<void>;
 };
 
-function defineBundledWorkflowExtension(): BakeryExtension {
-  return {
-    id: "bakery.workflow",
-    displayName: "Bakery workflow commands",
-    version: "0.1.0",
-    capabilities: ["commands"],
-    commands: WORKFLOW_SKILLS.map((skill) => ({
-      name: skill.name,
-      description: skill.description,
-      ...(skill.argumentHint ? { argumentHint: skill.argumentHint } : {}),
-      source: "skill" as const,
-      sourceInfo: skill.sourceInfo,
-      handler: (_ctx, args) => ({
-        kind: "launchPrompt",
-        title: `/${skill.name}`,
-        prompt: skill.buildPrompt(args),
-      }),
-    })),
-  };
-}
-
-export const BUNDLED_EXTENSIONS: BakeryExtension[] = [defineBundledWorkflowExtension()];
+export const BUNDLED_EXTENSIONS: BakeryExtension[] = [PLAN_BUNDLED_EXTENSION];
 
 const bundledExtensionCommandEntries = BUNDLED_EXTENSIONS.flatMap((extension) =>
   (extension.commands ?? []).map((command) => ({ extension, command })),
