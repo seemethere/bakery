@@ -674,14 +674,16 @@
   margin-top: 2px;
 }
 
-.message.tool.done.collapsed .message-header {
+.message.tool.done.collapsed .message-header,
+.message.tool.error.collapsed:not(.developer-bash) .message-header {
   min-height: 28px;
   padding: 4px 0;
   border-bottom: 0;
   gap: 8px;
 }
 
-.message.tool.done.collapsed .message-header strong {
+.message.tool.done.collapsed .message-header strong,
+.message.tool.error.collapsed:not(.developer-bash) .message-header strong {
   font-size: 12px;
   font-weight: 600;
 }
