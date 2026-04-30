@@ -183,12 +183,14 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
   await assistant.locator('[data-row-action="preview"]').waitFor({ state: "detached", timeout: 5_000 });
   await assistant.locator('[data-row-action="details"]').waitFor({ state: "detached", timeout: 5_000 });
   await assistant.locator('[data-row-action="copy"]').first().click();
-  await page.locator(".tool-activity-card").first().click();
-  const tool = page.locator(".tool-activity-run.expanded .message.tool").first();
-  await tool.locator(".message-header").click();
-  await tool.locator(".message-body").waitFor({ state: "hidden", timeout: 5_000 });
+  const tool = page.locator(".message.tool").first();
+  await tool.waitFor({ timeout: 5_000 });
+  if (!(await tool.evaluate((row) => row.classList.contains("collapsed")))) {
+    await tool.locator('[data-row-action="toggle-output"]').click();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>(".message.tool")?.classList.contains("collapsed"));
+  }
   await tool.locator('[data-row-action="toggle-output"]').click();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".tool-activity-run .message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed") && row.querySelector(".message-body")));
+  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed") && row.querySelector(".message-body")));
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   return collectMetrics(page);
 }
@@ -200,24 +202,19 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
-  const activityStrip = page.locator(".tool-activity-card");
-  await activityStrip.waitFor({ timeout: 15_000 });
-  await page.waitForFunction(() => document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length >= 1, null, { timeout: 15_000 });
+  await page.locator(".message.tool.running").first().waitFor({ timeout: 15_000 });
   const mobileActivityDefault = await page.evaluate(() => {
-    const strip = document.querySelector<HTMLElement>(".tool-activity-card");
-    const memberRows = Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]'));
+    const running = document.querySelector<HTMLElement>(".message.tool.running");
     return {
       mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
-      expanded: strip?.dataset.toolActivityExpanded ?? "missing",
-      visibleMembers: memberRows.filter((row) => getComputedStyle(row).display !== "none").length,
-      memberRows: memberRows.length,
+      collapsed: running?.classList.contains("collapsed") ?? false,
+      activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
+      activityMembers: document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length,
     };
   });
-  if (!mobileActivityDefault.mobile || mobileActivityDefault.expanded !== "false" || mobileActivityDefault.visibleMembers !== 0) {
-    throw new Error(`Expected running tool activity to default to summary-only, saw ${JSON.stringify(mobileActivityDefault)}`);
+  if (!mobileActivityDefault.mobile || !mobileActivityDefault.collapsed || mobileActivityDefault.activityCards !== 0 || mobileActivityDefault.activityMembers !== 0) {
+    throw new Error(`Expected running tool row to default to collapsed without activity wrappers, saw ${JSON.stringify(mobileActivityDefault)}`);
   }
-  await activityStrip.click();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]')).some((row) => getComputedStyle(row).display !== "none"), null, { timeout: 5_000 });
   await page.evaluate(() => {
     if (window.__piWebPerf) {
       window.__piWebPerf.renderCount = 0;
@@ -233,22 +230,17 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   });
   await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
   await waitForAgentIdle(page, 30_000);
-  const completedActivityDefault = await page.evaluate(() => {
-    const memberRows = Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]'));
-    return {
-      visibleMembers: memberRows.filter((row) => getComputedStyle(row).display !== "none").length,
-      memberRows: memberRows.length,
-      summaries: document.querySelectorAll(".tool-activity-card").length,
-    };
-  });
-  if (completedActivityDefault.visibleMembers !== 0 || completedActivityDefault.summaries < 1) {
-    throw new Error(`Expected completed tool activity to remain summary-only, saw ${JSON.stringify(completedActivityDefault)}`);
+  const completedActivityDefault = await page.evaluate(() => ({
+    activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
+    activityMembers: document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length,
+    collapsedTools: document.querySelectorAll(".message.tool.collapsed").length,
+  }));
+  if (completedActivityDefault.activityCards !== 0 || completedActivityDefault.activityMembers !== 0 || completedActivityDefault.collapsedTools < 1) {
+    throw new Error(`Expected completed tools to remain collapsed flat rows, saw ${JSON.stringify(completedActivityDefault)}`);
   }
-  await page.locator(".tool-activity-card").first().click();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]')).some((row) => getComputedStyle(row).display !== "none"), null, { timeout: 5_000 });
   const toolStreamPerf = await page.evaluate(() => window.__piWebPerf ? { renderCount: window.__piWebPerf.renderCount, patchCount: window.__piWebPerf.patchCount, rowUpdateCount: window.__piWebPerf.rowUpdateCount ?? 0 } : null);
   if ((toolStreamPerf?.renderCount ?? 0) > 2) throw new Error(`Expected tool streaming to avoid repeated full renders, saw ${JSON.stringify(toolStreamPerf)}`);
-  const tool = page.locator('.tool-activity-run.expanded .message.tool').first();
+  const tool = page.locator('.message.tool').first();
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed")));
@@ -257,15 +249,8 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
     const body = visibleTool?.querySelector<HTMLElement>(".message-body");
     return Boolean(body && body.scrollHeight > body.clientHeight && body.clientHeight < 460);
   });
-  await page.locator('.tool-activity-run .message.tool:not(.collapsed) [data-row-action="toggle-output"]').first().click();
-  await page.waitForFunction(() => {
-    const run = document.querySelector<HTMLElement>(".tool-activity-run");
-    const memberRows = Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]'));
-    const visibleMembers = memberRows.filter((row) => getComputedStyle(row).display !== "none");
-    const collapsedVisibleTools = Array.from(document.querySelectorAll<HTMLElement>(".message.tool.collapsed"))
-      .filter((row) => getComputedStyle(row).display !== "none");
-    return Boolean(run?.classList.contains("expanded") && visibleMembers.length > 0 && collapsedVisibleTools.length > 0);
-  });
+  await page.locator('.message.tool:not(.collapsed) [data-row-action="toggle-output"]').first().click();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool.collapsed")).some((row) => getComputedStyle(row).display !== "none"));
   await page.locator("#prompt").waitFor({ state: "visible" });
 
   // Leave this scenario in a screenshot-friendly state: the narrow-width assertions
@@ -276,39 +261,33 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   if (await leftToggle.isVisible().catch(() => false)) await leftToggle.click();
   const rightToggle = page.locator("#toggleRightPanel");
   if (await rightToggle.isVisible().catch(() => false)) await rightToggle.click();
-  await page.locator(".tool-activity-card").first().scrollIntoViewIfNeeded();
+  await page.locator(".message.tool").first().scrollIntoViewIfNeeded();
   return { toolStreamPerf, ...(await collectMetrics(page)) };
 }
 
 export async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await sendPromptAndWaitIdle(page, "Please run multiple tools with one failed tool for compact grouping alignment validation.");
+  await sendPromptAndWaitIdle(page, "Please run multiple tools with one failed tool for flat tool-row alignment validation.");
   await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 4, null, { timeout: 5_000 });
   const groups = await page.locator(".tool-run-group").count();
   if (groups !== 0) throw new Error(`Expected no legacy nested tool-run groups, saw ${groups} groups`);
-  const activityRuns = await page.locator(".tool-activity-run").count();
-  if (activityRuns < 1) throw new Error("Expected completed tools to collapse behind an activity summary.");
-  const hiddenMembers = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]')).filter((row) => getComputedStyle(row).display === "none").length);
-  if (hiddenMembers < 4) throw new Error(`Expected completed tool receipts hidden behind summary rows, saw ${hiddenMembers}`);
-  for (const card of await page.locator(".tool-activity-card").all()) await card.click();
-  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>('pi-transcript-row[data-tool-activity-member]')).some((row) => getComputedStyle(row).display !== "none"));
+  const activityRuns = await page.locator(".tool-activity-run, .tool-activity-card").count();
+  if (activityRuns !== 0) throw new Error(`Expected no tool activity wrappers, saw ${activityRuns}`);
+  const activityMembers = await page.locator('pi-transcript-row[data-tool-activity-member]').count();
+  if (activityMembers !== 0) throw new Error(`Expected no hidden tool activity members, saw ${activityMembers}`);
   await page.locator(".message.tool", { hasText: "read screenshots/fixture.png" }).waitFor({ timeout: 5_000 });
-  const failedExpanded = page.locator(".tool-activity-run.expanded .message.tool.error:not(.collapsed)").first();
+  const failedExpanded = page.locator(".message.tool.error:not(.collapsed)").first();
   if (await failedExpanded.isVisible().catch(() => false)) {
     await failedExpanded.locator('[data-row-action="toggle-output"]').click();
-    await page.waitForFunction(() => document.querySelector(".tool-activity-run.expanded .message.tool.error.collapsed"));
+    await page.waitForFunction(() => document.querySelector(".message.tool.error.collapsed"));
   }
   const collapsedBefore = await page.locator(".message.tool.collapsed").count();
-  if (collapsedBefore < 3) throw new Error(`Expected revealed tool receipts to remain collapsed, saw ${collapsedBefore}`);
-  const overflowButtons = page.locator('.tool-activity-run.expanded .message.tool [data-row-action="menu"]');
+  if (collapsedBefore < 3) throw new Error(`Expected flat tool receipts to remain collapsed, saw ${collapsedBefore}`);
+  const overflowButtons = page.locator('.message.tool [data-row-action="menu"]');
   await overflowButtons.nth(0).click();
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1);
   await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0);
-  if (await page.locator(".tool-activity-run.expanded").count() === 0) {
-    await page.locator(".tool-activity-card").first().click();
-    await page.waitForFunction(() => document.querySelector(".tool-activity-run.expanded"));
-  }
   const alignment = await page.evaluate(() => {
     const rectOf = (selector: string) => {
       const element = document.querySelector<HTMLElement>(selector);
@@ -316,11 +295,11 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
       const rect = element.getBoundingClientRect();
       return { left: rect.left, right: rect.right, top: rect.top, height: rect.height };
     };
-    const successRow = document.querySelector<HTMLElement>(".tool-activity-run.expanded .message.tool.done.collapsed");
-    const failedRow = document.querySelector<HTMLElement>(".tool-activity-run.expanded .message.tool.error.collapsed");
+    const successRow = document.querySelector<HTMLElement>(".message.tool.done.collapsed");
+    const failedRow = document.querySelector<HTMLElement>(".message.tool.error.collapsed");
     if (!successRow || !failedRow) {
-      const rows = Array.from(document.querySelectorAll<HTMLElement>(".tool-activity-run.expanded .message.tool")).map((row) => ({ classes: row.className, text: row.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) }));
-      throw new Error(`Expected expanded successful and failed tool rows for alignment check: ${JSON.stringify(rows)}`);
+      const rows = Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).map((row) => ({ classes: row.className, text: row.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) }));
+      throw new Error(`Expected successful and failed collapsed tool rows for alignment check: ${JSON.stringify(rows)}`);
     }
     const successId = successRow.dataset.transcriptId;
     const failedId = failedRow.dataset.transcriptId;
@@ -328,23 +307,20 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
     const failedToggle = rectOf(`[data-transcript-id="${CSS.escape(failedId ?? "")}"] .message-expand-toggle`);
     const successTitle = rectOf(`[data-transcript-id="${CSS.escape(successId ?? "")}"] .message-header strong`);
     const failedTitle = rectOf(`[data-transcript-id="${CSS.escape(failedId ?? "")}"] .message-header strong`);
-    const successMenu = rectOf(`[data-transcript-id="${CSS.escape(successId ?? "")}"] .message-overflow`);
-    const failedMenu = rectOf(`[data-transcript-id="${CSS.escape(failedId ?? "")}"] .message-overflow`);
     const successHeader = rectOf(`[data-transcript-id="${CSS.escape(successId ?? "")}"] .message-header`);
     const failedHeader = rectOf(`[data-transcript-id="${CSS.escape(failedId ?? "")}"] .message-header`);
     return {
       toggleLeftDelta: Math.abs(successToggle.left - failedToggle.left),
       titleLeftDelta: Math.abs(successTitle.left - failedTitle.left),
-      menuRightDelta: Math.abs(successMenu.right - failedMenu.right),
       headerHeightDelta: Math.abs(successHeader.height - failedHeader.height),
       toggleTopOffsetDelta: Math.abs(successToggle.top - successHeader.top - (failedToggle.top - failedHeader.top)),
     };
   });
-  if (alignment.toggleLeftDelta > 1 || alignment.titleLeftDelta > 1 || alignment.menuRightDelta > 1 || alignment.headerHeightDelta > 1 || alignment.toggleTopOffsetDelta > 1) {
+  if (alignment.toggleLeftDelta > 1 || alignment.titleLeftDelta > 1 || alignment.headerHeightDelta > 1 || alignment.toggleTopOffsetDelta > 1) {
     throw new Error(`Failed tool row alignment regressed: ${JSON.stringify(alignment)}`);
   }
   await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
-  return { groups, activityRuns, alignment, toolRows: await page.locator(".message.tool").count(), ...(await collectMetrics(page)) };
+  return { groups, activityRuns, activityMembers, alignment, toolRows: await page.locator(".message.tool").count(), ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {
