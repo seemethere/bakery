@@ -7,6 +7,18 @@
   overflow: hidden;
 }
 
+.transcript-shell::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  height: min(18vh, 150px);
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 12%, transparent) 42%, color-mix(in srgb, var(--color-footer-bg) 58%, transparent) 100%);
+}
+
 .transcript {
   box-sizing: border-box;
   background: var(--color-transcript-bg);

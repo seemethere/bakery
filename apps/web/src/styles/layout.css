@@ -341,21 +341,41 @@ footer {
   position: relative;
   grid-row: 5;
   z-index: 3;
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
+  isolation: isolate;
+  border-top: 0;
   border-bottom: 0;
   display: grid;
   grid-template-columns: minmax(0, 860px);
   justify-content: center;
   gap: 8px;
-  padding-block: 8px;
-  background: color-mix(in srgb, var(--color-footer-bg) 82%, transparent);
-  backdrop-filter: blur(14px);
+  padding: 8px 16px 9px;
+  background: transparent;
+}
+
+footer::before {
+  content: "";
+  position: absolute;
+  inset: -104px 0 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 9%, transparent) 36%, color-mix(in srgb, var(--color-footer-bg) 38%, transparent) 68%, color-mix(in srgb, var(--color-footer-bg) 78%, transparent) 100%),
+    radial-gradient(ellipse at 50% 112%, color-mix(in srgb, var(--color-footer-bg) 78%, transparent) 0%, color-mix(in srgb, var(--color-footer-bg) 42%, transparent) 48%, transparent 72%);
+}
+
+footer > * {
+  position: relative;
+  z-index: 1;
 }
 
 footer.running-footer {
-  border-top-color: color-mix(in srgb, var(--color-accent-soft) 46%, var(--color-border));
-  background: var(--color-footer-running-bg);
   box-shadow: var(--shadow-footer);
+}
+
+footer.running-footer::before {
+  background:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 10%, transparent) 34%, color-mix(in srgb, var(--color-footer-bg) 42%, transparent) 68%, color-mix(in srgb, var(--color-footer-bg) 82%, transparent) 100%),
+    radial-gradient(ellipse at 50% 108%, color-mix(in srgb, var(--color-accent-soft) 12%, transparent) 0%, color-mix(in srgb, var(--color-footer-bg) 60%, transparent) 54%, transparent 74%);
 }
 
 footer.model-picker-open {
