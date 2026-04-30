@@ -29,4 +29,12 @@ describe("question panel controller", () => {
     expect(html).toContain("Recommended");
     expect(html).toContain("Which path?");
   });
+
+  test("collapses custom answers behind a desktop toggle when options exist", () => {
+    const html = renderQuestionPanel(question, true, true);
+
+    expect(html).toContain("question-custom is-collapsed");
+    expect(html).toContain("questionCustomToggle");
+    expect(html).toContain("Custom answer");
+  });
 });

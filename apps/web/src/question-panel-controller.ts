@@ -30,12 +30,19 @@ export function recommendedQuestionOptionIndex(question: PendingQuestion | null)
   });
 }
 
+export function expandCustomQuestionAnswer(ctx: Pick<QuestionPanelContext, "root">): void {
+  const root = ctx.root();
+  root.querySelector<HTMLElement>(".question-custom")?.classList.remove("is-collapsed");
+  root.querySelector<HTMLElement>(".question-custom")?.classList.add("is-expanded");
+  root.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)")?.focus();
+}
+
 export function submitCustomQuestionAnswer(ctx: QuestionPanelContext): void {
   const input = ctx.root().querySelector<HTMLInputElement>("#questionCustomAnswer");
   const answer = input?.value.trim() ?? "";
   if (!answer) {
+    expandCustomQuestionAnswer(ctx);
     ctx.setNotice("Type an answer before submitting, or choose Cancel.");
-    ctx.render();
     return;
   }
   ctx.answer({ answer, selectedIndex: null, wasCustom: true });
@@ -106,7 +113,7 @@ export function handleQuestionPanelKeydown(ctx: QuestionPanelContext, event: Key
     const customInput = ctx.root().querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)");
     if (customInput) {
       event.preventDefault();
-      customInput.focus();
+      expandCustomQuestionAnswer(ctx);
     }
   }
 }
@@ -121,6 +128,7 @@ export function bindQuestionPanel(ctx: QuestionPanelContext): void {
       if (option && index >= 0) ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
     });
   });
+  root.querySelector<HTMLButtonElement>("#questionCustomToggle")?.addEventListener("click", () => expandCustomQuestionAnswer(ctx));
   root.querySelector<HTMLButtonElement>("#questionCustomSubmit")?.addEventListener("click", () => submitCustomQuestionAnswer(ctx));
   root.querySelector<HTMLInputElement>("#questionCustomAnswer")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -153,7 +161,8 @@ export function renderQuestionPanel(question: PendingQuestion | null, isControll
             </button>`;
           }).join("")}
         </div>` : ""}
-        ${question.allowCustomAnswer ? `<div class="question-custom">
+        ${question.allowCustomAnswer ? `<div class="question-custom ${question.options.length ? "is-collapsed" : "is-expanded"}">
+          <button id="questionCustomToggle" class="question-custom-toggle" type="button" ${disabled ? "disabled" : ""}><kbd>C</kbd> Custom answer…</button>
           <label class="question-custom-field"><span><kbd>C</kbd> Custom</span><input id="questionCustomAnswer" type="text" ${disabled ? "disabled" : ""} placeholder="Type a custom answer…" /></label>
           <button id="questionCustomSubmit" type="button" ${disabled ? "disabled" : ""}>Answer <kbd>Enter</kbd></button>
         </div>` : ""}

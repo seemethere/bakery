@@ -93,12 +93,16 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "1-9" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-custom-field", { hasText: "Custom" }).waitFor({ timeout: 5_000 });
+  await page.locator("#questionCustomToggle", { hasText: "Custom answer" }).waitFor({ timeout: 5_000 });
+  const desktopCustomFieldDisplay = await page.locator(".question-custom-field").evaluate((element) => getComputedStyle(element).display);
+  if (desktopCustomFieldDisplay !== "none") throw new Error(`Desktop question custom field should start collapsed; saw display=${desktopCustomFieldDisplay}`);
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
   await page.locator(".question-touch-hint", { hasText: "Tap an option or type a custom answer." }).waitFor({ timeout: 5_000 });
+  const mobileCustomFieldDisplay = await page.locator(".question-custom-field").evaluate((element) => getComputedStyle(element).display);
+  if (mobileCustomFieldDisplay === "none") throw new Error("Mobile question custom field should remain visible");
   const mobileKeyHintDisplay = await page.locator(".question-key-hint").evaluate((element) => getComputedStyle(element).display);
   if (mobileKeyHintDisplay !== "none") throw new Error(`Mobile question panel should hide keyboard shortcuts; saw display=${mobileKeyHintDisplay}`);
   await page.screenshot({ path: join(artifactDir, "question-answer-mobile-touch-hint.png"), fullPage: true });

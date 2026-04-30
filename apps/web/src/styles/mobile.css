@@ -614,6 +614,15 @@
     gap: 7px;
   }
 
+  .question-custom.is-collapsed .question-custom-field,
+  .question-custom.is-collapsed #questionCustomSubmit {
+    display: flex;
+  }
+
+  .question-custom-toggle {
+    display: none;
+  }
+
   .question-custom-field {
     min-width: 0;
   }
@@ -856,6 +865,9 @@
   .question-custom button,
   #questionCancel {
     min-height: 38px;
+    border-color: var(--color-border);
+    background: var(--color-bg-elevated);
+    padding: 7px 10px;
   }
 
   .question-actions {
