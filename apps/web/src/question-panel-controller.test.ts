@@ -30,6 +30,14 @@ describe("question panel controller", () => {
     expect(html).toContain("Which path?");
   });
 
+  test("renders option shortcuts as secondary title metadata", () => {
+    const html = renderQuestionPanel(question, true, true);
+
+    expect(html).toContain('class="option-label"');
+    expect(html).toContain('class="option-shortcut">1</kbd>');
+    expect(html).toContain("<strong>Safe</strong><em>Recommended</em>");
+  });
+
   test("collapses custom answers behind a desktop toggle when options exist", () => {
     const html = renderQuestionPanel(question, true, true);
 

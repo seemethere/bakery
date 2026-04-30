@@ -94,6 +94,8 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator(".question-key-hint", { hasText: "1-9" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
   await page.locator("#questionCustomToggle", { hasText: "Custom answer" }).waitFor({ timeout: 5_000 });
+  const desktopShortcutDisplay = await page.locator(".question-options .option-shortcut").first().evaluate((element) => getComputedStyle(element).display);
+  if (desktopShortcutDisplay === "none") throw new Error("Desktop question option shortcut should remain visible");
   const desktopCustomFieldDisplay = await page.locator(".question-custom-field").evaluate((element) => getComputedStyle(element).display);
   if (desktopCustomFieldDisplay !== "none") throw new Error(`Desktop question custom field should start collapsed; saw display=${desktopCustomFieldDisplay}`);
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
@@ -103,6 +105,8 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator(".question-touch-hint", { hasText: "Tap an option or type a custom answer." }).waitFor({ timeout: 5_000 });
   const mobileCustomFieldDisplay = await page.locator(".question-custom-field").evaluate((element) => getComputedStyle(element).display);
   if (mobileCustomFieldDisplay === "none") throw new Error("Mobile question custom field should remain visible");
+  const mobileShortcutDisplay = await page.locator(".question-options .option-shortcut").first().evaluate((element) => getComputedStyle(element).display);
+  if (mobileShortcutDisplay !== "none") throw new Error(`Mobile question option shortcut should be hidden; saw display=${mobileShortcutDisplay}`);
   const mobileKeyHintDisplay = await page.locator(".question-key-hint").evaluate((element) => getComputedStyle(element).display);
   if (mobileKeyHintDisplay !== "none") throw new Error(`Mobile question panel should hide keyboard shortcuts; saw display=${mobileKeyHintDisplay}`);
   await page.screenshot({ path: join(artifactDir, "question-answer-mobile-touch-hint.png"), fullPage: true });

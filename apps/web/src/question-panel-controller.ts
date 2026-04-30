@@ -156,7 +156,7 @@ export function renderQuestionPanel(question: PendingQuestion | null, isControll
           ${question.options.map((option, index) => {
             const recommended = index === recommendedOptionIndex;
             return `<button type="button" data-question-option-index="${index}" class="${recommended ? "recommended-option" : ""}" aria-keyshortcuts="${index + 1}" aria-label="${recommended ? "Recommended option: " : ""}${index + 1}. ${escapeHtml(option.label)}" ${disabled ? "disabled" : ""}>
-              <span class="option-title"><kbd>${index + 1}</kbd><strong>${escapeHtml(option.label)}</strong>${recommended ? `<em>Recommended</em>` : ""}</span>
+              <span class="option-title"><span class="option-label"><strong>${escapeHtml(option.label)}</strong>${recommended ? `<em>Recommended</em>` : ""}</span><kbd class="option-shortcut">${index + 1}</kbd></span>
               ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
             </button>`;
           }).join("")}

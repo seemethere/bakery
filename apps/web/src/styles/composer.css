@@ -266,16 +266,34 @@ footer.plan-takeover-footer {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.question-options .option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
   flex-wrap: wrap;
 }
 
 .question-options .option-title strong {
-  flex: 1 1 auto;
   color: var(--color-text);
   font-size: 14px;
 }
 
-.question-options kbd,
+.question-options .option-shortcut {
+  flex: 0 0 auto;
+  min-width: auto;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-faint);
+  padding: 0 1px;
+  font: 750 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .question-custom kbd,
 .question-key-hint kbd,
 #questionCustomSubmit kbd {
@@ -306,7 +324,6 @@ footer.plan-takeover-footer {
 
 .question-options small {
   color: var(--color-text-muted);
-  padding-left: 30px;
   line-height: 1.3;
 }
 

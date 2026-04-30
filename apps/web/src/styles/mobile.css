@@ -608,6 +608,10 @@
     padding: 9px;
   }
 
+  .question-options .option-shortcut {
+    display: none;
+  }
+
   .question-custom {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
