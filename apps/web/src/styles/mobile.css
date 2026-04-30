@@ -383,18 +383,12 @@
   .message.tool,
   .message.question,
   .message.system,
-  .message.error,
-  .tool-activity-card {
+  .message.error {
     width: 100%;
     min-width: 0;
     max-width: 100%;
   }
 
-  .tool-activity-run {
-    width: min(94%, 820px);
-    min-width: 0;
-    max-width: 100%;
-  }
 
   .message.user {
     max-width: min(86%, 620px);
@@ -425,9 +419,7 @@
     font-size: 15px;
   }
 
-  .message + .message,
-  .message + .tool-activity-run,
-  .tool-activity-run + .message {
+  .message + .message {
     margin-top: 14px;
   }
 
@@ -497,16 +489,6 @@
     padding: 2px 0;
   }
 
-  .tool-activity-run.expanded .message.tool.collapsed .message-header {
-    grid-template-columns: 28px minmax(0, 1fr) auto;
-  }
-
-  .tool-activity-run.expanded .message.tool.collapsed .message-expand-toggle {
-    width: 24px;
-    min-width: 24px;
-    height: 24px;
-    font-size: 11px;
-  }
 
   .message.tool.done.collapsed .message-header strong {
     max-width: none;
@@ -527,22 +509,6 @@
     display: none;
   }
 
-  .tool-activity-run.expanded .message.tool.collapsed .message-action-area {
-    display: flex;
-  }
-
-  .tool-activity-card {
-    gap: 8px;
-    padding: 9px 11px 9px 12px;
-  }
-
-  .tool-activity-run.expanded .tool-activity-card {
-    padding: 9px 11px 9px 12px;
-  }
-
-  .tool-activity-receipt {
-    font-size: 12px;
-  }
 
   .message-action-bar {
     opacity: 1;
