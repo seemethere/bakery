@@ -438,6 +438,41 @@ export function formatRunningToolDuration(durationMs: number | undefined): strin
   return formatToolDuration(durationMs);
 }
 
+export type ToolHeaderDisplay = {
+  action: string;
+  target: string;
+};
+
+function toolHeaderFromTitle(title: string): ToolHeaderDisplay {
+  const trimmed = title.trim();
+  if (!trimmed) return { action: "tool", target: "" };
+  if (trimmed.startsWith("$ ")) return { action: "bash", target: trimmed.slice(2).trim() };
+  const match = /^(read|edit|write|grep|find)\s+(.+)$/i.exec(trimmed);
+  if (match) return { action: match[1]!.toLowerCase(), target: match[2]!.trim() };
+  if (/^question$/i.test(trimmed)) return { action: "question", target: "operator input" };
+  const [first = "tool", ...rest] = trimmed.split(/\s+/);
+  return { action: first.toLowerCase(), target: rest.join(" ").trim() };
+}
+
+export function toolHeaderDisplay(item: TranscriptItem): ToolHeaderDisplay {
+  if (item.kind !== "tool") return { action: item.title, target: "" };
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const args = isRecord(raw.args) ? raw.args : {};
+  const rawName = typeof raw.toolName === "string" ? raw.toolName : typeof raw.name === "string" ? raw.name : "";
+  const action = rawName ? rawName.toLowerCase() : "";
+  if (action === "bash" && typeof args.command === "string") return { action: "bash", target: args.command };
+  if ((action === "read" || action === "edit" || action === "write") && typeof args.path === "string") return { action, target: args.path };
+  if ((action === "grep" || action === "find") && typeof args.pattern === "string") return { action, target: args.pattern };
+  if (action === "ask_question") return { action: "question", target: typeof args.question === "string" ? args.question : "operator input" };
+  return toolHeaderFromTitle(item.title);
+}
+
+export function shouldShowToolDuration(item: TranscriptItem, collapsed: boolean): boolean {
+  if (item.kind !== "tool" || item.durationMs === undefined) return false;
+  if (!collapsed) return true;
+  return item.durationMs >= 1_000;
+}
+
 function compactToolSummary(item: TranscriptItem): string {
   if (item.kind !== "tool" || item.status !== "done") return "";
   const segmentText = item.segments?.map((segment) => "text" in segment ? segment.text : segment.label).join("\n") ?? "";
@@ -604,12 +639,14 @@ export class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const streamingTextTarget = streamingText !== null ? this.querySelector<HTMLElement>(this.item?.kind === "tool" ? ".tool-streaming-output" : ".streaming-plain pre") : null;
     const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && streamingTextTarget);
-    const compactSummary = this.collapsed ? compactToolSummary(item) : "";
+    const compactSummary = this.collapsed && item.kind !== "tool" ? compactToolSummary(item) : "";
+    const toolDisplay = item.kind === "tool" ? toolHeaderDisplay(item) : null;
+    const visibleDuration = shouldShowToolDuration(item, this.collapsed);
     const segmentKey = item.segments?.map((segment) => {
       if ("text" in segment) return `${segment.kind}:${segment.text}`;
       return `${segment.kind}:${segment.label}:${segment.kind === "image" ? segment.src ?? "" : ""}`;
     }).join("|") ?? "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
     if (renderKey === this.lastRenderKey) {
       if (canPatchText && streamingText !== this.lastStreamingText) {
         streamingTextTarget!.textContent = streamingText ?? "";
@@ -631,11 +668,11 @@ export class PiTranscriptRow extends HTMLElement {
       <div class="message-header">
         ${isCollapsible ? `<button class="message-expand-toggle" type="button" data-row-action="toggle-output" data-transcript-id="${escapeHtml(item.id)}" aria-expanded="${this.collapsed ? "false" : "true"}" aria-label="${this.collapsed ? "Show output" : "Hide output"}" title="${this.collapsed ? "Show output" : "Hide output"}">${this.collapsed ? "▸" : "▾"}</button>` : ""}
         ${item.kind === "tool" && item.status === "running" ? `<span class="tool-running-spinner" aria-hidden="true"></span>` : ""}
-        <strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong>
+        ${toolDisplay ? `<strong class="tool-action" title="${escapeHtml(toolDisplay.action)}">${escapeHtml(toolDisplay.action)}</strong>${toolDisplay.target ? ` <span class="tool-target" title="${escapeHtml(toolDisplay.target)}">${escapeHtml(toolDisplay.target)}</span>` : ""}` : `<strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong>`}
         ${compactSummary ? `<span class="tool-summary">${escapeHtml(compactSummary)}</span>` : ""}
         <span class="message-header-spacer"></span>
-        ${item.durationMs !== undefined ? `<span class="tool-duration">${escapeHtml(formatToolDuration(item.durationMs))}</span>` : ""}
-        ${item.status ? `<span class="message-status">${escapeHtml(item.status)}</span>` : ""}
+        ${visibleDuration ? `<span class="tool-duration">${escapeHtml(formatToolDuration(item.durationMs!))}</span>` : ""}
+        ${item.status && !(item.kind === "tool" && this.collapsed) ? `<span class="message-status">${escapeHtml(item.status)}</span>` : ""}
         <div class="message-action-area">
           <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="Message actions">${ellipsisIconSvg()}</button>
           ${this.actionMenuOpen ? this.renderActionMenu(item) : ""}

@@ -6,6 +6,8 @@ let renderTranscriptSegments: typeof import("./transcript").renderTranscriptSegm
 let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDeveloperBash;
 let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
+let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
+let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, "HTMLElement", {
@@ -20,7 +22,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
 });
 
 describe("transcript terminal rendering", () => {
@@ -88,6 +90,26 @@ describe("transcript terminal rendering", () => {
     expect(html).toContain("streaming &lt;script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain("\u001b[31m");
+  });
+});
+
+describe("transcript tool row display", () => {
+  test("derives structured action-first headers for common tool titles", () => {
+    expect(toolHeaderDisplay({ id: "bash", kind: "tool", title: "$ bun run check", body: "", status: "done" })).toEqual({ action: "bash", target: "bun run check" });
+    expect(toolHeaderDisplay({ id: "read", kind: "tool", title: "read apps/web/src/transcript.ts", body: "", status: "done" })).toEqual({ action: "read", target: "apps/web/src/transcript.ts" });
+    expect(toolHeaderDisplay({ id: "edit", kind: "tool", title: "edit PROJECT_LOG.md", body: "", status: "done" })).toEqual({ action: "edit", target: "PROJECT_LOG.md" });
+    expect(toolHeaderDisplay({ id: "question", kind: "tool", title: "Question", body: "", status: "running" })).toEqual({ action: "question", target: "operator input" });
+  });
+
+  test("prefers raw tool args when available", () => {
+    expect(toolHeaderDisplay({ id: "raw", kind: "tool", title: "Tool", body: "", status: "done", raw: { toolName: "read", args: { path: "DESIGN.md" } } })).toEqual({ action: "read", target: "DESIGN.md" });
+    expect(toolHeaderDisplay({ id: "ask", kind: "tool", title: "Question", body: "", status: "running", raw: { toolName: "ask_question", args: { question: "Proceed?" } } })).toEqual({ action: "question", target: "Proceed?" });
+  });
+
+  test("shows collapsed tool durations only when noteworthy", () => {
+    expect(shouldShowToolDuration({ id: "fast", kind: "tool", title: "read file", body: "", status: "done", durationMs: 999 }, true)).toBe(false);
+    expect(shouldShowToolDuration({ id: "slow", kind: "tool", title: "read file", body: "", status: "done", durationMs: 1000 }, true)).toBe(true);
+    expect(shouldShowToolDuration({ id: "expanded", kind: "tool", title: "read file", body: "", status: "done", durationMs: 20 }, false)).toBe(true);
   });
 });
 
