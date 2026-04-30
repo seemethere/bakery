@@ -2,7 +2,7 @@ import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { PLAN_ACTIONS_MARKER, type AnswerQuestionPayload, type CommandInfo, type ModelPolicy, type NormalizedAgentEvent, type PendingQuestion, type SessionRuntimeSettings, type SessionSnapshot, type WebSession } from "@pi-web-agent/protocol";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
-import { getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "./workflow-skills.js";
+import { BUNDLED_EXTENSION_COMMANDS, runBundledExtensionCommand } from "./extensions.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -317,7 +317,7 @@ class FakeSessionHandle implements SessionHandle {
   getCommands(): CommandInfo[] {
     return [
       { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
-      ...WORKFLOW_SKILL_COMMANDS,
+      ...BUNDLED_EXTENSION_COMMANDS,
       { name: "session", description: "Show session info", source: "builtin" },
       { name: "reload", description: "Reload fake resources", source: "builtin" },
     ];
@@ -328,12 +328,21 @@ class FakeSessionHandle implements SessionHandle {
     if (trimmed === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
     if (trimmed === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
     const workflowMatch = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(trimmed);
-    const workflowSkill = workflowMatch ? getWorkflowSkill(workflowMatch[1] ?? "") : undefined;
-    if (workflowSkill) {
+    const commandName = workflowMatch?.[1] ?? "";
+    const bundledExtensionResult = commandName ? await runBundledExtensionCommand(commandName, workflowMatch?.[2]?.trim() ?? "") : undefined;
+    if (bundledExtensionResult?.kind === "launchPrompt") {
       return {
         handled: true,
-        title: `/${workflowSkill.name}`,
-        launchPrompt: workflowSkill.buildPrompt(workflowMatch?.[2]?.trim() ?? ""),
+        title: bundledExtensionResult.title ?? `/${commandName}`,
+        launchPrompt: bundledExtensionResult.prompt,
+      };
+    }
+    if (bundledExtensionResult?.kind === "handled") {
+      return {
+        handled: true,
+        ...(bundledExtensionResult.title ? { title: bundledExtensionResult.title } : {}),
+        ...(bundledExtensionResult.body ? { body: bundledExtensionResult.body } : {}),
+        ...(typeof bundledExtensionResult.isError === "boolean" ? { isError: bundledExtensionResult.isError } : {}),
       };
     }
     return { handled: false };

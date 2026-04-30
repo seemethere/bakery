@@ -1,18 +1,26 @@
 import { readFileSync } from "node:fs";
-import { compactWorkflowLaunchText, getWorkflowSkill, WORKFLOW_SKILL_COMMANDS } from "../apps/server/src/workflow-skills.js";
+import { BUNDLED_EXTENSION_COMMANDS, BUNDLED_EXTENSIONS, runBundledExtensionCommand } from "../apps/server/src/extensions.js";
+import { compactWorkflowLaunchText } from "../apps/server/src/workflow-skills.js";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-const commands = WORKFLOW_SKILL_COMMANDS.map((command) => command.name);
-assert(commands.includes("plan"), "expected /plan workflow skill command to be registered");
+const bundledWorkflowExtension = BUNDLED_EXTENSIONS.find((extension) => extension.id === "bakery.workflow");
+assert(bundledWorkflowExtension, "expected bundled workflow extension to be registered");
+assert(bundledWorkflowExtension.capabilities?.includes("commands"), "expected bundled workflow extension to declare command capability");
+
+const commands = BUNDLED_EXTENSION_COMMANDS.map((command) => command.name);
+assert(commands.includes("plan"), "expected /plan bundled extension command to be registered");
 assert(!commands.includes("grill-me"), "expected /grill-me workflow skill command to be removed");
 
-const plan = getWorkflowSkill("plan");
-assert(plan, "expected plan workflow skill to be retrievable");
+const planCommand = BUNDLED_EXTENSION_COMMANDS.find((command) => command.name === "plan");
+assert(planCommand?.source === "skill", "expected /plan to preserve its current slash autocomplete source");
+assert(planCommand.sourceInfo && typeof planCommand.sourceInfo === "object", "expected /plan to preserve source info");
 
-const prompt = plan.buildPrompt("what should be next?");
+const planResult = await runBundledExtensionCommand("plan", "what should be next?");
+assert(planResult?.kind === "launchPrompt", "expected /plan bundled extension command to launch a prompt");
+const prompt = planResult.prompt;
 const requiredSnippets = [
   "Run the bundled `plan` workflow skill",
   "Operator-provided focus: what should be next?",
@@ -38,7 +46,9 @@ for (const snippet of requiredSnippets) {
   assert(prompt.includes(snippet), `expected /plan prompt to include: ${snippet}`);
 }
 
-const defaultPrompt = plan.buildPrompt("   ");
+const defaultResult = await runBundledExtensionCommand("plan", "   ");
+assert(defaultResult?.kind === "launchPrompt", "expected default /plan command to launch a prompt");
+const defaultPrompt = defaultResult.prompt;
 assert(defaultPrompt.includes("Operator-provided focus: general project/codebase review."), "expected default focus copy");
 
 assert(compactWorkflowLaunchText(prompt) === "Launched /plan workflow · Focus: what should be next?", "expected compact /plan launch summary");
