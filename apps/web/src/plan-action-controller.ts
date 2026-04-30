@@ -5,6 +5,10 @@ import type { TranscriptItem } from "./transcript";
 
 export type PlanAction = "accept" | "chat";
 
+function isPlanAction(value: string): value is PlanAction {
+  return value === "accept" || value === "chat";
+}
+
 export type PlanActionControllerOptions = {
   transcript: () => TranscriptItem[];
   status: () => string;
@@ -37,7 +41,8 @@ export class PlanActionController {
     return renderPlanComposerTakeover(item);
   }
 
-  handle(action: PlanAction, transcriptId = this.activeItem()?.id ?? ""): void {
+  handle(action: string, transcriptId = this.activeItem()?.id ?? ""): void {
+    if (!isPlanAction(action)) return;
     if (transcriptId) this.dismissedTranscriptId = transcriptId;
     if (action === "chat") {
       this.fillPromptDraft("");

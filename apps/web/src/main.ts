@@ -20,7 +20,7 @@ import { TranscriptFollowController } from "./transcript-follow";
 import { hydrateTranscriptRows as hydrateTranscriptDomRows, patchDirtyTranscriptRows, type TranscriptBindingOptions, type TranscriptBindingState, type TranscriptRowStateOptions } from "./transcript-dom";
 import { patchTranscriptStructure as patchTranscriptStructureHtml, recordTranscriptPatchSample, replaceHtmlPreservingTranscript as replaceHtmlPreservingTranscriptRows, syncOpenActionMenus as syncTranscriptOpenActionMenus } from "./transcript-live-controller";
 import { renderTranscriptShell } from "./transcript-shell";
-import { PlanActionController, type PlanAction } from "./plan-action-controller";
+import { PlanActionController } from "./plan-action-controller";
 import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem } from "./running-queue";
 import { RunningQueueController } from "./running-queue-controller";
@@ -719,7 +719,7 @@ class PiWebAgentApp extends HTMLElement {
     this.render();
   }
 
-  private handlePlanAction(action: PlanAction, transcriptId = this.activePlanActionItem()?.id ?? ""): void {
+  private handlePlanAction(action: string, transcriptId = this.activePlanActionItem()?.id ?? ""): void {
     this.planActions.handle(action, transcriptId);
   }
 
@@ -1327,12 +1327,11 @@ class PiWebAgentApp extends HTMLElement {
         scheduleFollow: () => this.scheduleTranscriptFollow(),
       });
     });
-    this.querySelectorAll<HTMLButtonElement>("[data-plan-action]").forEach((button) => {
+    this.querySelectorAll<HTMLButtonElement>("[data-ui-action]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         button.blur();
-        const action = button.dataset.planAction;
-        if (action === "accept" || action === "chat") this.handlePlanAction(action, button.dataset.transcriptId ?? "");
+        this.handlePlanAction(button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
       });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {

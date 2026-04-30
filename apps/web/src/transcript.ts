@@ -1,4 +1,4 @@
-import { LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
+import { LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER, type UiActionContribution } from "@pi-web-agent/protocol";
 import ConvertAnsi from "ansi-to-html";
 import { marked } from "marked";
 import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
@@ -37,12 +37,29 @@ const planActionMarkers = [PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER];
 const escapedPlanActionMarkers = planActionMarkers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const planActionsMarkerPattern = new RegExp(`(?:\\n\\s*)?(?:${escapedPlanActionMarkers})\\s*$`);
 
+export const PLAN_UI_ACTION_CONTRIBUTION: UiActionContribution = {
+  id: "bakery.workflow.plan.actions",
+  placement: "composer_takeover",
+  title: "Plan ready",
+  description: "Accept to continue with this implementation plan, or return to the normal composer.",
+  source: { extensionId: "bakery.workflow", commandName: "plan" },
+  actions: [
+    { id: "accept", label: "Accept plan", variant: "primary" },
+    { id: "chat", label: "Back to chat", variant: "secondary" },
+  ],
+};
+
 export function stripPlanActionsMarker(text: string): string {
   return text.replace(planActionsMarkerPattern, "").trimEnd();
 }
 
+export function uiActionContributionForTranscriptItem(item: TranscriptItem): UiActionContribution | null {
+  if (item.kind !== "assistant" || !planActionsMarkerPattern.test(item.body)) return null;
+  return PLAN_UI_ACTION_CONTRIBUTION;
+}
+
 export function hasPlanActionsMarker(item: TranscriptItem): boolean {
-  return item.kind === "assistant" && planActionsMarkerPattern.test(item.body);
+  return uiActionContributionForTranscriptItem(item) !== null;
 }
 
 export function isDeveloperBashItem(item: TranscriptItem): boolean {

@@ -5,6 +5,32 @@ export const PROTOCOL_VERSION = 1;
 export const PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Back to chat";
 export const LEGACY_PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Give feedback · Cancel plan · Back to chat";
 
+export const uiActionVariantSchema = z.enum(["primary", "secondary"]);
+export type UiActionVariant = z.infer<typeof uiActionVariantSchema>;
+
+export const uiActionPlacementSchema = z.enum(["composer_takeover"]);
+export type UiActionPlacement = z.infer<typeof uiActionPlacementSchema>;
+
+export const uiActionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  variant: uiActionVariantSchema.optional(),
+});
+export type UiAction = z.infer<typeof uiActionSchema>;
+
+export const uiActionContributionSchema = z.object({
+  id: z.string().min(1),
+  placement: uiActionPlacementSchema,
+  title: z.string().min(1),
+  description: z.string().optional(),
+  source: z.object({
+    extensionId: z.string().min(1).optional(),
+    commandName: z.string().min(1).optional(),
+  }).optional(),
+  actions: z.array(uiActionSchema).min(1),
+});
+export type UiActionContribution = z.infer<typeof uiActionContributionSchema>;
+
 export const toolPermissionModeSchema = z.enum(["bypass", "confirm", "deny"]);
 export type ToolPermissionMode = z.infer<typeof toolPermissionModeSchema>;
 

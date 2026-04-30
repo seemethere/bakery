@@ -1,22 +1,28 @@
-import { hasPlanActionsMarker, type TranscriptItem } from "./transcript";
+import type { UiActionContribution } from "@pi-web-agent/protocol";
+import { uiActionContributionForTranscriptItem, type TranscriptItem } from "./transcript";
 import { renderTranscriptHtml } from "./transcript-renderer";
 import { escapeHtml } from "./utils";
 
 export function activePlanActionItem(items: readonly TranscriptItem[], dismissedId: string): TranscriptItem | null {
   const latestItem = items.at(-1);
-  if (!latestItem || latestItem.kind !== "assistant" || !hasPlanActionsMarker(latestItem)) return null;
+  if (!latestItem || !uiActionContributionForTranscriptItem(latestItem)) return null;
   return latestItem.id === dismissedId ? null : latestItem;
 }
 
 export function renderPlanComposerTakeover(item: TranscriptItem): string {
-  return `<section class="plan-composer-takeover" aria-label="Plan decision needed">
+  const contribution = uiActionContributionForTranscriptItem(item);
+  if (!contribution) return "";
+  return renderComposerTakeover(contribution, item.id);
+}
+
+function renderComposerTakeover(contribution: UiActionContribution, transcriptId: string): string {
+  return `<section class="plan-composer-takeover" aria-label="${escapeHtml(contribution.title)}">
       <div class="plan-composer-heading">
-        <strong>Plan ready</strong>
-        <span>Accept to continue with this implementation plan, or return to the normal composer.</span>
+        <strong>${escapeHtml(contribution.title)}</strong>
+        ${contribution.description ? `<span>${escapeHtml(contribution.description)}</span>` : ""}
       </div>
-      <div class="plan-composer-actions">
-        <button type="button" class="primary-action" data-plan-action="accept" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
-        <button type="button" data-plan-action="chat" data-transcript-id="${escapeHtml(item.id)}">Back to chat</button>
+      <div class="plan-composer-actions" data-ui-contribution-id="${escapeHtml(contribution.id)}" data-ui-placement="${escapeHtml(contribution.placement)}">
+        ${contribution.actions.map((action) => `<button type="button" class="${action.variant === "primary" ? "primary-action" : ""}" data-ui-action="${escapeHtml(action.id)}" data-plan-action="${escapeHtml(action.id)}" data-ui-contribution-id="${escapeHtml(contribution.id)}" data-transcript-id="${escapeHtml(transcriptId)}">${escapeHtml(action.label)}</button>`).join("")}
       </div>
     </section>`;
 }

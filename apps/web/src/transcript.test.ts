@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { LEGACY_PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
 import type { TranscriptItem } from "./transcript";
 
 let PLAN_ACTIONS_MARKER: typeof import("./transcript").PLAN_ACTIONS_MARKER;
@@ -6,6 +7,7 @@ let renderTranscriptSegments: typeof import("./transcript").renderTranscriptSegm
 let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDeveloperBash;
 let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
+let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
 
@@ -22,7 +24,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
 });
 
 describe("transcript terminal rendering", () => {
@@ -125,7 +127,30 @@ describe("transcript plan actions", () => {
 
     expect(hasPlanActionsMarker(item)).toBe(true);
     expect(stripPlanActionsMarker(item.body)).toBe("Recommendation");
+    expect(uiActionContributionForTranscriptItem(item)).toMatchObject({
+      id: "bakery.workflow.plan.actions",
+      placement: "composer_takeover",
+      source: { extensionId: "bakery.workflow", commandName: "plan" },
+      actions: [
+        { id: "accept", label: "Accept plan", variant: "primary" },
+        { id: "chat", label: "Back to chat", variant: "secondary" },
+      ],
+    });
     expect(hasPlanActionsMarker({ ...item, kind: "user" })).toBe(false);
+    expect(uiActionContributionForTranscriptItem({ ...item, kind: "user" })).toBeNull();
+  });
+
+  test("keeps legacy /plan markers compatible with typed actions", () => {
+    const item: TranscriptItem = {
+      id: "assistant-plan-legacy",
+      kind: "assistant",
+      title: "Pi",
+      body: `Recommendation\n\n${LEGACY_PLAN_ACTIONS_MARKER}`,
+      status: "done",
+    };
+
+    expect(stripPlanActionsMarker(item.body)).toBe("Recommendation");
+    expect(uiActionContributionForTranscriptItem(item)?.actions.map((action) => action.id)).toEqual(["accept", "chat"]);
   });
 });
 
