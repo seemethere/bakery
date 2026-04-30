@@ -468,45 +468,63 @@
     gap: 6px;
   }
 
-  .message.tool .message-header strong {
-    max-width: min(42ch, 46vw);
+  .message.tool .tool-action {
+    flex-basis: 7ch;
   }
 
-  .message.tool.done.collapsed:not(.developer-bash) {
+  .message.tool .tool-target {
+    max-width: none;
+  }
+
+  .message.tool.done.collapsed:not(.developer-bash),
+  .message.tool.error.collapsed:not(.developer-bash) {
     padding-left: 8px;
     opacity: 0.72;
   }
 
-  .message.tool.done.collapsed:not(.developer-bash) + .message.tool.done.collapsed:not(.developer-bash) {
+  .message.tool.done.collapsed:not(.developer-bash) + .message.tool.done.collapsed:not(.developer-bash),
+  .message.tool.error.collapsed:not(.developer-bash) + .message.tool.error.collapsed:not(.developer-bash),
+  .message.tool.done.collapsed:not(.developer-bash) + .message.tool.error.collapsed:not(.developer-bash),
+  .message.tool.error.collapsed:not(.developer-bash) + .message.tool.done.collapsed:not(.developer-bash) {
     margin-top: 0;
   }
 
-  .message.tool.done.collapsed .message-header {
+  .message.tool.done.collapsed .message-header,
+  .message.tool.error.collapsed:not(.developer-bash) .message-header {
     display: grid;
-    grid-template-columns: 24px minmax(5ch, 10ch) minmax(0, 1fr);
+    grid-template-columns: 24px minmax(5ch, 7ch) minmax(0, 1fr) auto;
     gap: 5px;
     min-height: 30px;
     padding: 2px 0;
   }
 
-
-  .message.tool.done.collapsed .message-header strong {
+  .message.tool.done.collapsed .tool-action,
+  .message.tool.error.collapsed:not(.developer-bash) .tool-action {
     max-width: none;
     color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
     font-size: 12px;
   }
 
-  .message.tool.done.collapsed .tool-summary {
+  .message.tool.done.collapsed .tool-target,
+  .message.tool.error.collapsed:not(.developer-bash) .tool-target {
     min-width: 0;
     color: color-mix(in srgb, var(--color-text-muted) 82%, transparent);
     font-size: 12px;
   }
 
   .message.tool.done.collapsed .message-header-spacer,
-  .message.tool.done.collapsed .tool-duration,
   .message.tool.done.collapsed .message-status,
-  .message.tool.done.collapsed .message-action-area {
+  .message.tool.done.collapsed .message-action-area,
+  .message.tool.error.collapsed:not(.developer-bash) .message-header-spacer,
+  .message.tool.error.collapsed:not(.developer-bash) .message-status,
+  .message.tool.error.collapsed:not(.developer-bash) .message-action-area {
     display: none;
+  }
+
+  .message.tool.done.collapsed .tool-duration,
+  .message.tool.error.collapsed:not(.developer-bash) .tool-duration {
+    align-self: center;
+    font-size: 10.5px;
   }
 
 
