@@ -46,7 +46,7 @@ In handoffs, include the report's `## Validation decision` block or summarize:
 
 Follow the selector's focused-first command list in order and stop to fix the first failure. Treat full `bun run test:web-perf` as an explicit escalation, not the default: run it when protocol/session lifecycle behavior changed, broad UI interaction paths changed, focused validation fails unexpectedly, or the selector selects it.
 
-When a focused `ui-harness` scenario fails, do not immediately rerun the same command. First inspect the latest artifact directory and relevant logs/screenshots, identify one failing assertion or cause, patch the smallest cause, then rerun only that focused scenario. In the handoff, include the artifact path and explain why any repeated failed scenario reruns were necessary.
+When a focused `ui-harness` scenario fails, do not immediately rerun the same command. First inspect the latest artifact directory and relevant logs/screenshots, identify one failing assertion or cause, patch the smallest cause, then rerun only that focused scenario. If `bun run report:iteration --recommend ...` or `--session-history` labels the latest artifact as degraded or missing, regenerate that same focused scenario once to capture useful failure logs/screenshots before deeper debugging; do not escalate to broad validation just to replace a bad artifact. In the handoff, include the artifact path, artifact quality when reported, and explain why any repeated failed scenario reruns were necessary.
 
 ## Reading current-session telemetry
 
@@ -70,7 +70,7 @@ Turn these into concrete process changes, for example:
 
 - replace broad log reads with `bun run project:notes` plus targeted `read` offsets;
 - prefer focused harness scenarios over full-suite runs when the selector says the full suite is not required;
-- stop after a failing focused scenario, inspect artifacts/logs, patch once, and rerun that scenario instead of cycling validation blindly;
+- stop after a failing focused scenario, check artifact quality, inspect usable artifacts/logs/screenshots, patch once, and rerun that scenario instead of cycling validation blindly;
 - patch high-churn files with smaller exact replacements;
 - include key harness screenshot PNG paths in mobile/UI handoffs.
 

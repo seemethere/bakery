@@ -111,12 +111,21 @@ type SessionContextReport = {
   notes: string[];
 };
 
+type HarnessArtifactQuality = {
+  status: "usable" | "degraded" | "missing";
+  reason: string;
+  files: Array<{ path: string; bytes: number }>;
+  missingFiles: string[];
+  screenshots: Array<{ path: string; bytes: number; width?: number; height?: number }>;
+};
+
 type FocusedHarnessInspection = {
   command: string;
   artifactDir: string;
   inspectPaths: string[];
   failureSummary?: string;
   generatedAt?: string;
+  quality: HarnessArtifactQuality;
 };
 
 type SessionHistoryReport = {
@@ -811,6 +820,79 @@ function failedHarnessArtifacts(): HarnessRun[] {
     .sort((a, b) => (b.generatedAtFromPath ?? "").localeCompare(a.generatedAtFromPath ?? ""));
 }
 
+function readPngDimensions(path: string): { width: number; height: number } | undefined {
+  try {
+    const buffer = readFileSync(path);
+    if (buffer.length < 24) return undefined;
+    const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (!pngSignature.every((byte, index) => buffer[index] === byte)) return undefined;
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  } catch {
+    return undefined;
+  }
+}
+
+function buildArtifactQuality(artifactDir: string): HarnessArtifactQuality {
+  const artifactRoot = join(root, artifactDir);
+  if (!existsSync(artifactRoot)) {
+    return { status: "missing", reason: "artifact directory is missing", files: [], missingFiles: ["failure.txt", "server.log", "web.log", "console.log"], screenshots: [] };
+  }
+  const debugFiles = ["failure.txt", "server.log", "web.log", "console.log"];
+  const files = debugFiles
+    .map((name) => ({ path: join(artifactDir, name), absolutePath: join(artifactRoot, name) }))
+    .filter((item) => existsSync(item.absolutePath))
+    .map((item) => ({ path: item.path, bytes: statSync(item.absolutePath).size }));
+  const missingFiles = debugFiles.filter((name) => !existsSync(join(artifactRoot, name)));
+  const screenshots = readdirSync(artifactRoot)
+    .filter((entry) => entry.endsWith(".png") && entry !== "fixture.png")
+    .sort()
+    .map((entry) => {
+      const path = join(artifactDir, entry);
+      const absolutePath = join(root, path);
+      const dimensions = readPngDimensions(absolutePath);
+      return { path, bytes: statSync(absolutePath).size, width: dimensions?.width, height: dimensions?.height };
+    });
+  const usefulScreenshots = screenshots.filter((item) => (item.width ?? 0) > 1 && (item.height ?? 0) > 1 && item.bytes > 1_000);
+  if (!existsSync(join(artifactRoot, "failure.txt"))) {
+    return { status: "missing", reason: "failure.txt is missing, so the failing assertion is not captured", files, missingFiles, screenshots };
+  }
+  if (usefulScreenshots.length === 0) {
+    return { status: "degraded", reason: "no useful scenario screenshot was captured beyond fixture placeholders", files, missingFiles, screenshots };
+  }
+  if (missingFiles.length > 0) {
+    return { status: "degraded", reason: `missing debug file(s): ${missingFiles.join(", ")}`, files, missingFiles, screenshots };
+  }
+  return { status: "usable", reason: `${usefulScreenshots.length} useful screenshot(s) plus failure/log files are available`, files, missingFiles, screenshots };
+}
+
+function buildFocusedHarnessInspection(run: HarnessRun, command: string): FocusedHarnessInspection {
+  const artifactRoot = join(root, run.artifactDir);
+  const knownFiles = ["failure.txt", "server.log", "web.log", "console.log", "final.png"];
+  const inspectPaths = knownFiles
+    .map((name) => join(run.artifactDir, name))
+    .filter((path) => existsSync(join(root, path)));
+  const screenshots = existsSync(artifactRoot)
+    ? readdirSync(artifactRoot)
+        .filter((entry) => entry.endsWith(".png") && entry !== "final.png" && entry !== "fixture.png")
+        .sort()
+        .slice(0, 4)
+        .map((entry) => join(run.artifactDir, entry))
+    : [];
+  return {
+    command,
+    artifactDir: run.artifactDir,
+    inspectPaths: [...inspectPaths, ...screenshots],
+    failureSummary: run.failureSummary,
+    generatedAt: run.generatedAtFromPath,
+    quality: buildArtifactQuality(run.artifactDir),
+  };
+}
+
+function latestFailedHarnessInspectionForScenario(scenario: string): FocusedHarnessInspection | undefined {
+  const run = failedHarnessArtifacts().find((candidate) => candidate.scenario === scenario);
+  return run ? buildFocusedHarnessInspection(run, `ui-harness:${scenario}`) : undefined;
+}
+
 function buildFocusedHarnessInspections(validationCommands: SessionHistoryReport["validationCommands"]): FocusedHarnessInspection[] {
   const failedArtifacts = failedHarnessArtifacts();
   return validationCommands
@@ -820,26 +902,7 @@ function buildFocusedHarnessInspections(validationCommands: SessionHistoryReport
     .flatMap((item) => {
       const scenario = item.command.replace(/^ui-harness:/, "");
       const run = failedArtifacts.find((candidate) => candidate.scenario === scenario);
-      if (!run) return [];
-      const artifactRoot = join(root, run.artifactDir);
-      const knownFiles = ["failure.txt", "server.log", "web.log", "console.log", "final.png"];
-      const inspectPaths = knownFiles
-        .map((name) => join(run.artifactDir, name))
-        .filter((path) => existsSync(join(root, path)));
-      const screenshots = existsSync(artifactRoot)
-        ? readdirSync(artifactRoot)
-            .filter((entry) => entry.endsWith(".png") && entry !== "final.png" && entry !== "fixture.png")
-            .sort()
-            .slice(0, 4)
-            .map((entry) => join(run.artifactDir, entry))
-        : [];
-      return [{
-        command: item.command,
-        artifactDir: run.artifactDir,
-        inspectPaths: [...inspectPaths, ...screenshots],
-        failureSummary: run.failureSummary,
-        generatedAt: run.generatedAtFromPath,
-      }];
+      return run ? [buildFocusedHarnessInspection(run, item.command)] : [];
     });
 }
 
@@ -962,8 +1025,14 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   const focusedLoop = rerunOpportunity.topRepeatedFailedFocusedHarness;
   if (focusedLoop) {
     const inspection = focusedHarnessInspections.find((item) => item.command === focusedLoop.command);
+    const artifactHint = inspection
+      ? `${inspection.artifactDir} (${inspection.quality.status}: ${inspection.quality.reason})`
+      : "the latest artifact directory";
+    const nextStep = inspection && inspection.quality.status !== "usable"
+      ? "regenerate that single scenario to capture useful logs/screenshots, then patch one cause before rerunning"
+      : "inspect the artifact logs/screenshots and patch one cause before rerunning the same scenario";
     actionRecommendations.push(
-      `Focused harness loops appear in history: ${focusedLoop.command} ran ${focusedLoop.runs} times with ${focusedLoop.failures} failure(s). Inspect ${inspection?.artifactDir ?? "the latest artifact directory"}/server.log and patch one cause before rerunning the same scenario.`,
+      `Focused harness loops appear in history: ${focusedLoop.command} ran ${focusedLoop.runs} times with ${focusedLoop.failures} failure(s). Use ${artifactHint}; ${nextStep}.`,
     );
   }
   const topValidation = validationCommands.find((item) => item.runs > 1);
@@ -1105,6 +1174,7 @@ function printSessionHistoryReport(report: SessionHistoryReport): void {
     report.focusedHarnessInspections.forEach((item) => {
       const suffix = item.generatedAt ? ` · ${item.generatedAt}` : "";
       console.log(`- ${item.command}: ${item.artifactDir}${suffix}`);
+      console.log(`  quality: ${item.quality.status} — ${item.quality.reason}`);
       if (item.failureSummary) console.log(`  failure: ${item.failureSummary}`);
       item.inspectPaths.forEach((path) => console.log(`  inspect: ${path}`));
     });
@@ -1389,6 +1459,39 @@ function fullSuiteDecision(recommendation: ValidationRecommendation): { mode: "s
   };
 }
 
+function formatArtifactScreenshotSummary(quality: HarnessArtifactQuality): string {
+  const useful = quality.screenshots.filter((item) => (item.width ?? 0) > 1 && (item.height ?? 0) > 1 && item.bytes > 1_000);
+  if (useful.length === 0) return "no useful screenshots";
+  return useful
+    .slice(0, 3)
+    .map((item) => `${item.path}${item.width && item.height ? ` (${item.width}×${item.height})` : ""}`)
+    .join(", ");
+}
+
+function printFocusedHarnessRetryAdvisory(recommendation: ValidationRecommendation): void {
+  const focusedScenarios = recommendation.scenarios.slice(0, 6);
+  if (focusedScenarios.length === 0) return;
+  console.log("\nFocused harness failure workflow:");
+  console.log("- If a focused scenario fails, stop before rerunning broad validation: inspect the latest artifact, patch one cause, then rerun only that scenario.");
+  console.log("- If the artifact is degraded or missing, regenerate that same scenario once to capture useful failure logs/screenshots before deeper debugging.");
+  const inspections = focusedScenarios.flatMap((scenario) => {
+    const inspection = latestFailedHarnessInspectionForScenario(scenario);
+    return inspection ? [inspection] : [];
+  });
+  if (inspections.length === 0) {
+    console.log("- No recent failed artifact directories found for the selected focused scenarios.");
+    return;
+  }
+  console.log("Latest failed artifacts for selected scenarios:");
+  inspections.forEach((item) => {
+    const scenario = item.command.replace(/^ui-harness:/, "");
+    const action = item.quality.status === "usable" ? "inspect before rerun" : "regenerate this scenario before relying on artifacts";
+    console.log(`- ${scenario}: ${item.artifactDir} — ${item.quality.status}; ${action}`);
+    console.log(`  ${item.quality.reason}; screenshots: ${formatArtifactScreenshotSummary(item.quality)}`);
+    if (item.failureSummary) console.log(`  failure: ${item.failureSummary}`);
+  });
+}
+
 function printValidationDecisionBlock(recommendation: ValidationRecommendation): void {
   console.log("\n## Validation decision");
   if (recommendation.files.length === 0) {
@@ -1425,6 +1528,7 @@ function printValidationRecommendation(recommendation: ValidationRecommendation)
   }
   console.log("\nWhy:");
   recommendation.reasons.forEach((reason) => console.log(`- ${reason}`));
+  printFocusedHarnessRetryAdvisory(recommendation);
   printValidationDecisionBlock(recommendation);
 }
 
