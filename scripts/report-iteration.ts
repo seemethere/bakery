@@ -11,6 +11,7 @@ const recommendMode = cliArgs.includes("--recommend");
 const agentActionsMode = cliArgs.includes("--agent-actions");
 const sessionContextMode = cliArgs.includes("--session-context");
 const sessionHistoryMode = cliArgs.includes("--session-history") || cliArgs.includes("--all-sessions");
+const roiMode = cliArgs.includes("--roi") || cliArgs.includes("--workstream-roi");
 const helpMode = cliArgs.includes("--help") || cliArgs.includes("-h");
 const outputFlagIndex = cliArgs.findIndex((arg) => arg === "--output" || arg === "-o");
 const sessionFlagIndex = cliArgs.findIndex((arg) => arg === "--session");
@@ -29,6 +30,7 @@ type GitCommit = {
   filesChanged: number;
   insertions: number;
   deletions: number;
+  changedFiles?: string[];
 };
 
 type HarnessRun = {
@@ -140,6 +142,34 @@ type SessionHistoryReport = {
   notes: string[];
 };
 
+type WorkstreamRoiEstimate = {
+  workstream: string;
+  commits: number;
+  topFiles: string[];
+  relatedScenarios: string[];
+};
+
+type RoiRecommendation = {
+  area: string;
+  confidence: "high" | "medium" | "low";
+  conservativeWin: string[];
+  assumptions: string[];
+};
+
+type RoiEstimateReport = {
+  window: { sessions: number; oldest?: string; newest?: string; commits: number };
+  workstreams: WorkstreamRoiEstimate[];
+  estimates: {
+    avoidableFocusedHarnessReruns: { min: number; max: number };
+    rawRuntimeSavedMs: { min: number; max: number };
+    contextCharsReducible: { min: number; max: number };
+    contextTokensReducible: { min: number; max: number };
+    editFailuresAvoidable: { min: number; max: number };
+  };
+  recommendations: RoiRecommendation[];
+  assumptions: string[];
+};
+
 type IterationReport = {
   generatedAt: string;
   source: {
@@ -168,6 +198,7 @@ type IterationReport = {
   }>;
   sessionContext?: SessionContextReport;
   sessionHistory?: SessionHistoryReport;
+  roiEstimate?: RoiEstimateReport;
 };
 
 function run(command: string, args: string[]): string {
@@ -195,8 +226,8 @@ function parseCommitType(subject: string): string | undefined {
   return subject.match(/^([a-z]+)(?:\([^)]+\))?!?:/)?.[1];
 }
 
-function readGitCommits(): { commits: GitCommit[]; typeFrequency: Record<string, number>; topChangedFiles: Array<{ path: string; changes: number }> } {
-  const raw = run("git", ["log", `-${maxCommits}`, "--date=iso-strict", "--pretty=format:@@COMMIT@@%H%x09%ad%x09%s", "--numstat"]);
+function parseGitCommits(args: string[]): { commits: GitCommit[]; typeFrequency: Record<string, number>; topChangedFiles: Array<{ path: string; changes: number }> } {
+  const raw = run("git", args);
   const typeFrequency: Record<string, number> = {};
   const fileChanges: Record<string, number> = {};
   const commits: GitCommit[] = [];
@@ -205,7 +236,7 @@ function readGitCommits(): { commits: GitCommit[]; typeFrequency: Record<string,
   for (const line of raw.split("\n")) {
     if (line.startsWith("@@COMMIT@@")) {
       const [hash = "", timestamp = "", subject = ""] = line.slice("@@COMMIT@@".length).split("\t");
-      current = { hash, timestamp, subject, type: parseCommitType(subject), filesChanged: 0, insertions: 0, deletions: 0 };
+      current = { hash, timestamp, subject, type: parseCommitType(subject), filesChanged: 0, insertions: 0, deletions: 0, changedFiles: [] };
       commits.push(current);
       increment(typeFrequency, current.type ?? "untyped");
       continue;
@@ -218,6 +249,7 @@ function readGitCommits(): { commits: GitCommit[]; typeFrequency: Record<string,
     current.filesChanged += 1;
     current.insertions += insertions;
     current.deletions += deletions;
+    current.changedFiles?.push(path);
     increment(fileChanges, path, insertions + deletions || 1);
   }
 
@@ -227,6 +259,15 @@ function readGitCommits(): { commits: GitCommit[]; typeFrequency: Record<string,
     .map(([path, changes]) => ({ path, changes }));
 
   return { commits, typeFrequency, topChangedFiles };
+}
+
+function readGitCommits(): { commits: GitCommit[]; typeFrequency: Record<string, number>; topChangedFiles: Array<{ path: string; changes: number }> } {
+  return parseGitCommits(["log", `-${maxCommits}`, "--date=iso-strict", "--pretty=format:@@COMMIT@@%H%x09%ad%x09%s", "--numstat"]);
+}
+
+function readGitCommitsInWindow(oldest?: string, newest?: string): { commits: GitCommit[]; typeFrequency: Record<string, number>; topChangedFiles: Array<{ path: string; changes: number }> } {
+  if (!oldest || !newest) return readGitCommits();
+  return parseGitCommits(["log", `--since=${oldest}`, `--until=${newest}`, "--date=iso-strict", "--pretty=format:@@COMMIT@@%H%x09%ad%x09%s", "--numstat"]);
 }
 
 function walkFiles(dir: string, fileName: string, limit: number): string[] {
@@ -1468,6 +1509,151 @@ function printAgentActionInsights(report: IterationReport, recommendation?: Vali
   console.log("\nNext instrumentation if this is not enough: add explicit phase markers or intent labels so timing can distinguish planning, editing, validation, and handoff without printing raw content.");
 }
 
+const scenarioWorkstreams: Record<string, string[]> = {
+  "ui-harness:tool-grouping": ["tool/transcript UI"],
+  "ui-harness:narrow-tool-stream": ["tool/transcript UI"],
+  "ui-harness:streaming-responsiveness": ["tool/transcript UI"],
+  "ui-harness:transcript-scroll-stability": ["tool/transcript UI"],
+  "ui-harness:question-answer": ["question/composer UI"],
+  "ui-harness:empty-session-layout": ["question/composer UI"],
+  "ui-harness:slash-commands": ["extensions/plan"],
+  "ui-harness:mobile-layout": ["mobile UI"],
+  "ui-harness:mobile-long-transcript-controls": ["mobile UI"],
+  "ui-harness:inspector-preview": ["inspector/artifacts UI"],
+  "ui-harness:reconnect-controller": ["backend/session lifecycle"],
+  "ui-harness:backend-restart": ["backend/session lifecycle"],
+  "ui-harness:controller-handoff-edges": ["backend/session lifecycle"],
+};
+
+function classifyWorkstream(commit: GitCommit): string {
+  const subject = commit.subject.toLowerCase();
+  const files = (commit.changedFiles ?? []).join("\n").toLowerCase();
+  if (subject.includes("question") || subject.includes("composer")) return "question/composer UI";
+  if (subject.includes("extension") || subject.includes("/plan") || subject.includes("plan ")) return "extensions/plan";
+  if (subject.includes("backend") || subject.includes("session hub") || subject.includes("route")) return "backend/session lifecycle";
+  if (subject.includes("tool") || subject.includes("transcript")) return "tool/transcript UI";
+  if (subject.includes("harness")) return "harness/tooling";
+  if (subject.includes("extract") || subject.includes("deslop") || subject.includes("controller")) return "controller/refactor";
+  if (subject.startsWith("docs:")) return "docs/process";
+  if (files.includes("question-panel") || files.includes("composer.css")) return "question/composer UI";
+  if (files.includes("bundled-extensions") || files.includes("workflow-skills") || files.includes("ui-action-controller")) return "extensions/plan";
+  if (files.includes("apps/server/src/index.ts") || files.includes("session-hub")) return "backend/session lifecycle";
+  if (files.includes("transcript")) return "tool/transcript UI";
+  if (files.includes("scripts/ui-harness")) return "harness/tooling";
+  if (files.includes("apps/web/src/main.ts")) return "controller/refactor";
+  if (files.includes("project_log.md") || files.includes("docs/")) return "docs/process";
+  return "other";
+}
+
+function buildRoiEstimate(sessionHistory: SessionHistoryReport, commitsForWindow: GitCommit[]): RoiEstimateReport {
+  const workstreamCounts: Record<string, number> = {};
+  const workstreamFiles: Record<string, Record<string, number>> = {};
+  for (const commit of commitsForWindow) {
+    const workstream = classifyWorkstream(commit);
+    increment(workstreamCounts, workstream);
+    workstreamFiles[workstream] ??= {};
+    for (const file of commit.changedFiles ?? []) increment(workstreamFiles[workstream], file);
+  }
+
+  const scenarioSets: Record<string, Set<string>> = {};
+  for (const item of sessionHistory.validationCommands) {
+    for (const workstream of scenarioWorkstreams[item.command] ?? []) {
+      scenarioSets[workstream] ??= new Set<string>();
+      scenarioSets[workstream].add(item.command.replace(/^ui-harness:/, ""));
+    }
+  }
+
+  const workstreams = Object.entries(workstreamCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([workstream, commits]) => ({
+      workstream,
+      commits,
+      topFiles: Object.entries(workstreamFiles[workstream] ?? {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([file]) => file),
+      relatedScenarios: Array.from(scenarioSets[workstream] ?? []).slice(0, 6),
+    }));
+
+  const avoidable = sessionHistory.rerunOpportunity.conservativeAvoidableReruns;
+  const rawRuntimeSavedMs = { min: avoidable.min * 15_000, max: avoidable.max * 30_000 };
+  const contextCandidates = [
+    ...sessionHistory.topReadPaths.filter((item) => item.path === "PROJECT_LOG.md" || item.resultChars >= 50_000).map((item) => item.resultChars),
+    ...sessionHistory.topBashCommands.filter((item) => item.resultChars >= 25_000).map((item) => item.resultChars),
+  ];
+  const contextChars = contextCandidates.reduce((sum, value) => sum + value, 0);
+  const contextCharsReducible = { min: Math.floor(contextChars * 0.2), max: Math.ceil(contextChars * 0.4) };
+  const contextTokensReducible = { min: estimateTokensFromChars(contextCharsReducible.min), max: estimateTokensFromChars(contextCharsReducible.max) };
+  const highChurnEditFailures = sessionHistory.editAttempts.filter((item) => item.failures > 0).reduce((sum, item) => sum + item.failures, 0);
+  const editFailuresAvoidable = {
+    min: highChurnEditFailures > 0 ? Math.max(1, Math.floor(highChurnEditFailures * 0.2)) : 0,
+    max: highChurnEditFailures > 0 ? Math.max(1, Math.ceil(highChurnEditFailures * 0.35)) : 0,
+  };
+
+  return {
+    window: { sessions: sessionHistory.sessionCount, oldest: sessionHistory.oldestMtime, newest: sessionHistory.newestMtime, commits: commitsForWindow.length },
+    workstreams,
+    estimates: { avoidableFocusedHarnessReruns: avoidable, rawRuntimeSavedMs, contextCharsReducible, contextTokensReducible, editFailuresAvoidable },
+    recommendations: [
+      {
+        area: "Artifact-first focused harness retry guard",
+        confidence: avoidable.max > 0 ? "high" : "low",
+        conservativeWin: [
+          `Avoid ${avoidable.min.toLocaleString()}-${avoidable.max.toLocaleString()} repeated failed focused-harness rerun(s).`,
+          `Save roughly ${formatDuration(rawRuntimeSavedMs.min)}-${formatDuration(rawRuntimeSavedMs.max)} of raw command runtime, plus fewer human/agent retry loops.`,
+        ],
+        assumptions: ["Counts only repeated failed focused harness runs, not every validation rerun.", "Uses 15-30 seconds per avoidable focused rerun as a conservative runtime proxy."],
+      },
+      {
+        area: "Targeted project/history context queries",
+        confidence: contextCharsReducible.max > 0 ? "medium" : "low",
+        conservativeWin: [
+          `Reduce ${contextCharsReducible.min.toLocaleString()}-${contextCharsReducible.max.toLocaleString()} tool-result chars (~${contextTokensReducible.min.toLocaleString()}-${contextTokensReducible.max.toLocaleString()} tokens) from broad reads/searches.`,
+          "Avoid repeated large PROJECT_LOG.md and broad rg payloads during planning.",
+        ],
+        assumptions: ["Applies a 20-40% reducible-context range to PROJECT_LOG-heavy reads and large broad bash outputs.", "Does not assume raw prompts or private tool contents are printed."],
+      },
+      {
+        area: "High-churn file ownership and smaller edit islands",
+        confidence: editFailuresAvoidable.max > 0 ? "medium" : "low",
+        conservativeWin: [`Avoid ${editFailuresAvoidable.min.toLocaleString()}-${editFailuresAvoidable.max.toLocaleString()} edit retry failure(s) on high-churn files.`],
+        assumptions: ["Applies a 20-35% avoidable range to observed edit failures, mostly via narrower reads and smaller exact replacements."],
+      },
+    ],
+    assumptions: [
+      "ROI is conservative and metadata-only: estimates use counts, result sizes, command labels, commit subjects, and changed paths, not raw prompt/tool content.",
+      "Workstream labels are heuristic; they are meant to guide optimization priority, not replace human product judgment.",
+      "Raw runtime savings understate ROI because they exclude attention switching, artifact inspection quality, and avoided broad context growth.",
+    ],
+  };
+}
+
+function printRoiEstimate(report: RoiEstimateReport): void {
+  console.log("\n## ROI estimate");
+  console.log(`Window: ${report.window.sessions.toLocaleString()} session(s), ${report.window.commits.toLocaleString()} commit(s)${report.window.oldest || report.window.newest ? ` (${report.window.oldest ?? "unknown"} → ${report.window.newest ?? "unknown"})` : ""}`);
+  console.log("\nWorkstream correlation:");
+  if (report.workstreams.length === 0) console.log("- none found");
+  report.workstreams.forEach((item) => {
+    const scenarios = item.relatedScenarios.length > 0 ? `; related scenarios: ${item.relatedScenarios.join(", ")}` : "";
+    const files = item.topFiles.length > 0 ? `; top files: ${item.topFiles.join(", ")}` : "";
+    console.log(`- ${item.workstream}: ${item.commits} commit(s)${scenarios}${files}`);
+  });
+  const estimates = report.estimates;
+  console.log("\nConservative estimated wins:");
+  console.log(`- avoidable focused harness reruns: ${estimates.avoidableFocusedHarnessReruns.min.toLocaleString()}-${estimates.avoidableFocusedHarnessReruns.max.toLocaleString()}`);
+  console.log(`- raw focused-rerun runtime saved: ${formatDuration(estimates.rawRuntimeSavedMs.min)}-${formatDuration(estimates.rawRuntimeSavedMs.max)}`);
+  console.log(`- broad context reducible: ${estimates.contextCharsReducible.min.toLocaleString()}-${estimates.contextCharsReducible.max.toLocaleString()} chars (~${estimates.contextTokensReducible.min.toLocaleString()}-${estimates.contextTokensReducible.max.toLocaleString()} tokens)`);
+  console.log(`- edit retry failures avoidable: ${estimates.editFailuresAvoidable.min.toLocaleString()}-${estimates.editFailuresAvoidable.max.toLocaleString()}`);
+  console.log("\nRanked ROI recommendations:");
+  report.recommendations.forEach((item, index) => {
+    console.log(`${index + 1}. ${item.area} (${item.confidence})`);
+    item.conservativeWin.forEach((win) => console.log(`   - ${win}`));
+    item.assumptions.forEach((assumption) => console.log(`   assumption: ${assumption}`));
+  });
+  console.log("\nROI assumptions:");
+  report.assumptions.forEach((assumption) => console.log(`- ${assumption}`));
+}
+
 function printHelp(): void {
   console.log(`Usage:
   bun run report:iteration
@@ -1476,8 +1662,9 @@ function printHelp(): void {
   bun run report:iteration --agent-actions [--recommend <changed files...>]
   bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
   bun run report:iteration --session-history [--latest-sessions 10] [--exclude-current-session]
+  bun run report:iteration --session-history --latest-sessions 30 --exclude-current-session --roi
 
-When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Use --latest-sessions/--session-history-limit to cap history and --exclude-current-session to skip the current/latest session log.`);
+When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Use --latest-sessions/--session-history-limit to cap history and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {
@@ -1541,7 +1728,9 @@ const baseReport = {
 
 const sessionContext = sessionContextMode ? buildSessionContextReport() : undefined;
 const sessionHistory = sessionHistoryMode ? buildSessionHistoryReport() : undefined;
-const report: IterationReport = { ...baseReport, candidates: buildCandidates(baseReport), ...(sessionContext ? { sessionContext } : {}), ...(sessionHistory ? { sessionHistory } : {}) };
+const commitsForRoi = roiMode && sessionHistory ? readGitCommitsInWindow(sessionHistory.oldestMtime, sessionHistory.newestMtime).commits : [];
+const roiEstimate = roiMode && sessionHistory ? buildRoiEstimate(sessionHistory, commitsForRoi) : undefined;
+const report: IterationReport = { ...baseReport, candidates: buildCandidates(baseReport), ...(sessionContext ? { sessionContext } : {}), ...(sessionHistory ? { sessionHistory } : {}), ...(roiEstimate ? { roiEstimate } : {}) };
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
 
@@ -1565,4 +1754,8 @@ if (sessionContext) {
 
 if (sessionHistory) {
   printSessionHistoryReport(sessionHistory);
+}
+
+if (roiEstimate) {
+  printRoiEstimate(roiEstimate);
 }
