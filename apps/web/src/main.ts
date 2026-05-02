@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type HelloMessage, type PendingQuestion, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
@@ -84,6 +84,8 @@ function contextUsageLabel(usage: ContextUsage): string {
 }
 
 function defaultApiBase(): string {
+  const configured = import.meta.env.VITE_PI_WEB_API_BASE?.trim();
+  if (configured) return configured.replace(/\/$/, "");
   const { protocol, hostname } = window.location;
   const apiProtocol = protocol === "https:" ? "https:" : "http:";
   return `${apiProtocol}//${hostname || "127.0.0.1"}:3141`;
@@ -97,7 +99,7 @@ function browserId(prefix = "id"): string {
 }
 
 class PiWebAgentApp extends HTMLElement {
-  private token = localStorage.getItem("piWebAuthToken") ?? "";
+  private token = localStorage.getItem("piWebAuthToken") ?? import.meta.env.VITE_PI_WEB_AUTH_TOKEN?.trim() ?? "";
   private apiBase = localStorage.getItem("piWebApiBase") ?? defaultApiBase();
   private sessions: WebSession[] = [];
   private workspaces: Workspace[] = [];
@@ -120,6 +122,8 @@ class PiWebAgentApp extends HTMLElement {
   private metadataSuggestionDraft: MetadataSuggestionDraft = { title: "", summary: "" };
   private metadataSuggestionError = "";
   private metadataGenerating = false;
+  private previewStackStatus: PreviewStackStatus | null = null;
+  private previewStackBusy = false;
   private editingTitleDraft: string | null = null;
   private sessionTree: SessionTreeResponse | null = null;
   private lastSelectedSessionId = localStorage.getItem("piWebLastSessionId") ?? "";
@@ -463,6 +467,8 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = null;
     this.modelThinkingPickerOpen = false;
     this.sessionDetailsOpen = false;
+    this.previewStackStatus = null;
+    this.previewStackBusy = false;
     this.pendingQuestion = null;
     this.uiActions.resetDismissed();
     this.sessionTree = null;
@@ -500,6 +506,8 @@ class PiWebAgentApp extends HTMLElement {
     this.controller = null;
     this.settings = null;
     this.sessionDetailsOpen = false;
+    this.previewStackStatus = null;
+    this.previewStackBusy = false;
     this.pendingQuestion = null;
     this.sessionTree = null;
     this.transcriptController.select("");
@@ -1223,17 +1231,23 @@ class PiWebAgentApp extends HTMLElement {
       event.stopPropagation();
       this.sessionDetailsOpen = !this.sessionDetailsOpen;
       this.render();
+      if (this.sessionDetailsOpen && this.selectedSession?.isolationKind === "git_worktree") void this.refreshPreviewStack();
     });
     this.querySelector<HTMLButtonElement>("#toggleIsolationDetails")?.addEventListener("click", (event) => {
       event.stopPropagation();
       this.sessionDetailsOpen = !this.sessionDetailsOpen;
       this.render();
+      if (this.sessionDetailsOpen && this.selectedSession?.isolationKind === "git_worktree") void this.refreshPreviewStack();
     });
     this.querySelector<HTMLButtonElement>("#closeSessionDetails")?.addEventListener("click", () => {
       this.sessionDetailsOpen = false;
       this.render();
     });
     this.querySelector<HTMLButtonElement>("#copyWorkspacePath")?.addEventListener("click", () => this.copyWorkspacePath());
+    this.querySelector<HTMLButtonElement>("#startPreviewStack")?.addEventListener("click", () => void this.startPreviewStack());
+    this.querySelector<HTMLButtonElement>("#stopPreviewStack")?.addEventListener("click", () => void this.stopPreviewStack());
+    this.querySelector<HTMLButtonElement>("#refreshPreviewStack")?.addEventListener("click", () => void this.refreshPreviewStack());
+    this.querySelector<HTMLButtonElement>("#copyPreviewStackUrl")?.addEventListener("click", () => this.copyPreviewStackUrl());
     this.querySelector<HTMLButtonElement>("#generateMetadata")?.addEventListener("click", () => void this.generateMetadataSuggestion());
     this.querySelectorAll<HTMLButtonElement>("#regenerateMetadata").forEach((button) => button.addEventListener("click", () => void this.generateMetadataSuggestion()));
     this.querySelector<HTMLButtonElement>("#toggleSessionSummary")?.addEventListener("click", () => this.setSummaryExpanded(!this.summaryExpanded()));
@@ -1385,6 +1399,64 @@ class PiWebAgentApp extends HTMLElement {
       metadataSuggestionError: this.metadataSuggestionError,
       metadataGenerating: this.metadataGenerating,
       status: this.status,
+      previewStackStatus: this.previewStackStatus,
+      previewStackBusy: this.previewStackBusy,
+    });
+  }
+
+  private async refreshPreviewStack(): Promise<void> {
+    if (!this.selectedSession?.id) return;
+    try {
+      this.previewStackStatus = await this.api<PreviewStackStatus>(`/api/sessions/${this.selectedSession.id}/preview-stack`);
+    } catch (error) {
+      this.previewStackStatus = { state: "error", mode: "fake-agent", message: error instanceof Error ? error.message : String(error) };
+    }
+    this.render();
+  }
+
+  private async startPreviewStack(): Promise<void> {
+    if (!this.selectedSession?.id) return;
+    this.previewStackBusy = true;
+    this.previewStackStatus = { state: "starting", mode: "fake-agent", message: "Starting preview stack…" };
+    this.render();
+    try {
+      this.previewStackStatus = await this.api<PreviewStackStatus>(`/api/sessions/${this.selectedSession.id}/preview-stack/start`, { method: "POST", body: JSON.stringify({}) });
+    } catch (error) {
+      this.previewStackStatus = { state: "error", mode: "fake-agent", message: error instanceof Error ? error.message : String(error) };
+    } finally {
+      this.previewStackBusy = false;
+      this.render();
+    }
+  }
+
+  private async stopPreviewStack(): Promise<void> {
+    if (!this.selectedSession?.id) return;
+    this.previewStackBusy = true;
+    this.render();
+    try {
+      this.previewStackStatus = await this.api<PreviewStackStatus>(`/api/sessions/${this.selectedSession.id}/preview-stack/stop`, { method: "POST", body: JSON.stringify({}) });
+    } catch (error) {
+      this.previewStackStatus = { state: "error", mode: "fake-agent", message: error instanceof Error ? error.message : String(error) };
+    } finally {
+      this.previewStackBusy = false;
+      this.render();
+    }
+  }
+
+  private copyPreviewStackUrl(): void {
+    const url = this.previewStackStatus?.url;
+    if (!url) return;
+    if (!navigator.clipboard?.writeText) {
+      this.notice = "Clipboard access is not available in this browser.";
+      this.render();
+      return;
+    }
+    void navigator.clipboard.writeText(url).then(() => {
+      this.notice = "Preview stack URL copied.";
+      this.render();
+    }).catch((error) => {
+      this.notice = `Could not copy preview URL: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
     });
   }
 

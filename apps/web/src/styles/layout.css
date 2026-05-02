@@ -323,10 +323,85 @@ header:has(.session-details-popover) {
 }
 
 .session-details-path button,
-.session-details-generate {
+.session-details-generate,
+.preview-stack-actions button,
+.preview-stack-url button,
+.preview-stack-url a {
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 12px;
+}
+
+.preview-stack-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft) 34%, var(--color-border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-accent-soft) 8%, var(--color-bg-elevated));
+  padding: 10px;
+}
+
+.preview-stack-heading,
+.preview-stack-url,
+.preview-stack-meta,
+.preview-stack-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preview-stack-heading {
+  justify-content: space-between;
+}
+
+.preview-stack-heading span,
+.preview-stack-command span {
+  color: var(--color-text-faint);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preview-stack-heading strong {
+  color: var(--color-text);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.preview-stack-card p,
+.preview-stack-meta {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.preview-stack-url code,
+.preview-stack-command code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+  border-radius: 999px;
+  background: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  padding: 5px 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-stack-url a {
+  border: 1px solid color-mix(in srgb, var(--color-border) 62%, transparent);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.preview-stack-command {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
 .session-details-generate {

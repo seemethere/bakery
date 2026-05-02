@@ -64,6 +64,13 @@ A product-owned extension packaged with Bakery that contributes commands or UI b
 - Not: an arbitrary third-party plugin loaded from an untrusted source.
 - Example: the bundled workflow extension contributes the `/plan` command.
 
+### Preview Stack
+
+An operator-started review environment for an isolated agent session that runs the session worktree's Bakery frontend and backend on separate temporary ports and gives the operator an openable URL for dogfooding that branch.
+
+- Not: the primary development server or an automatically merged workspace.
+- Example: an operator starts a Preview Stack from an isolated session's Details panel, opens the generated URL, reviews the branch's UI changes with fake-agent data, then stops the stack.
+
 ### Context Document
 
 A `CONTEXT.md` file that records the domain vocabulary for a product area so operators and agents use terms consistently.

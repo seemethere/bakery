@@ -1,4 +1,4 @@
-import type { AppSettings, SessionMetadataSuggestion, SessionRuntimeSettings, WebSession } from "@pi-web-agent/protocol";
+import type { AppSettings, PreviewStackStatus, SessionMetadataSuggestion, SessionRuntimeSettings, WebSession } from "@pi-web-agent/protocol";
 import { renderSessionSummary, type MetadataSuggestionDraft } from "./session-metadata";
 import { sessionRoutePath } from "./router";
 import { escapeHtml } from "./utils";
@@ -48,7 +48,37 @@ export function renderSelectedSessionSummary(options: SessionSummaryRenderOption
 export type SessionDetailsRenderOptions = Omit<SessionSummaryRenderOptions, "showSuggestion"> & {
   sessionDetailsOpen: boolean;
   mobileLayout: boolean;
+  previewStackStatus: PreviewStackStatus | null;
+  previewStackBusy: boolean;
 };
+
+function renderPreviewStackDetails(session: WebSession, status: PreviewStackStatus | null, busy: boolean): string {
+  if (session.isolationKind !== "git_worktree") return "";
+  const state = status?.state ?? "stopped";
+  const running = state === "running" || state === "starting";
+  const stoppable = running || (state === "error" && Boolean(status?.backendPort || status?.webPort));
+  const url = status?.url ?? "";
+  const message = status?.message ?? "Start a fake-agent preview stack to dogfood this isolated branch in its own browser URL.";
+  return `<section class="preview-stack-card" aria-label="Preview stack">
+        <div class="preview-stack-heading">
+          <span>Preview Stack</span>
+          <strong>${escapeHtml(state.replace(/_/g, " "))}</strong>
+        </div>
+        <p>${escapeHtml(message)}</p>
+        ${url ? `<div class="preview-stack-url"><code title="${escapeHtml(url)}">${escapeHtml(url)}</code><button id="copyPreviewStackUrl" type="button">Copy URL</button><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Open</a></div>` : ""}
+        <div class="preview-stack-meta">
+          <span>Mode: fake-agent</span>
+          ${status?.backendPort ? `<span>Backend: ${status.backendPort}</span>` : ""}
+          ${status?.webPort ? `<span>Web: ${status.webPort}</span>` : ""}
+        </div>
+        ${status?.logPath ? `<div class="preview-stack-command"><span>Logs</span><code title="${escapeHtml(status.logPath)}">${escapeHtml(status.logPath)}</code></div>` : ""}
+        <div class="preview-stack-actions">
+          <button id="startPreviewStack" type="button" ${busy || running ? "disabled" : ""}>${busy && !running ? "Starting…" : "Start preview stack"}</button>
+          <button id="stopPreviewStack" type="button" ${busy || !stoppable ? "disabled" : ""}>Stop</button>
+          <button id="refreshPreviewStack" type="button" ${busy ? "disabled" : ""}>Refresh</button>
+        </div>
+      </section>`;
+}
 
 export function renderSessionDetails(options: SessionDetailsRenderOptions): string {
   const session = options.selectedSession;
@@ -74,6 +104,7 @@ export function renderSessionDetails(options: SessionDetailsRenderOptions): stri
         </div>
         ${session.worktreeSourceDirty ? `<p class="notice">Created from HEAD; source had uncommitted changes that were not copied.</p>` : ""}
       ` : ""}
+      ${renderPreviewStackDetails(session, options.previewStackStatus, options.previewStackBusy)}
       ${renderSelectedSessionSummary({ ...options, showSuggestion: !options.mobileLayout })}
       <button id="generateMetadata" class="session-details-generate" type="button" ${options.metadataGenerating || options.status === "running" ? "disabled" : ""}>${options.metadataGenerating ? "Generating…" : "Suggest title and summary"}</button>
     </div>`;

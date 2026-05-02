@@ -77,8 +77,21 @@ export const appConfigSchema = z.object({
   modelPolicy: modelPolicySchema,
   resourcePolicy: resourcePolicySchema,
   sessionLifecycle: sessionLifecycleConfigSchema,
+  previewPublicBaseUrl: z.string().nullable().optional(),
 });
 export type AppConfig = z.infer<typeof appConfigSchema>;
+
+export const previewStackStatusSchema = z.object({
+  state: z.enum(["stopped", "starting", "running", "error"]),
+  mode: z.literal("fake-agent"),
+  message: z.string().optional(),
+  url: z.string().optional(),
+  backendPort: z.number().int().positive().optional(),
+  webPort: z.number().int().positive().optional(),
+  logPath: z.string().optional(),
+  startedAt: z.string().optional(),
+});
+export type PreviewStackStatus = z.infer<typeof previewStackStatusSchema>;
 
 export const workspaceSchema = z.object({
   path: z.string(),

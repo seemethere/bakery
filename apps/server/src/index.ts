@@ -9,6 +9,8 @@ import { FakePiSessionRunner } from "./fake-runner.js";
 import { MetadataStore } from "./metadata-store.js";
 import { registerMetadataRoutes } from "./metadata-routes.js";
 import { InProcessPiSessionRunner } from "./pi-runner.js";
+import { registerPreviewStackRoutes } from "./preview-stack-routes.js";
+import { PreviewStackManager } from "./preview-stacks.js";
 import { registerSearchRoutes } from "./search-routes.js";
 import { createSessionHubRegistry } from "./session-hub.js";
 import { registerSessionRoutes } from "./session-routes.js";
@@ -19,9 +21,11 @@ const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
 mkdirSync(config.sessionDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
 mkdirSync(config.worktreeDir, { recursive: true });
+mkdirSync(config.previewRuntimeDir, { recursive: true });
 
 const store = new MetadataStore(config.metadataDbPath);
 const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
+const previewStacks = new PreviewStackManager({ config });
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(websocket);
@@ -59,6 +63,7 @@ app.get("/api/config", async () => ({
   modelPolicy: config.modelPolicy,
   resourcePolicy: config.resourcePolicy,
   sessionLifecycle: config.sessionLifecycle,
+  previewPublicBaseUrl: config.previewPublicBaseUrl ?? null,
 }));
 
 app.get("/api/workspaces", async () => toWorkspaces(workspaceRoots));
@@ -92,6 +97,7 @@ registerMetadataRoutes(app, {
   getBroadcaster: sessionHubRegistry.getBroadcaster,
 });
 registerSearchRoutes(app, { store, runner });
+registerPreviewStackRoutes(app, { store, previewStacks });
 registerSessionRoutes(app, {
   config,
   workspaceRoots,
@@ -103,6 +109,7 @@ sessionHubRegistry.registerRoutes(app);
 
 const close = async () => {
   app.log.info("shutting down");
+  await previewStacks.stopAll();
   await sessionHubRegistry.disposeAll();
   for (const session of store.listSessions()) await runner.disposeSession(session.id);
   store.close();

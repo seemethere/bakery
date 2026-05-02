@@ -21,6 +21,8 @@ export type ServerConfig = AppConfig & {
   sessionDir: string;
   artifactDir: string;
   worktreeDir: string;
+  previewRuntimeDir: string;
+  previewPublicBaseUrl?: string | undefined;
   fakeAgent: boolean;
 };
 
@@ -41,6 +43,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     sessionDir: env.PI_WEB_SESSION_DIR ? expandHome(env.PI_WEB_SESSION_DIR) : resolve(dataDir, "sessions"),
     artifactDir: env.PI_WEB_ARTIFACT_DIR ? expandHome(env.PI_WEB_ARTIFACT_DIR) : resolve(dataDir, "artifacts"),
     worktreeDir: env.PI_WEB_WORKTREE_DIR ? expandHome(env.PI_WEB_WORKTREE_DIR) : resolve(dataDir, "worktrees"),
+    previewRuntimeDir: env.PI_WEB_PREVIEW_RUNTIME_DIR ? expandHome(env.PI_WEB_PREVIEW_RUNTIME_DIR) : resolve(dataDir, "preview-stacks"),
+    previewPublicBaseUrl: env.PI_WEB_PREVIEW_PUBLIC_BASE_URL?.trim() || undefined,
     fakeAgent: env.PI_WEB_FAKE_AGENT === "true" || env.PI_WEB_FAKE_AGENT === "1",
     toolPermissionPolicy: {
       allowedModes: ["bypass", "confirm"],
