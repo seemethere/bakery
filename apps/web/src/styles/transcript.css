@@ -250,6 +250,17 @@
   cursor: pointer;
 }
 
+.message.metadata-details-result {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.message.metadata-details-result .message-body {
+  padding: 0;
+}
+
 .metadata-details-card {
   gap: 10px;
   border-color: color-mix(in srgb, var(--color-success) 18%, var(--color-border));

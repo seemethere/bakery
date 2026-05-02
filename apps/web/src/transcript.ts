@@ -779,7 +779,9 @@ export class PiTranscriptRow extends HTMLElement {
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
     const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : metadataDetails ? renderMetadataDetailsCard(metadataDetails) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
-    this.innerHTML = isConversationMessage ? `
+    const isStandaloneCard = Boolean(metadataDetails);
+    this.innerHTML = isStandaloneCard ? `
+      <div class="message-body">${body}</div>` : isConversationMessage ? `
       <div class="message-body">${body}</div>
       ${this.renderConversationActionBar(item)}` : `
       <div class="message-header">
