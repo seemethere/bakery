@@ -12,6 +12,7 @@ services:
       PI_WEB_HOST: 0.0.0.0
       PI_WEB_WORKSPACE_ROOT: /workspace/bakery
       PI_WEB_DATA_DIR: /workspace/.bakery-data
+      PI_WEB_SESSION_DIR: /home/bun/.pi/agent/sessions
       PI_WEB_VITE_ALLOWED_HOSTS: "${PI_WEB_VITE_ALLOWED_HOSTS:-}"
       PI_WEB_PREVIEW_PUBLIC_BASE_URL: "${PI_WEB_PREVIEW_PUBLIC_BASE_URL:-}"
       BUN_INSTALL: /home/bun/.bun

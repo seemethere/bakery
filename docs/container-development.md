@@ -41,7 +41,7 @@ This is for developing Bakery itself. It is not yet the production single-port i
 | Host path | Container path | Purpose |
 | --- | --- | --- |
 | `.` | `/workspace/bakery` | This Bakery checkout and the only default allowed workspace root. |
-| `$HOME/.pi` | `/home/bun/.pi` | Existing pi auth, resources, and configuration. Mounted read-write for compatibility with normal pi behavior. |
+| `$HOME/.pi` | `/home/bun/.pi` | Existing pi auth, resources, configuration, and pi JSONL session logs. Mounted read-write for compatibility with normal pi behavior. Compose sets `PI_WEB_SESSION_DIR=/home/bun/.pi/agent/sessions` so iteration telemetry can discover these logs. |
 | `bakery-node-modules` volume | `/workspace/bakery/node_modules` | Container-owned dependencies so host `node_modules` is not required. |
 | `bakery-data` volume | `/workspace/.bakery-data` | Bakery metadata, session files, artifacts, and managed worktrees for the container. |
 | `bakery-bun-cache` volume | `/workspace/.cache/bun` | Bun cache for faster reinstalls. |
@@ -220,6 +220,10 @@ The container still listens on `3141` and `5173`; only the host bindings change.
 ### The app cannot access model credentials or pi resources
 
 Confirm `$HOME/.pi` exists on the host and is mounted at `/home/bun/.pi` in the container. The default mount is read-write to preserve normal pi auth/resource behavior.
+
+### Iteration telemetry cannot find pi session logs
+
+Compose sets `PI_WEB_SESSION_DIR=/home/bun/.pi/agent/sessions`, matching the mounted pi default. If you override this value or run outside Compose, point it at the directory that contains pi JSONL session logs; `bun run report:iteration --session-context` scans nested cwd-specific subdirectories under that path.
 
 ### Docker commands fail inside the container
 

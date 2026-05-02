@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 
@@ -494,7 +494,11 @@ function formatDuration(ms: number): string {
 }
 
 function candidateSessionDirs(): string[] {
-  const dirs = [process.env.PI_WEB_SESSION_DIR, join(homedir(), ".pi-web-agent", "sessions")].filter((dir): dir is string => Boolean(dir));
+  const dirs = [
+    process.env.PI_WEB_SESSION_DIR,
+    join(homedir(), ".pi-web-agent", "sessions"),
+    join(homedir(), ".pi", "agent", "sessions"),
+  ].filter((dir): dir is string => Boolean(dir));
   return Array.from(new Set(dirs.map((dir) => resolve(expandHome(dir)))));
 }
 
@@ -509,17 +513,31 @@ function readSessionCwd(path: string): string | undefined {
   }
 }
 
+function collectSessionLogCandidates(dir: string, depth = 0): Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> {
+  if (!existsSync(dir)) return [];
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const candidates: Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> = [];
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (depth < 3) candidates.push(...collectSessionLogCandidates(path, depth + 1));
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+    const stat = statSync(path);
+    candidates.push({ path, mtimeMs: stat.mtimeMs, cwd: readSessionCwd(path), bytes: stat.size });
+  }
+  return candidates;
+}
+
 function sessionLogCandidates(): Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> {
-  return candidateSessionDirs().flatMap((dir) => {
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((entry) => entry.endsWith(".jsonl"))
-      .map((entry) => {
-        const path = join(dir, entry);
-        const stat = statSync(path);
-        return { path, mtimeMs: stat.mtimeMs, cwd: readSessionCwd(path), bytes: stat.size };
-      });
-  });
+  return candidateSessionDirs().flatMap((dir) => collectSessionLogCandidates(dir));
+}
+
+function cwdMatchesCurrentWorkspace(cwd: string | undefined): boolean {
+  if (!cwd) return false;
+  if (resolve(cwd) === root) return true;
+  return basename(cwd) === basename(root);
 }
 
 function findSessionLogPath(): string | undefined {
@@ -527,7 +545,7 @@ function findSessionLogPath(): string | undefined {
   if (explicit) return resolve(expandHome(explicit));
 
   const sorted = sessionLogCandidates().sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return sorted.find((candidate) => candidate.cwd === root)?.path ?? sorted[0]?.path;
+  return sorted.find((candidate) => cwdMatchesCurrentWorkspace(candidate.cwd))?.path ?? sorted[0]?.path;
 }
 
 function findSessionHistoryPaths(): string[] {
