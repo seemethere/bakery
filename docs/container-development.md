@@ -41,7 +41,7 @@ This is for developing Bakery itself. It is not yet the production single-port i
 | Host path | Container path | Purpose |
 | --- | --- | --- |
 | `.` | `/workspace/bakery` | This Bakery checkout and the only default allowed workspace root. |
-| `$HOME/.pi` | `/home/bun/.pi` | Existing pi auth, resources, configuration, and pi JSONL session logs. Mounted read-write for compatibility with normal pi behavior. Compose sets `PI_WEB_SESSION_DIR=/home/bun/.pi/agent/sessions` so iteration telemetry can discover these logs. |
+| `$HOME/.pi` | `/home/bun/.pi` | Existing pi auth, resources, configuration, and pi JSONL session logs. Mounted read-write for compatibility with normal pi behavior. The entrypoint points `PI_CODING_AGENT_DIR` at a container-local overlay under `/workspace/.bakery-data/pi-agent` that symlinks this config but keeps managed binaries (`fd`, `rg`) Linux-native, avoiding host macOS/Windows binaries from `~/.pi/agent/bin`. Compose sets `PI_WEB_SESSION_DIR=/home/bun/.pi/agent/sessions` so iteration telemetry can discover these logs. |
 | `bakery-node-modules` volume | `/workspace/bakery/node_modules` | Container-owned dependencies so host `node_modules` is not required. |
 | `bakery-data` volume | `/workspace/.bakery-data` | Bakery metadata, session files, artifacts, and managed worktrees for the container. |
 | `bakery-bun-cache` volume | `/workspace/.cache/bun` | Bun cache for faster reinstalls. |
@@ -134,7 +134,7 @@ When modifying the containerized development environment, validate from the smal
      -e PI_WEB_CONTAINER_GID="$(id -g)" \
      -v "$PWD:/workspace/bakery" \
      bakery-dev:local \
-     bash -lc 'id && bun --version && git --version && docker --version && touch test-results/container-smoke/ownership.txt'
+     bash -lc 'id && bun --version && git --version && rg --version && command -v fd && test "$(command -v fd)" = /usr/local/bin/fd && test -L "${PI_CODING_AGENT_DIR}/bin/fd" && test -L "${PI_CODING_AGENT_DIR}/bin/rg" && fd --version && docker --version && touch test-results/container-smoke/ownership.txt'
 
    ls -ln test-results/container-smoke/ownership.txt
    ```

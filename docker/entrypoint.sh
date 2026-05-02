@@ -1,14 +1,61 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$(id -u)" != "0" ]]; then
-  exec "$@"
-fi
+sanitize_container_path() {
+  local home_dir="$1"
+  local agent_bin="${home_dir}/.pi/agent/bin"
+  local existing_path="${PATH:-}"
+  local rebuilt_path=""
+  local entry=""
+
+  IFS=":" read -r -a path_entries <<< "$existing_path"
+  for entry in "${path_entries[@]}"; do
+    if [[ -z "$entry" || "$entry" == "$agent_bin" ]]; then
+      continue
+    fi
+    case ":$rebuilt_path:" in
+      *":$entry:"*) continue ;;
+    esac
+    rebuilt_path="${rebuilt_path:+$rebuilt_path:}$entry"
+  done
+
+  export PATH="$BUN_INSTALL/bin:/usr/local/bin:/usr/bin:/bin${rebuilt_path:+:$rebuilt_path}"
+}
+
+prepare_pi_agent_overlay() {
+  local source_agent_dir="$1/.pi/agent"
+  local overlay_agent_dir="${PI_WEB_CONTAINER_AGENT_DIR:-/workspace/.bakery-data/pi-agent}"
+  local entry=""
+
+  mkdir -p "$source_agent_dir" "$overlay_agent_dir/bin"
+
+  for entry in auth.json settings.json models.json prompts themes sessions skills extensions; do
+    if [[ -e "$source_agent_dir/$entry" && ! -e "$overlay_agent_dir/$entry" ]]; then
+      ln -s "$source_agent_dir/$entry" "$overlay_agent_dir/$entry"
+    fi
+  done
+
+  mkdir -p "$source_agent_dir/sessions"
+  if [[ ! -e "$overlay_agent_dir/sessions" ]]; then
+    ln -s "$source_agent_dir/sessions" "$overlay_agent_dir/sessions"
+  fi
+
+  ln -sf /usr/local/bin/fd "$overlay_agent_dir/bin/fd"
+  ln -sf /usr/bin/rg "$overlay_agent_dir/bin/rg"
+  export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-$overlay_agent_dir}"
+}
 
 user_name="${PI_WEB_CONTAINER_USER:-bakery}"
 home_dir="${PI_WEB_CONTAINER_HOME:-/home/${user_name}}"
 uid_value="${PI_WEB_CONTAINER_UID:-1000}"
 gid_value="${PI_WEB_CONTAINER_GID:-1000}"
+
+if [[ "$(id -u)" != "0" ]]; then
+  export HOME="${HOME:-$home_dir}"
+  export BUN_INSTALL="${BUN_INSTALL:-$home_dir/.bun}"
+  sanitize_container_path "$home_dir"
+  exec "$@"
+fi
 
 if ! [[ "$uid_value" =~ ^[0-9]+$ ]] || ! [[ "$gid_value" =~ ^[0-9]+$ ]]; then
   echo "PI_WEB_CONTAINER_UID and PI_WEB_CONTAINER_GID must be numeric." >&2
@@ -54,6 +101,10 @@ fi
 
 export HOME="$home_dir"
 export BUN_INSTALL="${BUN_INSTALL:-$home_dir/.bun}"
-export PATH="$BUN_INSTALL/bin:$PATH"
+prepare_pi_agent_overlay "$home_dir"
+case "$PI_CODING_AGENT_DIR" in
+  /workspace/.bakery-data/*) chown -R "$uid_value:$gid_value" "$PI_CODING_AGENT_DIR" 2>/dev/null || true ;;
+esac
+sanitize_container_path "$home_dir"
 
 exec gosu "$user_name" "$@"

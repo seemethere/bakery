@@ -11,9 +11,12 @@ RUN apt-get update \
     curl \
     docker-cli \
     docker.io \
+    fd-find \
     git \
     gosu \
     openssh-client \
+    ripgrep \
+  && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/bakery
