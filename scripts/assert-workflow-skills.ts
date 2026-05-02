@@ -49,9 +49,12 @@ const requiredSnippets = [
   "2-4 short selectable options",
   "recommendedOptionIndex",
   "Include any CONTEXT.md or ADR updates made during the interview",
-  "smallest next vertical slice",
-  "validation plan with exact commands/harness scenarios",
-  "Plan actions: Accept plan · Back to chat",
+  "Smallest next slice",
+  "exact level-2 headings in the final plan",
+  "## Plan summary",
+  "## Full plan",
+  "normal composer remains available",
+  "Plan actions: Accept plan",
 ];
 
 for (const snippet of requiredSnippets) {

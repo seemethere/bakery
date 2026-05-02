@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { LEGACY_PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
+import { LEGACY_FULL_PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
 import type { TranscriptItem } from "./transcript";
 
 let PLAN_ACTIONS_MARKER: typeof import("./transcript").PLAN_ACTIONS_MARKER;
@@ -121,19 +121,18 @@ describe("transcript plan actions", () => {
       id: "assistant-plan",
       kind: "assistant",
       title: "Pi",
-      body: `Recommendation\n\n${PLAN_ACTIONS_MARKER}`,
+      body: `## Plan summary\n\nRecommendation\n\n${PLAN_ACTIONS_MARKER}`,
       status: "done",
     };
 
     expect(hasPlanActionsMarker(item)).toBe(true);
-    expect(stripPlanActionsMarker(item.body)).toBe("Recommendation");
+    expect(stripPlanActionsMarker(item.body)).toBe("## Plan summary\n\nRecommendation");
     expect(uiActionContributionForTranscriptItem(item)).toMatchObject({
       id: "bakery.workflow.plan.actions",
       placement: "composer_takeover",
       source: { extensionId: "bakery.workflow", commandName: "plan" },
       actions: [
         { id: "accept", label: "Accept plan", variant: "primary" },
-        { id: "chat", label: "Back to chat", variant: "secondary" },
       ],
     });
     expect(hasPlanActionsMarker({ ...item, kind: "user" })).toBe(false);
@@ -150,7 +149,11 @@ describe("transcript plan actions", () => {
     };
 
     expect(stripPlanActionsMarker(item.body)).toBe("Recommendation");
-    expect(uiActionContributionForTranscriptItem(item)?.actions.map((action) => action.id)).toEqual(["accept", "chat"]);
+    expect(uiActionContributionForTranscriptItem(item)?.actions.map((action) => action.id)).toEqual(["accept"]);
+
+    const fullLegacyItem: TranscriptItem = { ...item, body: `Recommendation\n\n${LEGACY_FULL_PLAN_ACTIONS_MARKER}` };
+    expect(stripPlanActionsMarker(fullLegacyItem.body)).toBe("Recommendation");
+    expect(uiActionContributionForTranscriptItem(fullLegacyItem)?.actions.map((action) => action.id)).toEqual(["accept"]);
   });
 });
 

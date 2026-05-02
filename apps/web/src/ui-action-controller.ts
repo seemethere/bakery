@@ -1,6 +1,6 @@
 import { buildComposerSendPayload, composerQueueItem, type ClientMessageType } from "./composer-actions";
 import { addRunningQueueItem, type RunningQueueState } from "./running-queue";
-import { activeUiActionItem, renderUiActionComposerTakeover } from "./transcript-shell";
+import { renderUiActionComposerTakeover } from "./transcript-shell";
 import { PLAN_UI_ACTION_CONTRIBUTION, type TranscriptItem } from "./transcript";
 
 export type UiActionControllerOptions = {
@@ -34,7 +34,7 @@ export class UiActionController {
   }
 
   activeItem(): TranscriptItem | null {
-    return activeUiActionItem(this.options.transcript(), this.dismissedTranscriptId);
+    return null;
   }
 
   renderTakeover(item: TranscriptItem): string {
@@ -50,15 +50,11 @@ export class UiActionController {
   }
 
   private canHandle(contributionId: string, actionId: string): boolean {
-    return contributionId === planContributionId && (actionId === "accept" || actionId === "chat");
+    return contributionId === planContributionId && actionId === "accept";
   }
 
   private handlePlanAction(actionId: string): void {
-    if (actionId === "chat") {
-      this.fillPromptDraft("");
-      return;
-    }
-    if (actionId === "accept") this.submitText("Proceed with the recommended plan.");
+    if (actionId === "accept") this.fillPromptDraft("Proceed with the recommended plan.");
   }
 
   private fillPromptDraft(text: string): void {

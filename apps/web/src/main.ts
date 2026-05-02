@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, 
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
-import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { renderSelectedSessionSummary, renderSessionDetails as renderSessionDetailsPanel, renderSettingsMain as renderSettingsMainPanel } from "./settings-panel";
 import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
@@ -136,6 +136,7 @@ class PiWebAgentApp extends HTMLElement {
   private collapsedSessionGroups = storedCollapsedSessionGroups();
   private sessionsSearch = "";
   private openActionMenuId = "";
+  private openPlanDetailsId = "";
   private readonly transcriptBindingState: TranscriptBindingState = { pointerDown: null };
   private readonly uiActions = new UiActionController({
     transcript: () => this.transcript,
@@ -727,6 +728,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private handleUiAction(contributionId: string, action: string, transcriptId = this.activeUiActionItem()?.id ?? ""): void {
+    this.openPlanDetailsId = "";
     this.uiActions.handle(contributionId, action, transcriptId);
   }
 
@@ -1317,7 +1319,15 @@ class PiWebAgentApp extends HTMLElement {
     });
 
     this.querySelector<HTMLElement>(".transcript")?.addEventListener("click", (event) => {
-      const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-row-action]");
+      const target = event.target as HTMLElement | null;
+      const planCard = target?.closest<HTMLElement>("[data-plan-detail-id]");
+      if (planCard && !target?.closest("button,a")) {
+        event.preventDefault();
+        this.openPlanDetailsId = planCard.dataset.planDetailId ?? "";
+        this.render();
+        return;
+      }
+      const button = target?.closest<HTMLButtonElement>("[data-row-action]");
       if (!button) {
         if (this.openActionMenuId) {
           this.openActionMenuId = "";
@@ -1343,8 +1353,28 @@ class PiWebAgentApp extends HTMLElement {
     this.querySelectorAll<HTMLButtonElement>("[data-ui-action]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.preventDefault();
+        event.stopPropagation();
         button.blur();
         this.handleUiAction(button.dataset.uiContributionId ?? "", button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
+      });
+    });
+    this.querySelectorAll<HTMLElement>("[data-plan-detail-id]").forEach((card) => {
+      const open = (event: Event) => {
+        if ((event.target as HTMLElement | null)?.closest("button,a")) return;
+        event.preventDefault();
+        this.openPlanDetailsId = card.dataset.planDetailId ?? "";
+        this.render();
+      };
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        open(event);
+      });
+    });
+    this.querySelectorAll<HTMLButtonElement>("[data-close-plan-details]").forEach((button) => {
+      button.addEventListener("click", () => {
+        this.openPlanDetailsId = "";
+        this.render();
       });
     });
     this.querySelectorAll<HTMLButtonElement>("[data-file-index]").forEach((button) => {
@@ -1544,6 +1574,26 @@ class PiWebAgentApp extends HTMLElement {
       transcript: this.transcript,
       status: this.status,
     });
+  }
+
+  private renderPlanDetailsOverlay(): string {
+    if (!this.openPlanDetailsId) return "";
+    const item = this.transcript.find((entry) => entry.id === this.openPlanDetailsId);
+    if (!item) return "";
+    const body = stripPlanActionsMarker(item.body);
+    return `<div class="plan-details-backdrop" role="presentation">
+      <section class="plan-details-dialog" role="dialog" aria-modal="true" aria-label="Full plan">
+        <header class="plan-details-header">
+          <div><span>Plan ready</span><strong>Full plan</strong></div>
+          <button type="button" data-close-plan-details aria-label="Close full plan">×</button>
+        </header>
+        <div class="plan-details-body">${renderTranscriptSegments({ ...item, body, segments: [{ kind: "markdown", text: body }] }, this.showThinking, { cache: this.renderedSegmentCache, localImageUrl: (path) => this.localImageUrl(path) })}</div>
+        <footer class="plan-details-actions">
+          <button type="button" data-close-plan-details>Close</button>
+          <button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="bakery.workflow.plan.actions" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
+        </footer>
+      </section>
+    </div>`;
   }
 
   private useEmptyQuickStart(action: string): void {
@@ -1932,6 +1982,7 @@ class PiWebAgentApp extends HTMLElement {
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
+        ${this.renderPlanDetailsOverlay()}
         <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
           ${this.renderQuestionPanel(isController)}
           ${activeUiActionItem ? this.renderUiActionComposerTakeover(activeUiActionItem) : `

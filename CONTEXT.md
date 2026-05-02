@@ -45,17 +45,25 @@ An operator-facing slash command that launches a guided workflow prompt for the 
 
 ### `/plan`
 
-The canonical Workflow Command for reaching shared understanding before implementation. It interviews the operator one question at a time, inspects project context when possible, recommends a small vertical slice, and ends with Plan Actions.
+The canonical Workflow Command for reaching shared understanding before implementation. It interviews the operator one question at a time, inspects project context when possible, recommends a small vertical slice, and ends with a Plan Card.
 
 - Not: a commitment to implement immediately; the operator still chooses whether to accept the plan.
 - Example: `/plan align the workflow prompt with domain documentation` starts a focused grill session about that goal.
 
+### Plan Card
+
+The operator-facing summary card rendered for a completed `/plan` response. It shows the plan's summary and smallest next slice, opens the full rendered plan when clicked, and offers an Accept Plan action that prepares the composer instead of immediately starting work.
+
+- Not: a composer takeover; the normal composer remains available for chat or edits while the Plan Card carries the plan-specific affordance.
+- Not: a replacement for the full plan details; the full rendered plan remains available from the card.
+- Example: an operator finishes a `/plan` interview, clicks the Plan Card to inspect the detailed markdown plan, then accepts it to prefill the composer with the implementation prompt.
+
 ### Plan Actions
 
-The inline actions rendered at the end of a completed `/plan` response so the operator can accept the plan or return to chat.
+The machine-readable final marker in a completed `/plan` response that lets Bakery recognize the plan and render the Plan Card affordance.
 
 - Not: part of the natural-language plan itself.
-- Example: the final standalone marker `Plan actions: Accept plan · Back to chat` is converted into mobile-friendly action buttons by Bakery.
+- Example: the final standalone marker `Plan actions: Accept plan` is converted into a Plan Card with an Accept Plan action by Bakery.
 
 ### Bundled Extension
 

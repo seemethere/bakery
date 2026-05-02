@@ -1,4 +1,4 @@
-import { LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER, type UiActionContribution } from "@pi-web-agent/protocol";
+import { LEGACY_FULL_PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER, type UiActionContribution } from "@pi-web-agent/protocol";
 import ConvertAnsi from "ansi-to-html";
 import { marked } from "marked";
 import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
@@ -33,7 +33,7 @@ export type RenderContext = {
 export type ToolGroupPosition = "single" | "start" | "middle" | "end";
 
 export { PLAN_ACTIONS_MARKER };
-const planActionMarkers = [PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER];
+const planActionMarkers = [PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, LEGACY_FULL_PLAN_ACTIONS_MARKER];
 const escapedPlanActionMarkers = planActionMarkers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const planActionsMarkerPattern = new RegExp(`(?:\\n\\s*)?(?:${escapedPlanActionMarkers})\\s*$`);
 
@@ -46,11 +46,10 @@ export const PLAN_UI_ACTION_CONTRIBUTION: UiActionContribution = {
   id: "bakery.workflow.plan.actions",
   placement: "composer_takeover",
   title: "Plan ready",
-  description: "Accept to continue with this implementation plan, or return to the normal composer.",
+  description: "Accept to prepare the composer with this implementation plan.",
   source: { extensionId: "bakery.workflow", commandName: "plan" },
   actions: [
     { id: "accept", label: "Accept plan", variant: "primary" },
-    { id: "chat", label: "Back to chat", variant: "secondary" },
   ],
 };
 
@@ -63,6 +62,53 @@ const UI_ACTION_CONTRIBUTION_MATCHERS: UiActionContributionMatcher[] = [
 
 export function stripPlanActionsMarker(text: string): string {
   return text.replace(planActionsMarkerPattern, "").trimEnd();
+}
+
+type PlanSectionId = "Plan summary" | "Smallest next slice" | "Key files likely to change" | "Validation plan";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractMarkdownSection(text: string, heading: PlanSectionId): string {
+  const pattern = new RegExp(`(?:^|\\n)##\\s+${escapeRegExp(heading)}\\s*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`, "i");
+  return text.match(pattern)?.[1]?.trim() ?? "";
+}
+
+function plainTextSummary(text: string, maxLength: number): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[>*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= maxLength) return plain;
+  return `${plain.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUrl?: RenderContext["localImageUrl"]): string {
+  const summary = extractMarkdownSection(strippedBody, "Plan summary") || plainTextSummary(strippedBody, 220) || "Review the recommended implementation plan.";
+  const nextSlice = extractMarkdownSection(strippedBody, "Smallest next slice");
+  const files = extractMarkdownSection(strippedBody, "Key files likely to change");
+  const validation = extractMarkdownSection(strippedBody, "Validation plan");
+  return `<article class="plan-card" role="button" tabindex="0" data-plan-detail-id="${escapeHtml(item.id)}" aria-label="Open full plan">
+      <div class="plan-card-header">
+        <span class="plan-card-kicker">Plan ready</span>
+        <span class="plan-card-open-hint">Full plan ↗</span>
+      </div>
+      <div class="plan-card-summary">${renderMarkdown(summary, localImageUrl)}</div>
+      ${nextSlice ? `<section class="plan-card-section"><h3>Smallest next slice</h3>${renderMarkdown(nextSlice, localImageUrl)}</section>` : ""}
+      ${files ? `<section class="plan-card-section compact"><h3>Key files</h3>${renderMarkdown(files, localImageUrl)}</section>` : ""}
+      ${validation ? `<section class="plan-card-section compact"><h3>Validation</h3>${renderMarkdown(validation, localImageUrl)}</section>` : ""}
+      <div class="plan-card-actions">
+        <span class="plan-card-click-copy">Click the card to read the full rendered plan.</span>
+        <button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="${escapeHtml(PLAN_UI_ACTION_CONTRIBUTION.id)}" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
+      </div>
+    </article>`;
 }
 
 export function uiActionContributionForTranscriptItem(item: TranscriptItem): UiActionContribution | null {
@@ -688,7 +734,7 @@ export class PiTranscriptRow extends HTMLElement {
     const hasPlanActions = hasPlanActionsMarker(item);
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
-    const body = this.collapsed ? "" : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     this.innerHTML = isConversationMessage ? `
       <div class="message-body">${body}</div>

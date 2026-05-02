@@ -53,8 +53,10 @@ export function planPrompt(args: string): string {
     "Finish:",
     "- After enough answers, stop interviewing and summarize the shared understanding and recommendation.",
     "- Include any CONTEXT.md or ADR updates made during the interview, and call out any documentation updates intentionally deferred.",
-    "- Propose the smallest next vertical slice, name the key files likely to change, and include a validation plan with exact commands/harness scenarios when practical.",
-    `- End the final plan summary with this exact standalone line so Bakery can render mobile-friendly inline actions: ${PLAN_ACTIONS_MARKER}`,
+    "- Use these exact level-2 headings in the final plan so Bakery can render the Plan Card: `## Plan summary`, `## Smallest next slice`, `## Key files likely to change`, `## Validation plan`, and `## Full plan`.",
+    "- Keep the Plan summary to 1-2 sentences and the Smallest next slice concise; put detailed rationale, tradeoffs, and sequencing under Full plan.",
+    "- The Plan Card will carry Accept Plan; do not add a Back to chat action because the normal composer remains available.",
+    `- End the final plan summary with this exact standalone line so Bakery can render the Plan Card: ${PLAN_ACTIONS_MARKER}`, 
   ].join("\n");
 }
 

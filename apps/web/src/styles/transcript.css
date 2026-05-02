@@ -236,6 +236,157 @@
   padding: 0;
 }
 
+.plan-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-border));
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-accent-soft) 16%, transparent), transparent 38%),
+    color-mix(in srgb, var(--color-bg-elevated) 92%, var(--color-bg-surface));
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+}
+
+.plan-card:hover,
+.plan-card:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent-soft) 72%, var(--color-border));
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.plan-card-header,
+.plan-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-card-kicker {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.plan-card-open-hint,
+.plan-card-click-copy {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.plan-card-summary .markdown-body,
+.plan-card-section .markdown-body {
+  color: var(--color-text);
+}
+
+.plan-card-summary .markdown-body {
+  font-size: 15px;
+}
+
+.plan-card-section {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+  padding-top: 10px;
+}
+
+.plan-card-section h3 {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.plan-card-section.compact .markdown-body {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.plan-card-actions .primary-action {
+  min-height: 34px;
+  border-color: var(--c-668cff);
+  background: var(--c-263b75);
+  color: var(--c-eef3ff);
+  padding: 7px 12px;
+  font-weight: 800;
+}
+
+.plan-details-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, #000 62%, transparent);
+  padding: 18px;
+}
+
+.plan-details-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(980px, 100%);
+  max-height: min(900px, 92vh);
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  background: var(--color-bg-elevated);
+  box-shadow: 0 24px 80px color-mix(in srgb, #000 42%, transparent);
+  overflow: hidden;
+}
+
+.plan-details-header,
+.plan-details-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  padding: 13px 16px;
+}
+
+.plan-details-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.plan-details-header span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.plan-details-header strong {
+  color: var(--color-text);
+  font-size: 16px;
+}
+
+.plan-details-header button {
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 999px;
+}
+
+.plan-details-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.plan-details-actions {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-bottom: 0;
+  justify-content: flex-end;
+}
+
+.plan-details-actions .primary-action {
+  border-color: var(--c-668cff);
+  background: var(--c-263b75);
+  color: var(--c-eef3ff);
+  font-weight: 800;
+}
+
 .message.user .markdown-body {
   border: 1px solid color-mix(in srgb, var(--color-border) 46%, transparent);
   border-radius: 18px;

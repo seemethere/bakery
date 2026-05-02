@@ -669,6 +669,39 @@
     padding: 7px 8px;
   }
 
+  .plan-card {
+    border-radius: 18px;
+    padding: 13px;
+  }
+
+  .plan-card-header,
+  .plan-card-actions {
+    align-items: stretch;
+  }
+
+  .plan-card-actions {
+    flex-direction: column;
+  }
+
+  .plan-card-actions .primary-action {
+    width: 100%;
+  }
+
+  .plan-details-backdrop {
+    padding: 0;
+  }
+
+  .plan-details-dialog {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .plan-details-body {
+    padding: 14px;
+  }
+
   .composer-mode {
     gap: 6px;
     flex-wrap: nowrap;
