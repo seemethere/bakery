@@ -1,9 +1,12 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
+import { getBakeryExtensionCardContributions, getBakeryExtensionRegistry, getBakeryExtensionWebModules, loadConfiguredBakeryExtensions } from "./extensions.js";
 import { loadConfig } from "./config.js";
 import { FakePiSessionRunner } from "./fake-runner.js";
 import { MetadataStore } from "./metadata-store.js";
@@ -26,6 +29,7 @@ mkdirSync(config.previewRuntimeDir, { recursive: true });
 const store = new MetadataStore(config.metadataDbPath);
 const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
 const previewStacks = new PreviewStackManager({ config });
+const extensionRegistry = await loadConfiguredBakeryExtensions(config);
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(websocket);
@@ -67,6 +71,24 @@ app.get("/api/config", async () => ({
 }));
 
 app.get("/api/workspaces", async () => toWorkspaces(workspaceRoots));
+
+app.get("/api/extensions", async () => ({
+  webModules: getBakeryExtensionWebModules(),
+  cards: getBakeryExtensionCardContributions(),
+  issues: getBakeryExtensionRegistry().issues,
+}));
+
+app.get<{ Params: { extensionId: string; "*": string } }>("/api/extensions/:extensionId/web/*", async (request, reply) => {
+  const extension = extensionRegistry.extensions.find((candidate) => candidate.id === request.params.extensionId);
+  if (!extension?.rootDir) return reply.code(404).send({ error: "extension not found" });
+  const relativePath = request.params["*"];
+  const filePath = resolve(extension.rootDir, relativePath);
+  const root = resolve(extension.rootDir);
+  if (filePath !== root && !filePath.startsWith(`${root}/`)) return reply.code(403).send({ error: "invalid extension asset path" });
+  if (!existsSync(filePath)) return reply.code(404).send({ error: "extension asset not found" });
+  const contentType = extname(filePath) === ".js" ? "application/javascript; charset=utf-8" : extname(filePath) === ".css" ? "text/css; charset=utf-8" : "application/octet-stream";
+  return reply.header("Content-Type", contentType).send(await readFile(filePath));
+});
 
 app.get("/api/models", async () => ({
   defaultModel: config.modelPolicy.defaultModel ?? null,

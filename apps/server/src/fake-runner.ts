@@ -2,7 +2,7 @@ import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { PLAN_ACTIONS_MARKER, type AnswerQuestionPayload, type CommandInfo, type ModelPolicy, type NormalizedAgentEvent, type PendingQuestion, type SessionRuntimeSettings, type SessionSnapshot, type WebSession } from "@pi-web-agent/protocol";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
-import { BUNDLED_EXTENSION_COMMANDS, runBundledExtensionCommand } from "./extensions.js";
+import { getBakeryExtensionCommands, runBundledExtensionCommand } from "./extensions.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -317,7 +317,7 @@ class FakeSessionHandle implements SessionHandle {
   getCommands(): CommandInfo[] {
     return [
       { name: "new", description: "Start a new web session in the same workspace", source: "builtin" },
-      ...BUNDLED_EXTENSION_COMMANDS,
+      ...getBakeryExtensionCommands(),
       { name: "session", description: "Show session info", source: "builtin" },
       { name: "reload", description: "Reload fake resources", source: "builtin" },
     ];
@@ -343,6 +343,7 @@ class FakeSessionHandle implements SessionHandle {
         ...(bundledExtensionResult.title ? { title: bundledExtensionResult.title } : {}),
         ...(bundledExtensionResult.body ? { body: bundledExtensionResult.body } : {}),
         ...(typeof bundledExtensionResult.isError === "boolean" ? { isError: bundledExtensionResult.isError } : {}),
+        ...(bundledExtensionResult.card ? { data: { kind: "extension_card", card: bundledExtensionResult.card } } : bundledExtensionResult.data !== undefined ? { data: bundledExtensionResult.data } : {}),
       };
     }
     return { handled: false };

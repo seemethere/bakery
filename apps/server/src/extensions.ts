@@ -1,12 +1,17 @@
-import type { CommandInfo } from "@pi-web-agent/protocol";
+import { existsSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import type { CommandInfo, ExtensionCardContribution, ExtensionWebModule } from "@pi-web-agent/protocol";
 import { BAKERY_BUNDLED_EXTENSION } from "./bundled-extensions/bakery/index.js";
 import { PLAN_BUNDLED_EXTENSION } from "./bundled-extensions/plan/index.js";
+import type { ServerConfig } from "./config.js";
 import type { GenerateSessionDetailsOptions, GenerateSessionDetailsResult } from "./metadata-routes.js";
 
-export type ExtensionCapability = "commands";
+export type ExtensionCapability = "commands" | "ui:transcript.customCard";
 
 export type ExtensionCommandResult =
-  | { kind: "handled"; title?: string; body?: string; isError?: boolean; data?: unknown }
+  | { kind: "handled"; title?: string; body?: string; isError?: boolean; data?: unknown; card?: { kind: string; props?: unknown } }
   | { kind: "launchPrompt"; title?: string; prompt: string; compactLaunchText?: string };
 
 export type GenerateSessionDetailsCommandOptions = GenerateSessionDetailsOptions;
@@ -29,37 +34,101 @@ export type ExtensionCommand = {
   handler: (ctx: ExtensionCommandContext, args: string) => ExtensionCommandResult | Promise<ExtensionCommandResult>;
 };
 
+export type ExtensionUiContribution = {
+  slot: "transcript.customCard";
+  kind: string;
+  component: string;
+};
+
 export type BakeryExtension = {
   id: string;
   displayName: string;
   version?: string;
   capabilities?: ExtensionCapability[];
   commands?: ExtensionCommand[];
+  ui?: ExtensionUiContribution[];
+  web?: { entry: string };
+  rootDir?: string;
   activate?(ctx: { extensionId: string }): void | Promise<void>;
+};
+
+export type LoadedBakeryExtension = BakeryExtension & { rootDir?: string; webModule?: ExtensionWebModule };
+
+export type ExtensionLoadIssue = { path: string; message: string };
+
+export type BakeryExtensionRegistry = {
+  extensions: LoadedBakeryExtension[];
+  issues: ExtensionLoadIssue[];
 };
 
 export const BUNDLED_EXTENSIONS: BakeryExtension[] = [PLAN_BUNDLED_EXTENSION, BAKERY_BUNDLED_EXTENSION];
 
-const bundledExtensionCommandEntries = BUNDLED_EXTENSIONS.flatMap((extension) =>
-  (extension.commands ?? []).map((command) => ({ extension, command })),
-);
+let activeRegistry: BakeryExtensionRegistry = { extensions: normalizeExtensions(BUNDLED_EXTENSIONS), issues: [] };
 
-const bundledExtensionCommandsByName = new Map(bundledExtensionCommandEntries.map((entry) => [entry.command.name, entry]));
+function normalizeExtensions(extensions: BakeryExtension[]): LoadedBakeryExtension[] {
+  return extensions.map((extension) => {
+    const webModule = webModuleFor(extension);
+    return webModule ? { ...extension, webModule } : { ...extension };
+  });
+}
 
-export const BUNDLED_EXTENSION_COMMANDS: CommandInfo[] = bundledExtensionCommandEntries.map(({ command }) => ({
-  name: command.name,
-  ...(command.description ? { description: command.description } : {}),
-  ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
-  source: command.source ?? "extension",
-  ...(command.sourceInfo ? { sourceInfo: command.sourceInfo } : {}),
-}));
+function webModuleFor(extension: BakeryExtension): ExtensionWebModule | undefined {
+  if (!extension.web?.entry) return undefined;
+  return {
+    extensionId: extension.id,
+    entryUrl: `/api/extensions/${encodeURIComponent(extension.id)}/web/${extension.web.entry.replace(/^\/+/, "")}`,
+  };
+}
+
+function extensionCommandEntries() {
+  return activeRegistry.extensions.flatMap((extension) => (extension.commands ?? []).map((command) => ({ extension, command })));
+}
+
+function extensionCommandsByName(): Map<string, { extension: LoadedBakeryExtension; command: ExtensionCommand }> {
+  return new Map(extensionCommandEntries().map((entry) => [entry.command.name, entry]));
+}
+
+export function setBakeryExtensionRegistry(registry: BakeryExtensionRegistry): void {
+  activeRegistry = registry;
+}
+
+export function getBakeryExtensionRegistry(): BakeryExtensionRegistry {
+  return activeRegistry;
+}
+
+export function getBakeryExtensionWebModules(): ExtensionWebModule[] {
+  return activeRegistry.extensions.map((extension) => extension.webModule).filter((module): module is ExtensionWebModule => Boolean(module));
+}
+
+export function getBakeryExtensionCardContributions(): ExtensionCardContribution[] {
+  return activeRegistry.extensions.flatMap((extension) => (extension.ui ?? [])
+    .filter((ui) => ui.slot === "transcript.customCard")
+    .map((ui) => ({
+      slot: "transcript.customCard" as const,
+      extensionId: extension.id,
+      kind: ui.kind,
+      component: ui.component,
+    })));
+}
+
+export function getBakeryExtensionCommands(): CommandInfo[] {
+  return extensionCommandEntries().map(({ extension, command }) => ({
+    name: command.name,
+    ...(command.description ? { description: command.description } : {}),
+    ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
+    source: command.source ?? "extension",
+    sourceInfo: command.sourceInfo ?? { kind: "bakery-extension", extensionId: extension.id, displayName: extension.displayName },
+  }));
+}
+
+export const BUNDLED_EXTENSION_COMMANDS = getBakeryExtensionCommands;
 
 export function isBundledExtensionCommand(name: string): boolean {
-  return bundledExtensionCommandsByName.has(name);
+  return extensionCommandsByName().has(name);
 }
 
 export function getBundledExtensionCommand(name: string): ExtensionCommand | undefined {
-  return bundledExtensionCommandsByName.get(name)?.command;
+  return extensionCommandsByName().get(name)?.command;
 }
 
 export function parseSlashCommand(text: string): { name: string; args: string } | null {
@@ -69,7 +138,62 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
 }
 
 export async function runBundledExtensionCommand(name: string, args: string, services?: ExtensionCommandServices): Promise<ExtensionCommandResult | undefined> {
-  const entry = bundledExtensionCommandsByName.get(name);
+  const entry = extensionCommandsByName().get(name);
   if (!entry) return undefined;
   return await entry.command.handler({ extensionId: entry.extension.id, ...(services ? { services } : {}) }, args);
+}
+
+async function resolveExtensionEntry(inputPath: string): Promise<{ entry: string; rootDir: string }> {
+  const path = resolve(inputPath);
+  if (!existsSync(path)) throw new Error("extension path does not exist");
+  const stat = statSync(path);
+  if (stat.isFile()) return { entry: path, rootDir: dirname(path) };
+  if (!stat.isDirectory()) throw new Error("extension path is not a file or directory");
+
+  const packagePath = resolve(path, "package.json");
+  if (existsSync(packagePath)) {
+    const raw = JSON.parse(await readFile(packagePath, "utf8")) as { bakery?: { extension?: string }; pi?: { extensions?: string[] }; main?: string };
+    const configured = raw.bakery?.extension ?? raw.pi?.extensions?.[0] ?? raw.main;
+    if (configured) {
+      const candidate = resolve(path, configured);
+      if (existsSync(candidate)) return { entry: candidate, rootDir: path };
+    }
+  }
+
+  for (const name of ["bakery.extension.ts", "bakery.extension.js", "index.ts", "index.js"]) {
+    const candidate = resolve(path, name);
+    if (existsSync(candidate)) return { entry: candidate, rootDir: path };
+  }
+  throw new Error("no extension entry found");
+}
+
+function isBakeryExtension(value: unknown): value is BakeryExtension {
+  if (!value || typeof value !== "object") return false;
+  const extension = value as Partial<BakeryExtension>;
+  return typeof extension.id === "string" && typeof extension.displayName === "string";
+}
+
+async function importExtension(entry: string, rootDir: string): Promise<BakeryExtension> {
+  const module = await import(`${pathToFileURL(entry).href}?t=${Date.now()}`) as { default?: unknown };
+  const exported = typeof module.default === "function" ? await module.default() : module.default;
+  if (!isBakeryExtension(exported)) throw new Error("extension default export must be a BakeryExtension object or factory returning one");
+  return { ...exported, rootDir };
+}
+
+export async function loadConfiguredBakeryExtensions(config: ServerConfig): Promise<BakeryExtensionRegistry> {
+  const issues: ExtensionLoadIssue[] = [];
+  const external: BakeryExtension[] = [];
+  if (config.resourcePolicy.allowExtensions) {
+    for (const inputPath of config.resourcePolicy.additionalExtensionPaths ?? []) {
+      try {
+        const { entry, rootDir } = await resolveExtensionEntry(inputPath);
+        external.push(await importExtension(entry, rootDir));
+      } catch (error) {
+        issues.push({ path: inputPath, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+  const registry = { extensions: normalizeExtensions([...BUNDLED_EXTENSIONS, ...external]), issues };
+  setBakeryExtensionRegistry(registry);
+  return registry;
 }

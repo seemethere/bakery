@@ -10,7 +10,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
-import { BUNDLED_EXTENSION_COMMANDS, runBundledExtensionCommand } from "./extensions.js";
+import { getBakeryExtensionCommands, isBundledExtensionCommand, runBundledExtensionCommand } from "./extensions.js";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
 export type BashResult = { output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string };
@@ -26,6 +26,7 @@ export type BuiltinCommandResult = {
   title?: string;
   body?: string;
   isError?: boolean;
+  data?: unknown;
   launchPrompt?: string;
 };
 
@@ -99,7 +100,9 @@ const BUILTIN_COMMANDS: CommandInfo[] = [
 ];
 
 const BUILTIN_COMMAND_NAMES = new Set(BUILTIN_COMMANDS.map((command) => command.name));
-const WEB_COMMAND_NAMES = new Set([...BUILTIN_COMMAND_NAMES, ...BUNDLED_EXTENSION_COMMANDS.map((command) => command.name)]);
+function isWebCommandName(name: string): boolean {
+  return BUILTIN_COMMAND_NAMES.has(name) || isBundledExtensionCommand(name);
+}
 
 function parseSlashCommand(text: string): { name: string; args: string } | null {
   const match = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(text.trim());
@@ -372,12 +375,12 @@ class InProcessSessionHandle implements SessionHandle {
       source: "skill" as const,
       sourceInfo: skill.sourceInfo,
     }));
-    return [...BUILTIN_COMMANDS, ...BUNDLED_EXTENSION_COMMANDS, ...extensionCommands, ...promptCommands, ...skillCommands];
+    return [...BUILTIN_COMMANDS, ...getBakeryExtensionCommands(), ...extensionCommands, ...promptCommands, ...skillCommands];
   }
 
   async runBuiltinCommand(text: string): Promise<BuiltinCommandResult> {
     const parsed = parseSlashCommand(text);
-    if (!parsed || !WEB_COMMAND_NAMES.has(parsed.name)) return { handled: false };
+    if (!parsed || !isWebCommandName(parsed.name)) return { handled: false };
 
     const bundledExtensionResult = await runBundledExtensionCommand(parsed.name, parsed.args);
     if (bundledExtensionResult?.kind === "launchPrompt") {
@@ -389,6 +392,7 @@ class InProcessSessionHandle implements SessionHandle {
         ...(bundledExtensionResult.title ? { title: bundledExtensionResult.title } : {}),
         ...(bundledExtensionResult.body ? { body: bundledExtensionResult.body } : {}),
         ...(typeof bundledExtensionResult.isError === "boolean" ? { isError: bundledExtensionResult.isError } : {}),
+        ...(bundledExtensionResult.card ? { data: { kind: "extension_card", card: bundledExtensionResult.card } } : bundledExtensionResult.data !== undefined ? { data: bundledExtensionResult.data } : {}),
       };
     }
 

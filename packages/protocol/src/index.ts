@@ -6,6 +6,33 @@ export const PLAN_ACTIONS_MARKER = "Plan actions: Accept plan";
 export const LEGACY_PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Back to chat";
 export const LEGACY_FULL_PLAN_ACTIONS_MARKER = "Plan actions: Accept plan · Give feedback · Cancel plan · Back to chat";
 
+export const extensionWebModuleSchema = z.object({
+  extensionId: z.string().min(1),
+  entryUrl: z.string().min(1),
+});
+export type ExtensionWebModule = z.infer<typeof extensionWebModuleSchema>;
+
+export const extensionCardContributionSchema = z.object({
+  slot: z.literal("transcript.customCard"),
+  extensionId: z.string().min(1),
+  kind: z.string().min(1),
+  component: z.string().min(1),
+});
+export type ExtensionCardContribution = z.infer<typeof extensionCardContributionSchema>;
+
+export const extensionCatalogSchema = z.object({
+  webModules: z.array(extensionWebModuleSchema),
+  cards: z.array(extensionCardContributionSchema),
+  issues: z.array(z.object({ path: z.string(), message: z.string() })),
+});
+export type ExtensionCatalog = z.infer<typeof extensionCatalogSchema>;
+
+export const extensionCardPayloadSchema = z.object({
+  kind: z.string().min(1),
+  props: z.unknown().optional(),
+});
+export type ExtensionCardPayload = z.infer<typeof extensionCardPayloadSchema>;
+
 export const uiActionVariantSchema = z.enum(["primary", "secondary"]);
 export type UiActionVariant = z.infer<typeof uiActionVariantSchema>;
 

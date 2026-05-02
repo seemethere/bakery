@@ -10,7 +10,7 @@ let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
-let metadataDetailsCardData: typeof import("./transcript").metadataDetailsCardData;
+let extensionCardPayload: typeof import("./extension-cards").extensionCardPayload;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, "HTMLElement", {
@@ -25,7 +25,8 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, metadataDetailsCardData } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
+  ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
 describe("transcript terminal rendering", () => {
@@ -158,8 +159,8 @@ describe("transcript plan actions", () => {
   });
 });
 
-describe("metadata details card data", () => {
-  test("extracts structured metadata details card data", () => {
+describe("extension card payload", () => {
+  test("extracts structured extension card payloads", () => {
     const item: TranscriptItem = {
       id: "command:metadata",
       kind: "system",
@@ -168,19 +169,27 @@ describe("metadata details card data", () => {
       raw: {
         type: "web_command_result",
         data: {
-          kind: "metadata_details_result",
-          applied: ["title", "summary"],
-          skipped: [],
-          title: "Add generate details command",
-          summary: "Implemented metadata generation command.",
+          kind: "extension_card",
+          card: {
+            kind: "bakery.metadataDetails",
+            props: {
+              applied: ["title", "summary"],
+              skipped: [],
+              title: "Add generate details command",
+              summary: "Implemented metadata generation command.",
+            },
+          },
         },
       },
     };
 
-    expect(metadataDetailsCardData(item)).toMatchObject({
-      applied: ["title", "summary"],
-      title: "Add generate details command",
-      summary: "Implemented metadata generation command.",
+    expect(extensionCardPayload(item)).toMatchObject({
+      kind: "bakery.metadataDetails",
+      props: {
+        applied: ["title", "summary"],
+        title: "Add generate details command",
+        summary: "Implemented metadata generation command.",
+      },
     });
   });
 });

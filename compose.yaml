@@ -1,0 +1,31 @@
+services:
+  bakery-dev:
+    build:
+      context: .
+    image: bakery-dev:local
+    init: true
+    working_dir: /workspace/bakery
+    environment:
+      PI_WEB_CONTAINER_UID: "${PI_WEB_CONTAINER_UID:-1000}"
+      PI_WEB_CONTAINER_GID: "${PI_WEB_CONTAINER_GID:-1000}"
+      PI_WEB_AUTH_TOKEN: "${PI_WEB_AUTH_TOKEN:?Copy .env.example to .env and set PI_WEB_AUTH_TOKEN}"
+      PI_WEB_HOST: 0.0.0.0
+      PI_WEB_WORKSPACE_ROOT: /workspace/bakery
+      PI_WEB_DATA_DIR: /workspace/.bakery-data
+      PI_WEB_VITE_ALLOWED_HOSTS: "${PI_WEB_VITE_ALLOWED_HOSTS:-}"
+      BUN_INSTALL: /home/bun/.bun
+    ports:
+      - "${PI_WEB_PORT:-3141}:3141"
+      - "${PI_WEB_WEB_PORT:-5173}:5173"
+    volumes:
+      - .:/workspace/bakery
+      - bakery-node-modules:/workspace/bakery/node_modules
+      - bakery-bun-cache:/workspace/.cache/bun
+      - bakery-data:/workspace/.bakery-data
+      - ${HOME}/.pi:/home/bun/.pi
+    command: bash -lc "bun install && bun run dev:lan"
+
+volumes:
+  bakery-node-modules:
+  bakery-bun-cache:
+  bakery-data:
