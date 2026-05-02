@@ -14,9 +14,9 @@
   right: 0;
   bottom: 0;
   z-index: 4;
-  height: min(18vh, 150px);
+  height: min(7vh, 56px);
   pointer-events: none;
-  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 12%, transparent) 42%, color-mix(in srgb, var(--color-footer-bg) 58%, transparent) 100%);
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 8%, transparent) 64%, color-mix(in srgb, var(--color-footer-bg) 28%, transparent) 100%);
 }
 
 .transcript {

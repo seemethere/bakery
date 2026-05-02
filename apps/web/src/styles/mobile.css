@@ -563,7 +563,7 @@
   }
 
   footer::before {
-    inset: -64px 0 0;
+    inset: -24px 0 0;
   }
 
   .prompt-shell,
