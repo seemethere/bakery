@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 import type { CommandInfo, ExtensionCardContribution, ExtensionWebModule } from "@pi-web-agent/protocol";
 import { BAKERY_BUNDLED_EXTENSION } from "./bundled-extensions/bakery/index.js";
 import { PLAN_BUNDLED_EXTENSION } from "./bundled-extensions/plan/index.js";
@@ -56,6 +57,25 @@ export type LoadedBakeryExtension = BakeryExtension & { rootDir?: string; webMod
 
 export type ExtensionLoadIssue = { path: string; message: string };
 
+type ExtensionCandidate = { extension: BakeryExtension; sourcePath: string };
+
+const componentTagPattern = /^[a-z][a-z0-9]*-[a-z0-9-]*$/;
+const extensionCapabilitySchema = z.enum(["commands", "ui:transcript.customCard"]);
+const extensionUiContributionSchema = z.object({
+  slot: z.literal("transcript.customCard"),
+  kind: z.string().min(1),
+  component: z.string().min(1).regex(componentTagPattern, "component must be a valid custom-element tag such as local-demo-card"),
+}).passthrough();
+const extensionWebSchema = z.object({ entry: z.string().min(1) }).passthrough();
+const bakeryExtensionManifestSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  version: z.string().optional(),
+  capabilities: z.array(extensionCapabilitySchema).optional(),
+  ui: z.array(extensionUiContributionSchema).optional(),
+  web: extensionWebSchema.optional(),
+}).passthrough();
+
 export type BakeryExtensionRegistry = {
   extensions: LoadedBakeryExtension[];
   issues: ExtensionLoadIssue[];
@@ -63,13 +83,51 @@ export type BakeryExtensionRegistry = {
 
 export const BUNDLED_EXTENSIONS: BakeryExtension[] = [PLAN_BUNDLED_EXTENSION, BAKERY_BUNDLED_EXTENSION];
 
-let activeRegistry: BakeryExtensionRegistry = { extensions: normalizeExtensions(BUNDLED_EXTENSIONS), issues: [] };
+let activeRegistry: BakeryExtensionRegistry = normalizeExtensions(BUNDLED_EXTENSIONS.map((extension) => ({ extension, sourcePath: `bundled:${extension.id}` })));
 
-function normalizeExtensions(extensions: BakeryExtension[]): LoadedBakeryExtension[] {
-  return extensions.map((extension) => {
+function validateExtensionShape(extension: BakeryExtension): string | undefined {
+  const parsed = bakeryExtensionManifestSchema.safeParse(extension);
+  if (!parsed.success) return parsed.error.issues.map((issue) => `${issue.path.join(".") || "manifest"}: ${issue.message}`).join("; ");
+  if ((extension.commands ?? []).some((command) => !command || typeof command.name !== "string" || command.name.trim() === "" || typeof command.handler !== "function")) return "commands must declare a non-empty name and function handler";
+  if ((extension.ui ?? []).length > 0 && !extension.web?.entry) return "extensions with UI contributions must declare web.entry";
+  return undefined;
+}
+
+function normalizeExtensions(candidates: ExtensionCandidate[]): BakeryExtensionRegistry {
+  const issues: ExtensionLoadIssue[] = [];
+  const extensions: LoadedBakeryExtension[] = [];
+  const commandOwners = new Map<string, string>();
+  const cardOwners = new Map<string, string>();
+
+  for (const { extension, sourcePath } of candidates) {
+    const shapeError = validateExtensionShape(extension);
+    if (shapeError) {
+      issues.push({ path: sourcePath, message: shapeError });
+      continue;
+    }
+
+    const duplicateCommands = (extension.commands ?? [])
+      .map((command) => command.name)
+      .filter((name, index, names) => names.indexOf(name) !== index || (commandOwners.has(name) && commandOwners.get(name) !== extension.id));
+    if (duplicateCommands.length > 0) {
+      issues.push({ path: sourcePath, message: `duplicate extension command(s): ${Array.from(new Set(duplicateCommands)).join(", ")}` });
+      continue;
+    }
+
+    const duplicateCards = (extension.ui ?? [])
+      .map((ui) => ui.kind)
+      .filter((kind, index, kinds) => kinds.indexOf(kind) !== index || (cardOwners.has(kind) && cardOwners.get(kind) !== extension.id));
+    if (duplicateCards.length > 0) {
+      issues.push({ path: sourcePath, message: `duplicate extension card kind(s): ${Array.from(new Set(duplicateCards)).join(", ")}` });
+      continue;
+    }
+
+    for (const command of extension.commands ?? []) commandOwners.set(command.name, extension.id);
+    for (const ui of extension.ui ?? []) cardOwners.set(ui.kind, extension.id);
     const webModule = webModuleFor(extension);
-    return webModule ? { ...extension, webModule } : { ...extension };
-  });
+    extensions.push(webModule ? { ...extension, webModule } : { ...extension });
+  }
+  return { extensions, issues };
 }
 
 function webModuleFor(extension: BakeryExtension): ExtensionWebModule | undefined {
@@ -181,19 +239,24 @@ async function importExtension(entry: string, rootDir: string): Promise<BakeryEx
 }
 
 export async function loadConfiguredBakeryExtensions(config: ServerConfig): Promise<BakeryExtensionRegistry> {
-  const issues: ExtensionLoadIssue[] = [];
-  const external: BakeryExtension[] = [];
+  const candidates: ExtensionCandidate[] = BUNDLED_EXTENSIONS.map((extension) => ({ extension, sourcePath: `bundled:${extension.id}` }));
+  const loadIssues: ExtensionLoadIssue[] = [];
   if (config.resourcePolicy.allowExtensions) {
     for (const inputPath of config.resourcePolicy.additionalExtensionPaths ?? []) {
       try {
         const { entry, rootDir } = await resolveExtensionEntry(inputPath);
-        external.push(await importExtension(entry, rootDir));
+        candidates.push({ extension: await importExtension(entry, rootDir), sourcePath: inputPath });
       } catch (error) {
-        issues.push({ path: inputPath, message: error instanceof Error ? error.message : String(error) });
+        loadIssues.push({ path: inputPath, message: error instanceof Error ? error.message : String(error) });
       }
     }
   }
-  const registry = { extensions: normalizeExtensions([...BUNDLED_EXTENSIONS, ...external]), issues };
+  const registry = normalizeExtensions(candidates);
+  registry.issues.unshift(...loadIssues);
   setBakeryExtensionRegistry(registry);
   return registry;
+}
+
+export async function reloadConfiguredBakeryExtensions(config: ServerConfig): Promise<BakeryExtensionRegistry> {
+  return loadConfiguredBakeryExtensions(config);
 }

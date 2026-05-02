@@ -10,6 +10,7 @@ export const allScenarios = [
   "session-metadata",
   "inspector-preview",
   "slash-commands",
+  "configured-extension-smoke",
   "bash-commands",
   "question-answer",
   "tree-fork-navigation",

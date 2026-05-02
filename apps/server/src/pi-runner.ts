@@ -10,7 +10,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
-import { getBakeryExtensionCommands, isBundledExtensionCommand, runBundledExtensionCommand } from "./extensions.js";
+import { loadConfig } from "./config.js";
+import { getBakeryExtensionCommands, isBundledExtensionCommand, reloadConfiguredBakeryExtensions, runBundledExtensionCommand } from "./extensions.js";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
 export type BashResult = { output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string };
@@ -408,7 +409,9 @@ class InProcessSessionHandle implements SessionHandle {
 
     if (parsed.name === "reload") {
       await this.session.reload();
-      return { handled: true, title: "/reload", body: "Reloaded extensions, skills, prompt templates, and context resources." };
+      const registry = await reloadConfiguredBakeryExtensions(loadConfig());
+      const issueText = registry.issues.length > 0 ? `\n\nExtension issues:\n${registry.issues.map((issue) => `- ${issue.path}: ${issue.message}`).join("\n")}` : "";
+      return { handled: true, title: "/reload", body: `Reloaded extensions, skills, prompt templates, and context resources. Bakery extensions loaded: ${registry.extensions.length}.${issueText}`, isError: registry.issues.length > 0 };
     }
     if (parsed.name === "compact") {
       const result = await this.session.compact(parsed.args || undefined);

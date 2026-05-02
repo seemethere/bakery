@@ -1,6 +1,6 @@
 # Bakery extension architecture
 
-Status: design draft, partially implemented. This document describes the extension model Bakery should implement after the current local-first web-agent baseline. ADR 0002 records the v1 decision to load trusted main-document web components from bundled and configured local extension paths.
+Status: design draft, partially implemented and now dogfooded through explicit configured paths. This document describes the extension model Bakery should implement after the current local-first web-agent baseline. ADR 0002 records the v1 decision to load trusted main-document web components from bundled and configured local extension paths.
 
 ## Goals
 
@@ -28,6 +28,8 @@ Bakery already exposes parts of pi's resource ecosystem:
 - Slash command autocomplete can show command sources from `builtin`, `extension`, `prompt`, and `skill` via `packages/protocol/src/index.ts`.
 - `/reload` calls `session.reload()` and reloads extensions, skills, prompts, and context resources.
 - Bundled workflow commands now register through `apps/server/src/extensions.ts`; `/plan` and `/bakery:generate-details` are bundled extension-shaped commands.
+- Explicit configured-path Bakery extensions load from `PI_WEB_EXTENSION_PATHS`, using file, directory, or package entry conventions. The loader validates unsafe or ambiguous manifest fields, keeps bundled extensions alive when configured extensions fail, and reports load issues through `/api/extensions` and `/reload`.
+- `transcript.customCard` is the first dynamic UI slot: extension command results can carry an opaque card payload, the browser imports declared web modules, and contributed Web Components render in the transcript.
 - The browser UI is a framework-light TypeScript app with focused modules for routing, composer behavior, transcript rendering, session sidebar, and harness scenarios.
 
 This is enough to design Bakery extensions as a thin host layer around stable protocol and UI contribution points.
@@ -410,7 +412,7 @@ bun scripts/ui-harness.ts --scenario mobile-layout
 
 ### Phase 3: trusted local extension loading
 
-Load configured-path Bakery extensions from policy-approved locations, validate manifests, expose command contributions, and serve declared web modules. Project/global auto-discovery should follow after configured-path loading is dogfooded.
+Status: first configured-path slice implemented for explicit `PI_WEB_EXTENSION_PATHS` loading. Bakery validates manifests, exposes command and `transcript.customCard` contributions, serves declared web modules from the active registry, and reloads configured manifests through `/reload`. Project/global auto-discovery should follow only after this explicit-path workflow is dogfooded further.
 
 Likely files:
 

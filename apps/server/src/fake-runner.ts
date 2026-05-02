@@ -1,8 +1,9 @@
 import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { PLAN_ACTIONS_MARKER, type AnswerQuestionPayload, type CommandInfo, type ModelPolicy, type NormalizedAgentEvent, type PendingQuestion, type SessionRuntimeSettings, type SessionSnapshot, type WebSession } from "@pi-web-agent/protocol";
+import { loadConfig } from "./config.js";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
-import { getBakeryExtensionCommands, runBundledExtensionCommand } from "./extensions.js";
+import { getBakeryExtensionCommands, reloadConfiguredBakeryExtensions, runBundledExtensionCommand } from "./extensions.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -326,7 +327,11 @@ class FakeSessionHandle implements SessionHandle {
   async runBuiltinCommand(text: string): Promise<BuiltinCommandResult> {
     const trimmed = text.trim();
     if (trimmed === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
-    if (trimmed === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
+    if (trimmed === "/reload") {
+      const registry = await reloadConfiguredBakeryExtensions(loadConfig());
+      const issueText = registry.issues.length > 0 ? `\n\nExtension issues:\n${registry.issues.map((issue) => `- ${issue.path}: ${issue.message}`).join("\n")}` : "";
+      return { handled: true, title: "/reload", body: `Reloaded fake resources and Bakery extensions. Bakery extensions loaded: ${registry.extensions.length}.${issueText}`, isError: registry.issues.length > 0 };
+    }
     const workflowMatch = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(trimmed);
     const commandName = workflowMatch?.[1] ?? "";
     const bundledExtensionResult = commandName ? await runBundledExtensionCommand(commandName, workflowMatch?.[2]?.trim() ?? "") : undefined;

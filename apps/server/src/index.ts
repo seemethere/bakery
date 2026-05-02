@@ -29,7 +29,7 @@ mkdirSync(config.previewRuntimeDir, { recursive: true });
 const store = new MetadataStore(config.metadataDbPath);
 const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
 const previewStacks = new PreviewStackManager({ config });
-const extensionRegistry = await loadConfiguredBakeryExtensions(config);
+await loadConfiguredBakeryExtensions(config);
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(websocket);
@@ -79,7 +79,7 @@ app.get("/api/extensions", async () => ({
 }));
 
 app.get<{ Params: { extensionId: string; "*": string } }>("/api/extensions/:extensionId/web/*", async (request, reply) => {
-  const extension = extensionRegistry.extensions.find((candidate) => candidate.id === request.params.extensionId);
+  const extension = getBakeryExtensionRegistry().extensions.find((candidate) => candidate.id === request.params.extensionId);
   if (!extension?.rootDir) return reply.code(404).send({ error: "extension not found" });
   const relativePath = request.params["*"];
   const filePath = resolve(extension.rootDir, relativePath);

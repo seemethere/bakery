@@ -90,6 +90,41 @@ async function waitForUrl(url: string, label: string, timeoutMs = 20_000): Promi
   throw new Error(`Timed out waiting for ${label} at ${url}: ${lastError}`);
 }
 
+async function createConfiguredExtensionFixture(): Promise<{ extensionDir: string; missingExtensionPath: string }> {
+  const extensionDir = await mkdtemp(join(tmpdir(), "bakery-local-extension-"));
+  await mkdir(join(extensionDir, "web"), { recursive: true });
+  await writeFile(join(extensionDir, "index.js"), `export default {
+  id: "local.demo",
+  displayName: "Local Demo",
+  capabilities: ["commands", "ui:transcript.customCard"],
+  web: { entry: "web/card.js" },
+  ui: [{ slot: "transcript.customCard", kind: "local.demo.card", component: "local-demo-card" }],
+  commands: [{
+    name: "local-demo",
+    description: "Render a local extension card",
+    argumentHint: "[message]",
+    handler: (_ctx, args) => ({
+      kind: "handled",
+      title: "/local-demo",
+      body: "Rendered a configured local extension card.",
+      card: { kind: "local.demo.card", props: { message: args || "hello from local extension" } },
+    }),
+  }],
+};\n`, "utf8");
+  await writeFile(join(extensionDir, "web", "card.js"), `class LocalDemoCard extends HTMLElement {
+  connectedCallback() { this.render(); }
+  static get observedAttributes() { return ["data-extension-card-props"]; }
+  attributeChangedCallback() { this.render(); }
+  render() {
+    let props = {};
+    try { props = JSON.parse(this.getAttribute("data-extension-card-props") || "{}"); } catch {}
+    this.innerHTML = '<article class="local-demo-card"><strong>Local extension card</strong><p>' + String(props.message || "") + '</p></article>';
+  }
+}
+customElements.define("local-demo-card", LocalDemoCard);\n`, "utf8");
+  return { extensionDir, missingExtensionPath: join(extensionDir, "missing-extension") };
+}
+
 async function waitForInterrupt(): Promise<string> {
   return await new Promise<string>((resolve) => {
     const done = (signal: string) => {
@@ -118,6 +153,7 @@ async function main(): Promise<void> {
   await writeFile(join(workspace, "screenshots", "fenced.png"), Buffer.from(fixturePngBase64, "base64"));
   await writeFile(join(workspace, "test-results", "ui-harness", "sample-run", "final.png"), Buffer.from(fixturePngBase64, "base64"));
 
+  const configuredExtension = scenarios.includes("configured-extension-smoke") ? await createConfiguredExtensionFixture() : null;
   const serverEnv = {
     PI_WEB_HOST: "127.0.0.1",
     PI_WEB_PORT: String(serverPort),
@@ -127,6 +163,7 @@ async function main(): Promise<void> {
     PI_WEB_AUTH_TOKEN: "",
     PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
     PI_WEB_LOAD_PROJECT_RESOURCES: "false",
+    ...(configuredExtension ? { PI_WEB_EXTENSION_PATHS: `${configuredExtension.extensionDir},${configuredExtension.missingExtensionPath}` } : {}),
   };
   const startServer = () => spawnLogged("server", "bun", ["run", "dev:server"], { cwd: root, env: serverEnv });
   let server = startServer();

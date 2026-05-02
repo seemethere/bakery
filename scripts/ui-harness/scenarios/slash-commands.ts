@@ -19,6 +19,7 @@ import { ensureSidebarSettingsVisible } from "./visual";
 
 export const slashCommandScenarios = [
   "slash-commands",
+  "configured-extension-smoke",
   "bash-commands",
   "file-autocomplete",
 ] as const;
@@ -85,6 +86,35 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await waitForAgentIdle(page, 5_000);
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+export async function runConfiguredExtensionSmoke(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  const catalog = await page.evaluate(async (apiBase) => {
+    const response = await fetch(`${apiBase}/api/extensions`);
+    if (!response.ok) throw new Error(`catalog failed: ${response.status}`);
+    return await response.json() as { webModules: Array<{ extensionId: string; entryUrl: string }>; cards: Array<{ kind: string; component: string }>; issues: Array<{ path: string; message: string }> };
+  }, apiBase);
+  if (!catalog.webModules.some((module) => module.extensionId === "local.demo")) throw new Error(`Expected local.demo web module in catalog: ${JSON.stringify(catalog)}`);
+  if (!catalog.cards.some((card) => card.kind === "local.demo.card" && card.component === "local-demo-card")) throw new Error(`Expected local.demo card in catalog: ${JSON.stringify(catalog)}`);
+  if (!catalog.issues.some((issue) => issue.message.includes("extension path does not exist"))) throw new Error(`Expected configured missing extension issue: ${JSON.stringify(catalog.issues)}`);
+
+  await page.locator("#prompt").fill("/");
+  await page.locator(".command-autocomplete", { hasText: "/local-demo" }).waitFor({ timeout: 5_000 });
+  await page.locator(".command-autocomplete", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("/local-demo harness says hello");
+  await page.locator("#send").click();
+  await page.locator("local-demo-card", { hasText: "Local extension card" }).waitFor({ timeout: 5_000 });
+  await page.locator("local-demo-card", { hasText: "harness says hello" }).waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
+
+  await page.locator("#prompt").fill("/reload");
+  await page.locator("#prompt").press("Enter");
+  await page.locator(".message", { hasText: "Bakery extensions loaded" }).waitFor({ timeout: 5_000 });
+  await page.locator(".message", { hasText: "Extension issues" }).waitFor({ timeout: 5_000 });
+  await page.locator("#prompt").fill("/");
+  await page.locator(".command-autocomplete", { hasText: "/local-demo" }).waitFor({ timeout: 5_000 });
   return collectMetrics(page);
 }
 

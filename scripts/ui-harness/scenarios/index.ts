@@ -5,7 +5,7 @@ import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments,
 import { runBackendRestart, runConnectionDisconnected, runControllerHandoffEdges, runReconnectController, runReconnectDraft } from "./lifecycle";
 import { runMobileImageStreamStability, runMobileLayout, runMobileLongTranscriptControls } from "./mobile";
 import { runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
-import { runBashCommands, runFileAutocomplete, runSlashCommands } from "./slash-commands";
+import { runBashCommands, runConfiguredExtensionSmoke, runFileAutocomplete, runSlashCommands } from "./slash-commands";
 import { runContextUsage, runEmptySessionLayout, runQuestionAnswer, runSessionMetadata, runSessionRouting, runSessionsPage, runTreeForkNavigation } from "./session";
 import { runThemeGallery, runThemes } from "./visual";
 
@@ -57,6 +57,7 @@ export async function runScenario(name: string, page: Page, browser: Browser, ru
   if (name === "session-metadata") return runSessionMetadata(page);
   if (name === "inspector-preview") return runInspectorPreview(page);
   if (name === "slash-commands") return runSlashCommands(page);
+  if (name === "configured-extension-smoke") return runConfiguredExtensionSmoke(page);
   if (name === "bash-commands") return runBashCommands(page);
   if (name === "question-answer") return runQuestionAnswer(page);
   if (name === "tree-fork-navigation") return runTreeForkNavigation(page);

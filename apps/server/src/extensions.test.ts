@@ -70,4 +70,33 @@ describe("Bakery extension registry", () => {
     expect(registry.issues).toHaveLength(1);
     expect(getBakeryExtensionCommands().map((command) => command.name)).toContain("plan");
   });
+
+  test("rejects unsafe or ambiguous configured contributions while keeping bundled extensions", async () => {
+    const invalidTagDir = await mkdtemp(join(tmpdir(), "bakery-extension-invalid-tag-"));
+    await writeFile(join(invalidTagDir, "index.js"), `export default {
+      id: "local.invalidTag",
+      displayName: "Invalid Tag",
+      capabilities: ["ui:transcript.customCard"],
+      web: { entry: "web/card.js" },
+      ui: [{ slot: "transcript.customCard", kind: "local.invalid.card", component: "LocalDemoCard" }],
+    };`);
+
+    const duplicateCommandDir = await mkdtemp(join(tmpdir(), "bakery-extension-duplicate-command-"));
+    await writeFile(join(duplicateCommandDir, "index.js"), `export default {
+      id: "local.duplicateCommand",
+      displayName: "Duplicate Command",
+      capabilities: ["commands"],
+      commands: [{ name: "plan", handler: () => ({ kind: "handled" }) }],
+    };`);
+
+    const registry = await loadConfiguredBakeryExtensions({
+      ...baseConfig,
+      resourcePolicy: { ...baseConfig.resourcePolicy, additionalExtensionPaths: [invalidTagDir, duplicateCommandDir] },
+    });
+
+    expect(registry.issues.map((issue) => issue.message).join("\n")).toContain("component must be a valid custom-element tag");
+    expect(registry.issues.map((issue) => issue.message).join("\n")).toContain("duplicate extension command(s): plan");
+    expect(getBakeryExtensionCommands().map((command) => command.name)).toContain("plan");
+    expect(getBakeryExtensionCommands().map((command) => command.name)).not.toContain("local-invalid");
+  });
 });
