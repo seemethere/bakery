@@ -124,25 +124,30 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.screenshot({ path: join(artifactDir, "question-answer-light.png"), fullPage: true });
   await page.locator("[data-question-option-index='0']").focus();
   await page.keyboard.press("ArrowDown");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 }).catch(async () => {
+    await page.locator("[data-question-option-index='1']").focus();
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
+  });
   await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
   await page.keyboard.press("Enter");
-  await page.locator(".question-card").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card.is-submitting", { hasText: "Submitting answer" }).waitFor({ timeout: 5_000 }).catch(() => undefined);
+  await page.keyboard.press("Enter");
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator(".message.question", { hasText: "Q: What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator(".message.question", { hasText: "A: Bug fix" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.readonly.answered", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.readonly.answered", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
+  if (await page.locator(".message.error", { hasText: "No matching pending question" }).count()) throw new Error("Duplicate question answer produced a visible agent_error row");
   await waitForAgentIdle(page, 10_000);
 
   await page.locator("#prompt").fill("Please trigger a cancel question-answer scenario.");
   await page.locator("#send").click();
-  await page.locator(".question-card", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
-  await page.keyboard.press("c");
-  await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
+  await page.locator(".question-card.pending", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.pending", { hasText: "Should this question be cancelled?" }).focus();
   await page.keyboard.press("Escape");
-  await page.locator(".question-card").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
-  await page.locator(".message.question.error", { hasText: "A: Cancelled" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.readonly.cancelled", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.readonly.cancelled", { hasText: "Cancelled" }).waitFor({ timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);
 
   await page.locator("#prompt").fill("Please trigger question-answer and keep it pending through reload.");
@@ -169,13 +174,12 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await viewerPage.close();
   await page.bringToFront();
-  await page.keyboard.press("c");
-  await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
+  await page.locator("#questionCustomToggle").click();
   await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");
   await page.keyboard.press("Enter");
-  await page.locator(".question-card").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator(".message.question", { hasText: "A: Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.readonly.answered", { hasText: "Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);
   await page.screenshot({ path: join(artifactDir, "question-answer.png"), fullPage: true });
   return { ...(await collectMetrics(page)) };

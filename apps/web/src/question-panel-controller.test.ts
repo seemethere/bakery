@@ -46,4 +46,13 @@ describe("question card controller", () => {
     expect(html).toContain("questionCustomToggle");
     expect(html).toContain("Custom answer");
   });
+
+  test("renders a disabled submitting state while an answer is in flight", () => {
+    const html = renderQuestionPanel(question, true, true, true);
+
+    expect(html).toContain("question-card pending is-submitting");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Submitting answer…");
+    expect(html).toContain("disabled");
+  });
 });

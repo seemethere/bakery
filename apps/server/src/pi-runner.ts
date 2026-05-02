@@ -155,7 +155,7 @@ class QuestionBroker {
   }
 
   answer(payload: AnswerQuestionPayload): void {
-    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) throw new Error("No matching pending question.");
+    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) return;
     const resolver = this.resolver;
     this.pending = null;
     this.resolver = null;

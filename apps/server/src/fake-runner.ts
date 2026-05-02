@@ -265,7 +265,7 @@ class FakeSessionHandle implements SessionHandle {
   }
 
   answerQuestion(payload: AnswerQuestionPayload): void {
-    if (!this.pendingQuestion || payload.questionId !== this.pendingQuestion.id || !this.questionResolver) throw new Error("No matching pending question.");
+    if (!this.pendingQuestion || payload.questionId !== this.pendingQuestion.id || !this.questionResolver) return;
     const resolver = this.questionResolver;
     this.pendingQuestion = null;
     this.questionResolver = null;

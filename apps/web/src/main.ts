@@ -189,6 +189,7 @@ class PiWebAgentApp extends HTMLElement {
   private shellPatchDirty = false;
   private focusPromptOnNextReadyRender = false;
   private focusPendingQuestionOnNextRender = false;
+  private answeringQuestionId: string | null = null;
   private renderedSegmentCache = new Map<string, string>();
   private failedImageUrls = new Map<string, number>();
   private readonly themeMedia = window.matchMedia(themeMediaQuery);
@@ -600,6 +601,7 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = snapshot.settings ?? this.settings;
     const previousQuestionId = this.pendingQuestion?.id ?? null;
     this.pendingQuestion = snapshot.pendingQuestion ?? null;
+    if (!this.pendingQuestion || this.pendingQuestion.id !== this.answeringQuestionId) this.answeringQuestionId = null;
     if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
     this.transcriptController.loadToolTimings(session.id);
     this.transcriptController.replaceItems(this.transcriptController.applyCachedToolTimings(compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)))));
@@ -642,6 +644,7 @@ class PiWebAgentApp extends HTMLElement {
     } else if (payload.type === "question_update") {
       const previousQuestionId = this.pendingQuestion?.id ?? null;
       this.pendingQuestion = payload.question;
+      if (!this.pendingQuestion || this.pendingQuestion.id !== this.answeringQuestionId) this.answeringQuestionId = null;
       if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
       this.forceFullRender = true;
     } else if (payload.type === "session_metadata_update") {
@@ -1036,6 +1039,7 @@ class PiWebAgentApp extends HTMLElement {
       pendingQuestion: () => this.pendingQuestion,
       isController: () => this.controller?.isController ?? true,
       isConnected: () => this.connectionState === "connected",
+      isSubmitting: () => Boolean(this.pendingQuestion && this.answeringQuestionId === this.pendingQuestion.id),
       root: () => this,
       answer: (payload) => this.answerPendingQuestion(payload),
       setNotice: (notice) => { this.notice = notice; },
@@ -1045,6 +1049,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private answerPendingQuestion(payload: QuestionAnswerPayload): void {
     if (!this.pendingQuestion) return;
+    if (this.answeringQuestionId === this.pendingQuestion.id) return;
     if (!(this.controller?.isController ?? true)) {
       this.notice = "Take control before answering this question.";
       this.render();
@@ -1056,6 +1061,9 @@ class PiWebAgentApp extends HTMLElement {
       return;
     }
     this.focusPromptOnNextReadyRender = true;
+    this.answeringQuestionId = this.pendingQuestion.id;
+    this.forceFullRender = true;
+    this.requestRender(0);
     this.ws.send(JSON.stringify({
       type: "answer_question",
       payload: {
@@ -1574,7 +1582,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderedTranscriptItems(): TranscriptItem[] {
     if (!this.pendingQuestion) return this.transcript;
     const isController = this.controller?.isController ?? true;
-    return [...this.transcript, pendingQuestionTranscriptItem(this.pendingQuestion, { isController, isConnected: this.connectionState === "connected" })];
+    return [...this.transcript, pendingQuestionTranscriptItem(this.pendingQuestion, { isController, isConnected: this.connectionState === "connected", isSubmitting: this.answeringQuestionId === this.pendingQuestion.id })];
   }
 
 
@@ -1783,6 +1791,7 @@ class PiWebAgentApp extends HTMLElement {
       this.patchComposerMode();
       this.patchRunningQueue();
       this.patchJumpToLatest();
+      bindQuestionPanel(this.questionPanelContext());
       this.syncOpenActionMenus(transcript);
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
@@ -1799,6 +1808,7 @@ class PiWebAgentApp extends HTMLElement {
     this.patchComposerMode();
     this.patchRunningQueue();
     this.patchJumpToLatest();
+    bindQuestionPanel(this.questionPanelContext());
     this.syncOpenActionMenus(transcript);
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();

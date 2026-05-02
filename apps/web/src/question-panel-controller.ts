@@ -7,14 +7,15 @@ export type QuestionPanelContext = {
   pendingQuestion: () => PendingQuestion | null;
   isController: () => boolean;
   isConnected: () => boolean;
+  isSubmitting: () => boolean;
   root: () => ParentNode;
   answer: (payload: QuestionAnswerPayload) => void;
   setNotice: (notice: string) => void;
   render: () => void;
 };
 
-export function canAnswerPendingQuestion(ctx: Pick<QuestionPanelContext, "pendingQuestion" | "isController" | "isConnected">): boolean {
-  return Boolean(ctx.pendingQuestion() && ctx.isController() && ctx.isConnected());
+export function canAnswerPendingQuestion(ctx: Pick<QuestionPanelContext, "pendingQuestion" | "isController" | "isConnected" | "isSubmitting">): boolean {
+  return Boolean(ctx.pendingQuestion() && ctx.isController() && ctx.isConnected() && !ctx.isSubmitting());
 }
 
 export function recommendedQuestionOptionIndex(question: PendingQuestion | null): number {
@@ -105,11 +106,11 @@ export function handleQuestionPanelKeydown(ctx: QuestionPanelContext, event: Key
   } else if (/^[1-9]$/.test(event.key)) {
     const index = Number(event.key) - 1;
     const option = question.options[index];
-    if (option) {
+    if (option && canAnswerPendingQuestion(ctx)) {
       event.preventDefault();
       ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
     }
-  } else if (event.key.toLowerCase() === "c" && question.allowCustomAnswer) {
+  } else if (event.key.toLowerCase() === "c" && question.allowCustomAnswer && !ctx.isSubmitting()) {
     const customInput = ctx.root().querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)");
     if (customInput) {
       event.preventDefault();
@@ -120,32 +121,41 @@ export function handleQuestionPanelKeydown(ctx: QuestionPanelContext, event: Key
 
 export function bindQuestionPanel(ctx: QuestionPanelContext): void {
   const root = ctx.root();
-  root.querySelector<HTMLElement>(".question-card.pending")?.addEventListener("keydown", (event) => handleQuestionPanelKeydown(ctx, event));
-  root.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
+  const card = root.querySelector<HTMLElement>(".question-card.pending");
+  if (!card || card.dataset.questionBound === "true") return;
+  card.dataset.questionBound = "true";
+  card.addEventListener("keydown", (event) => handleQuestionPanelKeydown(ctx, event));
+  card.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
     button.addEventListener("click", () => {
       const index = Number(button.dataset.questionOptionIndex ?? "-1");
       const option = ctx.pendingQuestion()?.options[index];
-      if (option && index >= 0) ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
+      if (option && index >= 0 && canAnswerPendingQuestion(ctx)) ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
     });
   });
-  root.querySelector<HTMLButtonElement>("#questionCustomToggle")?.addEventListener("click", () => expandCustomQuestionAnswer(ctx));
-  root.querySelector<HTMLButtonElement>("#questionCustomSubmit")?.addEventListener("click", () => submitCustomQuestionAnswer(ctx));
-  root.querySelector<HTMLInputElement>("#questionCustomAnswer")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
+  card.querySelector<HTMLButtonElement>("#questionCustomToggle")?.addEventListener("click", () => { if (!ctx.isSubmitting()) expandCustomQuestionAnswer(ctx); });
+  card.querySelector<HTMLButtonElement>("#questionCustomSubmit")?.addEventListener("click", () => { if (canAnswerPendingQuestion(ctx)) submitCustomQuestionAnswer(ctx); });
+  card.querySelector<HTMLInputElement>("#questionCustomAnswer")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && canAnswerPendingQuestion(ctx)) {
       event.preventDefault();
       submitCustomQuestionAnswer(ctx);
     }
   });
-  root.querySelector<HTMLButtonElement>("#questionCancel")?.addEventListener("click", () => ctx.answer({ cancelled: true, selectedIndex: null, wasCustom: false }));
+  card.querySelector<HTMLButtonElement>("#questionCancel")?.addEventListener("click", () => { if (canAnswerPendingQuestion(ctx)) ctx.answer({ cancelled: true, selectedIndex: null, wasCustom: false }); });
 }
 
-export function renderQuestionPanel(question: PendingQuestion | null, isController: boolean, isConnected: boolean): string {
+export function renderQuestionPanel(question: PendingQuestion | null, isController: boolean, isConnected: boolean, isSubmitting = false): string {
   if (!question) return "";
-  const disabled = !isController || !isConnected;
-  const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question. Keyboard answer shortcuts are disabled in viewer mode.</p>` : !isConnected ? `<p class="question-viewer-copy">Reconnect before answering. Keyboard answer shortcuts are disabled while disconnected.</p>` : "";
+  const disabled = !isController || !isConnected || isSubmitting;
+  const viewerCopy = isSubmitting
+    ? `<p class="question-viewer-copy">Submitting answer…</p>`
+    : !isController
+      ? `<p class="question-viewer-copy">Take control to answer this question. Keyboard answer shortcuts are disabled in viewer mode.</p>`
+      : !isConnected
+        ? `<p class="question-viewer-copy">Reconnect before answering. Keyboard answer shortcuts are disabled while disconnected.</p>`
+        : "";
   const recommendedOptionIndex = recommendedQuestionOptionIndex(question);
   return `
-      <section class="question-card pending" aria-label="Answer needed" tabindex="-1" data-question-id="${escapeHtml(question.id)}">
+      <section class="question-card pending${isSubmitting ? " is-submitting" : ""}" aria-label="Answer needed" tabindex="-1" data-question-id="${escapeHtml(question.id)}" aria-busy="${isSubmitting ? "true" : "false"}">
         <div class="question-card-header question-panel-heading">
           <span class="question-card-kicker">Answer needed</span>
           ${question.title ? `<span>${escapeHtml(question.title)}</span>` : `<span>Choose how to continue</span>`}

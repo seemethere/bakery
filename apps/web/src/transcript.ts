@@ -26,14 +26,14 @@ export type TranscriptItem = {
   raw?: unknown;
 };
 
-export function pendingQuestionTranscriptItem(question: import("@pi-web-agent/protocol").PendingQuestion, options: { isController: boolean; isConnected: boolean }): TranscriptItem {
+export function pendingQuestionTranscriptItem(question: import("@pi-web-agent/protocol").PendingQuestion, options: { isController: boolean; isConnected: boolean; isSubmitting?: boolean }): TranscriptItem {
   return {
     id: `pending-question:${question.id}`,
     kind: "question",
     title: "Answer needed",
     body: question.question,
     status: "running",
-    raw: { questionCard: { state: "pending", question, isController: options.isController, isConnected: options.isConnected } },
+    raw: { questionCard: { state: "pending", question, isController: options.isController, isConnected: options.isConnected, isSubmitting: options.isSubmitting ?? false } },
   };
 }
 
@@ -678,7 +678,8 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
     if ("text" in segment) return `${segment.kind}:${segment.text}`;
     return `${segment.kind}:${segment.label}:${segment.kind === "image" ? segment.src ?? "" : ""}`;
   }).join("|") ?? "";
-  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}:${segmentKey}:${context.localImageUrl ? "assets" : ""}:${suppressedKey}`;
+  const questionStateKey = item.kind === "question" && isRecord(item.raw) && isRecord(item.raw.questionCard) ? `:${item.raw.questionCard.isSubmitting === true ? "submitting" : "idle"}` : "";
+  const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}:${segmentKey}:${context.localImageUrl ? "assets" : ""}:${suppressedKey}${questionStateKey}`;
   const cached = context.cache?.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -686,7 +687,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
     const raw = isRecord(item.raw) ? item.raw : {};
     const questionCard = isRecord(raw.questionCard) ? raw.questionCard : null;
     if (questionCard?.state === "pending" && isRecord(questionCard.question)) {
-      return renderQuestionPanel(questionCard.question as import("@pi-web-agent/protocol").PendingQuestion, questionCard.isController !== false, questionCard.isConnected !== false);
+      return renderQuestionPanel(questionCard.question as import("@pi-web-agent/protocol").PendingQuestion, questionCard.isController !== false, questionCard.isConnected !== false, questionCard.isSubmitting === true);
     }
     return renderReadOnlyQuestionCard(item);
   }
