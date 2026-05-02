@@ -74,7 +74,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. The container bind-mounts this repository at `/workspace/bakery`, uses it as the only default workspace root, and mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources.
+Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. For LAN/Tailscale access, set `PI_WEB_VITE_ALLOWED_HOSTS` and `PI_WEB_PREVIEW_PUBLIC_BASE_URL` in `.env`; see [`docs/container-development.md`](docs/container-development.md#lantailscale-access). The container bind-mounts this repository at `/workspace/bakery`, uses it as the only default workspace root, and mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources.
 
 Docker socket access is intentionally off by default. When you need Docker commands inside the dev container, opt in explicitly:
 
@@ -106,5 +106,7 @@ docker compose up --build   # Run the containerized Bakery development environme
 | `PI_WEB_AUTH_TOKEN` | unset | Required for non-localhost access; optional on localhost. |
 | `PI_WEB_DATA_DIR` | `~/.pi-web-agent` | Base directory for metadata, session files, artifacts, and managed worktrees. |
 | `PI_WEB_WORKTREE_DIR` | `$PI_WEB_DATA_DIR/worktrees` | Directory for opt-in isolated Git worktree sessions. |
+| `PI_WEB_VITE_ALLOWED_HOSTS` | unset | Comma-separated hostnames allowed by the Vite dev server for LAN/Tailscale access. |
+| `PI_WEB_PREVIEW_PUBLIC_BASE_URL` | unset | Public base URL used when Bakery renders Preview Stack links. |
 
 See `apps/server/src/config.ts` for the full set of server configuration knobs.

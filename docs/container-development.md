@@ -48,6 +48,34 @@ This is for developing Bakery itself. It is not yet the production single-port i
 
 The entrypoint starts as root only long enough to map the container user to `PI_WEB_CONTAINER_UID`/`PI_WEB_CONTAINER_GID`, prepare writable volumes, and then drop privileges before running Bakery.
 
+## LAN/Tailscale access
+
+The dev container can replace a host-side LAN command such as:
+
+```bash
+PI_WEB_VITE_ALLOWED_HOSTS=bakery-dev.example.ts.net \
+PI_WEB_PREVIEW_PUBLIC_BASE_URL=http://bakery-dev.example.ts.net \
+bun run dev:lan
+```
+
+Set the same values in `.env` instead:
+
+```env
+PI_WEB_AUTH_TOKEN=your-local-secret
+PI_WEB_VITE_ALLOWED_HOSTS=bakery-dev.example.ts.net
+PI_WEB_PREVIEW_PUBLIC_BASE_URL=http://bakery-dev.example.ts.net
+```
+
+Then start Bakery normally:
+
+```bash
+docker compose up --build
+```
+
+Open the Vite UI at `http://bakery-dev.example.ts.net:5173/` and use the token from `.env` if prompted. `PI_WEB_VITE_ALLOWED_HOSTS` is the hostname only, while `PI_WEB_PREVIEW_PUBLIC_BASE_URL` includes the scheme. Bakery replaces the preview base URL's port with each Preview Stack's allocated port.
+
+Compose publishes the main Bakery ports (`3141` and `5173`) by default. Preview Stacks allocate dynamic ports inside the container, so preview URLs may still need a future explicit preview port-range publishing slice before they are reachable from the host/LAN browser.
+
 ## Docker socket access
 
 Docker access from inside the Bakery dev container is intentionally opt-in because mounting `/var/run/docker.sock` effectively grants host-level Docker control.
