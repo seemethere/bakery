@@ -91,6 +91,14 @@ function plainTextSummary(text: string, maxLength: number): string {
   return `${plain.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+function renderPlanGeneratingCard(): string {
+  return `<article class="plan-card generating" aria-live="polite" aria-label="Generating plan">
+      <div class="plan-card-header">
+        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>Generating</span>
+      </div>
+    </article>`;
+}
+
 function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUrl?: RenderContext["localImageUrl"]): string {
   const summary = extractMarkdownSection(strippedBody, "Plan summary") || plainTextSummary(strippedBody, 220) || "Review the recommended implementation plan.";
   const nextSlice = extractMarkdownSection(strippedBody, "Smallest next slice");
@@ -118,6 +126,19 @@ export function uiActionContributionForTranscriptItem(item: TranscriptItem): UiA
 
 export function hasPlanActionsMarker(item: TranscriptItem): boolean {
   return uiActionContributionForTranscriptItem(item) !== null;
+}
+
+function textForPlanGenerationDetection(item: TranscriptItem): string {
+  const segmentText = (item.segments ?? [])
+    .filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown")
+    .map((segment) => segment.text)
+    .join("\n\n");
+  return segmentText || item.body;
+}
+
+export function isGeneratingPlanItem(item: TranscriptItem): boolean {
+  if (item.kind !== "assistant" || item.status !== "running" || hasPlanActionsMarker(item)) return false;
+  return /(?:^|\n)##\s+Plan summary\s*(?:\n|$)/i.test(textForPlanGenerationDetection(item));
 }
 
 export function isDeveloperBashItem(item: TranscriptItem): boolean {
@@ -721,7 +742,10 @@ export class PiTranscriptRow extends HTMLElement {
       if ("text" in segment) return `${segment.kind}:${segment.text}`;
       return `${segment.kind}:${segment.label}:${segment.kind === "image" ? segment.src ?? "" : ""}`;
     }).join("|") ?? "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
+    const hasPlanActions = hasPlanActionsMarker(item);
+    const isGeneratingPlan = isGeneratingPlanItem(item);
+    const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : "";
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
     if (renderKey === this.lastRenderKey) {
       if (canPatchText && streamingText !== this.lastStreamingText) {
         streamingTextTarget!.textContent = streamingText ?? "";
@@ -732,11 +756,10 @@ export class PiTranscriptRow extends HTMLElement {
       return;
     }
 
-    const hasPlanActions = hasPlanActionsMarker(item);
     const hasCustomCard = hasExtensionCard(item);
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
-    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : isGeneratingPlan ? renderPlanGeneratingCard() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     const isStandaloneCard = hasCustomCard;
     this.innerHTML = isStandaloneCard ? `
