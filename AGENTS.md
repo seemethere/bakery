@@ -94,6 +94,10 @@ On a fresh machine, install the Playwright browser once if needed:
 bun x playwright install chromium
 ```
 
+## Containerized development validation
+
+When modifying `Dockerfile`, `.dockerignore`, `docker/entrypoint.sh`, `compose*.yaml`, `.env.example`, or container-development docs, follow `docs/container-development.md#validation-for-future-changes`. In short: run `bun run report:iteration --recommend <changed files>` and `bun run check`, then validate the relevant Docker layer (`docker build`, UID/GID ownership smoke, Compose config/startup, and Docker socket override only when touched). Do not run full `bun run test:web-perf` by default for Docker/docs-only changes; escalate only for UI/protocol/session lifecycle/auth runtime impact or unexpected focused-smoke failures.
+
 ## Commit hygiene
 
 When committing changes, prefer Conventional Commits with a concise imperative summary:

@@ -71,6 +71,91 @@ docker compose run --rm bakery-dev bun run check  # Run checks inside the contai
 
 Use the same `--env-file` or `.env` settings for these commands if you do not keep a root `.env` file.
 
+## Validation for future changes
+
+When modifying the containerized development environment, validate from the smallest relevant layer upward. Start with the repository's validation selector and stop to fix the first failure.
+
+1. Ask the validation selector for the changed files:
+
+   ```bash
+   bun run report:iteration --recommend Dockerfile docker/entrypoint.sh .dockerignore compose.yaml compose.docker.yaml .env.example README.md docs/container-development.md CONTEXT.md
+   ```
+
+   Pass only the files you changed when the slice is narrower. Include the selector's `## Validation decision` block in the handoff.
+
+2. Run the static project check selected for Docker/docs-only changes:
+
+   ```bash
+   bun run check
+   ```
+
+3. Rebuild the dev image when `Dockerfile`, `.dockerignore`, or entrypoint behavior changed:
+
+   ```bash
+   docker build -t bakery-dev:local .
+   ```
+
+4. Smoke the entrypoint, host UID/GID mapping, and bind-mount ownership when entrypoint, user, mount, or image-package behavior changed:
+
+   ```bash
+   rm -rf test-results/container-smoke
+   mkdir -p test-results/container-smoke
+
+   docker run --rm \
+     -e PI_WEB_CONTAINER_UID="$(id -u)" \
+     -e PI_WEB_CONTAINER_GID="$(id -g)" \
+     -v "$PWD:/workspace/bakery" \
+     bakery-dev:local \
+     bash -lc 'id && bun --version && git --version && docker --version && touch test-results/container-smoke/ownership.txt'
+
+   ls -ln test-results/container-smoke/ownership.txt
+   ```
+
+   Confirm the owner/group match the host UID/GID.
+
+5. Validate Compose wiring when Compose, env, ports, volumes, or docs changed:
+
+   ```bash
+   docker compose --env-file .env.example config
+   ```
+
+6. Smoke the full backend + Vite dev flow when Compose startup or runtime environment changed:
+
+   ```bash
+   docker compose --env-file .env.example up --build -d
+
+   curl -fsS \
+     -H 'Authorization: Bearer change-me' \
+     http://127.0.0.1:3141/healthz
+
+   curl -fsS http://127.0.0.1:5173/ | head
+
+   docker compose --env-file .env.example down
+   ```
+
+7. Validate Docker socket access only when Docker CLI, entrypoint socket-group logic, or `compose.docker.yaml` changed:
+
+   ```bash
+   docker compose \
+     -f compose.yaml \
+     -f compose.docker.yaml \
+     --env-file .env.example \
+     run --rm --no-deps bakery-dev \
+     bash -lc 'docker version --format "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"'
+   ```
+
+8. Do a manual browser smoke for meaningful dev-flow changes:
+
+   ```bash
+   cp .env.example .env
+   # Edit .env: set PI_WEB_AUTH_TOKEN; on Linux set PI_WEB_CONTAINER_UID/GID.
+   docker compose up --build
+   ```
+
+   Open `http://127.0.0.1:5173/`, enter the token from `.env`, and confirm Bakery can list or create sessions against `/workspace/bakery`.
+
+Do not run full `bun run test:web-perf` by default for Docker/docs-only changes. Escalate to focused UI harnesses or the full fake-agent suite only when the change also touches browser UI behavior, protocol/session lifecycle, server runtime behavior beyond container configuration, auth/CORS/API behavior, or when a focused Docker/manual smoke fails in a way that suggests an app-level regression.
+
 ## Troubleshooting
 
 ### Compose says `PI_WEB_AUTH_TOKEN` is missing
