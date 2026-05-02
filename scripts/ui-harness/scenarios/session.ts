@@ -88,7 +88,7 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
 
   await page.locator("#prompt").fill("Please trigger the question-answer scenario.");
   await page.locator("#send").click();
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "1-9" }).waitFor({ timeout: 5_000 });
@@ -113,12 +113,12 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.waitForFunction(() => !document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
   await setWorkbenchTheme(page, "workbench-dark");
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-dark.png"), fullPage: true });
   await setWorkbenchTheme(page, "workbench-light");
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-light.png"), fullPage: true });
@@ -127,7 +127,7 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
   await page.keyboard.press("Enter");
-  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.question", { hasText: "Q: What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Bug fix" }).waitFor({ timeout: 5_000 });
@@ -135,11 +135,11 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
 
   await page.locator("#prompt").fill("Please trigger a cancel question-answer scenario.");
   await page.locator("#send").click();
-  await page.locator(".question-panel", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
   await page.keyboard.press("c");
   await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.keyboard.press("Escape");
-  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.question.error", { hasText: "A: Cancelled" }).waitFor({ timeout: 5_000 });
@@ -147,16 +147,16 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
 
   await page.locator("#prompt").fill("Please trigger question-answer and keep it pending through reload.");
   await page.locator("#send").click();
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
   await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
   const viewerPage = await page.context().newPage();
   await viewerPage.goto(webBase, { waitUntil: "domcontentloaded" });
   await viewerPage.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 10_000 });
-  await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
+  await viewerPage.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
   await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
   await viewerPage.screenshot({ path: join(artifactDir, "question-answer-viewer-disabled-light.png"), fullPage: true });
   await setWorkbenchTheme(viewerPage, "workbench-dark");
@@ -165,15 +165,15 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await viewerPage.keyboard.press("1");
   await viewerPage.keyboard.press("Escape");
   await viewerPage.waitForTimeout(300);
-  await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await viewerPage.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await viewerPage.close();
   await page.bringToFront();
   await page.keyboard.press("c");
   await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
   await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");
   await page.keyboard.press("Enter");
-  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card").waitFor({ state: "detached", timeout: 5_000 });
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".message.question", { hasText: "A: Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);

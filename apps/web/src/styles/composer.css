@@ -146,6 +146,17 @@ footer.plan-takeover-footer {
   color: var(--c-eef3ff);
 }
 
+.question-composer-hint {
+  grid-column: 1 / -1;
+  border: 1px solid color-mix(in srgb, var(--color-accent-soft) 30%, var(--color-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-accent-soft) 8%, var(--color-bg-elevated));
+  color: var(--color-text-secondary);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .question-panel {
   grid-column: 1 / -1;
   display: grid;

@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, 
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
-import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, pendingQuestionTranscriptItem, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { renderSelectedSessionSummary, renderSessionDetails as renderSessionDetailsPanel, renderSettingsMain as renderSettingsMainPanel } from "./settings-panel";
 import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
@@ -25,7 +25,7 @@ import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem } from "./running-queue";
 import { RunningQueueController } from "./running-queue-controller";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
-import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, renderQuestionPanel as renderQuestionPanelHtml, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
+import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
 import { connectSessionWebSocket, type SessionConnectionContext } from "./session-connection-controller";
 import { handleTranscriptRowAction as handleTranscriptRowActionWithContext, type TranscriptRowAction, type TranscriptRowMenuAction } from "./transcript-row-actions";
 import { parseAppRoute, sessionRoutePath } from "./router";
@@ -266,9 +266,9 @@ class PiWebAgentApp extends HTMLElement {
     void this.openRouteFromLocation();
   };
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
+    if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-card.pending")) return;
     const target = event.target as HTMLElement | null;
-    if (target?.closest(".question-panel")) return;
+    if (target?.closest(".question-card")) return;
     if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End", "Enter", " ", "Escape"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
       this.handleQuestionPanelKeydown(event);
     }
@@ -862,6 +862,11 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = promptTextFromInput(input?.value, this.promptImages.length);
     if (!input || !text) return;
+    if (this.pendingQuestion) {
+      this.notice = "Answer the question in the transcript to continue.";
+      this.render();
+      return;
+    }
     const bash = type === "prompt" ? parseBashPrompt(text) : null;
     if (bash && this.promptImages.length > 0) {
       this.notice = "Remove image attachments before running a bash command.";
@@ -1556,8 +1561,20 @@ class PiWebAgentApp extends HTMLElement {
   }
 
 
-  private renderQuestionPanel(isController: boolean): string {
-    return renderQuestionPanelHtml(this.pendingQuestion, isController, this.connectionState === "connected");
+  private renderQuestionCheckpointHint(isController: boolean): string {
+    if (!this.pendingQuestion) return "";
+    const text = !isController
+      ? "Take control to answer the question in the transcript."
+      : this.connectionState !== "connected"
+        ? "Reconnect to answer the question in the transcript."
+        : "Answer the question in the transcript to continue.";
+    return `<section class="question-composer-hint" aria-live="polite">${escapeHtml(text)}</section>`;
+  }
+
+  private renderedTranscriptItems(): TranscriptItem[] {
+    if (!this.pendingQuestion) return this.transcript;
+    const isController = this.controller?.isController ?? true;
+    return [...this.transcript, pendingQuestionTranscriptItem(this.pendingQuestion, { isController, isConnected: this.connectionState === "connected" })];
   }
 
 
@@ -1580,7 +1597,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderTranscript(): string {
     return renderTranscriptShell({
       selectedSession: Boolean(this.selectedSession),
-      transcript: this.transcript,
+      transcript: this.renderedTranscriptItems(),
       status: this.status,
     });
   }
@@ -1681,7 +1698,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private hydrateTranscriptRows(): void {
-    hydrateTranscriptDomRows(this, this.transcript, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
+    hydrateTranscriptDomRows(this, this.renderedTranscriptItems(), this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
   }
 
   private renderStatusPill(): string {
@@ -1738,7 +1755,7 @@ class PiWebAgentApp extends HTMLElement {
     patchTranscriptStructureHtml({
       host: this,
       transcript,
-      items: this.transcript,
+      items: this.renderedTranscriptItems(),
       dirtyIds: this.dirtyTranscriptIds,
       renderTranscript: () => this.renderTranscript(),
       hydrateRows: () => this.hydrateTranscriptRows(),
@@ -1775,7 +1792,7 @@ class PiWebAgentApp extends HTMLElement {
     }
 
     const rowOptions = this.transcriptRowStateOptions();
-    patchDirtyTranscriptRows(this, transcript, this.transcript, this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
+    patchDirtyTranscriptRows(this, transcript, this.renderedTranscriptItems(), this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
@@ -1920,7 +1937,7 @@ class PiWebAgentApp extends HTMLElement {
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = isNoContextBashPromptDraft(this.promptDraft);
     const currentComposerModeLabel = composerModeLabel(this.promptDraft, this.status);
-    const canSendFromComposer = isController && this.hasComposerSendContent();
+    const canSendFromComposer = isController && !this.pendingQuestion && this.hasComposerSendContent();
     const promptSendDisabled = canSendFromComposer ? "" : "disabled";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
     const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
@@ -1987,13 +2004,13 @@ class PiWebAgentApp extends HTMLElement {
         ${this.renderAttentionNeeded()}
         ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
         <div class="transcript-shell ${this.runningQueue.hasItems() ? "has-running-queue" : ""}">
-          <section class="transcript ${this.transcript.length === 0 ? "empty" : ""}">${this.renderTranscript()}</section>
+          <section class="transcript ${this.renderedTranscriptItems().length === 0 ? "empty" : ""}">${this.renderTranscript()}</section>
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
         ${this.renderPlanDetailsOverlay()}
         <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
-          ${this.renderQuestionPanel(isController)}
+          ${this.renderQuestionCheckpointHint(isController)}
           ${activeUiActionItem ? this.renderUiActionComposerTakeover(activeUiActionItem) : `
             <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
               ${renderPromptImages(this.promptImages)}

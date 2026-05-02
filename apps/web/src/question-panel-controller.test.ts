@@ -15,7 +15,7 @@ const question: PendingQuestion = {
   createdAt: "2026-04-29T00:00:00.000Z",
 };
 
-describe("question panel controller", () => {
+describe("question card controller", () => {
   test("derives a recommended option from recommendation copy", () => {
     expect(recommendedQuestionOptionIndex(question)).toBe(0);
     expect(recommendedQuestionOptionIndex({ ...question, recommendedOptionIndex: 1 })).toBe(1);
@@ -24,6 +24,7 @@ describe("question panel controller", () => {
   test("renders disabled viewer state", () => {
     const html = renderQuestionPanel(question, false, true);
 
+    expect(html).toContain("question-card pending");
     expect(html).toContain("Take control to answer this question");
     expect(html).toContain("disabled");
     expect(html).toContain("Recommended");

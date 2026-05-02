@@ -38,7 +38,7 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await page.locator(".message.user", { hasText: "Launched /plan workflow." }).waitFor({ timeout: 5_000 });
   await page.locator(".message.user", { hasText: "Focus: choosing the next UX slice" }).waitFor({ timeout: 5_000 });
   await page.locator(".message.user", { hasText: "Question discipline:" }).waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-options button").first().click();
   await waitForAgentIdle(page, 5_000);
   const planMessage = page.locator(".message.assistant", { hasText: "Recommendation: start with the smallest vertical slice" }).last();

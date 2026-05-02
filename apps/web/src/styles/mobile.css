@@ -583,12 +583,13 @@
     grid-column: 1;
   }
 
-  .question-panel {
+  .question-card {
     gap: 9px;
     border-radius: 18px;
     padding: 10px;
   }
 
+  .question-card-header,
   .question-panel-heading {
     flex-wrap: wrap;
     gap: 6px;
@@ -610,6 +611,11 @@
 
   .question-options .option-shortcut {
     display: none;
+  }
+
+  .question-composer-hint {
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .question-custom {

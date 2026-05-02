@@ -11,6 +11,8 @@ let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
+let pendingQuestionTranscriptItem: typeof import("./transcript").pendingQuestionTranscriptItem;
+let isRenderableTranscriptItem: typeof import("./transcript").isRenderableTranscriptItem;
 let extensionCardPayload: typeof import("./extension-cards").extensionCardPayload;
 
 beforeAll(async () => {
@@ -26,7 +28,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -115,6 +117,29 @@ describe("transcript tool row display", () => {
     expect(shouldShowToolDuration({ id: "fast", kind: "tool", title: "read file", body: "", status: "done", durationMs: 999 }, true)).toBe(false);
     expect(shouldShowToolDuration({ id: "slow", kind: "tool", title: "read file", body: "", status: "done", durationMs: 1000 }, true)).toBe(true);
     expect(shouldShowToolDuration({ id: "expanded", kind: "tool", title: "read file", body: "", status: "done", durationMs: 20 }, false)).toBe(true);
+  });
+});
+
+describe("transcript question cards", () => {
+  test("renders pending questions as compact answer cards", () => {
+    const item = pendingQuestionTranscriptItem({
+      id: "q1",
+      question: "Proceed?",
+      options: [{ label: "Yes" }],
+      allowCustomAnswer: true,
+      createdAt: "2026-05-02T00:00:00.000Z",
+    }, { isController: true, isConnected: true });
+
+    const html = renderTranscriptSegments(item, false);
+
+    expect(html).toContain("question-card pending");
+    expect(html).toContain("Answer needed");
+    expect(html).toContain("Proceed?");
+    expect(html).toContain("Yes");
+  });
+
+  test("hides the underlying ask_question tool card", () => {
+    expect(isRenderableTranscriptItem({ id: "ask", kind: "tool", title: "Question", body: "", status: "running", raw: { toolName: "ask_question", args: { question: "Proceed?" } } })).toBe(false);
   });
 });
 

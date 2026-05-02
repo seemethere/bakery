@@ -65,6 +65,15 @@ The machine-readable final marker in a completed `/plan` response that lets Bake
 - Not: part of the natural-language plan itself.
 - Example: the final standalone marker `Plan actions: Accept plan` is converted into a Plan Card with an Accept Plan action by Bakery.
 
+### Question Card
+
+The transcript card used when the agent asks the operator for a decision through Bakery. A pending Question Card is core Bakery interaction infrastructure and a blocking checkpoint in the transcript: Bakery scrolls/focuses it, the normal composer cannot submit a new prompt until it is answered, and the completed card remains as the readable question-and-answer receipt.
+
+- Not: a generic composer panel or low-level tool-call receipt.
+- Not: duplicate visible tool activity for the underlying `ask_question` tool.
+- Not: an Extension Card in the first implementation; extensions may later reuse a similar interactive checkpoint shape, but the built-in operator question flow owns session blocking, focus, composer state, and controller/viewer permissions.
+- Example: during a `/plan` interview, the agent asks which UX direction to pursue; Bakery shows a compact pending Question Card with recommended options, then resolves it into a read-only answered Question Card after the operator chooses.
+
 ### Bundled Extension
 
 A product-owned extension packaged with Bakery that contributes commands or UI behavior through the extension-shaped interfaces.

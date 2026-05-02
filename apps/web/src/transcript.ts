@@ -2,6 +2,7 @@ import { LEGACY_FULL_PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIO
 import ConvertAnsi from "ansi-to-html";
 import { marked } from "marked";
 import { hasExtensionCard, renderExtensionCard } from "./extension-cards";
+import { renderQuestionPanel } from "./question-panel-controller";
 import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
 
 export type TranscriptKind = "user" | "assistant" | "tool" | "question" | "system" | "error";
@@ -24,6 +25,17 @@ export type TranscriptItem = {
   durationMs?: number;
   raw?: unknown;
 };
+
+export function pendingQuestionTranscriptItem(question: import("@pi-web-agent/protocol").PendingQuestion, options: { isController: boolean; isConnected: boolean }): TranscriptItem {
+  return {
+    id: `pending-question:${question.id}`,
+    kind: "question",
+    title: "Answer needed",
+    body: question.question,
+    status: "running",
+    raw: { questionCard: { state: "pending", question, isController: options.isController, isConnected: options.isConnected } },
+  };
+}
 
 export type RenderContext = {
   cache?: Map<string, string> | undefined;
@@ -383,6 +395,16 @@ export function toolResultToSegments(result: unknown): TranscriptSegment[] {
   });
 }
 
+export function isAskQuestionToolItem(item: TranscriptItem): boolean {
+  if (item.kind !== "tool") return false;
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const toolName = String(raw.toolName ?? raw.name ?? "");
+  if (toolName === "ask_question") return true;
+  const result = isRecord(raw.result) ? raw.result : raw;
+  const details = isRecord(result.details) ? result.details : isRecord(raw.details) ? raw.details : null;
+  return Boolean(details?.questionId || details?.question || /^question$/i.test(item.title.trim()));
+}
+
 export function questionSummaryFromTool(item: TranscriptItem): TranscriptItem | null {
   if (item.kind !== "tool" || item.status !== "done") return null;
   const raw = isRecord(item.raw) ? item.raw : {};
@@ -456,6 +478,7 @@ export function isToolCallOnlyAssistant(item: TranscriptItem): boolean {
 }
 
 export function isRenderableTranscriptItem(item: TranscriptItem): boolean {
+  if (isAskQuestionToolItem(item)) return false;
   if (item.kind !== "assistant") return true;
   if (item.body.trim()) return true;
   const segments = item.segments ?? [];
@@ -632,6 +655,23 @@ export function mergeDuplicateToolResult(previous: TranscriptItem, current: Tran
   return true;
 }
 
+function renderReadOnlyQuestionCard(item: TranscriptItem): string {
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const details = isRecord(raw.details) ? raw.details : null;
+  const question = typeof details?.question === "string" ? details.question : item.body.replace(/^Q:\s*/m, "");
+  const cancelled = details?.cancelled === true || item.status === "error";
+  const answer = cancelled ? "Cancelled" : String(details?.answer ?? details?.optionLabel ?? "").trim() || "—";
+  const selected = typeof details?.selectedIndex === "number" ? `Option ${details.selectedIndex + 1}` : details?.wasCustom === true ? "Custom answer" : "Answer";
+  return `<article class="question-card readonly ${cancelled ? "cancelled" : "answered"}" aria-label="${cancelled ? "Question cancelled" : "Question answered"}">
+      <div class="question-card-header">
+        <span class="question-card-kicker">${cancelled ? "Question cancelled" : "Question answered"}</span>
+        <span>${escapeHtml(selected)}</span>
+      </div>
+      <p class="question-text">${escapeHtml(question)}</p>
+      <div class="question-answer-receipt"><span>${cancelled ? "Result" : "Answer"}</span><strong>${escapeHtml(answer)}</strong></div>
+    </article>`;
+}
+
 export function renderTranscriptSegments(item: TranscriptItem, showThinking: boolean, context: RenderContext = {}): string {
   const suppressedKey = context.suppressLocalImageArtifactPaths ? Array.from(context.suppressLocalImageArtifactPaths).join("|") : "";
   const segmentKey = item.segments?.map((segment) => {
@@ -641,6 +681,15 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
   const cacheKey = `${item.id}:${item.kind}:${item.status ?? ""}:${showThinking}:${item.body}:${segmentKey}:${context.localImageUrl ? "assets" : ""}:${suppressedKey}`;
   const cached = context.cache?.get(cacheKey);
   if (cached !== undefined) return cached;
+
+  if (item.kind === "question") {
+    const raw = isRecord(item.raw) ? item.raw : {};
+    const questionCard = isRecord(raw.questionCard) ? raw.questionCard : null;
+    if (questionCard?.state === "pending" && isRecord(questionCard.question)) {
+      return renderQuestionPanel(questionCard.question as import("@pi-web-agent/protocol").PendingQuestion, questionCard.isController !== false, questionCard.isConnected !== false);
+    }
+    return renderReadOnlyQuestionCard(item);
+  }
 
   const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
   const usePlainStreamingText = item.status === "running" && (item.kind === "assistant" || item.kind === "user");
@@ -745,7 +794,8 @@ export class PiTranscriptRow extends HTMLElement {
     const hasPlanActions = hasPlanActionsMarker(item);
     const isGeneratingPlan = isGeneratingPlanItem(item);
     const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
+    const questionRenderState = item.kind === "question" && isRecord(item.raw) ? stringify(item.raw) : "";
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${questionRenderState}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
     if (renderKey === this.lastRenderKey) {
       if (canPatchText && streamingText !== this.lastStreamingText) {
         streamingTextTarget!.textContent = streamingText ?? "";
@@ -757,11 +807,12 @@ export class PiTranscriptRow extends HTMLElement {
     }
 
     const hasCustomCard = hasExtensionCard(item);
+    const hasQuestionCard = item.kind === "question";
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
     const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : isGeneratingPlan ? renderPlanGeneratingCard() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
-    const isStandaloneCard = hasCustomCard;
+    const isStandaloneCard = hasCustomCard || hasQuestionCard;
     this.innerHTML = isStandaloneCard ? `
       <div class="message-body">${body}</div>` : isConversationMessage ? `
       <div class="message-body">${body}</div>

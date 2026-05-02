@@ -62,7 +62,7 @@ export function focusQuestionPanel(ctx: Pick<QuestionPanelContext, "pendingQuest
     customInput.focus();
     return;
   }
-  root.querySelector<HTMLElement>(".question-panel")?.focus();
+  root.querySelector<HTMLElement>(".question-card.pending")?.focus();
 }
 
 export function handleQuestionPanelKeydown(ctx: QuestionPanelContext, event: KeyboardEvent): void {
@@ -120,7 +120,7 @@ export function handleQuestionPanelKeydown(ctx: QuestionPanelContext, event: Key
 
 export function bindQuestionPanel(ctx: QuestionPanelContext): void {
   const root = ctx.root();
-  root.querySelector<HTMLElement>(".question-panel")?.addEventListener("keydown", (event) => handleQuestionPanelKeydown(ctx, event));
+  root.querySelector<HTMLElement>(".question-card.pending")?.addEventListener("keydown", (event) => handleQuestionPanelKeydown(ctx, event));
   root.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
     button.addEventListener("click", () => {
       const index = Number(button.dataset.questionOptionIndex ?? "-1");
@@ -145,9 +145,9 @@ export function renderQuestionPanel(question: PendingQuestion | null, isControll
   const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question. Keyboard answer shortcuts are disabled in viewer mode.</p>` : !isConnected ? `<p class="question-viewer-copy">Reconnect before answering. Keyboard answer shortcuts are disabled while disconnected.</p>` : "";
   const recommendedOptionIndex = recommendedQuestionOptionIndex(question);
   return `
-      <section class="question-panel" aria-label="Answer needed" tabindex="-1">
-        <div class="question-panel-heading">
-          <strong>Answer needed</strong>
+      <section class="question-card pending" aria-label="Answer needed" tabindex="-1" data-question-id="${escapeHtml(question.id)}">
+        <div class="question-card-header question-panel-heading">
+          <span class="question-card-kicker">Answer needed</span>
           ${question.title ? `<span>${escapeHtml(question.title)}</span>` : `<span>Choose how to continue</span>`}
         </div>
         <p class="question-text">${escapeHtml(question.question)}</p>
