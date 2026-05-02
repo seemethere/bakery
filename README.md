@@ -64,6 +64,26 @@ Enter the same token in the app settings if prompted. Keep `PI_WEB_WORKSPACE_ROO
 
 For hostname-based setup and custom Vite host allowlists, see [`docs/local-network.md`](docs/local-network.md).
 
+## Containerized development
+
+Bakery also has a Docker Compose path for developing Bakery itself inside a container while editing this checkout from the host:
+
+```bash
+cp .env.example .env
+# Edit .env: set PI_WEB_AUTH_TOKEN, and on Linux set PI_WEB_CONTAINER_UID/GID.
+docker compose up --build
+```
+
+Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. The container bind-mounts this repository at `/workspace/bakery`, uses it as the only default workspace root, and mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources.
+
+Docker socket access is intentionally off by default. When you need Docker commands inside the dev container, opt in explicitly:
+
+```bash
+docker compose -f compose.yaml -f compose.docker.yaml up --build
+```
+
+See [`docs/container-development.md`](docs/container-development.md) for mounted paths, UID/GID notes, and troubleshooting.
+
 ## Common commands
 
 ```bash
@@ -73,6 +93,7 @@ bun run dev:lan             # Start backend and web UI for token-protected LAN a
 bun run dev:server:restart  # Restart only the backend during development
 bun run dev:server:logs     # Show backend logs
 bun run check               # Typecheck packages/apps and workflow-skill assertions
+docker compose up --build   # Run the containerized Bakery development environment
 ```
 
 ## Important environment variables

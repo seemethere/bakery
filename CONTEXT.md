@@ -103,6 +103,14 @@ An operator-started review environment for an isolated agent session that runs t
 - Not: the primary development server or an automatically merged workspace.
 - Example: an operator starts a Preview Stack from an isolated session's Details panel, opens the generated URL, reviews the branch's UI changes with fake-agent data, then stops the stack.
 
+### Containerized Development Environment
+
+A Docker-backed way to run and dogfood Bakery development from a container while editing the checked-out Bakery repository through a bind mount.
+
+- Also known as: dev container, Docker dev environment.
+- Not: the long-term multi-backend Bakery CLI or per-agent-session container isolation.
+- Example: an operator starts Bakery through Docker Compose, opens the Vite UI from the host browser, and the server inside the container runs agent sessions against the mounted Bakery repository.
+
 ### Context Document
 
 A `CONTEXT.md` file that records the domain vocabulary for a product area so operators and agents use terms consistently.
