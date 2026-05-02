@@ -6,6 +6,7 @@ let PLAN_ACTIONS_MARKER: typeof import("./transcript").PLAN_ACTIONS_MARKER;
 let renderTranscriptSegments: typeof import("./transcript").renderTranscriptSegments;
 let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDeveloperBash;
 let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
+let isGeneratingPlanItem: typeof import("./transcript").isGeneratingPlanItem;
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
@@ -25,7 +26,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -118,6 +119,22 @@ describe("transcript tool row display", () => {
 });
 
 describe("transcript plan actions", () => {
+  test("detects running final /plan output as a generating plan", () => {
+    const item: TranscriptItem = {
+      id: "assistant-plan-running",
+      kind: "assistant",
+      title: "Pi",
+      body: "## Plan summary\n\nRecommendation is still streaming",
+      status: "running",
+    };
+
+    expect(isGeneratingPlanItem(item)).toBe(true);
+    expect(isGeneratingPlanItem({ ...item, body: "I need one more detail before planning." })).toBe(false);
+    expect(isGeneratingPlanItem({ ...item, status: "done" })).toBe(false);
+    expect(isGeneratingPlanItem({ ...item, body: `${item.body}\n\n${PLAN_ACTIONS_MARKER}` })).toBe(false);
+    expect(isGeneratingPlanItem({ ...item, body: "", segments: [{ kind: "markdown", text: item.body }] })).toBe(true);
+  });
+
   test("detects and strips the final /plan action marker", () => {
     const item: TranscriptItem = {
       id: "assistant-plan",
