@@ -6,7 +6,7 @@ import type { GenerateSessionDetailsOptions, GenerateSessionDetailsResult } from
 export type ExtensionCapability = "commands";
 
 export type ExtensionCommandResult =
-  | { kind: "handled"; title?: string; body?: string; isError?: boolean }
+  | { kind: "handled"; title?: string; body?: string; isError?: boolean; data?: unknown }
   | { kind: "launchPrompt"; title?: string; prompt: string; compactLaunchText?: string };
 
 export type GenerateSessionDetailsCommandOptions = GenerateSessionDetailsOptions;

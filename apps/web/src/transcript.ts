@@ -111,6 +111,63 @@ function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUr
     </article>`;
 }
 
+type MetadataDetailsCardData = {
+  kind: "metadata_details_result";
+  applied: string[];
+  skipped: Array<{ field?: unknown; reason?: unknown }>;
+  deferred?: boolean;
+  title?: string;
+  summary?: string;
+  reason?: string;
+};
+
+export function metadataDetailsCardData(item: TranscriptItem): MetadataDetailsCardData | null {
+  if (!isRecord(item.raw) || !isRecord(item.raw.data)) return null;
+  const data = item.raw.data;
+  if (data.kind !== "metadata_details_result") return null;
+  return {
+    kind: "metadata_details_result",
+    applied: Array.isArray(data.applied) ? data.applied.map(String) : [],
+    skipped: Array.isArray(data.skipped) ? data.skipped.filter(isRecord) : [],
+    ...(typeof data.deferred === "boolean" ? { deferred: data.deferred } : {}),
+    ...(typeof data.title === "string" ? { title: data.title } : {}),
+    ...(typeof data.summary === "string" ? { summary: data.summary } : {}),
+    ...(typeof data.reason === "string" ? { reason: data.reason } : {}),
+  };
+}
+
+function renderMetadataDetailsCard(data: MetadataDetailsCardData): string {
+  const applied = new Set(data.applied);
+  const skipped = data.skipped.map((entry) => ({ field: String(entry.field ?? "field"), reason: String(entry.reason ?? "protected") }));
+  const status = data.deferred ? "Could not generate details yet" : applied.size > 0 ? "Session details updated" : skipped.length > 0 ? "Manual details protected" : "No details changed";
+  const kicker = data.deferred ? "Try again later" : applied.size > 0 ? "Generated details" : "Generate details";
+  const titleStatus = applied.has("title") ? "Updated" : skipped.some((entry) => entry.field === "title") ? "Protected" : data.title ? "Suggested" : "No change";
+  const summaryStatus = applied.has("summary") ? "Updated" : skipped.some((entry) => entry.field === "summary") ? "Protected" : data.summary ? "Suggested" : "No change";
+  return `<article class="metadata-details-card ${data.deferred ? "deferred" : ""}" aria-label="Session metadata generation result">
+    <div class="metadata-details-card-header">
+      <span class="metadata-details-icon" aria-hidden="true">✦</span>
+      <div>
+        <span class="metadata-details-kicker">${escapeHtml(kicker)}</span>
+        <strong>${escapeHtml(status)}</strong>
+      </div>
+    </div>
+    <div class="metadata-details-grid">
+      <section class="metadata-details-field ${applied.has("title") ? "updated" : ""}">
+        <span>${escapeHtml(titleStatus)}</span>
+        <h3>Title</h3>
+        <p>${escapeHtml(data.title || "No generated title returned.")}</p>
+      </section>
+      <section class="metadata-details-field ${applied.has("summary") ? "updated" : ""}">
+        <span>${escapeHtml(summaryStatus)}</span>
+        <h3>Summary</h3>
+        <p>${escapeHtml(data.summary || "No generated summary returned.")}</p>
+      </section>
+    </div>
+    ${skipped.length > 0 ? `<div class="metadata-details-note">${skipped.map((entry) => `Skipped ${escapeHtml(entry.field)}: ${escapeHtml(entry.reason)}. Use <code>--replace</code> to overwrite.`).join(" ")}</div>` : ""}
+    ${data.deferred && data.reason ? `<div class="metadata-details-note">${escapeHtml(data.reason)}</div>` : ""}
+  </article>`;
+}
+
 export function uiActionContributionForTranscriptItem(item: TranscriptItem): UiActionContribution | null {
   return UI_ACTION_CONTRIBUTION_MATCHERS.find((matcher) => matcher.matches(item))?.contribution ?? null;
 }
@@ -732,9 +789,10 @@ export class PiTranscriptRow extends HTMLElement {
     }
 
     const hasPlanActions = hasPlanActionsMarker(item);
+    const metadataDetails = metadataDetailsCardData(item);
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
-    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : metadataDetails ? renderMetadataDetailsCard(metadataDetails) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     this.innerHTML = isConversationMessage ? `
       <div class="message-body">${body}</div>
@@ -790,7 +848,8 @@ export class PiTranscriptRow extends HTMLElement {
     if (!this.item) return "message";
     const developerBashClass = isDeveloperBashItem(this.item) ? "developer-bash" : "";
     const noContextClass = isDeveloperBashNoContextItem(this.item) ? "no-context" : "";
-    return ["message", this.item.kind, this.item.status ?? "", developerBashClass, noContextClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    const metadataDetailsClass = metadataDetailsCardData(this.item) ? "metadata-details-result" : "";
+    return ["message", this.item.kind, this.item.status ?? "", developerBashClass, noContextClass, metadataDetailsClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {

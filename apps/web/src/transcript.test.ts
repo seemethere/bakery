@@ -10,6 +10,7 @@ let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
+let metadataDetailsCardData: typeof import("./transcript").metadataDetailsCardData;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, "HTMLElement", {
@@ -24,7 +25,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, metadataDetailsCardData } = await import("./transcript"));
 });
 
 describe("transcript terminal rendering", () => {
@@ -154,6 +155,33 @@ describe("transcript plan actions", () => {
     const fullLegacyItem: TranscriptItem = { ...item, body: `Recommendation\n\n${LEGACY_FULL_PLAN_ACTIONS_MARKER}` };
     expect(stripPlanActionsMarker(fullLegacyItem.body)).toBe("Recommendation");
     expect(uiActionContributionForTranscriptItem(fullLegacyItem)?.actions.map((action) => action.id)).toEqual(["accept"]);
+  });
+});
+
+describe("metadata details card data", () => {
+  test("extracts structured metadata details card data", () => {
+    const item: TranscriptItem = {
+      id: "command:metadata",
+      kind: "system",
+      title: "/bakery:generate-details",
+      body: "Updated title and summary.",
+      raw: {
+        type: "web_command_result",
+        data: {
+          kind: "metadata_details_result",
+          applied: ["title", "summary"],
+          skipped: [],
+          title: "Add generate details command",
+          summary: "Implemented metadata generation command.",
+        },
+      },
+    };
+
+    expect(metadataDetailsCardData(item)).toMatchObject({
+      applied: ["title", "summary"],
+      title: "Add generate details command",
+      summary: "Implemented metadata generation command.",
+    });
   });
 });
 

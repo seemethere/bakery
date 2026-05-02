@@ -17,6 +17,18 @@ export function parseGenerateDetailsArgs(args: string): GenerateSessionDetailsCo
   };
 }
 
+function generateDetailsCardData(result: GenerateSessionDetailsResult): Record<string, unknown> {
+  return {
+    kind: "metadata_details_result",
+    applied: result.applied,
+    skipped: result.skipped,
+    deferred: Boolean(result.suggestion.deferred),
+    ...(result.suggestion.title ? { title: result.suggestion.title } : {}),
+    ...(result.suggestion.summary ? { summary: result.suggestion.summary } : {}),
+    ...(result.suggestion.reason ? { reason: result.suggestion.reason } : {}),
+  };
+}
+
 function formatGenerateDetailsReceipt(result: GenerateSessionDetailsResult): string {
   const lines: string[] = [];
   if (result.suggestion.deferred) {
@@ -55,6 +67,7 @@ export const BAKERY_BUNDLED_EXTENSION: BakeryExtension = {
           title: "/bakery:generate-details",
           body: formatGenerateDetailsReceipt(result),
           isError: Boolean(result.suggestion.deferred),
+          data: generateDetailsCardData(result),
         };
       },
     },

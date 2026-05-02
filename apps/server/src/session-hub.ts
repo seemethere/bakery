@@ -236,13 +236,13 @@ class SessionHub {
     };
   }
 
-  private async emitCommandResult(title: string, body: string, isError = false): Promise<void> {
+  private async emitCommandResult(title: string, body: string, isError = false, data?: unknown): Promise<void> {
     this.broadcast({
       type: "agent_event",
       event: {
         type: "web_command_result",
         time: new Date().toISOString(),
-        data: { type: "web_command_result", id: `command:${Date.now()}`, title, body, isError },
+        data: { type: "web_command_result", id: `command:${Date.now()}`, title, body, isError, ...(data !== undefined ? { data } : {}) },
       },
     });
     await this.broadcastSettingsUpdate();
@@ -263,7 +263,7 @@ class SessionHub {
       await this.broadcastSettingsUpdate();
       return true;
     }
-    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false);
+    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false, result.data);
     return true;
   }
 
