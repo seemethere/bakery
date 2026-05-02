@@ -46,7 +46,7 @@ This is for developing Bakery itself. It is not yet the production single-port i
 | `bakery-data` volume | `/workspace/.bakery-data` | Bakery metadata, session files, artifacts, and managed worktrees for the container. |
 | `bakery-bun-cache` volume | `/workspace/.cache/bun` | Bun cache for faster reinstalls. |
 
-The entrypoint starts as root only long enough to map the container user to `PI_WEB_CONTAINER_UID`/`PI_WEB_CONTAINER_GID`, prepare writable volumes, and then drop privileges before running Bakery.
+The image includes the Linux runtime libraries and fonts required by Playwright's bundled Chromium/headless shell, so UI harnesses can run inside the dev container after the usual `bun install` and `bun x playwright install chromium` browser download. The entrypoint starts as root only long enough to map the container user to `PI_WEB_CONTAINER_UID`/`PI_WEB_CONTAINER_GID`, prepare writable volumes, and then drop privileges before running Bakery.
 
 ## LAN/Tailscale access
 
@@ -141,13 +141,26 @@ When modifying the containerized development environment, validate from the smal
 
    Confirm the owner/group match the host UID/GID.
 
-5. Validate Compose wiring when Compose, env, ports, volumes, or docs changed:
+5. Smoke Playwright/Chromium launch when browser runtime packages changed:
+
+   ```bash
+   docker run --rm \
+     -e PI_WEB_CONTAINER_UID="$(id -u)" \
+     -e PI_WEB_CONTAINER_GID="$(id -g)" \
+     -v "$PWD:/workspace/bakery" \
+     bakery-dev:local \
+     bash -lc 'bun install && bun x playwright install chromium && bun -e "const { chromium } = require(\"playwright\"); const browser = await chromium.launch({ headless: true }); const page = await browser.newPage(); await page.setContent(\"<h1>ok</h1>\"); console.log(await page.textContent(\"h1\")); await browser.close();"'
+   ```
+
+   This validates the image's system libraries; the Chromium browser binary itself is still downloaded by Playwright into the container/user cache rather than baked into the image.
+
+6. Validate Compose wiring when Compose, env, ports, volumes, or docs changed:
 
    ```bash
    docker compose --env-file .env.example config
    ```
 
-6. Smoke the full backend + Vite dev flow when Compose startup or runtime environment changed:
+7. Smoke the full backend + Vite dev flow when Compose startup or runtime environment changed:
 
    ```bash
    docker compose --env-file .env.example up --build -d
@@ -161,7 +174,7 @@ When modifying the containerized development environment, validate from the smal
    docker compose --env-file .env.example down
    ```
 
-7. Validate Docker socket access only when Docker CLI, entrypoint socket-group logic, or `compose.docker.yaml` changed:
+8. Validate Docker socket access only when Docker CLI, entrypoint socket-group logic, or `compose.docker.yaml` changed:
 
    ```bash
    docker compose \
@@ -172,7 +185,7 @@ When modifying the containerized development environment, validate from the smal
      bash -lc 'docker version --format "{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}"'
    ```
 
-8. Do a manual browser smoke for meaningful dev-flow changes:
+9. Do a manual browser smoke for meaningful dev-flow changes:
 
    ```bash
    cp .env.example .env
@@ -224,6 +237,22 @@ Confirm `$HOME/.pi` exists on the host and is mounted at `/home/bun/.pi` in the 
 ### Iteration telemetry cannot find pi session logs
 
 Compose sets `PI_WEB_SESSION_DIR=/home/bun/.pi/agent/sessions`, matching the mounted pi default. If you override this value or run outside Compose, point it at the directory that contains pi JSONL session logs; `bun run report:iteration --session-context` scans nested cwd-specific subdirectories under that path.
+
+### Playwright says host system dependencies are missing
+
+Rebuild the dev image so the Playwright Chromium runtime packages from `Dockerfile` are installed:
+
+```bash
+docker compose down
+docker compose up --build
+```
+
+Inside the rebuilt container, rerun the browser install/launch smoke:
+
+```bash
+bun x playwright install chromium
+bun -e 'const { chromium } = require("playwright"); const browser = await chromium.launch({ headless: true }); await browser.close(); console.log("chromium ok");'
+```
 
 ### Docker commands fail inside the container
 
