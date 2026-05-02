@@ -263,7 +263,7 @@ class SessionHub {
       await this.broadcastSettingsUpdate();
       return true;
     }
-    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false, result.data);
+    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false, result.card ? { kind: "extension_card", card: result.card } : result.data);
     return true;
   }
 
@@ -392,6 +392,7 @@ class SessionHub {
                 title: builtinResult.title ?? "Slash command",
                 body: builtinResult.body ?? "",
                 isError: builtinResult.isError ?? false,
+                ...(builtinResult.data !== undefined ? { data: builtinResult.data } : {}),
               },
             },
           });

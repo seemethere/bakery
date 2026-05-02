@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import type { BakeryExtension, ExtensionCommandResult, GenerateSessionDetailsCommandOptions } from "../../extensions.js";
 import type { GenerateSessionDetailsResult } from "../../metadata-routes.js";
 
@@ -19,7 +21,6 @@ export function parseGenerateDetailsArgs(args: string): GenerateSessionDetailsCo
 
 function generateDetailsCardData(result: GenerateSessionDetailsResult): Record<string, unknown> {
   return {
-    kind: "metadata_details_result",
     applied: result.applied,
     skipped: result.skipped,
     deferred: Boolean(result.suggestion.deferred),
@@ -47,9 +48,14 @@ function formatGenerateDetailsReceipt(result: GenerateSessionDetailsResult): str
 
 export const BAKERY_BUNDLED_EXTENSION: BakeryExtension = {
   id: "bakery.core",
+  rootDir: dirname(fileURLToPath(import.meta.url)),
   displayName: "Bakery commands",
   version: "0.1.0",
-  capabilities: ["commands"],
+  capabilities: ["commands", "ui:transcript.customCard"],
+  web: { entry: "web/metadata-details-card.js" },
+  ui: [
+    { slot: "transcript.customCard", kind: "bakery.metadataDetails", component: "bakery-metadata-details-card" },
+  ],
   commands: [
     {
       name: "bakery:generate-details",
@@ -67,7 +73,7 @@ export const BAKERY_BUNDLED_EXTENSION: BakeryExtension = {
           title: "/bakery:generate-details",
           body: formatGenerateDetailsReceipt(result),
           isError: Boolean(result.suggestion.deferred),
-          data: generateDetailsCardData(result),
+          card: { kind: "bakery.metadataDetails", props: generateDetailsCardData(result) },
         };
       },
     },

@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
@@ -31,6 +31,7 @@ import { handleTranscriptRowAction as handleTranscriptRowActionWithContext, type
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
+import { loadExtensionCatalog } from "./extension-cards";
 import "./styles.css";
 
 declare global {
@@ -113,6 +114,7 @@ class PiWebAgentApp extends HTMLElement {
   private controller: ControllerInfo | null = null;
   private settings: SessionRuntimeSettings | null = null;
   private config: AppConfig | null = null;
+  private extensionCatalog: ExtensionCatalog | null = null;
   private modelThinkingPickerOpen = false;
   private modelThinkingAnchor: { left: number; bottom: number; arrowLeft: number } | null = null;
   private sessionDetailsOpen = false;
@@ -402,11 +404,17 @@ class PiWebAgentApp extends HTMLElement {
       this.sessions = sessions;
       this.appSettings = appSettings;
       this.config = config;
+      this.notice = "";
+      try {
+        this.extensionCatalog = await loadExtensionCatalog({ apiBase: this.apiBase, token: this.token, api: (path) => this.api(path) });
+      } catch (error) {
+        this.extensionCatalog = null;
+        this.notice = `Extension load failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
       if (this.selectedSession) {
         const updated = sessions.find((candidate) => candidate.id === this.selectedSession?.id);
         if (updated) this.selectedSession = updated;
       }
-      this.notice = "";
       if (!this.selectedSession) {
         const route = parseAppRoute(window.location.pathname);
         const routeSessionId = route.kind === "session" ? route.sessionId : "";

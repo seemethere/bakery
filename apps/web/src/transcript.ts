@@ -1,6 +1,7 @@
 import { LEGACY_FULL_PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER, type UiActionContribution } from "@pi-web-agent/protocol";
 import ConvertAnsi from "ansi-to-html";
 import { marked } from "marked";
+import { hasExtensionCard, renderExtensionCard } from "./extension-cards";
 import { escapeHtml, isRecord, pathBasename, pathParent, recordPerfSample, stringify } from "./utils";
 
 export type TranscriptKind = "user" | "assistant" | "tool" | "question" | "system" | "error";
@@ -109,48 +110,6 @@ function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUr
         <button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="${escapeHtml(PLAN_UI_ACTION_CONTRIBUTION.id)}" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
       </div>
     </article>`;
-}
-
-type MetadataDetailsCardData = {
-  kind: "metadata_details_result";
-  applied: string[];
-  skipped: Array<{ field?: unknown; reason?: unknown }>;
-  deferred?: boolean;
-  title?: string;
-  summary?: string;
-  reason?: string;
-};
-
-export function metadataDetailsCardData(item: TranscriptItem): MetadataDetailsCardData | null {
-  if (!isRecord(item.raw) || !isRecord(item.raw.data)) return null;
-  const data = item.raw.data;
-  if (data.kind !== "metadata_details_result") return null;
-  return {
-    kind: "metadata_details_result",
-    applied: Array.isArray(data.applied) ? data.applied.map(String) : [],
-    skipped: Array.isArray(data.skipped) ? data.skipped.filter(isRecord) : [],
-    ...(typeof data.deferred === "boolean" ? { deferred: data.deferred } : {}),
-    ...(typeof data.title === "string" ? { title: data.title } : {}),
-    ...(typeof data.summary === "string" ? { summary: data.summary } : {}),
-    ...(typeof data.reason === "string" ? { reason: data.reason } : {}),
-  };
-}
-
-function renderMetadataDetailsCard(data: MetadataDetailsCardData): string {
-  const applied = new Set(data.applied);
-  const skipped = data.skipped.map((entry) => ({ field: String(entry.field ?? "field"), reason: String(entry.reason ?? "protected") }));
-  const status = data.deferred ? "Details not ready" : applied.size > 0 ? "Details generated" : skipped.length > 0 ? "Manual details protected" : "No details changed";
-  const changed = [applied.has("title") ? "title" : "", applied.has("summary") ? "summary" : ""].filter(Boolean).join(" and ");
-  const summary = data.summary || data.reason || "No generated summary returned.";
-  return `<article class="metadata-details-card ${data.deferred ? "deferred" : ""}" aria-label="Session metadata generation result">
-    <div class="metadata-details-card-header">
-      <span class="metadata-details-kicker">${escapeHtml(status)}</span>
-      ${changed ? `<span class="metadata-details-open-hint">Updated ${escapeHtml(changed)}</span>` : ""}
-    </div>
-    ${data.title ? `<div class="metadata-details-title">${escapeHtml(data.title)}</div>` : ""}
-    <div class="metadata-details-summary">${escapeHtml(summary)}</div>
-    ${skipped.length > 0 ? `<div class="metadata-details-note">${skipped.map((entry) => `Skipped ${escapeHtml(entry.field)}: ${escapeHtml(entry.reason)}. Use <code>--replace</code> to overwrite.`).join(" ")}</div>` : ""}
-  </article>`;
 }
 
 export function uiActionContributionForTranscriptItem(item: TranscriptItem): UiActionContribution | null {
@@ -774,12 +733,12 @@ export class PiTranscriptRow extends HTMLElement {
     }
 
     const hasPlanActions = hasPlanActionsMarker(item);
-    const metadataDetails = metadataDetailsCardData(item);
+    const hasCustomCard = hasExtensionCard(item);
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
-    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : metadataDetails ? renderMetadataDetailsCard(metadataDetails) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
-    const isStandaloneCard = Boolean(metadataDetails);
+    const isStandaloneCard = hasCustomCard;
     this.innerHTML = isStandaloneCard ? `
       <div class="message-body">${body}</div>` : isConversationMessage ? `
       <div class="message-body">${body}</div>
@@ -835,7 +794,7 @@ export class PiTranscriptRow extends HTMLElement {
     if (!this.item) return "message";
     const developerBashClass = isDeveloperBashItem(this.item) ? "developer-bash" : "";
     const noContextClass = isDeveloperBashNoContextItem(this.item) ? "no-context" : "";
-    const metadataDetailsClass = metadataDetailsCardData(this.item) ? "metadata-details-result" : "";
+    const metadataDetailsClass = hasExtensionCard(this.item) ? "metadata-details-result" : "";
     return ["message", this.item.kind, this.item.status ?? "", developerBashClass, noContextClass, metadataDetailsClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 

@@ -72,6 +72,22 @@ A product-owned extension packaged with Bakery that contributes commands or UI b
 - Not: an arbitrary third-party plugin loaded from an untrusted source.
 - Example: the bundled workflow extension contributes the `/plan` command.
 
+### Dynamic Bakery Extension
+
+A trusted local extension loaded by Bakery from an operator-configured path, using pi-like file, directory, or package entry conventions for backend code plus Bakery-specific web UI declarations when browser rendering is needed.
+
+- Also known as: local extension, external extension.
+- Not: an untrusted marketplace plugin or a browser-only script that bypasses Bakery's extension host.
+- Example: an operator configures an additional extension path, reloads resources, and Bakery discovers a command whose result renders in a transcript card.
+
+### Extension Card
+
+A transcript card whose data and browser component are contributed through Bakery's extension UI contract rather than hard-coded in the core transcript renderer.
+
+- Also known as: custom card, transcript custom card.
+- Not: arbitrary DOM mutation of the transcript or a terminal TUI renderer copied directly into the browser.
+- Example: `/bakery:generate-details` returns session metadata result data, and its bundled extension card renders the title, summary, and skipped-field note.
+
 ### Session Metadata Generation
 
 An explicit Bakery action that generates and updates an agent session's operator-facing title and summary from the session transcript, optionally steered by operator guidance.

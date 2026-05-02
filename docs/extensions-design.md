@@ -1,6 +1,6 @@
 # Bakery extension architecture
 
-Status: design draft. This document describes the extension model Bakery should implement after the current local-first web-agent baseline.
+Status: design draft, partially implemented. This document describes the extension model Bakery should implement after the current local-first web-agent baseline. ADR 0002 records the v1 decision to load trusted main-document web components from bundled and configured local extension paths.
 
 ## Goals
 
@@ -27,7 +27,7 @@ Bakery already exposes parts of pi's resource ecosystem:
 - `apps/server/src/pi-runner.ts` lists registered pi extension commands through `session.extensionRunner.getRegisteredCommands()`.
 - Slash command autocomplete can show command sources from `builtin`, `extension`, `prompt`, and `skill` via `packages/protocol/src/index.ts`.
 - `/reload` calls `session.reload()` and reloads extensions, skills, prompts, and context resources.
-- Bundled workflow commands currently live in `apps/server/src/workflow-skills.ts`; `/plan` is implemented there as a built-in workflow prompt factory rather than as a general extension.
+- Bundled workflow commands now register through `apps/server/src/extensions.ts`; `/plan` and `/bakery:generate-details` are bundled extension-shaped commands.
 - The browser UI is a framework-light TypeScript app with focused modules for routing, composer behavior, transcript rendering, session sidebar, and harness scenarios.
 
 This is enough to design Bakery extensions as a thin host layer around stable protocol and UI contribution points.
@@ -63,10 +63,10 @@ Candidate locations:
 
 | Location | Scope | Notes |
 | --- | --- | --- |
-| `apps/server/src/bundled-extensions/*` | Bundled | Used for `/plan` and other core-adjacent workflows during migration. |
-| `.pi/bakery/extensions/*` | Project-local | Loaded only when project resources are enabled. |
-| `~/.pi/bakery/extensions/*` | Global local | Loaded only when global resources are enabled. |
-| Explicit config paths | Local override | Useful for development and tests. |
+| `apps/server/src/bundled-extensions/*` | Bundled | Used for `/plan`, `/bakery:generate-details`, and other core-adjacent workflows during migration. |
+| Explicit config paths | Local override | First dynamic source; useful for development and tests via `PI_WEB_EXTENSION_PATHS`. |
+| `.pi/extensions/*` or `.pi/bakery/extensions/*` | Project-local | Later follow-up after configured-path loading and reload/error UX are proven. |
+| `~/.pi/agent/extensions/*` or `~/.pi/bakery/extensions/*` | Global local | Later follow-up after configured-path loading and reload/error UX are proven. |
 
 An extension can start as a directory:
 
@@ -149,7 +149,7 @@ type ExtensionCommandResult =
 
 Browser extensions should be framework-neutral and Web Component friendly.
 
-An extension web entry should register custom elements and declare contributions; it should not patch arbitrary DOM nodes.
+An extension web entry should register custom elements and declare contributions; it should not patch arbitrary DOM nodes. V1 web entries are browser-loadable JavaScript modules served by the local Bakery backend and imported into Bakery's trusted main document.
 
 Conceptual browser entry:
 
@@ -190,7 +190,7 @@ Recommended slot taxonomy:
 | Slot | Purpose | First priority |
 | --- | --- | --- |
 | `transcript.messageActions` | Inline buttons under specific assistant/system messages. | High; `/plan` reference. |
-| `transcript.customCard` | Structured transcript cards for extension results. | High after `/plan`. |
+| `transcript.customCard` | Structured transcript cards for extension results. | First dynamic UI slot; `/bakery:generate-details` is the reference card. |
 | `composer.left` | Small indicators/adornments near composer context controls. | Medium. |
 | `composer.right` | Additional compact composer controls. | Medium. |
 | `composer.actions` | Explicit send-adjacent actions. | Medium. |
@@ -410,7 +410,7 @@ bun scripts/ui-harness.ts --scenario mobile-layout
 
 ### Phase 3: trusted local extension loading
 
-Load project/global Bakery extensions from policy-approved locations, validate manifests, and expose command contributions.
+Load configured-path Bakery extensions from policy-approved locations, validate manifests, expose command contributions, and serve declared web modules. Project/global auto-discovery should follow after configured-path loading is dogfooded.
 
 Likely files:
 

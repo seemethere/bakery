@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { BUNDLED_EXTENSION_COMMANDS, BUNDLED_EXTENSIONS, runBundledExtensionCommand } from "../apps/server/src/extensions.js";
+import { BUNDLED_EXTENSIONS, getBakeryExtensionCommands, runBundledExtensionCommand } from "../apps/server/src/extensions.js";
 import { compactWorkflowLaunchText } from "../apps/server/src/workflow-skills.js";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -10,11 +10,12 @@ const bundledWorkflowExtension = BUNDLED_EXTENSIONS.find((extension) => extensio
 assert(bundledWorkflowExtension, "expected bundled workflow extension to be registered");
 assert(bundledWorkflowExtension.capabilities?.includes("commands"), "expected bundled workflow extension to declare command capability");
 
-const commands = BUNDLED_EXTENSION_COMMANDS.map((command) => command.name);
+const bundledCommands = getBakeryExtensionCommands();
+const commands = bundledCommands.map((command) => command.name);
 assert(commands.includes("plan"), "expected /plan bundled extension command to be registered");
 assert(!commands.includes("grill-me"), "expected /grill-me workflow skill command to be removed");
 
-const planCommand = BUNDLED_EXTENSION_COMMANDS.find((command) => command.name === "plan");
+const planCommand = bundledCommands.find((command) => command.name === "plan");
 assert(planCommand?.source === "skill", "expected /plan to preserve its current slash autocomplete source");
 assert(planCommand.sourceInfo && typeof planCommand.sourceInfo === "object", "expected /plan to preserve source info");
 
