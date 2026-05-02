@@ -15,11 +15,23 @@ export type MetadataUpdateBroadcaster = {
   broadcastMetadataUpdate(session: WebSession): void;
 };
 
-type MetadataRouteDeps = {
+export type MetadataRouteDeps = {
   config: ServerConfig;
   store: MetadataStore;
   runner: PiSessionRunner;
   getBroadcaster(sessionId: string): MetadataUpdateBroadcaster | undefined;
+};
+
+export type GenerateSessionDetailsOptions = {
+  guidance?: string;
+  replaceManual?: boolean;
+};
+
+export type GenerateSessionDetailsResult = {
+  suggestion: SessionMetadataSuggestion;
+  applied: Array<"title" | "summary">;
+  skipped: Array<{ field: "title" | "summary"; reason: string }>;
+  session?: WebSession;
 };
 
 type PiSessionTreeNode = ReturnType<SessionManager["getTree"]>[number];
@@ -120,7 +132,7 @@ function generateHeuristicMetadata(session: WebSession, deps: MetadataRouteDeps)
   return { title, confidence: "medium", reason: "Summary generation needs the model-backed generator." };
 }
 
-function metadataPromptMessages(session: WebSession, deps: MetadataRouteDeps): Message[] {
+function metadataPromptMessages(session: WebSession, deps: MetadataRouteDeps, guidance?: string): Message[] {
   const messages = sessionEntries(session, deps)
     .filter((entry) => entry.type === "message")
     .map((entry) => {
@@ -178,9 +190,9 @@ async function resolveMetadataModel(handle: SessionHandle, deps: MetadataRouteDe
   };
 }
 
-async function generateModelBackedMetadata(session: WebSession, deps: MetadataRouteDeps): Promise<SessionMetadataSuggestion> {
+async function generateModelBackedMetadata(session: WebSession, deps: MetadataRouteDeps, guidance?: string): Promise<SessionMetadataSuggestion> {
   const heuristic = generateHeuristicMetadata(session, deps);
-  const messages = metadataPromptMessages(session, deps);
+  const messages = metadataPromptMessages(session, deps, guidance);
   const meaningfulUsers = messages.filter((message) => message.role === "user" && !isGenericPrompt(messageText(message.content))).length;
   if (messages.length < 2 || meaningfulUsers === 0) return heuristic.deferred ? heuristic : { ...heuristic, deferred: true, reason: "Not enough session context for a useful summary yet." };
 
@@ -200,7 +212,11 @@ async function generateModelBackedMetadata(session: WebSession, deps: MetadataRo
       ...messages,
       {
         role: "user",
-        content: "Create session metadata for the preceding transcript. Return JSON exactly in this shape: {\"title\":\"3-7 words, <=60 chars\",\"summary\":\"1-3 plain-text sentences, <=600 chars, specific accomplishments and current state\"}. If the transcript is generic, still summarize only concrete context present.",
+        content: [
+          "Create session metadata for the preceding transcript. Return JSON exactly in this shape: {\"title\":\"3-7 words, <=60 chars\",\"summary\":\"1-3 plain-text sentences, <=600 chars, specific accomplishments and current state\"}.",
+          "If the transcript is generic, still summarize only concrete context present.",
+          guidance ? `Operator guidance: ${cleanMetadataText(guidance, 500)}` : "",
+        ].filter(Boolean).join(" "),
         timestamp: Date.now(),
       },
     ],
@@ -216,6 +232,42 @@ async function generateModelBackedMetadata(session: WebSession, deps: MetadataRo
     confidence: parsed.summary ? "high" : heuristic.confidence,
     reason: `Generated with ${model.provider}/${model.id}. Review before applying.`,
   };
+}
+
+export async function generateSessionMetadataSuggestion(session: WebSession, deps: MetadataRouteDeps, options: GenerateSessionDetailsOptions = {}): Promise<SessionMetadataSuggestion> {
+  return deps.config.fakeAgent ? generateHeuristicMetadata(session, deps) : await generateModelBackedMetadata(session, deps, options.guidance);
+}
+
+export function applySessionMetadataSuggestion(session: WebSession, deps: MetadataRouteDeps, suggestion: SessionMetadataSuggestion, options: GenerateSessionDetailsOptions = {}): GenerateSessionDetailsResult {
+  const applied: GenerateSessionDetailsResult["applied"] = [];
+  const skipped: GenerateSessionDetailsResult["skipped"] = [];
+  const patch: Parameters<MetadataStore["updateSession"]>[1] = {};
+  if (suggestion.title) {
+    if (!options.replaceManual && session.titleSource === "manual") skipped.push({ field: "title", reason: "manual title protected" });
+    else {
+      patch.title = suggestion.title;
+      patch.titleSource = "agent";
+      applied.push("title");
+    }
+  }
+  if (suggestion.summary) {
+    if (!options.replaceManual && session.summarySource === "manual") skipped.push({ field: "summary", reason: "manual summary protected" });
+    else {
+      patch.summary = suggestion.summary;
+      patch.summarySource = "agent";
+      applied.push("summary");
+    }
+  }
+  if (applied.length > 0) patch.incrementGenerationCount = true;
+  const updated = applied.length > 0 ? deps.store.updateSession(session.id, patch) : session;
+  if (updated && applied.length > 0) deps.getBroadcaster(session.id)?.broadcastMetadataUpdate(updated);
+  return { suggestion, applied, skipped, ...(updated ? { session: updated } : {}) };
+}
+
+export async function generateAndApplySessionDetails(session: WebSession, deps: MetadataRouteDeps, options: GenerateSessionDetailsOptions = {}): Promise<GenerateSessionDetailsResult> {
+  const suggestion = await generateSessionMetadataSuggestion(session, deps, options);
+  if (suggestion.deferred) return { suggestion, applied: [], skipped: [] };
+  return applySessionMetadataSuggestion(session, deps, suggestion, options);
 }
 
 export function registerMetadataRoutes(app: FastifyInstance, deps: MetadataRouteDeps): void {
@@ -251,7 +303,7 @@ export function registerMetadataRoutes(app: FastifyInstance, deps: MetadataRoute
     const handle = runner.getSession(session.id);
     if (handle && (await handle.snapshot(session)).status !== "idle") return reply.code(409).send({ error: "metadata generation is available when the session is idle" });
     try {
-      const suggestion = config.fakeAgent ? generateHeuristicMetadata(session, deps) : await generateModelBackedMetadata(session, deps);
+      const suggestion = await generateSessionMetadataSuggestion(session, deps, parsed.data.guidance ? { guidance: parsed.data.guidance } : {});
       if (!suggestion.deferred) {
         const updated = store.updateSession(session.id, { incrementGenerationCount: true });
         const broadcaster = getBroadcaster(session.id);

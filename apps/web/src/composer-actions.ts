@@ -1,4 +1,4 @@
-export type ClientMessageType = "prompt" | "steer" | "follow_up";
+export type ClientMessageType = "prompt" | "command" | "steer" | "follow_up";
 
 export type ParsedBashPrompt = {
   command: string;
@@ -66,6 +66,7 @@ export function promptTextFromInput(value: string | null | undefined, imageCount
 export function buildComposerSendPayload(type: ClientMessageType, text: string, images: string[] = []): ComposerSendPayload {
   const bash = type === "prompt" ? parseBashPrompt(text) : null;
   if (bash) return { type: "bash", command: bash.command, excludeFromContext: bash.excludeFromContext };
+  if (type === "command") return { type, text };
   return images.length > 0 ? { type, text, images } : { type, text };
 }
 

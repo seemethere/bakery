@@ -173,6 +173,7 @@ export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
 
 export const generateSessionMetadataRequestSchema = z.object({
   mode: z.literal("suggest").default("suggest"),
+  guidance: z.string().max(500).optional(),
 });
 export type GenerateSessionMetadataRequest = z.infer<typeof generateSessionMetadataRequestSchema>;
 
@@ -417,6 +418,7 @@ export type ServerEnvelope = z.infer<typeof serverEnvelopeSchema>;
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hello_ack"), protocolVersion: z.literal(PROTOCOL_VERSION), clientId: z.string().optional() }),
   z.object({ type: z.literal("prompt"), text: z.string().min(1), images: z.array(z.string()).optional() }),
+  z.object({ type: z.literal("command"), text: z.string().min(1) }),
   z.object({ type: z.literal("bash"), command: z.string().min(1), excludeFromContext: z.boolean().optional() }),
   z.object({ type: z.literal("steer"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("follow_up"), text: z.string().min(1), images: z.array(z.string()).optional() }),

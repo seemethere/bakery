@@ -923,7 +923,8 @@ class PiWebAgentApp extends HTMLElement {
       this.sendClientMessage("prompt");
       return;
     }
-    if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
+    if (this.status === "running" && /^\/bakery:generate-details(?:\s|$)/i.test(text)) this.sendClientMessage("command");
+    else if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
     else this.sendClientMessage("prompt");
   }
 

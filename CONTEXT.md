@@ -72,6 +72,14 @@ A product-owned extension packaged with Bakery that contributes commands or UI b
 - Not: an arbitrary third-party plugin loaded from an untrusted source.
 - Example: the bundled workflow extension contributes the `/plan` command.
 
+### Session Metadata Generation
+
+An explicit Bakery action that generates and updates an agent session's operator-facing title and summary from the session transcript, optionally steered by operator guidance.
+
+- Also known as: generate details, title/summary generation.
+- Not: the whole session Details popover; Details may also show workspace, isolation, preview, and other session information.
+- Example: an operator runs `/bakery:generate-details emphasize extension architecture`; Bakery asks the configured metadata model for a title and summary, applies the safe metadata update, and shows a compact command receipt.
+
 ### Preview Stack
 
 An operator-started review environment for an isolated agent session that runs the session worktree's Bakery frontend and backend on separate temporary ports and gives the operator an openable URL for dogfooding that branch.

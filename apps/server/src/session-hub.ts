@@ -9,7 +9,8 @@ import {
   type WebSession,
 } from "@pi-web-agent/protocol";
 import type { ServerConfig } from "./config.js";
-import { cleanMetadataText, firstPromptTitle } from "./metadata-routes.js";
+import { parseSlashCommand, runBundledExtensionCommand } from "./extensions.js";
+import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } from "./metadata-routes.js";
 import type { MetadataStore } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 
@@ -58,6 +59,8 @@ class SessionHub {
   private readonly clients = new Map<string, SocketClient>();
   private controllerId: string | null = null;
   private disposeTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingCommands: string[] = [];
+  private flushingPendingCommands = false;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeQuestion: () => void;
 
@@ -66,6 +69,7 @@ class SessionHub {
       this.broadcast({ type: "agent_event", event, raw });
       if (event.type === "agent_end" || event.type === "turn_end") {
         void this.broadcastSettingsUpdate();
+        void this.flushPendingCommands();
       }
       const webSession = deps.store.getSession(handle.id);
       if (this.clients.size === 0 && webSession) {
@@ -217,6 +221,74 @@ class SessionHub {
     }
   }
 
+  private commandServices() {
+    return {
+      generateSessionDetails: async (options: Parameters<typeof generateAndApplySessionDetails>[2]) => {
+        const webSession = this.deps.store.getSession(this.handle.id);
+        if (!webSession) throw new Error("session not found");
+        return await generateAndApplySessionDetails(webSession, {
+          config: this.deps.config,
+          store: this.deps.store,
+          runner: this.deps.runner,
+          getBroadcaster: (sessionId) => sessionId === this.handle.id ? this : undefined,
+        }, options);
+      },
+    };
+  }
+
+  private async emitCommandResult(title: string, body: string, isError = false): Promise<void> {
+    this.broadcast({
+      type: "agent_event",
+      event: {
+        type: "web_command_result",
+        time: new Date().toISOString(),
+        data: { type: "web_command_result", id: `command:${Date.now()}`, title, body, isError },
+      },
+    });
+    await this.broadcastSettingsUpdate();
+  }
+
+  private async runBundledCommandText(text: string, images?: ImageContent[]): Promise<boolean> {
+    const parsed = parseSlashCommand(text);
+    if (!parsed) return false;
+    const result = await runBundledExtensionCommand(parsed.name, parsed.args, this.commandServices());
+    if (!result) return false;
+    if (result.kind === "launchPrompt") {
+      const webSession = this.deps.store.getSession(this.handle.id);
+      if (webSession && !webSession.title) {
+        const updated = this.deps.store.updateSession(webSession.id, { title: result.title ?? "Workflow", titleSource: "first_prompt" });
+        if (updated) this.broadcastMetadataUpdate(updated);
+      }
+      await this.handle.prompt(result.prompt, images);
+      await this.broadcastSettingsUpdate();
+      return true;
+    }
+    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false);
+    return true;
+  }
+
+  private async queueCommandUntilIdle(text: string): Promise<void> {
+    this.pendingCommands.push(text);
+    await this.emitCommandResult("Queued command", `${text.trim()} will run after the active turn finishes.`);
+  }
+
+  private async flushPendingCommands(): Promise<void> {
+    if (this.flushingPendingCommands || this.pendingCommands.length === 0) return;
+    const webSession = this.deps.store.getSession(this.handle.id);
+    if (!webSession) return;
+    const snapshot = await this.handle.snapshot(webSession);
+    if (snapshot.status !== "idle") return;
+    this.flushingPendingCommands = true;
+    try {
+      while (this.pendingCommands.length > 0) {
+        const command = this.pendingCommands.shift();
+        if (command) await this.runBundledCommandText(command);
+      }
+    } finally {
+      this.flushingPendingCommands = false;
+    }
+  }
+
   private scheduleDispose(): void {
     if (this.disposeTimer) return;
     this.disposeTimer = setTimeout(() => {
@@ -263,6 +335,11 @@ class SessionHub {
     try {
       if (parsed.data.type === "bash") {
         await this.runBashCommand(parsed.data.command, parsed.data.excludeFromContext);
+      } else if (parsed.data.type === "command") {
+        const webSession = this.deps.store.getSession(this.handle.id);
+        const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
+        if (status === "idle") await this.runBundledCommandText(parsed.data.text);
+        else await this.queueCommandUntilIdle(parsed.data.text);
       } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
         if (nameCommand.matched) {
@@ -291,6 +368,7 @@ class SessionHub {
           });
           return;
         }
+        if (await this.runBundledCommandText(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent))) return;
         const builtinResult = await this.handle.runBuiltinCommand(parsed.data.text);
         if (builtinResult.handled) {
           if (builtinResult.launchPrompt) {
