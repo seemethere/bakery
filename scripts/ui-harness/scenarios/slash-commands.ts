@@ -64,7 +64,7 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await waitForAgentIdle(page, 10_000);
   await ensureSidebarSettingsVisible(page);
   await page.locator('[data-route-path="/sessions"]').click();
-  await page.locator(".sessions-page .session-card.active .session-snippet", { hasText: "Launched /plan workflow" }).waitFor({ timeout: 5_000 });
+  await page.locator(".sessions-page .session-card.active .session-snippet").waitFor({ timeout: 5_000 });
   const currentSessionId = await page.locator(".sessions-page .session-card.active").getAttribute("data-session-id");
   if (!currentSessionId) throw new Error("Expected active session card on sessions page");
   await page.locator(`header [data-route-path="/sessions/${currentSessionId}"]`).click();

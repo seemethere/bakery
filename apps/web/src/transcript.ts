@@ -414,14 +414,15 @@ export function questionSummaryFromTool(item: TranscriptItem): TranscriptItem | 
   if (toolName !== "ask_question" && !details?.questionId && !details?.question) return null;
   if (!details || typeof details.question !== "string") return null;
   const cancelled = details.cancelled === true;
-  const answer = cancelled ? "Cancelled" : String(details.answer ?? details.optionLabel ?? "").trim();
+  const terminalCheckpoint = details.terminalCheckpoint === true;
+  const answer = cancelled ? "Cancelled" : terminalCheckpoint ? "Awaiting chat reply" : String(details.answer ?? details.optionLabel ?? "").trim();
   const wasCustom = details.wasCustom === true;
   const selected = typeof details.selectedIndex === "number" ? `Option ${details.selectedIndex + 1}` : wasCustom ? "Custom answer" : "Answer";
-  const body = [`Q: ${details.question}`, `A: ${answer || "—"}`].join("\n");
+  const body = [`Q: ${details.question}`, terminalCheckpoint ? "Reply below or choose an option." : `A: ${answer || "—"}`].join("\n");
   return {
     id: `question:${item.id}`,
     kind: "question",
-    title: cancelled ? "Question cancelled" : `Answered question · ${selected}`,
+    title: terminalCheckpoint ? "Question asked" : cancelled ? "Question cancelled" : `Answered question · ${selected}`,
     body,
     segments: [{ kind: "pre", text: body }],
     status: cancelled ? "error" : "done",
@@ -660,15 +661,16 @@ function renderReadOnlyQuestionCard(item: TranscriptItem): string {
   const details = isRecord(raw.details) ? raw.details : null;
   const question = typeof details?.question === "string" ? details.question : item.body.replace(/^Q:\s*/m, "");
   const cancelled = details?.cancelled === true || item.status === "error";
-  const answer = cancelled ? "Cancelled" : String(details?.answer ?? details?.optionLabel ?? "").trim() || "—";
-  const selected = typeof details?.selectedIndex === "number" ? `Option ${details.selectedIndex + 1}` : details?.wasCustom === true ? "Custom answer" : "Answer";
-  return `<article class="question-card readonly ${cancelled ? "cancelled" : "answered"}" aria-label="${cancelled ? "Question cancelled" : "Question answered"}">
+  const terminalCheckpoint = details?.terminalCheckpoint === true;
+  const answer = cancelled ? "Cancelled" : terminalCheckpoint ? "Reply below or choose an option." : String(details?.answer ?? details?.optionLabel ?? "").trim() || "—";
+  const selected = terminalCheckpoint ? "Chat checkpoint" : typeof details?.selectedIndex === "number" ? `Option ${details.selectedIndex + 1}` : details?.wasCustom === true ? "Custom answer" : "Answer";
+  return `<article class="question-card readonly ${cancelled ? "cancelled" : terminalCheckpoint ? "checkpoint" : "answered"}" aria-label="${cancelled ? "Question cancelled" : terminalCheckpoint ? "Question asked" : "Question answered"}">
       <div class="question-card-header">
-        <span class="question-card-kicker">${cancelled ? "Question cancelled" : "Question answered"}</span>
+        <span class="question-card-kicker">${cancelled ? "Question cancelled" : terminalCheckpoint ? "Question asked" : "Question answered"}</span>
         <span>${escapeHtml(selected)}</span>
       </div>
       <p class="question-text">${escapeHtml(question)}</p>
-      <div class="question-answer-receipt"><span>${cancelled ? "Result" : "Answer"}</span><strong>${escapeHtml(answer)}</strong></div>
+      <div class="question-answer-receipt"><span>${cancelled ? "Result" : terminalCheckpoint ? "Continue" : "Answer"}</span><strong>${escapeHtml(answer)}</strong></div>
     </article>`;
 }
 

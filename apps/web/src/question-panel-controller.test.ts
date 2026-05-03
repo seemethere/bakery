@@ -39,12 +39,12 @@ describe("question card controller", () => {
     expect(html).toContain("<strong>Safe</strong><em>Recommended</em>");
   });
 
-  test("collapses custom answers behind a desktop toggle when options exist", () => {
+  test("uses the normal composer for freeform answers", () => {
     const html = renderQuestionPanel(question, true, true);
 
-    expect(html).toContain("question-custom is-collapsed");
-    expect(html).toContain("questionCustomToggle");
-    expect(html).toContain("Custom answer");
+    expect(html).not.toContain("questionCustomToggle");
+    expect(html).not.toContain("Custom answer");
+    expect(html).toContain("Or reply normally in the composer.");
   });
 
   test("renders a disabled submitting state while an answer is in flight", () => {

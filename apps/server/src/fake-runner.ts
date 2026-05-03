@@ -136,6 +136,12 @@ class FakeSessionHandle implements SessionHandle {
     this.sessionManager.appendMessage({ role: "user", content: userContent } as never);
     this.emit({ type: "message_end", message: user });
 
+    if (this.pendingQuestion) {
+      this.pendingQuestion = null;
+      this.questionResolver = null;
+      this.emitQuestionUpdate();
+    }
+
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
     const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript;
@@ -459,13 +465,9 @@ class FakeSessionHandle implements SessionHandle {
     this.emit({ type: "tool_execution_start", toolCallId, toolName: "ask_question", args });
     this.pendingQuestion = { id: crypto.randomUUID(), ...args, createdAt: new Date().toISOString() };
     this.emitQuestionUpdate();
-    const answer = await new Promise<Required<Pick<AnswerQuestionPayload, "cancelled">> & Omit<AnswerQuestionPayload, "cancelled">>((resolve) => {
-      this.questionResolver = resolve;
-    });
-    const result = answer.cancelled
-      ? { content: [{ type: "text", text: "User cancelled the question." }], details: { questionId: answer.questionId, question: args.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } }
-      : { content: [{ type: "text", text: `${answer.wasCustom ? "User wrote" : `User selected option ${(answer.selectedIndex ?? 0) + 1}`}: ${answer.answer ?? ""}` }], details: { questionId: answer.questionId, question: args.question, answer: answer.answer ?? null, selectedIndex: answer.selectedIndex ?? null, wasCustom: answer.wasCustom ?? false, cancelled: false } };
+    const result = { content: [{ type: "text", text: "Question checkpoint shown to the operator. The operator will continue in chat." }], details: { questionId: this.pendingQuestion.id, question: args.question, options: args.options, recommendedOptionIndex: args.recommendedOptionIndex ?? null, terminalCheckpoint: true, cancelled: false } };
     this.emit({ type: "tool_execution_end", toolCallId, toolName: "ask_question", result, isError: false });
+    if (!isPlanWorkflow) return;
     const planSummary = [
       "## Plan summary",
       "",
@@ -492,7 +494,7 @@ class FakeSessionHandle implements SessionHandle {
       "",
       PLAN_ACTIONS_MARKER,
     ].join("\n");
-    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : isPlanWorkflow ? planSummary : `Thanks — I'll proceed with: ${answer.answer}.` };
+    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: planSummary };
     this.messages.push(assistant);
     this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: assistant });

@@ -865,11 +865,6 @@ class PiWebAgentApp extends HTMLElement {
     const input = this.querySelector<HTMLTextAreaElement>("#prompt");
     const text = promptTextFromInput(input?.value, this.promptImages.length);
     if (!input || !text) return;
-    if (this.pendingQuestion) {
-      this.notice = "Answer the question in the transcript to continue.";
-      this.render();
-      return;
-    }
     const bash = type === "prompt" ? parseBashPrompt(text) : null;
     if (bash && this.promptImages.length > 0) {
       this.notice = "Remove image attachments before running a bash command.";
@@ -939,7 +934,8 @@ class PiWebAgentApp extends HTMLElement {
       this.sendClientMessage("prompt");
       return;
     }
-    if (this.status === "running" && /^\/bakery:generate-details(?:\s|$)/i.test(text)) this.sendClientMessage("command");
+    if (this.pendingQuestion) this.sendClientMessage("prompt");
+    else if (this.status === "running" && /^\/bakery:generate-details(?:\s|$)/i.test(text)) this.sendClientMessage("command");
     else if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
     else this.sendClientMessage("prompt");
   }
@@ -1048,7 +1044,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private answerPendingQuestion(payload: QuestionAnswerPayload): void {
-    if (!this.pendingQuestion) return;
+    if (!this.pendingQuestion || !payload.answer || payload.cancelled) return;
     if (this.answeringQuestionId === this.pendingQuestion.id) return;
     if (!(this.controller?.isController ?? true)) {
       this.notice = "Take control before answering this question.";
@@ -1060,20 +1056,20 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
+    const text = payload.answer.trim();
+    if (!text) return;
     this.focusPromptOnNextReadyRender = true;
     this.answeringQuestionId = this.pendingQuestion.id;
+    this.pendingQuestion = null;
     this.forceFullRender = true;
+    this.ws.send(JSON.stringify(buildComposerSendPayload("prompt", text, [])));
+    this.setAgentStatus("running");
+    this.promptDraft = "";
+    this.savePromptDraft();
+    this.promptImages = [];
+    this.closeFileAutocomplete();
+    this.closeCommandAutocomplete();
     this.requestRender(0);
-    this.ws.send(JSON.stringify({
-      type: "answer_question",
-      payload: {
-        questionId: this.pendingQuestion.id,
-        selectedIndex: payload.selectedIndex ?? null,
-        wasCustom: payload.wasCustom ?? false,
-        cancelled: payload.cancelled ?? false,
-        ...(payload.answer ? { answer: payload.answer } : {}),
-      },
-    }));
   }
 
   private handleQuestionPanelKeydown(event: KeyboardEvent): void {
@@ -1572,17 +1568,21 @@ class PiWebAgentApp extends HTMLElement {
   private renderQuestionCheckpointHint(isController: boolean): string {
     if (!this.pendingQuestion) return "";
     const text = !isController
-      ? "Take control to answer the question in the transcript."
+      ? "Take control to answer this question."
       : this.connectionState !== "connected"
-        ? "Reconnect to answer the question in the transcript."
-        : "Answer the question in the transcript to continue.";
+        ? "Reconnect to answer this question."
+        : "Reply below or choose an option from the question card.";
     return `<section class="question-composer-hint" aria-live="polite">${escapeHtml(text)}</section>`;
   }
 
   private renderedTranscriptItems(): TranscriptItem[] {
     if (!this.pendingQuestion) return this.transcript;
     const isController = this.controller?.isController ?? true;
-    return [...this.transcript, pendingQuestionTranscriptItem(this.pendingQuestion, { isController, isConnected: this.connectionState === "connected", isSubmitting: this.answeringQuestionId === this.pendingQuestion.id })];
+    const transcript = this.transcript.filter((item) => {
+      const details = isRecord(item.raw) && isRecord(item.raw.details) ? item.raw.details : null;
+      return !(item.kind === "question" && details?.terminalCheckpoint === true && details.question === this.pendingQuestion?.question);
+    });
+    return [...transcript, pendingQuestionTranscriptItem(this.pendingQuestion, { isController, isConnected: this.connectionState === "connected", isSubmitting: this.answeringQuestionId === this.pendingQuestion.id })];
   }
 
 
@@ -1947,7 +1947,7 @@ class PiWebAgentApp extends HTMLElement {
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = isNoContextBashPromptDraft(this.promptDraft);
     const currentComposerModeLabel = composerModeLabel(this.promptDraft, this.status);
-    const canSendFromComposer = isController && !this.pendingQuestion && this.hasComposerSendContent();
+    const canSendFromComposer = isController && this.hasComposerSendContent();
     const promptSendDisabled = canSendFromComposer ? "" : "disabled";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
     const sendIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>`;
@@ -2031,7 +2031,7 @@ class PiWebAgentApp extends HTMLElement {
                 ${this.renderViewerCount()}
                 ${this.renderContextUsageNotice()}
               </div>
-              <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+              <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (this.pendingQuestion ? "Reply to the question... Paste/drop screenshots, type / for commands or @ for files." : isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
               ${this.renderComposerNotice()}
               ${renderCommandAutocomplete(this.autocomplete.command)}
               ${renderFileAutocomplete(this.autocomplete.file)}

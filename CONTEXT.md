@@ -67,12 +67,13 @@ The machine-readable final marker in a completed `/plan` response that lets Bake
 
 ### Question Card
 
-The transcript card used when the agent asks the operator for a decision through Bakery. A pending Question Card is core Bakery interaction infrastructure and a blocking checkpoint in the transcript: Bakery scrolls/focuses it, the normal composer cannot submit a new prompt until it is answered, and the completed card remains as the readable question-and-answer receipt.
+The transcript card used when the agent asks the operator for a decision through Bakery. A Question Card is a terminal assistant checkpoint: Bakery presents the question in the transcript, returns the session to normal chat input, and lets the operator continue with either a tapped option or a normal composer send.
 
 - Not: a generic composer panel or low-level tool-call receipt.
 - Not: duplicate visible tool activity for the underlying `ask_question` tool.
-- Not: an Extension Card in the first implementation; extensions may later reuse a similar interactive checkpoint shape, but the built-in operator question flow owns session blocking, focus, composer state, and controller/viewer permissions.
-- Example: during a `/plan` interview, the agent asks which UX direction to pursue; Bakery shows a compact pending Question Card with recommended options, then resolves it into a read-only answered Question Card after the operator chooses.
+- Not: a long-lived custom-answer form embedded in the transcript; freeform responses belong in the normal composer, including the composer’s usual attachment affordances.
+- Not: an Extension Card in the first implementation; extensions may later reuse a similar interactive checkpoint shape, but the built-in operator question flow owns session checkpointing, focus, composer state, and controller/viewer permissions.
+- Example: during a `/plan` interview, the agent asks which UX direction to pursue; Bakery shows a compact Question Card with recommended options. The operator can tap an option to send it as the next chat turn, or type a normal response in the composer.
 
 ### Bundled Extension
 
