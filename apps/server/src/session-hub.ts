@@ -6,6 +6,7 @@ import {
   type HelloMessage,
   type ServerEnvelope,
   type ServerMessage,
+  type SessionSnapshot,
   type WebSession,
 } from "@pi-web-agent/protocol";
 import type { ServerConfig } from "./config.js";
@@ -106,7 +107,7 @@ class SessionHub {
       clientId,
     };
     socket.send(JSON.stringify(hello));
-    void this.handle.snapshot(webSession).then((snapshot) => {
+    void this.snapshotWithWebCommands(webSession).then((snapshot) => {
       this.send(client, { type: "session_snapshot", snapshot: { ...snapshot, controller: this.controllerFor(clientId) } });
       this.broadcastControllerUpdate();
     });
@@ -221,6 +222,20 @@ class SessionHub {
     }
   }
 
+  private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
+    const snapshot = await this.handle.snapshot(webSession);
+    const commandMessages = this.deps.store.listWebCommandResults(webSession.id).map((record) => ({
+      role: "webCommandResult",
+      id: record.id,
+      title: record.title,
+      body: record.body,
+      isError: record.isError,
+      timestamp: record.timestamp,
+      ...(record.data !== undefined ? { data: record.data } : {}),
+    }));
+    return { ...snapshot, messages: [...snapshot.messages, ...commandMessages] };
+  }
+
   private commandServices() {
     return {
       generateSessionDetails: async (options: Parameters<typeof generateAndApplySessionDetails>[2]) => {
@@ -237,12 +252,13 @@ class SessionHub {
   }
 
   private async emitCommandResult(title: string, body: string, isError = false, data?: unknown): Promise<void> {
+    const record = this.deps.store.addWebCommandResult(this.handle.id, { title, body, isError, ...(data !== undefined ? { data } : {}) });
     this.broadcast({
       type: "agent_event",
       event: {
         type: "web_command_result",
-        time: new Date().toISOString(),
-        data: { type: "web_command_result", id: `command:${Date.now()}`, title, body, isError, ...(data !== undefined ? { data } : {}) },
+        time: record.timestamp,
+        data: { type: "web_command_result", id: record.id, title: record.title, body: record.body, isError: record.isError, ...(record.data !== undefined ? { data: record.data } : {}) },
       },
     });
     await this.broadcastSettingsUpdate();
@@ -358,14 +374,7 @@ class SessionHub {
           } else {
             body = `Current title: ${webSession.title ?? "(unset)"}\nSource: ${webSession.titleSource}\nUsage: /name <title> or /name --clear`;
           }
-          this.broadcast({
-            type: "agent_event",
-            event: {
-              type: "web_command_result",
-              time: new Date().toISOString(),
-              data: { type: "web_command_result", id: `command:${Date.now()}`, title: "/name", body },
-            },
-          });
+          await this.emitCommandResult("/name", body);
           return;
         }
         if (await this.runBundledCommandText(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent))) return;
@@ -381,22 +390,7 @@ class SessionHub {
             await this.broadcastSettingsUpdate();
             return;
           }
-          this.broadcast({
-            type: "agent_event",
-            event: {
-              type: "web_command_result",
-              time: new Date().toISOString(),
-              data: {
-                type: "web_command_result",
-                id: `command:${Date.now()}`,
-                title: builtinResult.title ?? "Slash command",
-                body: builtinResult.body ?? "",
-                isError: builtinResult.isError ?? false,
-                ...(builtinResult.data !== undefined ? { data: builtinResult.data } : {}),
-              },
-            },
-          });
-          await this.broadcastSettingsUpdate();
+          await this.emitCommandResult(builtinResult.title ?? "Slash command", builtinResult.body ?? "", builtinResult.isError ?? false, builtinResult.data);
           return;
         }
         const webSession = this.deps.store.getSession(this.handle.id);

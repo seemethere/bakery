@@ -15,6 +15,7 @@ let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
 let pendingQuestionTranscriptItem: typeof import("./transcript").pendingQuestionTranscriptItem;
 let isRenderableTranscriptItem: typeof import("./transcript").isRenderableTranscriptItem;
+let messageToTranscriptItem: typeof import("./transcript").messageToTranscriptItem;
 let extensionCardPayload: typeof import("./extension-cards").extensionCardPayload;
 
 beforeAll(async () => {
@@ -30,7 +31,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, messageToTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -250,6 +251,25 @@ describe("transcript plan actions", () => {
 });
 
 describe("extension card payload", () => {
+  test("restores structured extension card payloads from snapshot web command messages", () => {
+    const item = messageToTranscriptItem({
+      role: "webCommandResult",
+      id: "command:metadata",
+      title: "/bakery:generate-details",
+      body: "Updated title and summary.",
+      isError: false,
+      data: {
+        kind: "extension_card",
+        card: { kind: "bakery.metadataDetails", props: { applied: ["title"], title: "Details" } },
+      },
+      timestamp: "2026-05-03T00:00:00.000Z",
+    }, "snapshot:command");
+
+    expect(item.id).toBe("command:metadata");
+    expect(item.title).toBe("/bakery:generate-details");
+    expect(extensionCardPayload(item)).toMatchObject({ kind: "bakery.metadataDetails", props: { title: "Details" } });
+  });
+
   test("extracts structured extension card payloads", () => {
     const item: TranscriptItem = {
       id: "command:metadata",

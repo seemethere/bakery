@@ -9,6 +9,25 @@ export type SessionPreferences = {
   uiStateJson: string | null;
 };
 
+export type WebCommandResultRecord = {
+  id: string;
+  title: string;
+  body: string;
+  isError: boolean;
+  data?: unknown;
+  timestamp: string;
+};
+
+type WebCommandResultRow = {
+  id: string;
+  web_session_id: string;
+  title: string;
+  body: string;
+  is_error: number;
+  data_json: string | null;
+  timestamp: string;
+};
+
 type SessionRow = {
   id: string;
   cwd: string;
@@ -120,6 +139,17 @@ export class MetadataStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS web_command_results (
+        id TEXT PRIMARY KEY,
+        web_session_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        is_error INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT,
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
+      );
     `);
     this.addColumn("web_sessions", "isolation_kind TEXT NOT NULL DEFAULT 'none'", "isolation_kind");
     this.addColumn("web_sessions", "source_cwd TEXT", "source_cwd");
@@ -201,6 +231,35 @@ export class MetadataStore {
            ui_state_json = COALESCE(excluded.ui_state_json, session_preferences.ui_state_json)`,
       )
       .run(id, input.toolPermissionMode ?? null, input.uiStateJson ?? null);
+  }
+
+  addWebCommandResult(sessionId: string, input: { id?: string; title: string; body: string; isError?: boolean; data?: unknown; timestamp?: string }): WebCommandResultRecord {
+    const record: WebCommandResultRecord = {
+      id: input.id ?? `command:${crypto.randomUUID()}`,
+      title: input.title,
+      body: input.body,
+      isError: Boolean(input.isError),
+      ...(input.data !== undefined ? { data: input.data } : {}),
+      timestamp: input.timestamp ?? new Date().toISOString(),
+    };
+    this.db
+      .query("INSERT OR REPLACE INTO web_command_results (id, web_session_id, title, body, is_error, data_json, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(record.id, sessionId, record.title, record.body, record.isError ? 1 : 0, record.data === undefined ? null : JSON.stringify(record.data), record.timestamp);
+    return record;
+  }
+
+  listWebCommandResults(sessionId: string): WebCommandResultRecord[] {
+    return this.db
+      .query<WebCommandResultRow, [string]>("SELECT * FROM web_command_results WHERE web_session_id = ? ORDER BY timestamp ASC, id ASC")
+      .all(sessionId)
+      .map((row) => ({
+        id: row.id,
+        title: row.title,
+        body: row.body,
+        isError: Boolean(row.is_error),
+        ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
+        timestamp: row.timestamp,
+      }));
   }
 
   getSettings(): AppSettings {

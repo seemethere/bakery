@@ -925,6 +925,16 @@ function compactWorkflowLaunch(text: string): { body: string; segments: Transcri
   return { body, segments: [{ kind: "markdown", text: body }] };
 }
 
+function webCommandResultToTranscriptLike(event: Record<string, unknown>, fallbackId: string): TranscriptItem {
+  return {
+    id: String(event.id ?? fallbackId),
+    kind: event.isError ? "error" : "system",
+    title: String(event.title ?? "Slash command"),
+    body: String(event.body ?? ""),
+    raw: event,
+  };
+}
+
 export function messageToTranscriptItem(message: unknown, fallbackId: string): TranscriptItem {
   if (!isRecord(message)) {
     return { id: fallbackId, kind: "system", title: "Event", body: stringify(message), raw: message };
@@ -938,6 +948,18 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
     return { id: messageKey(message, fallbackId), kind: "user", title: "You", body: compact?.body ?? body, segments: compact?.segments ?? segments, raw: message };
   }
   if (role === "assistant") return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, raw: message };
+  if (role === "webCommandResult") {
+    const commandEvent = {
+      type: "web_command_result",
+      id: message.id,
+      title: message.title,
+      body: message.body,
+      isError: message.isError,
+      data: message.data,
+      time: message.timestamp,
+    };
+    return webCommandResultToTranscriptLike(commandEvent, fallbackId);
+  }
   if (role === "bashExecution") {
     const command = String(message.command ?? "bash");
     const output = String(message.output ?? "");
