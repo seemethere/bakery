@@ -184,12 +184,14 @@ describe("transcript plan actions", () => {
 
     const html = renderTranscriptSegments(item, false);
 
-    expect(html).toContain("assistant-generating-card");
+    expect(html).toContain("assistant-streaming-placeholder");
+    expect(html).toContain("assistant-streaming-spinner");
     expect(html).toContain("aria-label=\"Assistant response generating\"");
     expect(html).toContain("Pi is responding…");
     expect(html).not.toContain("Raw heading");
     expect(html).not.toContain("raw streamed list item");
-    expect(renderAssistantStreamingPlaceholder()).toContain("plan-card-spinner");
+    expect(html).not.toContain("plan-card");
+    expect(renderAssistantStreamingPlaceholder()).toContain("assistant-streaming-spinner");
   });
 
   test("renders completed assistant markdown normally", () => {

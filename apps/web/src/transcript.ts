@@ -103,20 +103,19 @@ function plainTextSummary(text: string, maxLength: number): string {
   return `${plain.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function renderAssistantGeneratingCard(label: string, ariaLabel: string, className = "assistant-generating-card"): string {
-  return `<article class="${escapeHtml(className)}" aria-live="polite" aria-label="${escapeHtml(ariaLabel)}">
-      <div class="plan-card-header">
-        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>${escapeHtml(label)}</span>
-      </div>
-    </article>`;
-}
-
 export function renderAssistantStreamingPlaceholder(): string {
-  return renderAssistantGeneratingCard("Pi is responding…", "Assistant response generating");
+  return `<div class="assistant-streaming-placeholder" aria-live="polite" aria-label="Assistant response generating">
+      <span class="assistant-streaming-spinner" aria-hidden="true"></span>
+      <span>Pi is responding…</span>
+    </div>`;
 }
 
 export function renderPlanGeneratingCard(): string {
-  return renderAssistantGeneratingCard("Generating Plan", "Generating plan", "plan-card generating");
+  return `<article class="plan-card generating" aria-live="polite" aria-label="Generating plan">
+      <div class="plan-card-header">
+        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>Generating Plan</span>
+      </div>
+    </article>`;
 }
 
 function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUrl?: RenderContext["localImageUrl"]): string {

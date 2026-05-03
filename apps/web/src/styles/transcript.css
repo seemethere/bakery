@@ -236,9 +236,28 @@
   padding: 0;
 }
 
+.assistant-streaming-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.assistant-streaming-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--color-text-muted) 24%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-accent-soft) 65%, var(--color-text-muted));
+  border-radius: 999px;
+  animation: tool-running-spinner 900ms linear infinite;
+  flex: 0 0 auto;
+}
+
 .metadata-details-card,
-.plan-card,
-.assistant-generating-card {
+.plan-card {
   display: grid;
   gap: 12px;
   border: 1px solid color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-border));
@@ -285,16 +304,13 @@
   transform: translateY(-1px);
 }
 
-.plan-card.generating,
-.assistant-generating-card {
+.plan-card.generating {
   min-height: 72px;
   cursor: default;
 }
 
 .plan-card.generating:hover,
-.plan-card.generating:focus-visible,
-.assistant-generating-card:hover,
-.assistant-generating-card:focus-visible {
+.plan-card.generating:focus-visible {
   border-color: color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-border));
   transform: none;
 }
