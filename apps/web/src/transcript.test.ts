@@ -8,6 +8,7 @@ let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDev
 let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
 let isGeneratingPlanItem: typeof import("./transcript").isGeneratingPlanItem;
 let renderPlanGeneratingCard: typeof import("./transcript").renderPlanGeneratingCard;
+let renderAssistantStreamingPlaceholder: typeof import("./transcript").renderAssistantStreamingPlaceholder;
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
@@ -29,7 +30,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -169,6 +170,40 @@ describe("transcript plan actions", () => {
     expect(html).toContain("plan-card-spinner");
     expect(html).toContain("Generating Plan");
     expect(html).not.toContain(">Generating</span>");
+  });
+
+  test("renders normal running assistant output as a generic streaming placeholder", () => {
+    const item: TranscriptItem = {
+      id: "assistant-running",
+      kind: "assistant",
+      title: "Pi",
+      body: "## Raw heading\n\n- raw streamed list item",
+      segments: [{ kind: "markdown", text: "## Raw heading\n\n- raw streamed list item" }],
+      status: "running",
+    };
+
+    const html = renderTranscriptSegments(item, false);
+
+    expect(html).toContain("assistant-generating-card");
+    expect(html).toContain("aria-label=\"Assistant response generating\"");
+    expect(html).toContain("Pi is responding…");
+    expect(html).not.toContain("Raw heading");
+    expect(html).not.toContain("raw streamed list item");
+    expect(renderAssistantStreamingPlaceholder()).toContain("plan-card-spinner");
+  });
+
+  test("renders completed assistant markdown normally", () => {
+    const html = renderTranscriptSegments({
+      id: "assistant-done",
+      kind: "assistant",
+      title: "Pi",
+      body: "## Rendered heading\n\n- rendered list item",
+      status: "done",
+    }, false);
+
+    expect(html).toContain("<h2>Rendered heading</h2>");
+    expect(html).toContain("rendered list item");
+    expect(html).not.toContain("Pi is responding…");
   });
 
   test("detects and strips the final /plan action marker", () => {

@@ -237,7 +237,8 @@
 }
 
 .metadata-details-card,
-.plan-card {
+.plan-card,
+.assistant-generating-card {
   display: grid;
   gap: 12px;
   border: 1px solid color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-border));
@@ -284,13 +285,16 @@
   transform: translateY(-1px);
 }
 
-.plan-card.generating {
+.plan-card.generating,
+.assistant-generating-card {
   min-height: 72px;
   cursor: default;
 }
 
 .plan-card.generating:hover,
-.plan-card.generating:focus-visible {
+.plan-card.generating:focus-visible,
+.assistant-generating-card:hover,
+.assistant-generating-card:focus-visible {
   border-color: color-mix(in srgb, var(--color-accent-soft) 36%, var(--color-border));
   transform: none;
 }

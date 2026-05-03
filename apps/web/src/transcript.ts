@@ -103,12 +103,20 @@ function plainTextSummary(text: string, maxLength: number): string {
   return `${plain.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-export function renderPlanGeneratingCard(): string {
-  return `<article class="plan-card generating" aria-live="polite" aria-label="Generating plan">
+function renderAssistantGeneratingCard(label: string, ariaLabel: string, className = "assistant-generating-card"): string {
+  return `<article class="${escapeHtml(className)}" aria-live="polite" aria-label="${escapeHtml(ariaLabel)}">
       <div class="plan-card-header">
-        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>Generating Plan</span>
+        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>${escapeHtml(label)}</span>
       </div>
     </article>`;
+}
+
+export function renderAssistantStreamingPlaceholder(): string {
+  return renderAssistantGeneratingCard("Pi is responding…", "Assistant response generating");
+}
+
+export function renderPlanGeneratingCard(): string {
+  return renderAssistantGeneratingCard("Generating Plan", "Generating plan", "plan-card generating");
 }
 
 function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUrl?: RenderContext["localImageUrl"]): string {
@@ -694,8 +702,10 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
     return renderReadOnlyQuestionCard(item);
   }
 
+  if (item.kind === "assistant" && item.status === "running") return renderAssistantStreamingPlaceholder();
+
   const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
-  const usePlainStreamingText = item.status === "running" && (item.kind === "assistant" || item.kind === "user");
+  const usePlainStreamingText = item.status === "running" && item.kind === "user";
   const usePlainStreamingToolOutput = item.status === "running" && item.kind === "tool";
   const rendered = segments
     .map((segment) => {
@@ -796,9 +806,11 @@ export class PiTranscriptRow extends HTMLElement {
     }).join("|") ?? "";
     const hasPlanActions = hasPlanActionsMarker(item);
     const isGeneratingPlan = isGeneratingPlanItem(item);
-    const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : "";
+    const isStreamingAssistant = item.kind === "assistant" && item.status === "running";
+    const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : isStreamingAssistant ? "assistant-generating" : "";
     const questionRenderState = item.kind === "question" && isRecord(item.raw) ? stringify(item.raw) : "";
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${questionRenderState}:${streamingText !== null ? "streaming" : `${item.body}:${segmentKey}`}`;
+    const contentRenderKey = streamingText !== null ? "streaming" : isStreamingAssistant ? "assistant-generating" : `${item.body}:${segmentKey}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${questionRenderState}:${contentRenderKey}`;
     if (renderKey === this.lastRenderKey) {
       if (canPatchText && streamingText !== this.lastStreamingText) {
         streamingTextTarget!.textContent = streamingText ?? "";
@@ -813,7 +825,7 @@ export class PiTranscriptRow extends HTMLElement {
     const hasQuestionCard = item.kind === "question";
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
-    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : isGeneratingPlan ? renderPlanGeneratingCard() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : isGeneratingPlan ? renderPlanGeneratingCard() : isStreamingAssistant ? renderAssistantStreamingPlaceholder() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     const isStandaloneCard = hasCustomCard || hasQuestionCard;
     this.innerHTML = isStandaloneCard ? `
@@ -877,7 +889,8 @@ export class PiTranscriptRow extends HTMLElement {
 
   private streamingText(): string | null {
     if (!this.item || this.item.status !== "running") return null;
-    if (this.item.kind === "assistant" || this.item.kind === "user") {
+    if (this.item.kind === "assistant") return null;
+    if (this.item.kind === "user") {
       const segments = this.item.segments?.length ? this.item.segments : [{ kind: "markdown", text: this.item.body } satisfies TranscriptSegment];
       return segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown").map((segment) => segment.text).join("\n\n");
     }

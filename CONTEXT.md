@@ -65,6 +65,13 @@ The machine-readable final marker in a completed `/plan` response that lets Bake
 - Not: part of the natural-language plan itself.
 - Example: the final standalone marker `Plan actions: Accept plan` is converted into a Plan Card with an Accept Plan action by Bakery.
 
+### Assistant Streaming Placeholder
+
+The compact transcript card Bakery shows while an assistant response is still streaming, instead of showing raw pre-render markdown or partial final text. The placeholder confirms that Pi is responding, then gives way to the fully rendered assistant message when the response completes.
+
+- Not: a replacement for live tool activity, Question Cards, or the completed assistant response.
+- Example: an operator sends a normal prompt, sees a small “Pi is responding…” card while the answer streams, and then sees the final rendered markdown message when streaming finishes.
+
 ### Question Card
 
 The transcript card used when the agent asks the operator for a decision through Bakery. A Question Card is a terminal assistant checkpoint: Bakery presents the question in the transcript, returns the session to normal chat input, and lets the operator continue with either a tapped option or a normal composer send.
