@@ -52,11 +52,11 @@ The canonical Workflow Command for reaching shared understanding before implemen
 
 ### Plan Card
 
-The operator-facing summary card rendered for a completed `/plan` response. It shows the plan's summary and smallest next slice, opens the full rendered plan when clicked, and offers an Accept Plan action that prepares the composer instead of immediately starting work.
+The operator-facing transcript card rendered for a `/plan` response. While the final plan is still streaming, it shows a generating state; when complete, it shows the plan's summary and smallest next slice, opens the full rendered plan when clicked, and offers an Accept Plan action that prepares the composer instead of immediately starting work.
 
 - Not: a composer takeover; the normal composer remains available for chat or edits while the Plan Card carries the plan-specific affordance.
-- Not: a replacement for the full plan details; the full rendered plan remains available from the card.
-- Example: an operator finishes a `/plan` interview, clicks the Plan Card to inspect the detailed markdown plan, then accepts it to prefill the composer with the implementation prompt.
+- Not: a replacement for the full plan details; the full rendered plan remains available from the ready card.
+- Example: an operator finishes a `/plan` interview, sees a generating Plan Card while the final answer streams, clicks the ready Plan Card to inspect the detailed markdown plan, then accepts it to prefill the composer with the implementation prompt.
 
 ### Plan Actions
 

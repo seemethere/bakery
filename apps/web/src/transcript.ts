@@ -103,10 +103,10 @@ function plainTextSummary(text: string, maxLength: number): string {
   return `${plain.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function renderPlanGeneratingCard(): string {
+export function renderPlanGeneratingCard(): string {
   return `<article class="plan-card generating" aria-live="polite" aria-label="Generating plan">
       <div class="plan-card-header">
-        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>Generating</span>
+        <span class="plan-card-kicker"><span class="plan-card-spinner" aria-hidden="true"></span>Generating Plan</span>
       </div>
     </article>`;
 }

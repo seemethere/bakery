@@ -7,6 +7,7 @@ let renderTranscriptSegments: typeof import("./transcript").renderTranscriptSegm
 let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDeveloperBash;
 let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
 let isGeneratingPlanItem: typeof import("./transcript").isGeneratingPlanItem;
+let renderPlanGeneratingCard: typeof import("./transcript").renderPlanGeneratingCard;
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
@@ -28,7 +29,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -158,6 +159,16 @@ describe("transcript plan actions", () => {
     expect(isGeneratingPlanItem({ ...item, status: "done" })).toBe(false);
     expect(isGeneratingPlanItem({ ...item, body: `${item.body}\n\n${PLAN_ACTIONS_MARKER}` })).toBe(false);
     expect(isGeneratingPlanItem({ ...item, body: "", segments: [{ kind: "markdown", text: item.body }] })).toBe(true);
+  });
+
+  test("renders running final /plan output as a generating Plan Card", () => {
+    const html = renderPlanGeneratingCard();
+
+    expect(html).toContain("plan-card generating");
+    expect(html).toContain("aria-label=\"Generating plan\"");
+    expect(html).toContain("plan-card-spinner");
+    expect(html).toContain("Generating Plan");
+    expect(html).not.toContain(">Generating</span>");
   });
 
   test("detects and strips the final /plan action marker", () => {
