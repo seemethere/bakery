@@ -199,21 +199,28 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
 export async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareSession(page);
-  await page.locator("#prompt").fill("Run a tool and produce a long narrow-width streaming response for layout validation.");
+  await page.locator("#prompt").fill("Please run many long narrow tools and produce a streaming response for layout validation.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
-  await page.locator(".message.tool.running").first().waitFor({ timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 1, null, { timeout: 15_000 });
   const mobileActivityDefault = await page.evaluate(() => {
-    const running = document.querySelector<HTMLElement>(".message.tool.running");
+    const tool = document.querySelector<HTMLElement>(".message.tool.running") ?? document.querySelector<HTMLElement>(".message.tool");
+    const transcript = document.querySelector<HTMLElement>(".transcript");
     return {
       mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
-      collapsed: running?.classList.contains("collapsed") ?? false,
+      collapsed: tool?.classList.contains("collapsed") ?? false,
+      toolRunning: tool?.classList.contains("running") ?? false,
       activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
       activityMembers: document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length,
+      hasJumpToLatest: Boolean(document.querySelector("#jumpToLatest")),
+      bottomGap: transcript ? Math.round(transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop) : null,
     };
   });
   if (!mobileActivityDefault.mobile || !mobileActivityDefault.collapsed || mobileActivityDefault.activityCards !== 0 || mobileActivityDefault.activityMembers !== 0) {
     throw new Error(`Expected running tool row to default to collapsed without activity wrappers, saw ${JSON.stringify(mobileActivityDefault)}`);
+  }
+  if (mobileActivityDefault.hasJumpToLatest || (mobileActivityDefault.bottomGap ?? 999) > 80) {
+    throw new Error(`Expected transcript auto-scroll to stay pinned during running tool stream, saw ${JSON.stringify(mobileActivityDefault)}`);
   }
   await page.evaluate(() => {
     if (window.__piWebPerf) {
@@ -230,13 +237,25 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   });
   await page.screenshot({ path: join(artifactDir, "tool-stream.png"), fullPage: true });
   await waitForAgentIdle(page, 30_000);
-  const completedActivityDefault = await page.evaluate(() => ({
-    activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
-    activityMembers: document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length,
-    collapsedTools: document.querySelectorAll(".message.tool.collapsed").length,
-  }));
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    return Boolean(transcript && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 80 && !document.querySelector("#jumpToLatest"));
+  }, null, { timeout: 5_000 });
+  const completedActivityDefault = await page.evaluate(() => {
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    return {
+      activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
+      activityMembers: document.querySelectorAll('pi-transcript-row[data-tool-activity-member]').length,
+      collapsedTools: document.querySelectorAll(".message.tool.collapsed").length,
+      hasJumpToLatest: Boolean(document.querySelector("#jumpToLatest")),
+      bottomGap: transcript ? Math.round(transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop) : null,
+    };
+  });
   if (completedActivityDefault.activityCards !== 0 || completedActivityDefault.activityMembers !== 0 || completedActivityDefault.collapsedTools < 1) {
     throw new Error(`Expected completed tools to remain collapsed flat rows, saw ${JSON.stringify(completedActivityDefault)}`);
+  }
+  if (completedActivityDefault.hasJumpToLatest || (completedActivityDefault.bottomGap ?? 999) > 80) {
+    throw new Error(`Expected transcript auto-scroll to finish pinned after narrow tool stream, saw ${JSON.stringify(completedActivityDefault)}`);
   }
   const toolStreamPerf = await page.evaluate(() => window.__piWebPerf ? { renderCount: window.__piWebPerf.renderCount, patchCount: window.__piWebPerf.patchCount, rowUpdateCount: window.__piWebPerf.rowUpdateCount ?? 0 } : null);
   if ((toolStreamPerf?.renderCount ?? 0) > 2) throw new Error(`Expected tool streaming to avoid repeated full renders, saw ${JSON.stringify(toolStreamPerf)}`);

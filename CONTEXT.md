@@ -72,6 +72,14 @@ The compact transcript card Bakery shows while an assistant response is still st
 - Not: a replacement for live tool activity, Question Cards, or the completed assistant response.
 - Example: an operator sends a normal prompt, sees a small “Pi is responding…” card while the answer streams, and then sees the final rendered markdown message when streaming finishes.
 
+### Transcript Auto-scroll
+
+The transcript behavior that keeps the latest streamed assistant text, tool activity, and other new session events visible while the operator has not intentionally scrolled away.
+
+- Also known as: follow latest, pin to latest.
+- Not: forcing the transcript to jump while the operator is deliberately reading older transcript content.
+- Example: during a long run with many tool calls, Bakery keeps the live tool activity pinned at the bottom until the operator scrolls upward, then shows Jump to latest instead of fighting the operator's scroll position.
+
 ### Question Card
 
 The transcript card used when the agent asks the operator for a decision through Bakery. A Question Card is a terminal assistant checkpoint: Bakery presents the question in the transcript, returns the session to normal chat input, and lets the operator continue with either a tapped option or a normal composer send.
