@@ -14,6 +14,7 @@ Use this skill to make workflow recommendations from local evidence instead of i
 - Prefer summaries: counts, durations, paths, command labels, artifact directories, and recommendations.
 - If a command output is likely to be large, redirect it to a temp file or run a narrower command first.
 - Use `bun run project:notes` before broad `PROJECT_LOG.md` reads.
+- Avoid broad raw searches over session directories and avoid reading screenshot/image payloads unless visual review explicitly requires the image itself.
 
 ## Quick start
 
@@ -24,10 +25,11 @@ bun run project:notes
 bun run report:iteration --agent-actions --recommend
 bun run report:iteration --session-context
 bun run report:iteration --session-history
+bun run report:iteration --session-history --days 2 --roi
 bun run report:iteration --session-history --latest-sessions 10 --exclude-current-session
 ```
 
-Use `--session-context` for the current/most recent session and `--session-history` to backfill available local JSONL session logs. Use `--latest-sessions 10 --exclude-current-session` when you want recent-history evidence without counting the active conversation.
+Use `--session-context` for the current/most recent session and `--session-history` to backfill available local JSONL session logs. Use `--session-history --days 2 --roi` for a repeatable today/yesterday optimization review; recent-day filtering uses local-calendar day boundaries and session log mtime. Use `--latest-sessions 10 --exclude-current-session` when you want recent-history evidence without counting the active conversation.
 
 ## Choosing validation commands
 
@@ -80,7 +82,10 @@ Run:
 
 ```bash
 bun run report:iteration --session-history
+bun run report:iteration --session-history --days 2 --roi
 ```
+
+Use the date-windowed command for today/yesterday reviews. Session-history date filters are mtime-based; `--days 2` means local-calendar today and yesterday through now, while explicit `--since`/`--until` windows are available for exact ranges.
 
 Use the aggregate sections to identify recurring optimization opportunities:
 

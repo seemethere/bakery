@@ -89,6 +89,18 @@ type SessionHistoryActionSummary = SessionActionSummary & {
   largestSessionToolResultChars: number;
 };
 
+type SessionLogCandidate = { path: string; mtimeMs: number; cwd?: string; bytes: number };
+
+type SessionHistoryFilter = {
+  basis: "mtime";
+  days?: number;
+  since?: string;
+  until?: string;
+  latestSessions: number;
+  excludeCurrentSession: boolean;
+  calendar: "local";
+};
+
 type SessionContextReport = {
   sessionPath?: string;
   sessionCwd?: string;
@@ -135,6 +147,9 @@ type SessionHistoryReport = {
   totalBytes: number;
   oldestMtime?: string;
   newestMtime?: string;
+  filter: SessionHistoryFilter;
+  sessionsByMtimeDay: Array<{ day: string; sessions: number }>;
+  candidateDirs: string[];
   cwdFrequency: Array<{ cwd: string; sessions: number }>;
   toolCallsByName: Record<string, number>;
   toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }>;
@@ -229,6 +244,76 @@ function parsePositiveIntegerFlag(names: string[]): number | undefined {
     if (Number.isInteger(value) && value > 0) return value;
   }
   return undefined;
+}
+
+function rawFlagValue(names: string[]): string | undefined {
+  for (const name of names) {
+    const index = cliArgs.findIndex((arg) => arg === name || arg.startsWith(`${name}=`));
+    if (index < 0) continue;
+    return cliArgs[index]?.includes("=") ? cliArgs[index]?.split("=", 2)[1] : cliArgs[index + 1];
+  }
+  return undefined;
+}
+
+function failCli(message: string): never {
+  console.error(`report:iteration: ${message}`);
+  process.exit(1);
+}
+
+function parseRequiredPositiveIntegerFlag(names: string[], label: string): number | undefined {
+  const raw = rawFlagValue(names);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) failCli(`${label} must be a positive integer; received ${JSON.stringify(raw)}`);
+  return value;
+}
+
+function parseLocalDateTimeFlag(names: string[], label: string): Date | undefined {
+  const raw = rawFlagValue(names);
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) failCli(`${label} requires a date or datetime value`);
+  const dateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 0, 0, 0, 0)
+    : new Date(trimmed);
+  if (Number.isNaN(date.getTime())) failCli(`${label} must be a valid date or datetime; received ${JSON.stringify(raw)}`);
+  return date;
+}
+
+function localMidnightDaysAgo(daysAgo: number, from = new Date()): Date {
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() - daysAgo, 0, 0, 0, 0);
+}
+
+function formatLocalDay(timestampMs: number): string {
+  const date = new Date(timestampMs);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function buildSessionHistoryFilter(): { filter: SessionHistoryFilter; sinceMs?: number; untilMs?: number } {
+  const days = parseRequiredPositiveIntegerFlag(["--days"], "--days");
+  const explicitSince = parseLocalDateTimeFlag(["--since"], "--since");
+  const explicitUntil = parseLocalDateTimeFlag(["--until"], "--until");
+  const now = new Date();
+  const since = explicitSince ?? (days ? localMidnightDaysAgo(days - 1, now) : undefined);
+  const until = explicitUntil ?? (days ? now : undefined);
+  if (since && until && since.getTime() > until.getTime()) failCli(`--since must be before or equal to --until (${since.toISOString()} > ${until.toISOString()})`);
+  return {
+    filter: {
+      basis: "mtime",
+      days,
+      since: since?.toISOString(),
+      until: until?.toISOString(),
+      latestSessions: maxSessionHistory,
+      excludeCurrentSession: excludeCurrentSessionFromHistory,
+      calendar: "local",
+    },
+    sinceMs: since?.getTime(),
+    untilMs: until?.getTime(),
+  };
 }
 
 function parseCommitType(subject: string): string | undefined {
@@ -513,10 +598,10 @@ function readSessionCwd(path: string): string | undefined {
   }
 }
 
-function collectSessionLogCandidates(dir: string, depth = 0): Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> {
+function collectSessionLogCandidates(dir: string, depth = 0): SessionLogCandidate[] {
   if (!existsSync(dir)) return [];
   const entries = readdirSync(dir, { withFileTypes: true });
-  const candidates: Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> = [];
+  const candidates: SessionLogCandidate[] = [];
   for (const entry of entries) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -530,7 +615,7 @@ function collectSessionLogCandidates(dir: string, depth = 0): Array<{ path: stri
   return candidates;
 }
 
-function sessionLogCandidates(): Array<{ path: string; mtimeMs: number; cwd?: string; bytes: number }> {
+function sessionLogCandidates(): SessionLogCandidate[] {
   return candidateSessionDirs().flatMap((dir) => collectSessionLogCandidates(dir));
 }
 
@@ -548,13 +633,16 @@ function findSessionLogPath(): string | undefined {
   return sorted.find((candidate) => cwdMatchesCurrentWorkspace(candidate.cwd))?.path ?? sorted[0]?.path;
 }
 
-function findSessionHistoryPaths(): string[] {
+function findSessionHistoryCandidates(): { candidates: SessionLogCandidate[]; filter: SessionHistoryFilter; candidateDirs: string[] } {
   const currentSessionPath = excludeCurrentSessionFromHistory ? findSessionLogPath() : undefined;
-  return sessionLogCandidates()
+  const { filter, sinceMs, untilMs } = buildSessionHistoryFilter();
+  const candidates = sessionLogCandidates()
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
     .filter((candidate) => !currentSessionPath || candidate.path !== currentSessionPath)
-    .slice(0, maxSessionHistory)
-    .map((candidate) => candidate.path);
+    .filter((candidate) => sinceMs === undefined || candidate.mtimeMs >= sinceMs)
+    .filter((candidate) => untilMs === undefined || candidate.mtimeMs <= untilMs)
+    .slice(0, maxSessionHistory);
+  return { candidates, filter, candidateDirs: candidateSessionDirs() };
 }
 
 function buildSessionContextReport(sessionPathOverride?: string): SessionContextReport {
@@ -925,8 +1013,9 @@ function buildFocusedHarnessInspections(validationCommands: SessionHistoryReport
 }
 
 function buildSessionHistoryReport(): SessionHistoryReport {
-  const paths = findSessionHistoryPaths();
+  const { candidates, filter, candidateDirs } = findSessionHistoryCandidates();
   const cwdCounts: Record<string, number> = {};
+  const sessionsByMtimeDayCounts: Record<string, number> = {};
   const toolCallsByName: Record<string, number> = {};
   const toolResultsByName: Record<string, { calls: number; chars: number; estimatedTokens: number; maxChars: number }> = {};
   const validationSummaries: Record<string, { runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }> = {};
@@ -947,10 +1036,13 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   let oldestMtimeMs: number | undefined;
   let newestMtimeMs: number | undefined;
 
-  for (const path of paths) {
+  for (const candidate of candidates) {
+    const { path } = candidate;
     const stat = statSync(path);
-    oldestMtimeMs = Math.min(oldestMtimeMs ?? stat.mtimeMs, stat.mtimeMs);
-    newestMtimeMs = Math.max(newestMtimeMs ?? stat.mtimeMs, stat.mtimeMs);
+    const mtimeMs = stat.mtimeMs;
+    oldestMtimeMs = Math.min(oldestMtimeMs ?? mtimeMs, mtimeMs);
+    newestMtimeMs = Math.max(newestMtimeMs ?? mtimeMs, mtimeMs);
+    increment(sessionsByMtimeDayCounts, formatLocalDay(mtimeMs));
     const report = buildSessionContextReport(path);
     const displayPath = report.sessionPath;
     totalLines += report.lines;
@@ -1065,11 +1157,14 @@ function buildSessionHistoryReport(): SessionHistoryReport {
 
   return {
     actionSummary,
-    sessionCount: paths.length,
+    sessionCount: candidates.length,
     totalLines,
     totalBytes,
     oldestMtime: typeof oldestMtimeMs === "number" ? new Date(oldestMtimeMs).toISOString() : undefined,
     newestMtime: typeof newestMtimeMs === "number" ? new Date(newestMtimeMs).toISOString() : undefined,
+    filter,
+    sessionsByMtimeDay: Object.entries(sessionsByMtimeDayCounts).sort((a, b) => b[0].localeCompare(a[0])).map(([day, sessions]) => ({ day, sessions })),
+    candidateDirs,
     cwdFrequency: Object.entries(cwdCounts).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([cwd, sessions]) => ({ cwd, sessions })),
     toolCallsByName,
     toolResultsByName,
@@ -1084,7 +1179,8 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     sessionsWithEditFailures: sessionsWithEditFailures.sort((a, b) => b.failures - a.failures || b.attempts - a.attempts).slice(0, 20),
     actionRecommendations,
     notes: [
-      `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateSessionDirs().join(", ")}${excludeCurrentSessionFromHistory ? "; excluded the current/latest session log" : ""}.`,
+      `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateDirs.join(", ")}${excludeCurrentSessionFromHistory ? "; excluded the current/latest session log" : ""}${filter.since || filter.until ? `; filtered by session log mtime${filter.since ? ` since ${filter.since}` : ""}${filter.until ? ` until ${filter.until}` : ""}` : ""}.`,
+      ...(candidates.length === 0 ? [`No session logs matched the active mtime filters in ${candidateDirs.join(", ")}.`] : []),
       "Backfill is metadata-only: raw prompts/tool outputs are not printed; deleted/unlogged sessions and human intent for reruns cannot be reconstructed.",
       "Action summaries count all parsed tool calls/results; history-level unique read/bash counts and top input lists are capped per session, so long-tail per-input counts may be underreported while totals remain accurate.",
     ],
@@ -1170,6 +1266,19 @@ function printSessionContextReport(report: SessionContextReport): void {
 function printSessionHistoryReport(report: SessionHistoryReport): void {
   console.log("\n## Session history backfill");
   console.log(`Sessions scanned: ${report.sessionCount}`);
+  const filterParts = [
+    `basis=${report.filter.basis}`,
+    `calendar=${report.filter.calendar}`,
+    report.filter.days ? `days=${report.filter.days}` : undefined,
+    report.filter.since ? `since=${report.filter.since}` : undefined,
+    report.filter.until ? `until=${report.filter.until}` : undefined,
+    `latest cap=${report.filter.latestSessions.toLocaleString()}`,
+    `exclude current=${report.filter.excludeCurrentSession ? "yes" : "no"}`,
+  ].filter(Boolean);
+  console.log(`Filter: ${filterParts.join("; ")}`);
+  if (report.sessionsByMtimeDay.length > 0) {
+    console.log(`Sessions by mtime day: ${report.sessionsByMtimeDay.map((item) => `${item.day}: ${item.sessions.toLocaleString()}`).join(", ")}`);
+  }
   console.log(`JSONL lines: ${report.totalLines.toLocaleString()}`);
   console.log(`JSONL bytes: ${report.totalBytes.toLocaleString()}`);
   if (report.oldestMtime || report.newestMtime) console.log(`Mtime range: ${report.oldestMtime ?? "unknown"} → ${report.newestMtime ?? "unknown"}`);
@@ -1784,9 +1893,11 @@ function printHelp(): void {
   bun run report:iteration --agent-actions [--recommend <changed files...>]
   bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
   bun run report:iteration --session-history [--latest-sessions 10] [--exclude-current-session]
+  bun run report:iteration --session-history --days 2 --roi
+  bun run report:iteration --session-history --since 2026-05-04 --until 2026-05-06 --latest-sessions 500
   bun run report:iteration --session-history --latest-sessions 30 --exclude-current-session --roi
 
-When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Use --latest-sessions/--session-history-limit to cap history and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
+When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Session-history date filters use session log mtime: --days uses local-calendar days (for example, --days 2 means local-calendar today and yesterday through now), while --since/--until accept a date or datetime. Use --latest-sessions/--session-history-limit to cap history after date filtering and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {
