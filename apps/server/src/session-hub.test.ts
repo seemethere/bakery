@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { dataUrlToImageContent, parseNameCommand } from "./session-hub.js";
+import { dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand } from "./session-hub.js";
 
 describe("parseNameCommand", () => {
   test("ignores non-name commands", () => {
@@ -30,5 +30,60 @@ describe("dataUrlToImageContent", () => {
 
   test("rejects unsupported data URLs", () => {
     expect(() => dataUrlToImageContent("data:text/plain;base64,SGVsbG8=")).toThrow("Images must be png, jpeg, gif, or webp data URLs");
+  });
+});
+
+describe("mergeSnapshotMessagesWithWebCommands", () => {
+  test("interleaves persisted web command results between timestamped snapshot messages", () => {
+    const messages = [
+      { role: "user", id: "user-1", timestamp: "2026-05-03T00:00:00.000Z" },
+      { role: "assistant", id: "assistant-1", timestamp: "2026-05-03T00:00:10.000Z" },
+    ];
+
+    const merged = mergeSnapshotMessagesWithWebCommands(messages, [{
+      id: "command:metadata",
+      title: "/bakery:generate-details",
+      body: "Updated title and summary.",
+      isError: false,
+      data: { kind: "extension_card", card: { kind: "bakery.metadataDetails", props: { title: "Details" } } },
+      timestamp: "2026-05-03T00:00:05.000Z",
+    }]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["user-1", "command:metadata", "assistant-1"]);
+    expect(merged[1]).toMatchObject({
+      role: "webCommandResult",
+      id: "command:metadata",
+      title: "/bakery:generate-details",
+      data: { kind: "extension_card" },
+    });
+  });
+
+  test("keeps deterministic order for equal timestamps", () => {
+    const merged = mergeSnapshotMessagesWithWebCommands([
+      { role: "user", id: "user-1", timestamp: "2026-05-03T00:00:00.000Z" },
+      { role: "assistant", id: "assistant-1", timestamp: "2026-05-03T00:00:00.000Z" },
+    ], [
+      { id: "command:a", title: "A", body: "A", isError: false, timestamp: "2026-05-03T00:00:00.000Z" },
+      { id: "command:b", title: "B", body: "B", isError: false, timestamp: "2026-05-03T00:00:00.000Z" },
+    ]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["user-1", "assistant-1", "command:a", "command:b"]);
+  });
+
+  test("falls back to append behavior when snapshot timestamps are unavailable", () => {
+    const messages = [
+      { role: "user", id: "user-1" },
+      { role: "assistant", id: "assistant-1", timestamp: "2026-05-03T00:00:10.000Z" },
+    ];
+
+    const merged = mergeSnapshotMessagesWithWebCommands(messages, [{
+      id: "command:metadata",
+      title: "/bakery:generate-details",
+      body: "Updated title and summary.",
+      isError: false,
+      timestamp: "2026-05-03T00:00:05.000Z",
+    }]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["user-1", "assistant-1", "command:metadata"]);
   });
 });

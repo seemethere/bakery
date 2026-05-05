@@ -12,7 +12,7 @@ import {
 import type { ServerConfig } from "./config.js";
 import { parseSlashCommand, runBundledExtensionCommand } from "./extensions.js";
 import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } from "./metadata-routes.js";
-import type { MetadataStore } from "./metadata-store.js";
+import type { MetadataStore, WebCommandResultRecord } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
@@ -32,6 +32,67 @@ export function parseNameCommand(text: string): { matched: boolean; clear?: bool
   if (args === "--clear") return { matched: true, clear: true };
   if (!args) return { matched: true };
   return { matched: true, title: cleanMetadataText(args, 120) };
+}
+
+type WebCommandResultSnapshotMessage = {
+  role: "webCommandResult";
+  id: string;
+  title: string;
+  body: string;
+  isError: boolean;
+  timestamp: string;
+  data?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function timestampMs(value: unknown): number | null {
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = typeof value === "number" ? value : Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function messageTimestampMs(message: unknown): number | null {
+  if (!isRecord(message)) return null;
+  return timestampMs(message.timestamp);
+}
+
+function webCommandResultSnapshotMessage(record: WebCommandResultRecord): WebCommandResultSnapshotMessage {
+  return {
+    role: "webCommandResult",
+    id: record.id,
+    title: record.title,
+    body: record.body,
+    isError: record.isError,
+    timestamp: record.timestamp,
+    ...(record.data !== undefined ? { data: record.data } : {}),
+  };
+}
+
+export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], records: WebCommandResultRecord[]): unknown[] {
+  const commandMessages = records.map(webCommandResultSnapshotMessage);
+  if (messages.length === 0) return commandMessages;
+  if (commandMessages.length === 0) return messages;
+
+  const messageEntries = messages.map((message, index) => ({ kind: "message" as const, value: message, time: messageTimestampMs(message), index }));
+  const commandEntries = commandMessages.map((message, index) => ({ kind: "command" as const, value: message, time: timestampMs(message.timestamp), index }));
+
+  // If the runner snapshot lacks reliable timestamps, fall back to the previous
+  // append behavior rather than guessing where persisted web-only cards belong.
+  if (messageEntries.some((entry) => entry.time === null) || commandEntries.some((entry) => entry.time === null)) return [...messages, ...commandMessages];
+
+  return [...messageEntries, ...commandEntries]
+    .sort((left, right) => {
+      const byTime = left.time! - right.time!;
+      if (byTime !== 0) return byTime;
+      if (left.kind !== right.kind) return left.kind === "message" ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map((entry) => entry.value);
 }
 
 type SocketClient = {
@@ -224,16 +285,8 @@ class SessionHub {
 
   private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
     const snapshot = await this.handle.snapshot(webSession);
-    const commandMessages = this.deps.store.listWebCommandResults(webSession.id).map((record) => ({
-      role: "webCommandResult",
-      id: record.id,
-      title: record.title,
-      body: record.body,
-      isError: record.isError,
-      timestamp: record.timestamp,
-      ...(record.data !== undefined ? { data: record.data } : {}),
-    }));
-    return { ...snapshot, messages: [...snapshot.messages, ...commandMessages] };
+    const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+    return { ...snapshot, messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords) };
   }
 
   private commandServices() {
