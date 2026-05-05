@@ -18,6 +18,9 @@ let isRenderableTranscriptItem: typeof import("./transcript").isRenderableTransc
 let hasSubagentCard: typeof import("./transcript").hasSubagentCard;
 let renderSubagentCard: typeof import("./transcript").renderSubagentCard;
 let messageToTranscriptItem: typeof import("./transcript").messageToTranscriptItem;
+let shouldPatchStreamingText: typeof import("./transcript").shouldPatchStreamingText;
+let streamingContentRenderKey: typeof import("./transcript").streamingContentRenderKey;
+let streamingTextForTranscriptItem: typeof import("./transcript").streamingTextForTranscriptItem;
 let extensionCardPayload: typeof import("./extension-cards").extensionCardPayload;
 
 beforeAll(async () => {
@@ -33,11 +36,24 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem, shouldPatchStreamingText, streamingContentRenderKey, streamingTextForTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
 describe("transcript terminal rendering", () => {
+  test("uses live tool row ids for SDK toolResult messages with toolCallId", () => {
+    const item = messageToTranscriptItem({
+      role: "toolResult",
+      toolCallId: "call_subagent_1",
+      toolName: "subagent",
+      content: [{ type: "text", text: "Done" }],
+      details: { mode: "single", results: [{ agent: "worker", exitCode: 0 }] },
+    }, "fallback");
+
+    expect(item.id).toBe("tool:call_subagent_1");
+    expect(hasSubagentCard(item)).toBe(true);
+  });
+
   test("merges SDK bashExecution messages into the optimistic local bash row", () => {
     const previous: TranscriptItem = {
       id: "bash:local",
@@ -103,6 +119,46 @@ describe("transcript terminal rendering", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("\u001b[31m");
   });
+
+  test("patches running stream text even when the previous text was empty", () => {
+    expect(shouldPatchStreamingText("", true)).toBe(true);
+    expect(shouldPatchStreamingText("hello", true)).toBe(true);
+    expect(shouldPatchStreamingText("hello", false)).toBe(false);
+    expect(shouldPatchStreamingText(null, true)).toBe(false);
+  });
+
+  test("keeps the stable streaming render key only for patchable text-only streams", () => {
+    const textOnlyTool: TranscriptItem = {
+      id: "tool-running",
+      kind: "tool",
+      title: "$ test",
+      body: "",
+      segments: [{ kind: "pre", text: "" }],
+      status: "running",
+    };
+    const markdownTool: TranscriptItem = {
+      id: "tool-markdown",
+      kind: "tool",
+      title: "read image",
+      body: "![preview](artifact.png)",
+      segments: [{ kind: "markdown", text: "![preview](artifact.png)" }],
+      status: "running",
+    };
+    const mixedTool: TranscriptItem = {
+      id: "tool-mixed",
+      kind: "tool",
+      title: "$ test",
+      body: "stdout",
+      segments: [{ kind: "pre", text: "stdout" }, { kind: "markdown", text: "![preview](artifact.png)" }],
+      status: "running",
+    };
+
+    expect(streamingTextForTranscriptItem(textOnlyTool)).toBe("");
+    expect(streamingContentRenderKey(textOnlyTool, "pre:")).toBe("streaming");
+    expect(streamingTextForTranscriptItem(markdownTool)).toBe("");
+    expect(streamingContentRenderKey(markdownTool, "markdown:![preview](artifact.png)")).toBe("![preview](artifact.png):markdown:![preview](artifact.png)");
+    expect(streamingContentRenderKey(mixedTool, "pre:stdout|markdown:![preview](artifact.png)")).toBe("stdout:pre:stdout|markdown:![preview](artifact.png)");
+  });
 });
 
 describe("transcript tool row display", () => {
@@ -126,6 +182,145 @@ describe("transcript tool row display", () => {
 });
 
 describe("transcript subagent cards", () => {
+  test("hides low-information management receipts instead of rendering Subagent Cards", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-management",
+      kind: "tool",
+      title: "subagent",
+      body: "",
+      status: "done",
+      raw: {
+        toolName: "subagent",
+        result: {
+          content: [{ type: "text", text: "Executable agents:\n- scout (builtin): Fast codebase recon\n- worker (builtin): Implementation agent" }],
+          details: { mode: "Management" },
+        },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(false);
+    expect(isRenderableTranscriptItem(item)).toBe(false);
+    expect(renderTranscriptSegments(item, false)).not.toContain("subagent-card");
+  });
+
+  test("keeps meaningful management output renderable as a compact tool row", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-management-useful",
+      kind: "tool",
+      title: "subagent",
+      body: "Installed 3 executable agents: planner, worker, reviewer",
+      status: "done",
+      raw: {
+        toolName: "subagent",
+        result: {
+          content: [{ type: "text", text: "Installed 3 executable agents: planner, worker, reviewer" }],
+          details: { mode: "Management" },
+        },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(false);
+    expect(isRenderableTranscriptItem(item)).toBe(true);
+    expect(renderTranscriptSegments(item, false)).not.toContain("subagent-card");
+  });
+
+  test("renders early non-management running calls as Subagent Cards", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-early",
+      kind: "tool",
+      title: "subagent",
+      body: "Starting reviewer",
+      status: "running",
+      raw: {
+        toolName: "subagent",
+        partialResult: {
+          details: { mode: "single" },
+        },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(true);
+    expect(isRenderableTranscriptItem(item)).toBe(true);
+    expect(renderTranscriptSegments(item, false)).toContain("subagent-card running");
+  });
+
+  test("renders directive tasks as compact artifact activity", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-directive",
+      kind: "tool",
+      title: "subagent",
+      body: "Scout is running",
+      status: "running",
+      raw: {
+        toolName: "subagent",
+        partialResult: {
+          details: {
+            mode: "chain",
+            progress: [{ agent: "scout", status: "completed", task: "[Write to: /tmp/pi-subagents-uid-1000/chain-runs/57c06651/context.md]\n\nInvestigate the issue" }],
+            results: [],
+          },
+        },
+      },
+    };
+
+    const html = renderSubagentCard(item);
+
+    expect(html).toContain("Writing context.md");
+    expect(html).not.toContain("[Write to:");
+    expect(html).not.toContain("/tmp/pi-subagents");
+  });
+
+  test("renders agent-specific running fallbacks instead of thinking", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-planner",
+      kind: "tool",
+      title: "subagent",
+      body: "Planner is running",
+      status: "running",
+      raw: {
+        toolName: "subagent",
+        partialResult: {
+          details: {
+            mode: "chain",
+            progress: [{ agent: "planner", status: "running", task: "Create the plan" }],
+            results: [],
+          },
+        },
+      },
+    };
+
+    const html = renderSubagentCard(item);
+
+    expect(html).toContain("Drafting implementation plan");
+    expect(html).not.toContain("thinking");
+  });
+
+  test("renders completed output paths as compact labels", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-compact-path",
+      kind: "tool",
+      title: "subagent",
+      body: "done",
+      status: "done",
+      raw: {
+        toolName: "subagent",
+        result: {
+          details: {
+            mode: "chain",
+            results: [{ agent: "planner", exitCode: 0, finalOutput: "Plan complete.", savedOutputPath: "/tmp/pi-subagents-uid-1000/chain-runs/57c06651/plan.md", sessionFile: "/home/bun/.pi/agent/sessions/2026-05-05T04-35-14-148Z_019df66b.jsonl" }],
+          },
+        },
+      },
+    };
+
+    const html = renderSubagentCard(item);
+
+    expect(html).toContain("output: plan.md");
+    expect(html).toContain("session: 2026-05-05T04-35-14-148Z_019df66b.jsonl");
+    expect(html).not.toContain("/tmp/pi-subagents");
+    expect(html).not.toContain("/home/bun/.pi");
+  });
+
   test("renders live foreground progress as a Subagent Card", () => {
     const item: TranscriptItem = {
       id: "tool:subagent-1",
@@ -176,12 +371,14 @@ describe("transcript subagent cards", () => {
       },
     };
 
+    expect(hasSubagentCard(item)).toBe(true);
     const html = renderSubagentCard(item);
 
     expect(html).toContain("subagent-card completed");
     expect(html).toContain("Approved the slice.");
     expect(html).toContain("fake/model");
-    expect(html).toContain("output: /tmp/output.md");
+    expect(html).toContain("output: output.md");
+    expect(html).not.toContain("/tmp/output.md");
     expect(html).not.toContain("&quot;results&quot;");
   });
 });

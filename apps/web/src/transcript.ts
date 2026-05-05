@@ -487,6 +487,7 @@ export function isToolCallOnlyAssistant(item: TranscriptItem): boolean {
 
 export function isRenderableTranscriptItem(item: TranscriptItem): boolean {
   if (isAskQuestionToolItem(item)) return false;
+  if (isNonInformativeSubagentManagementReceipt(item)) return false;
   if (item.kind !== "assistant") return true;
   if (item.body.trim()) return true;
   const segments = item.segments ?? [];
@@ -681,13 +682,48 @@ function subagentDetails(item: TranscriptItem): Record<string, unknown> | null {
   return null;
 }
 
+function subagentProgressRows(details: Record<string, unknown> | null): Record<string, unknown>[] {
+  return Array.isArray(details?.progress) ? details.progress.filter(isRecord) : [];
+}
+
+function subagentResultRows(details: Record<string, unknown> | null): Record<string, unknown>[] {
+  return Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+}
+
+function isKnownSubagentManagementMode(details: Record<string, unknown> | null): boolean {
+  return typeof details?.mode === "string" && details.mode.trim().toLowerCase() === "management";
+}
+
+function visibleSubagentText(item: TranscriptItem, result: Record<string, unknown> | null = subagentRawResult(item)): string {
+  return (item.body || textFromSubagentContent(result?.content)).trim();
+}
+
+function isLowInformationSubagentManagementText(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalized === "" || normalized === "executable agents:" || normalized === "executable agents" || normalized.startsWith("executable agents: - ");
+}
+
+function isNonInformativeSubagentManagementReceipt(item: TranscriptItem): boolean {
+  if (item.status === "running" || item.status === "error") return false;
+  const result = subagentRawResult(item);
+  if (!result) return false;
+  const details = subagentDetails(item);
+  if (!isKnownSubagentManagementMode(details)) return false;
+  if (subagentProgressRows(details).length > 0 || subagentResultRows(details).length > 0) return false;
+  return isLowInformationSubagentManagementText(visibleSubagentText(item, result));
+}
+
 export function hasSubagentCard(item: TranscriptItem): boolean {
-  return subagentRawResult(item) !== null;
+  const result = subagentRawResult(item);
+  if (!result) return false;
+  const details = subagentDetails(item);
+  if (subagentProgressRows(details).length > 0 || subagentResultRows(details).length > 0) return true;
+  return item.status === "running" && !isKnownSubagentManagementMode(details);
 }
 
 function subagentStatus(details: Record<string, unknown> | null, item: TranscriptItem): "running" | "completed" | "failed" | "paused" | "detached" {
   if (item.status === "running") return "running";
-  const results = Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+  const results = subagentResultRows(details);
   if (results.some((result) => result.interrupted === true)) return "paused";
   if (results.some((result) => result.detached === true)) return "detached";
   if (item.status === "error" || results.some((result) => typeof result.exitCode === "number" && result.exitCode !== 0)) return "failed";
@@ -723,10 +759,58 @@ function firstUsefulLine(text: string, fallback = "No text output"): string {
   return line.length > 180 ? `${line.slice(0, 177).trimEnd()}…` : line;
 }
 
+type SubagentDirective = { verb: "write" | "read"; path: string };
+
+function subagentLeadingDirective(text: string): SubagentDirective | null {
+  const match = /^\s*\[(Write to|Read from):\s*([^\]]+?)\]\s*/i.exec(text);
+  if (!match) return null;
+  return { verb: /^write/i.test(match[1] ?? "") ? "write" : "read", path: (match[2] ?? "").trim() };
+}
+
+function stripSubagentLeadingDirectives(text: string): string {
+  let next = text;
+  while (/^\s*\[(?:Write to|Read from):\s*[^\]]+?\]\s*/i.test(next)) {
+    next = next.replace(/^\s*\[(?:Write to|Read from):\s*[^\]]+?\]\s*/i, "");
+  }
+  return next.trim();
+}
+
+function subagentPathLabel(path: string): string {
+  return pathBasename(path) || path;
+}
+
+function subagentDirectiveActivity(directive: SubagentDirective | null): string {
+  if (!directive) return "";
+  const label = subagentPathLabel(directive.path);
+  if (!label) return "";
+  return `${directive.verb === "write" ? "Writing" : "Reading"} ${label}`;
+}
+
+function subagentTaskActivity(text: string): string {
+  const directive = subagentLeadingDirective(text);
+  const directiveActivity = subagentDirectiveActivity(directive);
+  if (directiveActivity) return directiveActivity;
+  return firstUsefulLine(stripSubagentLeadingDirectives(text), "");
+}
+
+function compactSubagentPath(kind: string, path: string): string {
+  const label = subagentPathLabel(path);
+  return label ? `${kind}: ${label}` : kind;
+}
+
+function subagentRunningFallback(entry: Record<string, unknown>): string {
+  const agent = String(entry.agent ?? "").trim().toLowerCase();
+  if (agent === "scout" || agent === "context-builder") return "Scanning codebase…";
+  if (agent === "planner" || agent === "planning") return "Drafting implementation plan…";
+  if (agent === "oracle" || agent === "reviewer") return "Reviewing…";
+  if (agent === "worker" || agent === "delegate") return "Applying changes…";
+  return "Working…";
+}
+
 function subagentStats(details: Record<string, unknown> | null, item: TranscriptItem): string[] {
   const stats: string[] = [];
-  const progress = Array.isArray(details?.progress) ? details.progress.filter(isRecord) : [];
-  const results = Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+  const progress = subagentProgressRows(details);
+  const results = subagentResultRows(details);
   const running = progress.filter((entry) => entry.status === "running").length;
   const done = progress.filter((entry) => entry.status === "completed").length || results.filter((entry) => typeof entry.exitCode !== "number" || entry.exitCode === 0).length;
   const total = typeof details?.totalSteps === "number" ? details.totalSteps : Math.max(progress.length, results.length);
@@ -750,7 +834,7 @@ function subagentActivity(entry: Record<string, unknown>): string {
   if (typeof entry.currentPath === "string" && entry.currentPath) parts.push(pathBasename(entry.currentPath));
   if (typeof entry.activityState === "string" && entry.activityState) parts.push(entry.activityState.replaceAll("_", " "));
   if (parts.length > 0) return parts.join(" · ");
-  if (entry.status === "running") return "thinking…";
+  if (entry.status === "running") return subagentRunningFallback(entry);
   return "";
 }
 
@@ -765,7 +849,7 @@ function renderSubagentProgressRows(progress: Record<string, unknown>[]): string
     const status = String(entry.status ?? "pending");
     const agent = String(entry.agent ?? `agent ${index + 1}`);
     const activity = subagentActivity(entry);
-    const task = typeof entry.task === "string" ? firstUsefulLine(entry.task, "") : "";
+    const task = typeof entry.task === "string" ? subagentTaskActivity(entry.task) : "";
     const stats = [typeof entry.toolCount === "number" && entry.toolCount > 0 ? `${entry.toolCount} tools` : "", compactNumber(entry.tokens) ? `${compactNumber(entry.tokens)} tokens` : "", formatToolDuration(typeof entry.durationMs === "number" ? entry.durationMs : undefined)].filter(Boolean).join(" · ");
     return `<div class="subagent-result-row ${subagentStatusClass(status)}">
       <span class="subagent-status-glyph" aria-hidden="true">${escapeHtml(statusGlyph(status))}</span>
@@ -786,7 +870,7 @@ function renderSubagentResultRows(results: Record<string, unknown>[]): string {
     const output = typeof result.finalOutput === "string" ? result.finalOutput : textFromSubagentContent(result.content);
     const usage = isRecord(result.usage) ? result.usage : null;
     const stats = [typeof result.model === "string" ? result.model : "", usage && typeof usage.turns === "number" ? `${usage.turns} turns` : "", usage && typeof usage.input === "number" && typeof usage.output === "number" ? `${compactNumber(usage.input + usage.output)} tokens` : ""].filter(Boolean).join(" · ");
-    const paths = [typeof result.savedOutputPath === "string" ? `output: ${result.savedOutputPath}` : "", typeof result.sessionFile === "string" ? `session: ${result.sessionFile}` : ""].filter(Boolean);
+    const paths = [typeof result.savedOutputPath === "string" ? compactSubagentPath("output", result.savedOutputPath) : "", typeof result.sessionFile === "string" ? compactSubagentPath("session", result.sessionFile) : ""].filter(Boolean);
     return `<div class="subagent-result-row ${subagentStatusClass(status)}">
       <span class="subagent-status-glyph" aria-hidden="true">${escapeHtml(statusGlyph(status))}</span>
       <div class="subagent-result-main">
@@ -803,8 +887,8 @@ export function renderSubagentCard(item: TranscriptItem): string {
   const result = subagentRawResult(item);
   const mode = typeof details?.mode === "string" ? details.mode : "run";
   const status = subagentStatus(details, item);
-  const progress = Array.isArray(details?.progress) ? details.progress.filter(isRecord) : [];
-  const results = Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+  const progress = subagentProgressRows(details);
+  const results = subagentResultRows(details);
   const stats = subagentStats(details, item);
   const renderedRows = item.status === "running" ? progress : results;
   const fallback = firstUsefulLine(item.body || textFromSubagentContent(result?.content), item.status === "running" ? "Subagent is running…" : "Subagent completed.");
@@ -955,7 +1039,7 @@ export class PiTranscriptRow extends HTMLElement {
 
     const streamingText = this.streamingText();
     const streamingTextTarget = streamingText !== null ? this.querySelector<HTMLElement>(this.item?.kind === "tool" ? ".tool-streaming-output" : ".streaming-plain pre") : null;
-    const canPatchText = Boolean(streamingText !== null && this.lastStreamingText !== "" && streamingTextTarget);
+    const canPatchText = shouldPatchStreamingText(streamingText, Boolean(streamingTextTarget));
     const compactSummary = this.collapsed && item.kind !== "tool" ? compactToolSummary(item) : "";
     const toolDisplay = item.kind === "tool" ? toolHeaderDisplay(item) : null;
     const visibleDuration = shouldShowToolDuration(item, this.collapsed);
@@ -969,7 +1053,7 @@ export class PiTranscriptRow extends HTMLElement {
     const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : isStreamingAssistant ? "assistant-generating" : "";
     const questionRenderState = item.kind === "question" && isRecord(item.raw) ? stringify(item.raw) : "";
     const subagentRenderState = hasSubagentCard(item) && isRecord(item.raw) ? stringify(item.raw) : "";
-    const contentRenderKey = streamingText !== null ? "streaming" : isStreamingAssistant ? "assistant-generating" : `${item.body}:${segmentKey}`;
+    const contentRenderKey = streamingText !== null ? streamingContentRenderKey(item, segmentKey) : isStreamingAssistant ? "assistant-generating" : `${item.body}:${segmentKey}`;
     const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${questionRenderState}:${subagentRenderState}:${contentRenderKey}`;
     if (renderKey === this.lastRenderKey) {
       if (canPatchText && streamingText !== this.lastStreamingText) {
@@ -1051,18 +1135,42 @@ export class PiTranscriptRow extends HTMLElement {
   }
 
   private streamingText(): string | null {
-    if (!this.item || this.item.status !== "running") return null;
-    if (this.item.kind === "assistant") return null;
-    if (this.item.kind === "user") {
-      const segments = this.item.segments?.length ? this.item.segments : [{ kind: "markdown", text: this.item.body } satisfies TranscriptSegment];
-      return segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown").map((segment) => segment.text).join("\n\n");
-    }
-    if (this.item.kind === "tool") {
-      const segments = this.item.segments?.length ? this.item.segments : [{ kind: "pre", text: this.item.body } satisfies TranscriptSegment];
-      return segments.filter((segment): segment is Extract<TranscriptSegment, { kind: "pre" }> => segment.kind === "pre").map((segment) => segment.text).join("\n\n");
-    }
-    return null;
+    return streamingTextForTranscriptItem(this.item);
   }
+}
+
+function effectiveStreamingSegments(item: TranscriptItem): TranscriptSegment[] {
+  if (item.kind === "user") return item.segments?.length ? item.segments : [{ kind: "markdown", text: item.body } satisfies TranscriptSegment];
+  if (item.kind === "tool") return item.segments?.length ? item.segments : [{ kind: "pre", text: item.body } satisfies TranscriptSegment];
+  return [];
+}
+
+export function streamingTextForTranscriptItem(item: TranscriptItem | null | undefined): string | null {
+  if (!item || item.status !== "running") return null;
+  if (item.kind === "assistant") return null;
+  if (item.kind === "user") {
+    return effectiveStreamingSegments(item).filter((segment): segment is Extract<TranscriptSegment, { kind: "markdown" }> => segment.kind === "markdown").map((segment) => segment.text).join("\n\n");
+  }
+  if (item.kind === "tool") {
+    return effectiveStreamingSegments(item).filter((segment): segment is Extract<TranscriptSegment, { kind: "pre" }> => segment.kind === "pre").map((segment) => segment.text).join("\n\n");
+  }
+  return null;
+}
+
+export function shouldPatchStreamingText(streamingText: string | null, hasStreamingTextTarget: boolean): boolean {
+  return streamingText !== null && hasStreamingTextTarget;
+}
+
+function hasSinglePatchableStreamingSegment(item: TranscriptItem): boolean {
+  const segments = effectiveStreamingSegments(item);
+  if (segments.length !== 1) return false;
+  if (item.kind === "user") return segments[0]?.kind === "markdown";
+  if (item.kind === "tool") return segments[0]?.kind === "pre";
+  return false;
+}
+
+export function streamingContentRenderKey(item: TranscriptItem, segmentKey: string): string {
+  return hasSinglePatchableStreamingSegment(item) ? "streaming" : `${item.body}:${segmentKey}`;
 }
 
 customElements.define("pi-transcript-row", PiTranscriptRow);
@@ -1071,6 +1179,10 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
   const role = String(message.role ?? "message");
   const timestamp = message.timestamp ?? message.id;
   return timestamp ? `${role}:${String(timestamp)}` : fallback;
+}
+
+function toolResultMessageKey(message: Record<string, unknown>, fallback: string): string {
+  return typeof message.toolCallId === "string" ? `tool:${message.toolCallId}` : messageKey(message, fallback);
 }
 
 export function compactWorkflowLaunchSummary(text: string): string | null {
@@ -1142,7 +1254,7 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
   if (role === "toolResult") {
     const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";
     return {
-      id: messageKey(message, fallbackId),
+      id: toolResultMessageKey(message, fallbackId),
       kind: "tool",
       title: `Tool result${message.toolName ? `: ${String(message.toolName)}` : ""}`,
       body: `${body}${details}`,
