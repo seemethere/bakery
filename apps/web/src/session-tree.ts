@@ -88,7 +88,10 @@ export function forkEntryIdForTranscriptItem(item: TreeTranscriptItem, nodes: Se
     if (!treeNodeMatchesTranscriptKind(candidate, item)) return false;
     if (timestamp && candidate.timestamp === timestamp) return true;
     const candidateTitle = normalizedTreeTitle(candidate);
-    if ((item.kind === "user" || item.kind === "assistant") && text) return candidateTitle.startsWith(text.slice(0, 80));
+    if ((item.kind === "user" || item.kind === "assistant") && text && candidateTitle) {
+      const textPrefix = text.slice(0, 80).trim();
+      return candidateTitle.startsWith(textPrefix) || text.startsWith(candidateTitle);
+    }
     if (item.kind === "tool" && title) return candidate.title.includes(title) || title.includes(candidateTitle);
     return false;
   });

@@ -56,6 +56,10 @@ describe("session tree helpers", () => {
     expect(forkEntryIdForTranscriptItem({ id: "user:other", kind: "user", body: "Build the tree" }, nodes)).toBe("u1");
     expect(forkEntryIdForTranscriptItem({ id: "assistant:2026-01-01T00:00:01.000Z", kind: "assistant", body: "Done" }, nodes)).toBe("a1");
     expect(forkEntryIdForTranscriptItem({ id: "snapshot:2", kind: "assistant", body: "Done" }, nodes)).toBe("a1");
+    expect(forkEntryIdForTranscriptItem(
+      { id: "assistant:numeric", kind: "assistant", body: "Done with enough extra text to prove a tree title truncated on a word boundary still matches." },
+      [node({ id: "a2", role: "assistant", title: "assistant: Done with enough extra text to prove a tree title truncated on a word boundary", timestamp: "2026-01-01T00:00:03.000Z" })],
+    )).toBe("a2");
     expect(forkEntryIdForTranscriptItem({ id: "tool:other", kind: "tool", title: "Tool result: read", body: "read output", raw: { timestamp: "2026-01-01T00:00:02.000Z" } }, nodes)).toBe("t1");
     expect(forkEntryIdForTranscriptItem({ id: "x", kind: "assistant", body: "Build the tree" }, nodes)).toBeNull();
   });
