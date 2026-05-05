@@ -281,6 +281,32 @@
   padding: 0;
 }
 
+.message.metadata-details-result .metadata-details-card,
+.message.subagent-card-result .subagent-card,
+.message.question .question-card {
+  padding-right: 52px;
+}
+
+.standalone-card-action-area {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+}
+
+.standalone-card-action-area .message-overflow {
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, transparent);
+  opacity: 0;
+}
+
+.message:hover .standalone-card-action-area .message-overflow,
+.message:focus-within .standalone-card-action-area .message-overflow,
+.message.selected .standalone-card-action-area .message-overflow,
+.standalone-card-action-area .message-overflow[aria-expanded="true"] {
+  opacity: 1;
+}
+
 .message.subagent-card-result .message-body {
   overflow: visible;
 }

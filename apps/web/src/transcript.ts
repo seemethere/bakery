@@ -1120,7 +1120,11 @@ export class PiTranscriptRow extends HTMLElement {
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     const isStandaloneCard = hasCustomCard || hasSubagent || hasQuestionCard;
     this.innerHTML = isStandaloneCard ? `
-      <div class="message-body">${body}</div>` : isConversationMessage ? `
+      <div class="message-body">${body}</div>
+      <div class="standalone-card-action-area message-action-area">
+        <button class="message-overflow" type="button" data-row-action="menu" data-transcript-id="${escapeHtml(item.id)}" aria-haspopup="menu" aria-expanded="${this.actionMenuOpen ? "true" : "false"}" title="Message actions">${ellipsisIconSvg()}</button>
+        ${this.actionMenuOpen ? this.renderActionMenu(item) : ""}
+      </div>` : isConversationMessage ? `
       <div class="message-body">${body}</div>
       ${this.renderConversationActionBar(item)}` : `
       <div class="message-header">
