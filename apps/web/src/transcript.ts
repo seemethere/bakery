@@ -44,6 +44,7 @@ export type RenderContext = {
 };
 
 export type ToolGroupPosition = "single" | "start" | "middle" | "end";
+export type PlanActionOutcome = "accepted" | "rejected" | "discussing";
 
 export { PLAN_ACTIONS_MARKER };
 const planActionMarkers = [PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, LEGACY_FULL_PLAN_ACTIONS_MARKER];
@@ -63,6 +64,7 @@ export const PLAN_UI_ACTION_CONTRIBUTION: UiActionContribution = {
   source: { extensionId: "bakery.workflow", commandName: "plan" },
   actions: [
     { id: "accept", label: "Accept plan", variant: "primary" },
+    { id: "reject", label: "Reject plan", variant: "secondary" },
   ],
 };
 
@@ -118,7 +120,16 @@ export function renderPlanGeneratingCard(): string {
     </article>`;
 }
 
-function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUrl?: RenderContext["localImageUrl"]): string {
+export function renderPlanActionControls(transcriptId: string, outcome?: PlanActionOutcome): string {
+  if (outcome) {
+    const label = outcome === "accepted" ? "Accepted" : outcome === "rejected" ? "Rejected" : "Discussing";
+    return `<button type="button" class="plan-action-state" data-plan-outcome="${escapeHtml(outcome)}" disabled aria-disabled="true">${escapeHtml(label)}</button>`;
+  }
+  return `<button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="${escapeHtml(PLAN_UI_ACTION_CONTRIBUTION.id)}" data-transcript-id="${escapeHtml(transcriptId)}">Accept plan</button>
+        <button type="button" class="plan-reject-action" data-ui-action="reject" data-plan-action="reject" data-ui-contribution-id="${escapeHtml(PLAN_UI_ACTION_CONTRIBUTION.id)}" data-transcript-id="${escapeHtml(transcriptId)}" aria-label="Reject plan" title="Reject plan">×</button>`;
+}
+
+function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUrl?: RenderContext["localImageUrl"], outcome?: PlanActionOutcome): string {
   const summary = extractMarkdownSection(strippedBody, "Plan summary") || plainTextSummary(strippedBody, 220) || "Review the recommended implementation plan.";
   const nextSlice = extractMarkdownSection(strippedBody, "Smallest next slice");
   const files = extractMarkdownSection(strippedBody, "Key files likely to change");
@@ -134,7 +145,7 @@ function renderPlanCard(item: TranscriptItem, strippedBody: string, localImageUr
       ${validation ? `<section class="plan-card-section compact"><h3>Validation</h3>${renderMarkdown(validation, localImageUrl)}</section>` : ""}
       <div class="plan-card-actions">
         <span class="plan-card-click-copy">Click the card to read the full rendered plan.</span>
-        <button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="${escapeHtml(PLAN_UI_ACTION_CONTRIBUTION.id)}" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
+        <div class="plan-card-action-buttons">${renderPlanActionControls(item.id, outcome)}</div>
       </div>
     </article>`;
 }
@@ -1063,7 +1074,7 @@ export class PiTranscriptRow extends HTMLElement {
     });
   }
 
-  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; expanded?: boolean | undefined; actionMenuOpen?: boolean; canFork?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
+  setState(item: TranscriptItem, options: { showThinking: boolean; selected: boolean; expanded?: boolean | undefined; actionMenuOpen?: boolean; canFork?: boolean; afterRunningTool?: boolean; toolGroupPosition?: ToolGroupPosition; planActionOutcome?: PlanActionOutcome | undefined; cache?: Map<string, string>; localImageUrl?: (path: string) => string | null; suppressLocalImageArtifactPaths?: Set<string> }): void {
     const start = performance.now();
     this.item = item;
     this.showThinking = options.showThinking;
@@ -1096,7 +1107,7 @@ export class PiTranscriptRow extends HTMLElement {
     const hasPlanActions = hasPlanActionsMarker(item);
     const isGeneratingPlan = isGeneratingPlanItem(item);
     const isStreamingAssistant = item.kind === "assistant" && item.status === "running";
-    const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : isStreamingAssistant ? "assistant-generating" : "";
+    const planRenderState = hasPlanActions ? `plan-ready:${options.planActionOutcome ?? "pending"}` : isGeneratingPlan ? "plan-generating" : isStreamingAssistant ? "assistant-generating" : "";
     const questionRenderState = item.kind === "question" && isRecord(item.raw) ? stringify(item.raw) : "";
     const subagentRenderState = hasSubagentCard(item) && isRecord(item.raw) ? stringify(item.raw) : "";
     const contentRenderKey = streamingText !== null ? streamingContentRenderKey(item, segmentKey) : isStreamingAssistant ? "assistant-generating" : `${item.body}:${segmentKey}`;
@@ -1116,7 +1127,7 @@ export class PiTranscriptRow extends HTMLElement {
     const hasQuestionCard = item.kind === "question";
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
-    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : isGeneratingPlan ? renderPlanGeneratingCard() : isStreamingAssistant ? renderAssistantStreamingPlaceholder() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
+    const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl, options.planActionOutcome) : isGeneratingPlan ? renderPlanGeneratingCard() : isStreamingAssistant ? renderAssistantStreamingPlaceholder() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
     const isStandaloneCard = hasCustomCard || hasSubagent || hasQuestionCard;
     this.innerHTML = isStandaloneCard ? `

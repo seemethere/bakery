@@ -629,13 +629,62 @@
   font-size: 13px;
 }
 
-.plan-card-actions .primary-action {
+.plan-card-action-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-card-actions .primary-action,
+.plan-details-actions .primary-action {
   min-height: 34px;
   border-color: var(--c-668cff);
   background: var(--c-263b75);
   color: var(--c-eef3ff);
   padding: 7px 12px;
   font-weight: 800;
+}
+
+.plan-reject-action {
+  display: inline-grid;
+  min-width: 34px;
+  min-height: 34px;
+  place-items: center;
+  border-color: color-mix(in srgb, var(--color-error) 58%, var(--color-border));
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: color-mix(in srgb, var(--color-error) 82%, var(--color-text));
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.plan-reject-action:hover,
+.plan-reject-action:focus-visible {
+  border-color: color-mix(in srgb, var(--color-error) 78%, var(--color-border));
+  background: color-mix(in srgb, var(--color-error) 20%, transparent);
+  color: var(--color-error);
+}
+
+.plan-action-state {
+  min-height: 34px;
+  border-color: color-mix(in srgb, var(--color-border) 86%, transparent);
+  background: color-mix(in srgb, var(--color-bg-muted) 68%, transparent);
+  color: var(--color-text-muted);
+  padding: 7px 12px;
+  cursor: default;
+  font-weight: 800;
+}
+
+.plan-action-state[data-plan-outcome="rejected"] {
+  border-color: color-mix(in srgb, var(--color-error) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-error) 9%, var(--color-bg-muted));
+  color: color-mix(in srgb, var(--color-error) 56%, var(--color-text-muted));
+}
+
+.plan-action-state:disabled:hover,
+.plan-action-state:disabled:focus-visible {
+  transform: none;
+  box-shadow: none;
 }
 
 .plan-details-backdrop {
@@ -701,13 +750,6 @@
   border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   border-bottom: 0;
   justify-content: flex-end;
-}
-
-.plan-details-actions .primary-action {
-  border-color: var(--c-668cff);
-  background: var(--c-263b75);
-  color: var(--c-eef3ff);
-  font-weight: 800;
 }
 
 .message.user .markdown-body {

@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, 
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
-import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, pendingQuestionTranscriptItem, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, pendingQuestionTranscriptItem, renderPlanActionControls, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { renderSelectedSessionSummary, renderSessionDetails as renderSessionDetailsPanel, renderSettingsMain as renderSettingsMainPanel } from "./settings-panel";
 import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
@@ -155,6 +155,7 @@ class PiWebAgentApp extends HTMLElement {
     },
     focusPromptOnNextReadyRender: () => { this.focusPromptOnNextReadyRender = true; },
     setNotice: (notice) => { this.notice = notice; },
+    markTranscriptDirty: (transcriptId) => this.dirtyTranscriptIds.add(transcriptId),
     render: () => this.render(),
   });
   private promptDraft = "";
@@ -212,6 +213,16 @@ class PiWebAgentApp extends HTMLElement {
   };
   private readonly viewportResizeHandler = () => {
     if (this.autoScroll) this.scheduleTranscriptFollow();
+  };
+  private readonly uiActionClickHandler = (event: Event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest<HTMLButtonElement>("button[data-ui-action]");
+    if (!button || !this.contains(button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (button.disabled || button.getAttribute("aria-disabled") === "true") return;
+    button.blur();
+    this.handleUiAction(button.dataset.uiContributionId ?? "", button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
   };
   private get autoScroll(): boolean {
     return this.transcriptFollow.autoScroll;
@@ -297,6 +308,7 @@ class PiWebAgentApp extends HTMLElement {
     window.addEventListener("keydown", this.sidebarKeyHandler);
     window.addEventListener("resize", this.viewportResizeHandler);
     window.addEventListener("popstate", this.popstateHandler);
+    this.addEventListener("click", this.uiActionClickHandler, true);
     window.visualViewport?.addEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.addEventListener("change", this.mobileLayoutHandler);
@@ -312,6 +324,7 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("keydown", this.sidebarKeyHandler);
     window.removeEventListener("resize", this.viewportResizeHandler);
     window.removeEventListener("popstate", this.popstateHandler);
+    this.removeEventListener("click", this.uiActionClickHandler, true);
     window.visualViewport?.removeEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
@@ -890,6 +903,7 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
+    this.uiActions.markLatestPendingDiscussing();
     const images = this.promptImages.map((image) => image.dataUrl);
     this.ws.send(JSON.stringify(buildComposerSendPayload(type, text, images)));
     const shouldOptimisticallyShowRunning = type === "prompt" && !bash && !text.trimStart().startsWith("/");
@@ -1378,14 +1392,6 @@ class PiWebAgentApp extends HTMLElement {
         scheduleFollow: () => this.scheduleTranscriptFollow(),
       });
     });
-    this.querySelectorAll<HTMLButtonElement>("[data-ui-action]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        button.blur();
-        this.handleUiAction(button.dataset.uiContributionId ?? "", button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
-      });
-    });
     this.querySelectorAll<HTMLElement>("[data-plan-detail-id]").forEach((card) => {
       const open = (event: Event) => {
         if ((event.target as HTMLElement | null)?.closest("button,a")) return;
@@ -1615,6 +1621,7 @@ class PiWebAgentApp extends HTMLElement {
     const item = this.transcript.find((entry) => entry.id === this.openPlanDetailsId);
     if (!item) return "";
     const body = stripPlanActionsMarker(item.body);
+    const outcome = this.uiActions.outcomeFor(item.id);
     return `<div class="plan-details-backdrop" role="presentation">
       <section class="plan-details-dialog" role="dialog" aria-modal="true" aria-label="Full plan">
         <header class="plan-details-header">
@@ -1624,7 +1631,7 @@ class PiWebAgentApp extends HTMLElement {
         <div class="plan-details-body">${renderTranscriptSegments({ ...item, body, segments: [{ kind: "markdown", text: body }] }, this.showThinking, { cache: this.renderedSegmentCache, localImageUrl: (path) => this.localImageUrl(path) })}</div>
         <footer class="plan-details-actions">
           <button type="button" data-close-plan-details>Close</button>
-          <button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="bakery.workflow.plan.actions" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
+          <div class="plan-card-action-buttons">${renderPlanActionControls(item.id, outcome)}</div>
         </footer>
       </section>
     </div>`;
@@ -1728,6 +1735,7 @@ class PiWebAgentApp extends HTMLElement {
       canFork: (item) => Boolean(this.forkEntryIdForTranscriptItem(item)),
       renderedSegmentCache: this.renderedSegmentCache,
       localImageUrl: (path) => this.localImageUrl(path),
+      planActionOutcomeFor: (transcriptId) => this.uiActions.outcomeFor(transcriptId),
     };
   }
 

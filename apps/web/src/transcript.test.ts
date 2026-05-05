@@ -8,6 +8,7 @@ let mergeDuplicateDeveloperBash: typeof import("./transcript").mergeDuplicateDev
 let hasPlanActionsMarker: typeof import("./transcript").hasPlanActionsMarker;
 let isGeneratingPlanItem: typeof import("./transcript").isGeneratingPlanItem;
 let renderPlanGeneratingCard: typeof import("./transcript").renderPlanGeneratingCard;
+let renderPlanActionControls: typeof import("./transcript").renderPlanActionControls;
 let renderAssistantStreamingPlaceholder: typeof import("./transcript").renderAssistantStreamingPlaceholder;
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
@@ -37,7 +38,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, compactToolSummary, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem, shouldPatchStreamingText, streamingContentRenderKey, streamingTextForTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderPlanActionControls, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, compactToolSummary, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem, shouldPatchStreamingText, streamingContentRenderKey, streamingTextForTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -554,6 +555,7 @@ describe("transcript plan actions", () => {
       source: { extensionId: "bakery.workflow", commandName: "plan" },
       actions: [
         { id: "accept", label: "Accept plan", variant: "primary" },
+        { id: "reject", label: "Reject plan", variant: "secondary" },
       ],
     });
     expect(hasPlanActionsMarker({ ...item, kind: "user" })).toBe(false);
@@ -570,11 +572,35 @@ describe("transcript plan actions", () => {
     };
 
     expect(stripPlanActionsMarker(item.body)).toBe("Recommendation");
-    expect(uiActionContributionForTranscriptItem(item)?.actions.map((action) => action.id)).toEqual(["accept"]);
+    expect(uiActionContributionForTranscriptItem(item)?.actions.map((action) => action.id)).toEqual(["accept", "reject"]);
 
     const fullLegacyItem: TranscriptItem = { ...item, body: `Recommendation\n\n${LEGACY_FULL_PLAN_ACTIONS_MARKER}` };
     expect(stripPlanActionsMarker(fullLegacyItem.body)).toBe("Recommendation");
-    expect(uiActionContributionForTranscriptItem(fullLegacyItem)?.actions.map((action) => action.id)).toEqual(["accept"]);
+    expect(uiActionContributionForTranscriptItem(fullLegacyItem)?.actions.map((action) => action.id)).toEqual(["accept", "reject"]);
+  });
+
+  test("renders /plan action controls for pending and completed local states", () => {
+    const pending = renderPlanActionControls("assistant-plan");
+    expect(pending).toContain("Accept plan");
+    expect(pending).toContain('data-plan-action="accept"');
+    expect(pending).toContain('data-plan-action="reject"');
+    expect(pending).toContain('aria-label="Reject plan"');
+
+    const accepted = renderPlanActionControls("assistant-plan", "accepted");
+    expect(accepted).toContain("Accepted");
+    expect(accepted).toContain('data-plan-outcome="accepted"');
+    expect(accepted).toContain("disabled");
+    expect(accepted).not.toContain('data-ui-action="accept"');
+
+    const rejected = renderPlanActionControls("assistant-plan", "rejected");
+    expect(rejected).toContain("Rejected");
+    expect(rejected).toContain('data-plan-outcome="rejected"');
+    expect(rejected).not.toContain('data-ui-action="reject"');
+
+    const discussing = renderPlanActionControls("assistant-plan", "discussing");
+    expect(discussing).toContain("Discussing");
+    expect(discussing).toContain('data-plan-outcome="discussing"');
+    expect(discussing).not.toContain('data-ui-action=');
   });
 });
 

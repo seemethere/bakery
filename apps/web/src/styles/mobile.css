@@ -689,8 +689,18 @@
     flex-direction: column;
   }
 
-  .plan-card-actions .primary-action {
+  .plan-card-action-buttons {
     width: 100%;
+  }
+
+  .plan-card-actions .primary-action,
+  .plan-action-state {
+    flex: 1;
+    width: 100%;
+  }
+
+  .plan-reject-action {
+    min-width: 40px;
   }
 
   .plan-details-backdrop {
