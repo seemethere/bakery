@@ -121,6 +121,14 @@ A focused child pi coding-agent session launched by the parent agent through a r
 - Not: a replacement for the parent Agent Session; the parent remains responsible for orchestration and summarizing results.
 - Example: the parent agent asks a `reviewer` subagent to inspect a diff, then brings the review result back into the main conversation.
 
+### Subagent-assisted Planning
+
+A `/plan` behavior where the parent Agent Session uses an available Subagent for bounded, read-only reconnaissance before asking the operator or finalizing a Plan Card.
+
+- Not: delegating the operator interview to a child session; the parent still owns Question Cards and asks the operator one question at a time.
+- Not: native web-managed subagent orchestration or background child-session controls.
+- Example: during a non-trivial `/plan` interview, the parent runs a foreground `scout` subagent to inspect code paths and summarize risks, then asks the operator the next decision through a Question Card.
+
 ### Subagent Card
 
 A Bakery-owned transcript card that renders an existing `pi-subagents` tool run in Bakery's card style, covering live foreground progress and final child-agent results.
