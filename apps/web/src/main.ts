@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type ForkSessionResponse, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
@@ -706,12 +706,19 @@ class PiWebAgentApp extends HTMLElement {
   private async forkFromEntry(entryId: string): Promise<void> {
     if (!this.selectedSession) return;
     try {
-      const session = await this.api<WebSession>(`/api/sessions/${this.selectedSession.id}/fork`, {
+      const fork = await this.api<ForkSessionResponse>(`/api/sessions/${this.selectedSession.id}/fork`, {
         method: "POST",
         body: JSON.stringify({ entryId }),
       });
-      this.sessions = [session, ...this.sessions];
-      this.openSession(session);
+      this.sessions = [fork.session, ...this.sessions];
+      this.openSession(fork.session);
+      if (fork.editorText) {
+        this.promptDraft = fork.editorText;
+        this.savePromptDraft();
+        this.focusPromptOnNextReadyRender = true;
+        this.notice = "Fork created. Edit the restored prompt, then send it to continue from that point.";
+        this.render();
+      }
     } catch (error) {
       this.notice = `Fork failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();

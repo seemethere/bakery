@@ -120,6 +120,14 @@ An operator-started review environment for an isolated agent session that runs t
 - Not: the primary development server or an automatically merged workspace.
 - Example: an operator starts a Preview Stack from an isolated session's Details panel, opens the generated URL, reviews the branch's UI changes with fake-agent data, then stops the stack.
 
+### Event Fork
+
+A new Bakery agent session created from a selected session-tree-backed transcript event, used as Bakery's rollback/go-to behavior without mutating the source session's active leaf.
+
+- Also known as: fork from here, rollback fork.
+- Not: guaranteed workspace file restoration; the first behavior forks conversation/session history only.
+- Example: an operator forks from an assistant response to continue after that response in a new session, or forks from a user input to reopen that prompt as an editable composer draft in the new session.
+
 ### Containerized Development Environment
 
 A Docker-backed way to run and dogfood Bakery development from a container while editing the checked-out Bakery repository through a bind mount.

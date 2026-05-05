@@ -327,11 +327,21 @@ export const sessionTreeResponseSchema = z.object({
 });
 export type SessionTreeResponse = z.infer<typeof sessionTreeResponseSchema>;
 
+export const forkSessionPositionSchema = z.enum(["auto", "before", "at"]);
+export type ForkSessionPosition = z.infer<typeof forkSessionPositionSchema>;
+
 export const forkSessionRequestSchema = z.object({
   entryId: z.string().min(1),
   title: z.string().min(1).max(120).optional(),
+  position: forkSessionPositionSchema.optional().default("auto"),
 });
 export type ForkSessionRequest = z.infer<typeof forkSessionRequestSchema>;
+
+export const forkSessionResponseSchema = z.object({
+  session: webSessionSchema,
+  editorText: z.string().optional(),
+});
+export type ForkSessionResponse = z.infer<typeof forkSessionResponseSchema>;
 
 export const navigateTreeRequestSchema = z.object({
   entryId: z.string().min(1),

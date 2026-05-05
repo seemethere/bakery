@@ -92,7 +92,10 @@ export class TranscriptFollowController {
   }
 
   scheduleFollow(root: ParentNode, reason = "scheduled-follow"): void {
-    requestAnimationFrame(() => this.scrollToBottom(root, reason));
+    requestAnimationFrame(() => {
+      if (!this.autoScrollValue) return;
+      this.scrollToBottom(root, reason);
+    });
   }
 
   syncScroll(root: ParentNode): void {
