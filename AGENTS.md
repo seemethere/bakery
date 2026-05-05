@@ -85,6 +85,8 @@ bun run report:iteration --recommend <changed files>
 
 Follow the report's focused-first command list in order and stop to fix the first failure instead of continuing through later harness commands. Treat full `bun run test:web-perf` as an explicit escalation, not the default: run it when the report selects it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly. For non-trivial validation choices, paste or summarize the report's `## Validation decision` block in the final handoff, including whether the full suite was run or intentionally skipped.
 
+When a focused UI harness scenario fails, locate the newest artifact before rerunning with `bun run report:iteration --latest-artifact <scenario>`; inspect the listed failure/log/screenshot paths, patch one cause, then rerun only that scenario unless escalation criteria apply.
+
 ## UI validation expectations
 
 For changes that affect the browser UI, WebSocket/session lifecycle, transcript rendering, slash commands, inspector/tree panels, or perceived responsiveness:

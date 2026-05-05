@@ -3,24 +3,38 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { findLatestHarnessArtifact, formatLatestHarnessArtifactResult, normalizeHarnessScenario } from "./report-iteration-artifacts";
 
-const root = resolve(import.meta.dir, "..");
+const root = resolve(process.env.PI_WEB_ITERATION_ROOT ?? resolve(import.meta.dir, ".."));
 const defaultOutputPath = join(root, "test-results", "iteration", "iteration-report.json");
 const cliArgs = process.argv.slice(2);
-const recommendMode = cliArgs.includes("--recommend");
-const agentActionsMode = cliArgs.includes("--agent-actions");
-const sessionContextMode = cliArgs.includes("--session-context");
-const sessionHistoryMode = cliArgs.includes("--session-history") || cliArgs.includes("--all-sessions");
-const roiMode = cliArgs.includes("--roi") || cliArgs.includes("--workstream-roi");
-const helpMode = cliArgs.includes("--help") || cliArgs.includes("-h");
-const outputFlagIndex = cliArgs.findIndex((arg) => arg === "--output" || arg === "-o");
-const sessionFlagIndex = cliArgs.findIndex((arg) => arg === "--session");
-const positionalOutput = !recommendMode && cliArgs[0] && !cliArgs[0].startsWith("-") ? cliArgs[0] : undefined;
-const outputPath = resolve(root, outputFlagIndex >= 0 ? cliArgs[outputFlagIndex + 1] ?? defaultOutputPath : positionalOutput ?? defaultOutputPath);
+const valueFlags = new Set(["--output", "-o", "--session", "--session-history-limit", "--latest-sessions", "--sessions", "--days", "--since", "--until", "--scenario"]);
+const booleanFlags = new Set([
+  "--recommend",
+  "--agent-actions",
+  "--session-context",
+  "--session-history",
+  "--all-sessions",
+  "--roi",
+  "--workstream-roi",
+  "--help",
+  "-h",
+  "--exclude-current-session",
+  "--exclude-current",
+]);
+const optionalValueFlags = new Set(["--latest-artifact"]);
+const cliOptions = parseCliOptions(cliArgs);
+const recommendMode = cliOptions.recommendMode;
+const agentActionsMode = cliOptions.agentActionsMode;
+const sessionContextMode = cliOptions.sessionContextMode;
+const sessionHistoryMode = cliOptions.sessionHistoryMode;
+const roiMode = cliOptions.roiMode;
+const helpMode = cliOptions.helpMode;
+const outputPath = resolve(root, cliOptions.outputPath ?? defaultOutputPath);
 const maxCommits = Number(process.env.PI_WEB_ITERATION_COMMITS ?? 40);
 const maxHarnessRuns = Number(process.env.PI_WEB_ITERATION_HARNESS_RUNS ?? 80);
 const maxSessionHistory = parsePositiveIntegerFlag(["--session-history-limit", "--latest-sessions", "--sessions"]) ?? Number(process.env.PI_WEB_ITERATION_SESSION_HISTORY ?? 500);
-const excludeCurrentSessionFromHistory = cliArgs.includes("--exclude-current-session") || cliArgs.includes("--exclude-current");
+const excludeCurrentSessionFromHistory = cliOptions.excludeCurrentSessionFromHistory;
 
 type GitCommit = {
   hash: string;
@@ -224,6 +238,70 @@ type IterationReport = {
   sessionHistory?: SessionHistoryReport;
   roiEstimate?: RoiEstimateReport;
 };
+
+type CliOptions = {
+  recommendMode: boolean;
+  agentActionsMode: boolean;
+  sessionContextMode: boolean;
+  sessionHistoryMode: boolean;
+  roiMode: boolean;
+  helpMode: boolean;
+  latestArtifactMode: boolean;
+  latestArtifactScenario?: string;
+  outputPath?: string;
+  excludeCurrentSessionFromHistory: boolean;
+};
+
+function parseCliOptions(args: string[]): CliOptions {
+  let latestArtifactMode = false;
+  let latestArtifactScenario: string | undefined;
+  let outputPath: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    const [flag, inlineValue] = arg.startsWith("-") && arg.includes("=") ? (arg.split(/=(.*)/s, 2) as [string, string]) : [arg, undefined];
+    if (valueFlags.has(flag)) {
+      const value = inlineValue ?? args[index + 1];
+      if (!value || value.startsWith("-")) failCli(`${flag} requires a value`);
+      if (inlineValue === undefined) index += 1;
+      if (flag === "--output" || flag === "-o") outputPath = value;
+      if (flag === "--scenario") {
+        latestArtifactMode = true;
+        latestArtifactScenario = normalizeHarnessScenario(value);
+      }
+      continue;
+    }
+    if (optionalValueFlags.has(flag)) {
+      latestArtifactMode = true;
+      const next = inlineValue ?? args[index + 1];
+      if (next && !next.startsWith("-")) {
+        latestArtifactScenario = normalizeHarnessScenario(next);
+        if (inlineValue === undefined) index += 1;
+      }
+      continue;
+    }
+    if (booleanFlags.has(flag)) {
+      if (inlineValue !== undefined) failCli(`${flag} does not accept a value`);
+      continue;
+    }
+    if (arg.startsWith("-")) failCli(`unknown option ${arg}; use --help for usage`);
+  }
+
+  const recommendMode = args.includes("--recommend");
+  const positionalOutput = !recommendMode && !latestArtifactMode && args[0] && !args[0].startsWith("-") ? args[0] : undefined;
+  return {
+    recommendMode,
+    agentActionsMode: args.includes("--agent-actions"),
+    sessionContextMode: args.includes("--session-context"),
+    sessionHistoryMode: args.includes("--session-history") || args.includes("--all-sessions"),
+    roiMode: args.includes("--roi") || args.includes("--workstream-roi"),
+    helpMode: args.includes("--help") || args.includes("-h"),
+    latestArtifactMode,
+    latestArtifactScenario,
+    outputPath: outputPath ?? positionalOutput,
+    excludeCurrentSessionFromHistory: args.includes("--exclude-current-session") || args.includes("--exclude-current"),
+  };
+}
 
 function run(command: string, args: string[]): string {
   const result = spawnSync(command, args, { cwd: root, encoding: "utf8" });
@@ -483,6 +561,7 @@ function validationLabelsFromCommand(command: string): string[] {
     const scenario = match[1];
     if (scenario && scenario !== "all") labels.push(`ui-harness:${scenario}`);
   }
+  if (/\bbun (?:run report:iteration|scripts\/report-iteration\.ts)\b[^\n]*--latest-artifact\b/.test(command)) labels.push("bun run report:iteration --latest-artifact");
   if (/\bbun run report:iteration\b/.test(command) || /\bbun scripts\/report-iteration\.ts\b/.test(command)) labels.push("bun run report:iteration");
   return Array.from(new Set(labels));
 }
@@ -626,7 +705,7 @@ function cwdMatchesCurrentWorkspace(cwd: string | undefined): boolean {
 }
 
 function findSessionLogPath(): string | undefined {
-  const explicit = sessionFlagIndex >= 0 ? cliArgs[sessionFlagIndex + 1] : undefined;
+  const explicit = rawFlagValue(["--session"]);
   if (explicit) return resolve(expandHome(explicit));
 
   const sorted = sessionLogCandidates().sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -1442,7 +1521,7 @@ const validationRules: ValidationRule[] = [
   },
   {
     name: "iteration-reporting",
-    matches: ["scripts/report-iteration.ts", "scripts/project-notes.ts"],
+    matches: ["scripts/report-iteration", "scripts/project-notes.ts"],
     commands: ["bun run report:iteration", "bun run project:notes", "bun run check"],
     reason: "Iteration/project-notes reporting changes are script-only and can usually avoid browser harness runs.",
   },
@@ -1521,8 +1600,14 @@ function recommendationFilesFromArgs(args: string[]): string[] {
   for (let index = recommendIndex + 1; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg) continue;
-    if (arg === "--output" || arg === "-o") {
-      index += 1;
+    const [flag, inlineValue] = arg.startsWith("-") && arg.includes("=") ? (arg.split(/=(.*)/s, 2) as [string, string]) : [arg, undefined];
+    if (valueFlags.has(flag)) {
+      if (inlineValue === undefined) index += 1;
+      continue;
+    }
+    if (optionalValueFlags.has(flag)) {
+      const next = inlineValue ?? args[index + 1];
+      if (next && !next.startsWith("-") && inlineValue === undefined) index += 1;
       continue;
     }
     if (arg.startsWith("-")) continue;
@@ -1601,6 +1686,8 @@ function printFocusedHarnessRetryAdvisory(recommendation: ValidationRecommendati
   console.log("\nFocused harness failure workflow:");
   console.log("- If a focused scenario fails, stop before rerunning broad validation: inspect the latest artifact, patch one cause, then rerun only that scenario.");
   console.log("- If the artifact is degraded or missing, regenerate that same scenario once to capture useful failure logs/screenshots before deeper debugging.");
+  console.log("Latest artifact commands:");
+  focusedScenarios.forEach((scenario) => console.log(`- ${scenario}: bun run report:iteration --latest-artifact ${scenario}`));
   const inspections = focusedScenarios.flatMap((scenario) => {
     const inspection = latestFailedHarnessInspectionForScenario(scenario);
     return inspection ? [inspection] : [];
@@ -1890,6 +1977,7 @@ function printHelp(): void {
   bun run report:iteration
   bun run report:iteration --output test-results/iteration/report.json
   bun run report:iteration --recommend <changed files...>
+  bun run report:iteration --latest-artifact [scenario]
   bun run report:iteration --agent-actions [--recommend <changed files...>]
   bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
   bun run report:iteration --session-history [--latest-sessions 10] [--exclude-current-session]
@@ -1897,7 +1985,7 @@ function printHelp(): void {
   bun run report:iteration --session-history --since 2026-05-04 --until 2026-05-06 --latest-sessions 500
   bun run report:iteration --session-history --latest-sessions 30 --exclude-current-session --roi
 
-When --recommend is passed without files, changed files are read from git status. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Session-history date filters use session log mtime: --days uses local-calendar days (for example, --days 2 means local-calendar today and yesterday through now), while --since/--until accept a date or datetime. Use --latest-sessions/--session-history-limit to cap history after date filtering and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
+When --recommend is passed without files, changed files are read from git status. --latest-artifact short-circuits the generic report path and does not write test-results/iteration/iteration-report.json. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Session-history date filters use session log mtime: --days uses local-calendar days (for example, --days 2 means local-calendar today and yesterday through now), while --since/--until accept a date or datetime. Use --latest-sessions/--session-history-limit to cap history after date filtering and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {
@@ -1930,6 +2018,12 @@ function buildCandidates(report: Omit<IterationReport, "candidates">): Iteration
 if (helpMode) {
   printHelp();
   process.exit(0);
+}
+
+if (cliOptions.latestArtifactMode) {
+  const result = findLatestHarnessArtifact({ root, scenario: cliOptions.latestArtifactScenario });
+  console.log(formatLatestHarnessArtifactResult(result));
+  process.exit(result.found ? 0 : 1);
 }
 
 const git = readGitCommits();
