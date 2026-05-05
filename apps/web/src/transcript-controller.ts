@@ -1,4 +1,4 @@
-import { isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, shouldPreferPendingToolTitle, toolCallTitlesForItem, type TranscriptItem } from "./transcript";
+import { isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolHeaderDisplay, type TranscriptItem } from "./transcript";
 import { isRecord } from "./utils";
 
 export type ToolTimingCacheEntry = { startedAt?: string; endedAt?: string; durationMs?: number };
@@ -39,15 +39,29 @@ function hasToolOutput(item: TranscriptItem): boolean {
   return Boolean(item.body.trim() || item.segments?.length);
 }
 
+function shouldPreserveExistingToolTitle(existing: TranscriptItem, nextItem: TranscriptItem): boolean {
+  if (existing.kind !== "tool" || nextItem.kind !== "tool") return false;
+  if (isGenericToolResultTitle(nextItem.title)) return true;
+  const existingDisplay = toolHeaderDisplay(existing);
+  const nextDisplay = toolHeaderDisplay(nextItem);
+  return Boolean(existingDisplay.target && !nextDisplay.target && existingDisplay.action === nextDisplay.action);
+}
+
 function mergeSameIdToolResult(existing: TranscriptItem, nextItem: TranscriptItem): TranscriptItem {
-  if (existing.kind !== "tool" || nextItem.kind !== "tool" || !isGenericToolResultTitle(nextItem.title)) return { ...existing, ...nextItem };
+  if (existing.kind !== "tool" || nextItem.kind !== "tool") return { ...existing, ...nextItem };
   const existingHasOutput = hasToolOutput(existing);
-  const nextBody = nextItem.body.trim() || !existingHasOutput ? nextItem.body : existing.body;
+  const nextHasOutput = hasToolOutput(nextItem);
+  const nextBody = nextHasOutput || !existingHasOutput ? nextItem.body : existing.body;
   const nextSegments = nextItem.segments?.length ? nextItem.segments : nextItem.body.trim() ? undefined : existing.segments;
+  const title = isGenericToolResultTitle(existing.title)
+    ? nextItem.title
+    : shouldPreserveExistingToolTitle(existing, nextItem)
+      ? existing.title
+      : nextItem.title;
   const merged: TranscriptItem = {
     ...existing,
     ...nextItem,
-    title: isGenericToolResultTitle(existing.title) ? nextItem.title : existing.title,
+    title,
     body: nextBody,
     raw: { previous: existing.raw, toolResult: nextItem.raw },
   };

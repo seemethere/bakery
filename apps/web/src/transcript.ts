@@ -1040,7 +1040,7 @@ export class PiTranscriptRow extends HTMLElement {
     const streamingText = this.streamingText();
     const streamingTextTarget = streamingText !== null ? this.querySelector<HTMLElement>(this.item?.kind === "tool" ? ".tool-streaming-output" : ".streaming-plain pre") : null;
     const canPatchText = shouldPatchStreamingText(streamingText, Boolean(streamingTextTarget));
-    const compactSummary = this.collapsed && item.kind === "tool" ? compactToolSummary(item) : "";
+    const compactSummary = "";
     const toolDisplay = item.kind === "tool" ? toolHeaderDisplay(item) : null;
     const visibleDuration = shouldShowToolDuration(item, this.collapsed);
     const segmentKey = item.segments?.map((segment) => {
