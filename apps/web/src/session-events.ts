@@ -1,4 +1,4 @@
-import type { WebSession } from "@pi-web-agent/protocol";
+import type { ActiveToolExecutionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { formatToolTitle, messageToTranscriptItem, questionSummaryFromTool, toolArgsToText, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { isRecord, stringify } from "./utils";
 
@@ -123,6 +123,12 @@ export function toolExecutionToTranscriptItem(type: string, event: Record<string
     };
   }
   return null;
+}
+
+export function activeToolExecutionSnapshotToTranscriptItem(event: ActiveToolExecutionSnapshot, existing?: TranscriptItem): TranscriptItem | null {
+  if (typeof event.toolCallId !== "string" || !event.toolCallId.trim()) return null;
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_update") return null;
+  return toolExecutionToTranscriptItem(event.type, event, existing);
 }
 
 export function questionSummaryForToolItem(item: TranscriptItem): TranscriptItem | null {

@@ -1538,6 +1538,13 @@ const validationRules: ValidationRule[] = [
     reason: "Workflow skill launchers surface through slash-command metadata and transcript/sidebar compaction.",
   },
   {
+    name: "active-tool-snapshot",
+    matches: ["packages/protocol/src/index.ts", "apps/server/src/session-hub.ts", "apps/web/src/main.ts", "apps/web/src/session-events.ts", "apps/web/src/transcript-event-controller.ts", "scripts/ui-harness/scenarios/transcript.ts"],
+    scenarios: ["subagent-card-reconnect", "subagent-card", "reconnect-controller"],
+    optionalCommands: ["bun run test:web-perf"],
+    reason: "Active tool snapshot/reconnect changes should first prove running Subagent Cards survive refresh, then validate the normal card and reconnect controller paths.",
+  },
+  {
     name: "protocol",
     matches: ["packages/protocol/src/", "packages/protocol/package.json"],
     optionalCommands: ["bun run test:web-perf"],
@@ -1545,20 +1552,20 @@ const validationRules: ValidationRule[] = [
   },
   {
     name: "server-session-lifecycle",
-    matches: ["apps/server/src/index.ts", "apps/server/src/pi-runner.ts"],
+    matches: ["apps/server/src/index.ts", "apps/server/src/pi-runner.ts", "apps/server/src/session-hub.ts"],
     scenarios: ["reconnect-controller", "controller-handoff-edges", "backend-restart", "slash-commands"],
     reason: "Server runner/session-hub changes often affect WebSocket lifecycle, controller state, slash commands, and restart behavior.",
   },
   {
     name: "fake-runner",
     matches: ["apps/server/src/fake-runner.ts"],
-    scenarios: ["streaming-responsiveness", "narrow-tool-stream", "question-answer", "slash-commands"],
+    scenarios: ["subagent-card-reconnect", "subagent-card", "streaming-responsiveness", "narrow-tool-stream", "question-answer", "slash-commands"],
     reason: "Fake-agent changes should validate the deterministic scenarios whose synthetic events may have changed.",
   },
   {
     name: "web-main-core",
     matches: ["apps/web/src/main.ts"],
-    scenarios: ["streaming-responsiveness", "slash-commands", "question-answer", "inspector-preview", "transcript-scroll-stability"],
+    scenarios: ["subagent-card-reconnect", "streaming-responsiveness", "slash-commands", "question-answer", "inspector-preview", "transcript-scroll-stability"],
     optionalCommands: ["bun run test:web-perf"],
     reason: "The main web component is high-churn and cross-cutting; start with the nearest focused UI scenarios, then use the full suite if multiple interaction paths changed.",
   },
@@ -1570,8 +1577,8 @@ const validationRules: ValidationRule[] = [
   },
   {
     name: "harness",
-    matches: ["scripts/ui-harness.ts"],
-    scenarios: ["mobile-layout", "slash-commands", "question-answer", "streaming-responsiveness"],
+    matches: ["scripts/ui-harness.ts", "scripts/ui-harness/scenarios/index.ts", "scripts/ui-harness/scenarios/names.ts"],
+    scenarios: ["subagent-card-reconnect", "mobile-layout", "slash-commands", "question-answer", "streaming-responsiveness"],
     optionalCommands: ["bun run test:web-perf"],
     reason: "Harness changes need at least one focused scenario to prove the runner still works; run the full suite when scenario orchestration changed broadly.",
   },

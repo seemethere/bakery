@@ -22,6 +22,7 @@ export const allScenarios = [
   "tool-grouping",
   "tool-image-heavy-transcript",
   "subagent-card",
+  "subagent-card-reconnect",
   "mobile-long-transcript-controls",
   "mobile-image-stream-stability",
   "file-autocomplete",

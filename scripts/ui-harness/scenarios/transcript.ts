@@ -26,6 +26,7 @@ export const transcriptScenarios = [
   "tool-grouping",
   "tool-image-heavy-transcript",
   "subagent-card",
+  "subagent-card-reconnect",
   "model-thinking",
   "context-usage",
 ] as const;
@@ -116,6 +117,40 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     throw new Error(`Expected mobile Subagent Card to use available transcript width, saw ${JSON.stringify(mobileLayout)}`);
   }
   await page.screenshot({ path: join(artifactDir, "subagent-card-mobile.png"), fullPage: true });
+  return collectMetrics(page);
+}
+
+export async function runSubagentCardReconnect(page: Page): Promise<Record<string, unknown>> {
+  const sessionId = await prepareSession(page);
+  await page.locator("#prompt").fill("Please run a slow fake subagent card reconnect scenario for renderer validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  const runningCard = page.locator(".subagent-card.running", { hasText: "reviewer" });
+  await runningCard.waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => document.querySelector(".subagent-card.running")?.textContent?.includes("read"), null, { timeout: 5_000 });
+  const beforeReload = await page.evaluate(() => ({
+    cards: document.querySelectorAll(".subagent-card.running").length,
+    text: document.querySelector(".transcript")?.textContent?.replace(/\s+/g, " ").slice(0, 240) ?? "",
+  }));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, sessionId);
+  await waitForAgentRunning(page, 8_000);
+  await page.locator(".subagent-card.running", { hasText: "reviewer" }).waitFor({ timeout: 5_000 });
+  const afterReload = await page.evaluate(() => ({
+    cards: document.querySelectorAll(".subagent-card.running").length,
+    text: document.querySelector(".transcript")?.textContent?.replace(/\s+/g, " ").slice(0, 240) ?? "",
+  }));
+  if (afterReload.cards < 1) throw new Error(`Expected running Subagent Card after reload, before=${JSON.stringify(beforeReload)} after=${JSON.stringify(afterReload)}`);
+  await page.screenshot({ path: join(artifactDir, "subagent-card-reconnect-running.png"), fullPage: true });
+  await waitForAgentIdle(page, 12_000);
+  await page.locator(".subagent-card.completed", { hasText: "Reviewer approved" }).waitFor({ timeout: 5_000 });
+  const completed = await page.evaluate(() => ({
+    completedCards: document.querySelectorAll(".subagent-card.completed").length,
+    cardRows: document.querySelectorAll(".message.subagent-card-result").length,
+    text: document.querySelector(".transcript")?.textContent?.replace(/\s+/g, " ").slice(0, 320) ?? "",
+  }));
+  if (completed.completedCards !== 1 || completed.cardRows !== 1) throw new Error(`Expected exactly one completed Subagent Card after reconnect, saw ${JSON.stringify(completed)}`);
+  await page.screenshot({ path: join(artifactDir, "subagent-card-reconnect-completed.png"), fullPage: true });
   return collectMetrics(page);
 }
 

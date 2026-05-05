@@ -163,7 +163,8 @@ class FakeSessionHandle implements SessionHandle {
     }
 
     if (shouldEmitSubagentCard) {
-      await this.emitFakeSubagentRun();
+      const slowSubagentCard = /(?:slow fake subagent card|subagent card reconnect)/i.test(text);
+      await this.emitFakeSubagentRun(slowSubagentCard ? { runningDelayMs: 4_000 } : {});
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -549,7 +550,7 @@ class FakeSessionHandle implements SessionHandle {
     }
   }
 
-  private async emitFakeSubagentRun(): Promise<void> {
+  private async emitFakeSubagentRun(options: { runningDelayMs?: number } = {}): Promise<void> {
     const toolCallId = crypto.randomUUID();
     const startedAt = new Date(Date.now() - 120).toISOString();
     const args = { agent: "reviewer", task: "Review the current Bakery subagent card implementation", context: "fork" };
@@ -574,7 +575,7 @@ class FakeSessionHandle implements SessionHandle {
       },
     });
     // Keep the live progress state observable long enough for focused UI harness layout assertions.
-    await sleep(750);
+    await sleep(options.runningDelayMs ?? 750);
     const endedAt = new Date().toISOString();
     this.emit({
       type: "tool_execution_end",

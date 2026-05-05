@@ -4,7 +4,7 @@ import { collectMetrics, prepareSession } from "./helpers";
 import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments, runArtifactPathFormats, runMissingRemoteImageArtifact, runRemoteImageArtifactPaths, runRemoteImageArtifactUpload, runRepeatedImageArtifactPaths } from "./artifacts";
 import { runBackendRestart, runConnectionDisconnected, runControllerHandoffEdges, runReconnectController, runReconnectDraft } from "./lifecycle";
 import { runMobileImageStreamStability, runMobileLayout, runMobileLongTranscriptControls } from "./mobile";
-import { runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runSubagentCard, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
+import { runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runSubagentCard, runSubagentCardReconnect, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
 import { runBashCommands, runConfiguredExtensionSmoke, runFileAutocomplete, runSlashCommands } from "./slash-commands";
 import { runContextUsage, runEmptySessionLayout, runQuestionAnswer, runSessionMetadata, runSessionRouting, runSessionsPage, runTreeForkNavigation } from "./session";
 import { runThemeGallery, runThemes } from "./visual";
@@ -70,6 +70,7 @@ export async function runScenario(name: string, page: Page, browser: Browser, ru
   if (name === "tool-grouping") return runToolGrouping(page);
   if (name === "tool-image-heavy-transcript") return runToolImageHeavyTranscript(page);
   if (name === "subagent-card") return runSubagentCard(page);
+  if (name === "subagent-card-reconnect") return runSubagentCardReconnect(page);
   if (name === "mobile-long-transcript-controls") return runMobileLongTranscriptControls(page);
   if (name === "mobile-image-stream-stability") return runMobileImageStreamStability(page);
   if (name === "file-autocomplete") return runFileAutocomplete(page);

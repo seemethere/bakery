@@ -2,8 +2,10 @@ import type { FastifyInstance } from "fastify";
 import {
   PROTOCOL_VERSION,
   clientMessageSchema,
+  type ActiveToolExecutionSnapshot,
   type ControllerInfo,
   type HelloMessage,
+  type NormalizedAgentEvent,
   type ServerEnvelope,
   type ServerMessage,
   type SessionSnapshot,
@@ -95,9 +97,35 @@ export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], record
     .map((entry) => entry.value);
 }
 
+export function activeToolCallId(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const id = value.toolCallId;
+  return typeof id === "string" && id.trim() ? id : null;
+}
+
+export function activeToolSnapshotFromEvent(event: NormalizedAgentEvent, existing?: ActiveToolExecutionSnapshot): ActiveToolExecutionSnapshot | null {
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_update") return null;
+  if (!isRecord(event.data)) return null;
+  const toolCallId = activeToolCallId(event.data);
+  if (!toolCallId) return null;
+  const snapshot: ActiveToolExecutionSnapshot = {
+    ...existing,
+    ...event.data,
+    type: event.type,
+    toolCallId,
+    ...(typeof event.time === "string" ? { eventTime: event.time } : {}),
+  };
+  if (existing?.toolName !== undefined && snapshot.toolName === undefined) snapshot.toolName = existing.toolName;
+  if (existing?.args !== undefined && snapshot.args === undefined) snapshot.args = existing.args;
+  if (existing?.startedAt !== undefined && snapshot.startedAt === undefined) snapshot.startedAt = existing.startedAt;
+  return snapshot;
+}
+
 type SocketClient = {
   clientId: string;
   seq: number;
+  snapshotPending: boolean;
+  bufferedPayloads: ServerMessage[];
   socket: { send(data: string): void; close(code?: number, reason?: string): void; on(event: string, listener: (...args: never[]) => void): void };
 };
 
@@ -117,8 +145,9 @@ type SessionHubDeps = {
   removeHub(sessionId: string): void;
 };
 
-class SessionHub {
+export class SessionHub {
   private readonly clients = new Map<string, SocketClient>();
+  private readonly activeToolExecutions = new Map<string, ActiveToolExecutionSnapshot>();
   private controllerId: string | null = null;
   private disposeTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingCommands: string[] = [];
@@ -128,6 +157,7 @@ class SessionHub {
 
   constructor(private readonly handle: SessionHandle, private readonly deps: SessionHubDeps) {
     this.unsubscribe = handle.subscribe((event, raw) => {
+      this.rememberActiveToolExecution(event);
       this.broadcast({ type: "agent_event", event, raw });
       if (event.type === "agent_end" || event.type === "turn_end") {
         void this.broadcastSettingsUpdate();
@@ -150,7 +180,7 @@ class SessionHub {
     this.disposeTimer = undefined;
 
     const clientId = requestedClientId && !this.clients.has(requestedClientId) ? requestedClientId : crypto.randomUUID();
-    const client: SocketClient = { clientId, seq: 0, socket };
+    const client: SocketClient = { clientId, seq: 0, snapshotPending: true, bufferedPayloads: [], socket };
     this.clients.set(clientId, client);
     if (!this.controllerId) this.controllerId = clientId;
 
@@ -168,10 +198,6 @@ class SessionHub {
       clientId,
     };
     socket.send(JSON.stringify(hello));
-    void this.snapshotWithWebCommands(webSession).then((snapshot) => {
-      this.send(client, { type: "session_snapshot", snapshot: { ...snapshot, controller: this.controllerFor(clientId) } });
-      this.broadcastControllerUpdate();
-    });
 
     socket.on("message", (...args: never[]) => {
       const [raw] = args as unknown as [Buffer | string];
@@ -180,11 +206,22 @@ class SessionHub {
 
     socket.on("close", () => {
       this.clients.delete(clientId);
+      client.bufferedPayloads = [];
       if (this.controllerId === clientId) {
         this.controllerId = this.clients.keys().next().value ?? null;
       }
       this.broadcastControllerUpdate();
       if (this.clients.size === 0) this.scheduleDispose();
+    });
+
+    void this.snapshotWithWebCommands(webSession).then((snapshot) => {
+      if (this.clients.get(clientId) !== client) return;
+      this.send(client, { type: "session_snapshot", snapshot: { ...snapshot, controller: this.controllerFor(clientId) } });
+      client.snapshotPending = false;
+      const buffered = client.bufferedPayloads;
+      client.bufferedPayloads = [];
+      for (const payload of buffered) this.send(client, payload);
+      this.broadcastControllerUpdate();
     });
   }
 
@@ -210,6 +247,24 @@ class SessionHub {
     client.socket.send(JSON.stringify(envelope(client.seq++, payload)));
   }
 
+  private sendOrBuffer(client: SocketClient, payload: ServerMessage): void {
+    if (client.snapshotPending) {
+      client.bufferedPayloads.push(payload);
+      return;
+    }
+    this.send(client, payload);
+  }
+
+  private rememberActiveToolExecution(event: NormalizedAgentEvent): void {
+    if (event.type === "tool_execution_end") {
+      const toolCallId = activeToolCallId(event.data);
+      if (toolCallId) this.activeToolExecutions.delete(toolCallId);
+      return;
+    }
+    const snapshot = activeToolSnapshotFromEvent(event, activeToolCallId(event.data) ? this.activeToolExecutions.get(activeToolCallId(event.data)!) : undefined);
+    if (snapshot) this.activeToolExecutions.set(snapshot.toolCallId, snapshot);
+  }
+
   private grantControl(requesterId: string): void {
     if (!this.clients.has(requesterId)) return;
     this.controllerId = requesterId;
@@ -217,7 +272,7 @@ class SessionHub {
   }
 
   private broadcast(payload: ServerMessage): void {
-    for (const client of this.clients.values()) this.send(client, payload);
+    for (const client of this.clients.values()) this.sendOrBuffer(client, payload);
   }
 
   broadcastMetadataUpdate(session: WebSession): void {
@@ -225,7 +280,7 @@ class SessionHub {
   }
 
   private broadcastControllerUpdate(): void {
-    for (const client of this.clients.values()) this.send(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
+    for (const client of this.clients.values()) this.sendOrBuffer(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
   }
 
   private async broadcastSettingsUpdate(): Promise<void> {
@@ -286,7 +341,12 @@ class SessionHub {
   private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
     const snapshot = await this.handle.snapshot(webSession);
     const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
-    return { ...snapshot, messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords) };
+    const activeToolExecutions = [...this.activeToolExecutions.values()];
+    return {
+      ...snapshot,
+      messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords),
+      ...(activeToolExecutions.length > 0 ? { activeToolExecutions } : {}),
+    };
   }
 
   private commandServices() {

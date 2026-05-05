@@ -9,7 +9,7 @@ import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./sess
 import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionSidebarHtml, renderSessionSidebarBackdrop as renderSessionSidebarBackdropHtml, sessionSidebarOverlayOpen } from "./session-sidebar-controller";
 import { bindSessionShellEvents } from "./session-shell-events";
 import { patchConnectionBanner as patchConnectionBannerWithState, patchHeaderStatus as patchHeaderStatusWithHtml, renderAttentionNeeded as renderAttentionNeededHtml, renderConnectionBanner as renderConnectionBannerHtml, renderConnectionBannerContent as renderConnectionBannerContentHtml, renderStatusPill as renderStatusPillHtml, renderViewerCount as renderViewerCountHtml, shouldRenderConnectionBanner as shouldRenderConnectionBannerForState, type AgentStatus, type ConnectionState } from "./session-status-controller";
-import { mergeSessionMetadataUpdate } from "./session-events";
+import { activeToolExecutionSnapshotToTranscriptItem, mergeSessionMetadataUpdate } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
 import { composerModeLabel, hasComposerSendContent as composerHasSendContent, isBashPromptDraft as isComposerBashPromptDraft, isComposerNotice as isComposerNoticeMessage, isNoContextBashPromptDraft, patchComposerMode as patchComposerModeWithState, patchComposerSendAvailability as patchComposerSendAvailabilityWithState, renderComposerNotice as renderComposerNoticeHtml } from "./composer-mode-controller";
@@ -618,7 +618,16 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.pendingQuestion || this.pendingQuestion.id !== this.answeringQuestionId) this.answeringQuestionId = null;
     if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
     this.transcriptController.loadToolTimings(session.id);
-    this.transcriptController.replaceItems(this.transcriptController.applyCachedToolTimings(compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)))));
+    const snapshotItems = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
+    for (const activeTool of snapshot.activeToolExecutions ?? []) {
+      const existing = snapshotItems.find((item) => item.id === `tool:${activeTool.toolCallId}`);
+      const item = activeToolExecutionSnapshotToTranscriptItem(activeTool, existing);
+      if (!item) continue;
+      const index = snapshotItems.findIndex((candidate) => candidate.id === item.id);
+      if (index === -1) snapshotItems.push(item);
+      else snapshotItems[index] = item;
+    }
+    this.transcriptController.replaceItems(this.transcriptController.applyCachedToolTimings(snapshotItems));
     this.runningQueue.reset();
     this.transcriptFollow.clearUnread();
     this.forceFullRender = true;

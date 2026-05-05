@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand } from "./session-hub.js";
+import type { NormalizedAgentEvent, ServerEnvelope, WebSession } from "@pi-web-agent/protocol";
+import { activeToolCallId, activeToolSnapshotFromEvent, dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand, SessionHub } from "./session-hub.js";
 
 describe("parseNameCommand", () => {
   test("ignores non-name commands", () => {
@@ -32,6 +33,37 @@ describe("dataUrlToImageContent", () => {
     expect(() => dataUrlToImageContent("data:text/plain;base64,SGVsbG8=")).toThrow("Images must be png, jpeg, gif, or webp data URLs");
   });
 });
+
+function webSession(overrides: Partial<WebSession> = {}): WebSession {
+  return {
+    id: "s1",
+    cwd: "/repo",
+    piSessionFile: "/repo/.pi/sessions/s1.jsonl",
+    isolationKind: "none",
+    sourceCwd: null,
+    worktreePath: null,
+    worktreeBranch: null,
+    worktreeBaseCommit: null,
+    worktreeSourceDirty: false,
+    title: null,
+    titleSource: "unset",
+    summary: null,
+    summarySource: "unset",
+    summaryUpdatedAt: null,
+    metadataGenerationCount: 0,
+    metadataLastGeneratedAt: null,
+    autoGenerateMetadataOverride: "default",
+    createdAt: "2026-05-05T00:00:00.000Z",
+    lastOpenedAt: "2026-05-05T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 describe("mergeSnapshotMessagesWithWebCommands", () => {
   test("interleaves persisted web command results between timestamped snapshot messages", () => {
@@ -85,5 +117,73 @@ describe("mergeSnapshotMessagesWithWebCommands", () => {
     }]);
 
     expect(merged.map((message) => (message as { id: string }).id)).toEqual(["user-1", "assistant-1", "command:metadata"]);
+  });
+});
+
+describe("active tool execution snapshots", () => {
+  test("merges sparse updates while preserving start metadata", () => {
+    const start = activeToolSnapshotFromEvent({
+      type: "tool_execution_start",
+      time: "2026-05-05T00:00:00.000Z",
+      data: { type: "tool_execution_start", toolCallId: "sub-1", toolName: "subagent", args: { agent: "reviewer" }, startedAt: "2026-05-05T00:00:00.000Z" },
+    });
+    const update = activeToolSnapshotFromEvent({
+      type: "tool_execution_update",
+      time: "2026-05-05T00:00:01.000Z",
+      data: { type: "tool_execution_update", toolCallId: "sub-1", partialResult: { details: { progress: [{ agent: "reviewer", status: "running" }] } } },
+    }, start ?? undefined);
+
+    expect(update).toMatchObject({
+      type: "tool_execution_update",
+      toolCallId: "sub-1",
+      toolName: "subagent",
+      args: { agent: "reviewer" },
+      startedAt: "2026-05-05T00:00:00.000Z",
+      eventTime: "2026-05-05T00:00:01.000Z",
+      partialResult: { details: { progress: [{ agent: "reviewer", status: "running" }] } },
+    });
+  });
+
+  test("skips events without a stable toolCallId", () => {
+    expect(activeToolCallId({ toolCallId: "" })).toBeNull();
+    expect(activeToolCallId({ toolCallId: 3 })).toBeNull();
+    expect(activeToolSnapshotFromEvent({ type: "tool_execution_start", time: "now", data: { toolName: "subagent" } })).toBeNull();
+  });
+
+  test("buffers broadcasts until snapshot is sent, then drains in order", async () => {
+    let listener: (event: NormalizedAgentEvent, raw: unknown) => void = () => undefined;
+    const snapshot = deferred<{ session: WebSession; status: "idle" | "running"; messages: unknown[] }>();
+    const session = webSession();
+    const handle = {
+      id: session.id,
+      cwd: session.cwd,
+      subscribe: (next: (event: NormalizedAgentEvent, raw: unknown) => void) => { listener = next; return () => undefined; },
+      subscribeQuestion: () => () => undefined,
+      snapshot: () => snapshot.promise,
+      getSettings: async () => ({ model: null, availableModels: [], thinkingLevel: "low", availableThinkingLevels: ["low"], contextUsage: { tokens: null, contextWindow: null, percent: null } }),
+      getCommands: () => [],
+    };
+    const store = {
+      getSession: () => session,
+      listWebCommandResults: () => [],
+    };
+    const sent: unknown[] = [];
+    const socket = { send: (data: string) => sent.push(JSON.parse(data)), close: () => undefined, on: () => undefined };
+    const hub = new SessionHub(handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+
+    hub.add(socket, "client-1");
+    listener?.({ type: "tool_execution_update", time: "2026-05-05T00:00:01.000Z", data: { type: "tool_execution_update", toolCallId: "sub-1", toolName: "subagent", partialResult: { content: "running" } } }, {});
+    listener?.({ type: "tool_execution_end", time: "2026-05-05T00:00:02.000Z", data: { type: "tool_execution_end", toolCallId: "sub-1", toolName: "subagent", result: { content: "done" } } }, {});
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as { type?: string }).type).toBe("hello");
+
+    snapshot.resolve({ session, status: "running", messages: [] });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const envelopes = sent.slice(1) as ServerEnvelope[];
+    expect(envelopes.map((entry) => entry.payload.type)).toEqual(["session_snapshot", "agent_event", "agent_event", "controller_update"]);
+    expect(envelopes[0]?.payload.type).toBe("session_snapshot");
+    if (envelopes[0]?.payload.type === "session_snapshot") expect(envelopes[0].payload.snapshot.activeToolExecutions).toBeUndefined();
   });
 });

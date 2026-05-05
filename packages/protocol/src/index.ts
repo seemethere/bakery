@@ -411,6 +411,17 @@ export const answerQuestionPayloadSchema = z.object({
 });
 export type AnswerQuestionPayload = z.infer<typeof answerQuestionPayloadSchema>;
 
+export const activeToolExecutionSnapshotSchema = z.object({
+  type: z.enum(["tool_execution_start", "tool_execution_update"]),
+  toolCallId: z.string().min(1),
+  toolName: z.unknown().optional(),
+  args: z.unknown().optional(),
+  startedAt: z.string().optional(),
+  partialResult: z.unknown().optional(),
+  eventTime: z.string().optional(),
+}).passthrough();
+export type ActiveToolExecutionSnapshot = z.infer<typeof activeToolExecutionSnapshotSchema>;
+
 export const sessionSnapshotSchema = z.object({
   session: webSessionSchema,
   status: agentStatusSchema,
@@ -418,6 +429,7 @@ export const sessionSnapshotSchema = z.object({
   controller: controllerInfoSchema.optional(),
   settings: sessionRuntimeSettingsSchema.optional(),
   pendingQuestion: pendingQuestionSchema.nullable().optional(),
+  activeToolExecutions: z.array(activeToolExecutionSnapshotSchema).optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 

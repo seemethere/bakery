@@ -120,6 +120,31 @@ describe("session event helpers", () => {
     expect(helpers.toolExecutionToTranscriptItem("other", {})).toBeNull();
   });
 
+  test("hydrates active tool execution snapshots with stable ids", () => {
+    const start = helpers.activeToolExecutionSnapshotToTranscriptItem({
+      type: "tool_execution_start",
+      toolCallId: "sub-active",
+      toolName: "subagent",
+      args: { agent: "reviewer", task: "Review reconnect handling" },
+      startedAt: "2026-05-05T00:00:00.000Z",
+      eventTime: "2026-05-05T00:00:00.000Z",
+    });
+    expect(start).toMatchObject({ id: "tool:sub-active", title: "subagent", status: "running", startedAt: "2026-05-05T00:00:00.000Z" });
+
+    const update = helpers.activeToolExecutionSnapshotToTranscriptItem({
+      type: "tool_execution_update",
+      toolCallId: "sub-active",
+      toolName: "subagent",
+      args: { agent: "reviewer", task: "Review reconnect handling" },
+      startedAt: "2026-05-05T00:00:00.000Z",
+      partialResult: { content: [{ type: "text", text: "running" }], details: { mode: "single", progress: [{ agent: "reviewer", status: "running" }] } },
+      eventTime: "2026-05-05T00:00:01.000Z",
+    }, start ?? undefined);
+    expect(update).toMatchObject({ id: "tool:sub-active", title: "subagent", status: "running", startedAt: "2026-05-05T00:00:00.000Z" });
+    expect((update?.raw as { partialResult?: { details?: { progress?: unknown[] } } }).partialResult?.details?.progress?.length).toBe(1);
+    expect(helpers.activeToolExecutionSnapshotToTranscriptItem({ type: "tool_execution_update", toolCallId: "" } as never)).toBeNull();
+  });
+
   test("preserves subagent partial and final details for card rendering", () => {
     const update = helpers.toolExecutionToTranscriptItem("tool_execution_update", {
       toolCallId: "sub-1",
