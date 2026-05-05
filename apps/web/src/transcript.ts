@@ -59,7 +59,7 @@ export const PLAN_UI_ACTION_CONTRIBUTION: UiActionContribution = {
   id: "bakery.workflow.plan.actions",
   placement: "composer_takeover",
   title: "Plan ready",
-  description: "Accept to prepare the composer with this implementation plan.",
+  description: "Accept to send the recommended implementation prompt.",
   source: { extensionId: "bakery.workflow", commandName: "plan" },
   actions: [
     { id: "accept", label: "Accept plan", variant: "primary" },

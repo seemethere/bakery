@@ -54,7 +54,7 @@ export class UiActionController {
   }
 
   private handlePlanAction(actionId: string): void {
-    if (actionId === "accept") this.fillPromptDraft("Proceed with the recommended plan.");
+    if (actionId === "accept") this.submitText("Proceed with the recommended plan.");
   }
 
   private fillPromptDraft(text: string): void {

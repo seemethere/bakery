@@ -58,9 +58,8 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await page.locator(".plan-details-dialog [data-close-plan-details]").first().click();
   await page.locator(".plan-details-dialog").waitFor({ state: "detached", timeout: 5_000 });
   await planCard.locator('[data-plan-action="accept"]').click();
-  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "Proceed with the recommended plan.", null, { timeout: 5_000 });
-  await page.locator(".message.user", { hasText: "Proceed with the recommended plan" }).waitFor({ state: "detached", timeout: 1_500 }).catch(() => undefined);
-  await page.locator("#prompt").fill("");
+  await page.locator(".message.user", { hasText: "Proceed with the recommended plan" }).waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "", null, { timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);
   await ensureSidebarSettingsVisible(page);
   await page.locator('[data-route-path="/sessions"]').click();
