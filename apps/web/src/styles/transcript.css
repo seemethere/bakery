@@ -954,6 +954,12 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
+@media (min-width: 769px) {
+  .message.tool.subagent-card-result {
+    width: min(100%, 640px);
+  }
+}
+
 .message.tool.running:not(.developer-bash) {
   padding-left: 16px;
   border: 0;
