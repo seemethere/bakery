@@ -129,6 +129,15 @@ describe("session event helpers", () => {
     });
     expect(update).toMatchObject({ id: "tool:sub-1", kind: "tool", title: "subagent", status: "running" });
     expect((update?.raw as { partialResult?: { details?: { mode?: string } } }).partialResult?.details?.mode).toBe("single");
+    expect((update?.raw as { args?: { agent?: string } }).args?.agent).toBe("reviewer");
+
+    const sparseStart = helpers.toolExecutionToTranscriptItem("tool_execution_start", {
+      toolCallId: "sub-2",
+      toolName: "subagent",
+      args: { agent: "scout", task: "Inspect the mobile card layout" },
+    });
+    expect(sparseStart).toMatchObject({ id: "tool:sub-2", kind: "tool", title: "subagent", status: "running" });
+    expect((sparseStart?.raw as { args?: { task?: string } }).args?.task).toBe("Inspect the mobile card layout");
 
     const end = helpers.toolExecutionToTranscriptItem("tool_execution_end", {
       toolCallId: "sub-1",

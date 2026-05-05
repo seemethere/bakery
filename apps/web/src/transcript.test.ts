@@ -253,6 +253,8 @@ describe("transcript subagent cards", () => {
     expect(html).toContain("subagent-card running");
     expect(html).toContain("reviewer");
     expect(html).toContain("Review the diff");
+    expect(html).not.toContain("(running...)");
+    expect(html).not.toContain("&quot;agent&quot;");
   });
 
   test("keeps management list calls out of full Subagent Cards while running", () => {
@@ -379,6 +381,36 @@ describe("transcript subagent cards", () => {
     expect(html).toContain("2 tools");
   });
 
+  test("renders same-id merged final subagent results as standalone cards", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-merged",
+      kind: "tool",
+      title: "subagent",
+      body: "Reviewer approved the slice.",
+      status: "done",
+      raw: {
+        previous: { toolName: "subagent", args: { agent: "reviewer", task: "Review the diff" } },
+        toolResult: {
+          toolName: "subagent",
+          args: { agent: "reviewer", task: "Review the diff" },
+          result: {
+            details: {
+              mode: "single",
+              results: [{ agent: "reviewer", exitCode: 0, finalOutput: "Reviewer approved the slice.", model: "fake/subagent-reviewer" }],
+            },
+          },
+        },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(true);
+    const html = renderSubagentCard(item);
+
+    expect(html).toContain("subagent-card completed");
+    expect(html).toContain("Reviewer approved the slice.");
+    expect(html).toContain("fake/subagent-reviewer");
+  });
+
   test("renders final subagent results without raw JSON", () => {
     const item: TranscriptItem = {
       id: "tool:subagent-2",
@@ -406,6 +438,7 @@ describe("transcript subagent cards", () => {
     expect(html).toContain("Approved the slice.");
     expect(html).toContain("fake/model");
     expect(html).toContain("output: output.md");
+    expect(html).not.toContain("Full reviewer output");
     expect(html).not.toContain("/tmp/output.md");
     expect(html).not.toContain("&quot;results&quot;");
   });

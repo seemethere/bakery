@@ -37,13 +37,85 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
   await waitForAgentRunning(page);
   const runningCard = page.locator(".subagent-card.running", { hasText: "reviewer" });
   await runningCard.waitFor({ timeout: 5_000 });
-  await runningCard.locator(".subagent-activity", { hasText: "read" }).waitFor({ timeout: 5_000 });
+  const runningSnapshot = await runningCard.evaluate((card) => ({
+    text: (card as HTMLElement).textContent ?? "",
+    activities: Array.from((card as HTMLElement).querySelectorAll(".subagent-activity"), (node) => node.textContent ?? ""),
+  }));
+  if (!runningSnapshot.activities.some((text) => text.includes("read") || text.includes("Review the current Bakery subagent card implementation"))) {
+    throw new Error(`Expected running Subagent Card activity row, saw ${JSON.stringify(runningSnapshot)}`);
+  }
   await waitForAgentIdle(page, 10_000);
   const finalCard = page.locator(".subagent-card.completed", { hasText: "Reviewer approved" });
-  await finalCard.waitFor({ timeout: 5_000 });
+  const sawFinalCard = await finalCard.waitFor({ timeout: 5_000 }).then(() => true).catch(() => false);
+  if (!sawFinalCard) {
+    const subagentDom = await page.evaluate(() => Array.from(document.querySelectorAll(".message, .subagent-card"), (node) => ({ className: (node as HTMLElement).className, text: ((node as HTMLElement).textContent ?? "").slice(0, 300) })));
+    throw new Error(`Expected completed Subagent Card, saw ${JSON.stringify(subagentDom)}`);
+  }
   await finalCard.locator(".subagent-result-title", { hasText: "fake/subagent-reviewer" }).waitFor({ timeout: 5_000 });
-  await page.locator(".message.subagent-card-result").waitFor({ timeout: 5_000 });
+  const cardRow = page.locator(".message.subagent-card-result").last();
+  await cardRow.waitFor({ timeout: 5_000 });
+  const desktopLayout = await cardRow.evaluate((row) => {
+    const element = row as HTMLElement;
+    const body = element.querySelector<HTMLElement>(".message-body");
+    const card = element.querySelector<HTMLElement>(".subagent-card");
+    const actionArea = element.querySelector<HTMLElement>(".standalone-card-action-area");
+    const actionButton = actionArea?.querySelector<HTMLElement>('[data-row-action="menu"]');
+    const style = body ? getComputedStyle(body) : null;
+    const rect = element.getBoundingClientRect();
+    return {
+      classes: Array.from(element.classList),
+      hasCard: Boolean(card),
+      hasGenericHeader: Boolean(element.querySelector(".message-header")),
+      hasActionArea: Boolean(actionArea),
+      hasActionButton: Boolean(actionButton),
+      overflowY: style?.overflowY ?? null,
+      maxHeight: style?.maxHeight ?? null,
+      bodyScrollHeight: body?.scrollHeight ?? null,
+      bodyClientHeight: body?.clientHeight ?? null,
+      width: Math.round(rect.width),
+    };
+  });
+  if (!desktopLayout.hasCard || desktopLayout.hasGenericHeader || desktopLayout.classes.includes("collapsible") || desktopLayout.classes.includes("collapsed")) {
+    throw new Error(`Expected Subagent Card to render as a non-collapsible standalone card, saw ${JSON.stringify(desktopLayout)}`);
+  }
+  if (!desktopLayout.hasActionArea || !desktopLayout.hasActionButton) {
+    throw new Error(`Expected standalone Subagent Card action menu, saw ${JSON.stringify(desktopLayout)}`);
+  }
+  if (desktopLayout.overflowY !== "visible" || desktopLayout.maxHeight !== "none" || ((desktopLayout.bodyScrollHeight ?? 0) > (desktopLayout.bodyClientHeight ?? 0) + 2)) {
+    throw new Error(`Expected Subagent Card body to avoid nested scrolling, saw ${JSON.stringify(desktopLayout)}`);
+  }
+  if (desktopLayout.width <= 0 || desktopLayout.width > 660) {
+    throw new Error(`Expected desktop Subagent Card width cap near 640px, saw ${JSON.stringify(desktopLayout)}`);
+  }
+  await cardRow.locator('[data-row-action="menu"]').click();
+  await cardRow.locator('.message-action-menu [data-row-action="copy"]').waitFor({ timeout: 5_000 });
+  await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
+  await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0, null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "subagent-card.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await cardRow.scrollIntoViewIfNeeded();
+  const mobileLayout = await cardRow.evaluate((row) => {
+    const element = row as HTMLElement;
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = element.getBoundingClientRect();
+    const transcriptRect = transcript?.getBoundingClientRect();
+    return {
+      mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
+      width: Math.round(rect.width),
+      transcriptWidth: transcriptRect ? Math.round(transcriptRect.width) : null,
+      hasCard: Boolean(element.querySelector(".subagent-card")),
+      hasGenericHeader: Boolean(element.querySelector(".message-header")),
+      text: element.textContent?.slice(0, 160) ?? "",
+    };
+  });
+  if (!mobileLayout.mobile || !mobileLayout.hasCard || mobileLayout.hasGenericHeader) {
+    throw new Error(`Expected mobile Subagent Card to stay standalone instead of generic tool row, saw ${JSON.stringify(mobileLayout)}`);
+  }
+  if ((mobileLayout.transcriptWidth ?? 0) > 0 && mobileLayout.width < (mobileLayout.transcriptWidth ?? 0) * 0.78) {
+    throw new Error(`Expected mobile Subagent Card to use available transcript width, saw ${JSON.stringify(mobileLayout)}`);
+  }
+  await page.screenshot({ path: join(artifactDir, "subagent-card-mobile.png"), fullPage: true });
   return collectMetrics(page);
 }
 

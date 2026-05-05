@@ -1242,6 +1242,29 @@
   max-height: clamp(260px, 50vh, 680px);
 }
 
+.message.tool.subagent-card-result,
+.message.tool.running.subagent-card-result:not(.developer-bash),
+.message.tool.error.subagent-card-result:not(.developer-bash) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.message.tool.subagent-card-result .message-body,
+.message.tool.running.subagent-card-result:not(.developer-bash) .message-body,
+.message.tool.error.subagent-card-result:not(.developer-bash) .message-body {
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+  overscroll-behavior: auto;
+  scrollbar-gutter: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .message.tool pre {
   color: var(--color-text-secondary);
   padding: 10px;

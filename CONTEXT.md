@@ -139,12 +139,16 @@ A `/plan` behavior where the parent Agent Session uses an available Subagent for
 
 ### Subagent Card
 
-A Bakery-owned transcript card that renders an existing `pi-subagents` tool run in Bakery's card style, covering live foreground progress and final child-agent results.
+A Bakery-owned transcript card that renders an existing foreground `pi-subagents` execution run in Bakery's standalone card style, covering live child-agent progress and concise final child-agent results.
 
+- Running execution calls render as full standalone cards immediately, including before rich progress details arrive; Bakery uses available agent/task/chain arguments as fallback activity until `pi-subagents` reports structured progress.
+- Final execution cards prioritize a concise per-child summary: agent status, useful model/tool/token/duration stats when available, a short final-output preview, and compact basename-only output/session path chips.
+- Management calls such as list, status, get, doctor, interrupt, and resume remain quiet or compact tool receipts rather than full Subagent Cards.
+- The card is non-collapsible, avoids generic tool-row headers, avoids nested internal scrollbars, keeps a compact desktop width while using available narrow/mobile width, and preserves Copy/Fork through an overlaid standalone-card action menu.
 - Not: native web-managed subagent orchestration.
 - Not: direct reuse of the terminal TUI renderer from `pi-subagents`.
 - Not: the full background async widget/status surface; those may become follow-up UI.
-- Example: while a foreground reviewer subagent runs, Bakery shows agent status, current activity, tool/tokens/duration stats, and then the final result summary in a structured card.
+- Example: while a foreground reviewer subagent runs, Bakery shows agent status and current activity immediately, then replaces that live progress with a structured summary such as “Reviewer approved,” model/usage stats, and compact output-file labels.
 
 ### Session Metadata Generation
 

@@ -675,18 +675,30 @@ export function mergeDuplicateToolResult(previous: TranscriptItem, current: Tran
   return true;
 }
 
-function subagentRawResult(item: TranscriptItem): Record<string, unknown> | null {
-  if (item.kind !== "tool" || !isRecord(item.raw)) return null;
-  const raw = item.raw;
+function subagentRawEventFrom(raw: unknown, depth = 0): Record<string, unknown> | null {
+  if (!isRecord(raw) || depth > 3) return null;
   const toolName = String(raw.toolName ?? raw.name ?? "");
-  if (toolName !== "subagent") return null;
+  if (toolName === "subagent") return raw;
+  return subagentRawEventFrom(raw.toolResult, depth + 1)
+    ?? subagentRawEventFrom(raw.duplicateResult, depth + 1)
+    ?? subagentRawEventFrom(raw.previous, depth + 1);
+}
+
+function subagentRawEvent(item: TranscriptItem): Record<string, unknown> | null {
+  if (item.kind !== "tool") return null;
+  return subagentRawEventFrom(item.raw);
+}
+
+function subagentRawResult(item: TranscriptItem): Record<string, unknown> | null {
+  const raw = subagentRawEvent(item);
+  if (!raw) return null;
   const result = isRecord(raw.result) ? raw.result : isRecord(raw.partialResult) ? raw.partialResult : raw;
   return result;
 }
 
 function subagentDetails(item: TranscriptItem): Record<string, unknown> | null {
   const result = subagentRawResult(item);
-  const raw = isRecord(item.raw) ? item.raw : {};
+  const raw = subagentRawEvent(item) ?? {};
   const details = isRecord(result?.details) ? result.details : isRecord(raw.details) ? raw.details : null;
   if (!details) return null;
   if (typeof details.mode === "string" || Array.isArray(details.progress) || Array.isArray(details.results)) return details;
@@ -707,8 +719,9 @@ function isKnownSubagentManagementMode(details: Record<string, unknown> | null):
 
 function isSubagentManagementCall(item: TranscriptItem, details: Record<string, unknown> | null): boolean {
   if (isKnownSubagentManagementMode(details)) return true;
-  if (!isRecord(item.raw)) return false;
-  const args = isRecord(item.raw.args) ? item.raw.args : item.raw;
+  const raw = subagentRawEvent(item);
+  if (!raw) return false;
+  const args = isRecord(raw.args) ? raw.args : raw;
   const action = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
   return ["list", "get", "create", "update", "delete", "status", "interrupt", "resume", "doctor"].includes(action);
 }
@@ -925,16 +938,18 @@ function subagentFallbackTask(raw: Record<string, unknown>): string {
 }
 
 function fallbackSubagentProgressRows(item: TranscriptItem, details: Record<string, unknown> | null): Record<string, unknown>[] {
-  if (item.status !== "running" || !isRecord(item.raw)) return [];
-  const task = subagentFallbackTask(item.raw);
-  return [{ agent: subagentFallbackAgent(item.raw, details), status: "running", task, currentTool: task }];
+  const raw = subagentRawEvent(item);
+  if (item.status !== "running" || !raw) return [];
+  const task = subagentFallbackTask(raw);
+  return [{ agent: subagentFallbackAgent(raw, details), status: "running", task, currentTool: task }];
 }
 
 function fallbackSubagentResultRows(item: TranscriptItem, details: Record<string, unknown> | null, result: Record<string, unknown> | null): Record<string, unknown>[] {
-  if (item.status === "running" || !isRecord(item.raw)) return [];
+  const raw = subagentRawEvent(item);
+  if (item.status === "running" || !raw) return [];
   const output = visibleSubagentText(item, result) || (item.status === "error" ? "Failed" : "Done");
   const failed = item.status === "error" || isSubagentFailureText(output);
-  return [{ agent: subagentFallbackAgent(item.raw, details), status: failed ? "failed" : "completed", exitCode: failed ? 1 : 0, finalOutput: output }];
+  return [{ agent: subagentFallbackAgent(raw, details), status: failed ? "failed" : "completed", exitCode: failed ? 1 : 0, finalOutput: output }];
 }
 
 export function renderSubagentCard(item: TranscriptItem): string {

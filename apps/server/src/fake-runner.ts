@@ -573,7 +573,8 @@ class FakeSessionHandle implements SessionHandle {
         },
       },
     });
-    await sleep(160);
+    // Keep the live progress state observable long enough for focused UI harness layout assertions.
+    await sleep(750);
     const endedAt = new Date().toISOString();
     this.emit({
       type: "tool_execution_end",
