@@ -22,6 +22,14 @@ Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verificati
 - Preserve local-first security assumptions from `DESIGN.md`.
 - Prefer small, incremental vertical slices over large rewrites.
 
+## Subagent implementation hints
+
+When the `subagent` tool is available during implementation, use subagents deliberately for bounded assistance that reduces context load or risk, not as a replacement for parent-session ownership.
+
+- For editing help, delegate only a clearly scoped file, module, or vertical slice; keep the parent agent responsible for reviewing and integrating the final diff.
+- For validation help, ask subagents for focused test strategy, failure triage, or independent review, but run the selected repository validation commands in the parent session and report exact results.
+- Prefer foreground subagent runs for implementation/review loops; use async/background subagents only when the task is explicitly parallelizable and the parent can continue safely.
+
 ## "What's next?" dev loop
 
 When the operator asks "what's next?" or asks to continue planning:

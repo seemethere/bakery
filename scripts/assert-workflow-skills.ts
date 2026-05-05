@@ -98,6 +98,10 @@ const guidanceSnippets = [
   "bun run report:iteration --session-history",
   ".pi/skills/iteration-observability/SKILL.md",
   "per-tool result payload size",
+  "## Subagent implementation hints",
+  "delegate only a clearly scoped file, module, or vertical slice",
+  "For validation help, ask subagents for focused test strategy",
+  "run the selected repository validation commands in the parent session",
 ];
 
 for (const snippet of guidanceSnippets) {
