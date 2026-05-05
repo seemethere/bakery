@@ -258,11 +258,12 @@ export async function runTreeForkNavigation(page: Page): Promise<Record<string, 
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   const userRow = page.locator(".message.user", { hasText: "Create a transcript fork row" }).last();
   await userRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
+  const assistantRow = page.locator(".message.assistant").last();
+  await assistantRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
   await userRow.locator('[data-row-action="fork"]').click();
   await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeSessions, { timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
   await ensureSidebarSettingsVisible(page);
-  await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "transcript-fork-no-tree-ui.png"), fullPage: true });
   return collectMetrics(page);
 }

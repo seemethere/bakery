@@ -696,6 +696,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     try {
       this.sessionTree = await this.api<SessionTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree`);
+      for (const item of this.renderedTranscriptItems()) this.dirtyTranscriptIds.add(item.id);
       this.requestRender(0);
     } catch (error) {
       this.notice = `Tree refresh failed: ${error instanceof Error ? error.message : String(error)}`;
