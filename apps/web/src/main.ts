@@ -28,6 +28,7 @@ import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-t
 import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
 import { connectSessionWebSocket, type SessionConnectionContext } from "./session-connection-controller";
 import { handleTranscriptRowAction as handleTranscriptRowActionWithContext, type TranscriptRowAction, type TranscriptRowMenuAction } from "./transcript-row-actions";
+import { copyTextToClipboard } from "./clipboard";
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
@@ -728,7 +729,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private async copyText(value: string): Promise<void> {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyTextToClipboard(value);
       this.notice = "";
     } catch (error) {
       this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -1502,12 +1503,7 @@ class PiWebAgentApp extends HTMLElement {
   private copyPreviewStackUrl(): void {
     const url = this.previewStackStatus?.url;
     if (!url) return;
-    if (!navigator.clipboard?.writeText) {
-      this.notice = "Clipboard access is not available in this browser.";
-      this.render();
-      return;
-    }
-    void navigator.clipboard.writeText(url).then(() => {
+    void copyTextToClipboard(url).then(() => {
       this.notice = "Preview stack URL copied.";
       this.render();
     }).catch((error) => {
@@ -1518,12 +1514,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private copyWorkspacePath(): void {
     if (!this.selectedSession) return;
-    if (!navigator.clipboard?.writeText) {
-      this.notice = "Clipboard access is not available in this browser.";
-      this.render();
-      return;
-    }
-    void navigator.clipboard.writeText(this.selectedSession.cwd).then(() => {
+    void copyTextToClipboard(this.selectedSession.cwd).then(() => {
       this.notice = "Workspace path copied.";
       this.sessionDetailsOpen = false;
       this.render();
