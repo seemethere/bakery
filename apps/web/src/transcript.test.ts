@@ -239,6 +239,7 @@ describe("transcript subagent cards", () => {
       status: "running",
       raw: {
         toolName: "subagent",
+        args: { agent: "reviewer", task: "Review the diff" },
         partialResult: {
           details: { mode: "single" },
         },
@@ -247,7 +248,27 @@ describe("transcript subagent cards", () => {
 
     expect(hasSubagentCard(item)).toBe(true);
     expect(isRenderableTranscriptItem(item)).toBe(true);
-    expect(renderTranscriptSegments(item, false)).toContain("subagent-card running");
+    const html = renderTranscriptSegments(item, false);
+    expect(html).toContain("subagent-card running");
+    expect(html).toContain("reviewer");
+    expect(html).toContain("Review the diff");
+  });
+
+  test("keeps management list calls out of full Subagent Cards while running", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-list-running",
+      kind: "tool",
+      title: "subagent",
+      body: "Starting…",
+      status: "running",
+      raw: {
+        toolName: "subagent",
+        args: { action: "list" },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(false);
+    expect(renderTranscriptSegments(item, false)).not.toContain("subagent-card");
   });
 
   test("renders directive tasks as compact artifact activity", () => {
@@ -386,6 +407,47 @@ describe("transcript subagent cards", () => {
     expect(html).toContain("output: output.md");
     expect(html).not.toContain("/tmp/output.md");
     expect(html).not.toContain("&quot;results&quot;");
+  });
+
+  test("renders failed execution subagent tool results without detail rows as failed Subagent Cards", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-failed",
+      kind: "tool",
+      title: "subagent",
+      body: "Failed",
+      status: "done",
+      raw: {
+        toolName: "subagent",
+        args: { agent: "scout", task: "Inspect the codebase" },
+        result: { content: [{ type: "text", text: "Failed" }] },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(true);
+    const html = renderSubagentCard(item);
+
+    expect(html).toContain("subagent-card failed");
+    expect(html).toContain("scout");
+    expect(html).toContain("Failed");
+    expect(html).not.toContain("message-body");
+  });
+
+  test("keeps failed management list calls out of full Subagent Cards", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-list-failed",
+      kind: "tool",
+      title: "subagent",
+      body: "Failed",
+      status: "done",
+      raw: {
+        toolName: "subagent",
+        args: { action: "list" },
+        result: { content: [{ type: "text", text: "Failed" }] },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(false);
+    expect(renderTranscriptSegments(item, false)).not.toContain("subagent-card");
   });
 });
 

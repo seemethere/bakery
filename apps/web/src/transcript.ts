@@ -694,6 +694,14 @@ function isKnownSubagentManagementMode(details: Record<string, unknown> | null):
   return typeof details?.mode === "string" && details.mode.trim().toLowerCase() === "management";
 }
 
+function isSubagentManagementCall(item: TranscriptItem, details: Record<string, unknown> | null): boolean {
+  if (isKnownSubagentManagementMode(details)) return true;
+  if (!isRecord(item.raw)) return false;
+  const args = isRecord(item.raw.args) ? item.raw.args : item.raw;
+  const action = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
+  return ["list", "get", "create", "update", "delete", "status", "interrupt", "resume", "doctor"].includes(action);
+}
+
 function visibleSubagentText(item: TranscriptItem, result: Record<string, unknown> | null = subagentRawResult(item)): string {
   return (item.body || textFromSubagentContent(result?.content)).trim();
 }
@@ -708,9 +716,13 @@ function isNonInformativeSubagentManagementReceipt(item: TranscriptItem): boolea
   const result = subagentRawResult(item);
   if (!result) return false;
   const details = subagentDetails(item);
-  if (!isKnownSubagentManagementMode(details)) return false;
+  if (!isSubagentManagementCall(item, details)) return false;
   if (subagentProgressRows(details).length > 0 || subagentResultRows(details).length > 0) return false;
   return isLowInformationSubagentManagementText(visibleSubagentText(item, result));
+}
+
+function isSubagentFailureText(text: string): boolean {
+  return /^(?:failed|error|cancelled|canceled)(?:\.|:|$)/i.test(text.trim());
 }
 
 export function hasSubagentCard(item: TranscriptItem): boolean {
@@ -718,15 +730,18 @@ export function hasSubagentCard(item: TranscriptItem): boolean {
   if (!result) return false;
   const details = subagentDetails(item);
   if (subagentProgressRows(details).length > 0 || subagentResultRows(details).length > 0) return true;
-  return item.status === "running" && !isKnownSubagentManagementMode(details);
+  if (isSubagentManagementCall(item, details)) return false;
+  if (item.status === "running" || item.status === "error") return true;
+  return isSubagentFailureText(visibleSubagentText(item, result));
 }
 
 function subagentStatus(details: Record<string, unknown> | null, item: TranscriptItem): "running" | "completed" | "failed" | "paused" | "detached" {
   if (item.status === "running") return "running";
+  const result = subagentRawResult(item);
   const results = subagentResultRows(details);
   if (results.some((result) => result.interrupted === true)) return "paused";
   if (results.some((result) => result.detached === true)) return "detached";
-  if (item.status === "error" || results.some((result) => typeof result.exitCode === "number" && result.exitCode !== 0)) return "failed";
+  if (item.status === "error" || results.some((result) => typeof result.exitCode === "number" && result.exitCode !== 0) || isSubagentFailureText(visibleSubagentText(item, result))) return "failed";
   return "completed";
 }
 
@@ -865,7 +880,7 @@ function renderSubagentResultRows(results: Record<string, unknown>[]): string {
   if (results.length === 0) return "";
   return `<div class="subagent-card-rows">${results.map((result, index) => {
     const exitCode = typeof result.exitCode === "number" ? result.exitCode : 0;
-    const status = result.interrupted === true ? "paused" : result.detached === true ? "detached" : exitCode === 0 ? "completed" : "failed";
+    const status = typeof result.status === "string" ? result.status : result.interrupted === true ? "paused" : result.detached === true ? "detached" : exitCode === 0 ? "completed" : "failed";
     const agent = String(result.agent ?? `agent ${index + 1}`);
     const output = typeof result.finalOutput === "string" ? result.finalOutput : textFromSubagentContent(result.content);
     const usage = isRecord(result.usage) ? result.usage : null;
@@ -874,12 +889,41 @@ function renderSubagentResultRows(results: Record<string, unknown>[]): string {
     return `<div class="subagent-result-row ${subagentStatusClass(status)}">
       <span class="subagent-status-glyph" aria-hidden="true">${escapeHtml(statusGlyph(status))}</span>
       <div class="subagent-result-main">
-        <div class="subagent-result-title"><strong>${escapeHtml(agent)}</strong><span>${escapeHtml(status)}</span>${stats ? `<em>${escapeHtml(stats)}</em>` : ""}</div>
+        <div class="subagent-result-title"><strong>${escapeHtml(agent)}</strong><span>${escapeHtml(status.replaceAll("_", " "))}</span>${stats ? `<em>${escapeHtml(stats)}</em>` : ""}</div>
         <div class="subagent-output-preview">${escapeHtml(firstUsefulLine(output, exitCode === 0 ? "Done" : String(result.error ?? "Failed")))}</div>
         ${paths.length ? `<div class="subagent-paths">${paths.map((entry) => `<code>${escapeHtml(entry)}</code>`).join("")}</div>` : ""}
       </div>
     </div>`;
   }).join("")}</div>`;
+}
+
+function subagentFallbackAgent(raw: Record<string, unknown>, details: Record<string, unknown> | null, index = 0): string {
+  const args = isRecord(raw.args) ? raw.args : {};
+  if (typeof args.agent === "string" && args.agent.trim()) return args.agent;
+  if (typeof details?.mode === "string" && details.mode.trim().toLowerCase() === "management") return "subagents";
+  return index === 0 ? "subagent" : `agent ${index + 1}`;
+}
+
+function subagentFallbackTask(raw: Record<string, unknown>): string {
+  const args = isRecord(raw.args) ? raw.args : {};
+  if (typeof args.task === "string" && args.task.trim()) return subagentTaskActivity(args.task);
+  if (typeof args.action === "string" && args.action.trim()) return `${args.action} subagents`;
+  if (Array.isArray(args.chain)) return `Running ${args.chain.length} chain step${args.chain.length === 1 ? "" : "s"}`;
+  if (Array.isArray(args.tasks)) return `Running ${args.tasks.length} parallel task${args.tasks.length === 1 ? "" : "s"}`;
+  return "Starting subagent…";
+}
+
+function fallbackSubagentProgressRows(item: TranscriptItem, details: Record<string, unknown> | null): Record<string, unknown>[] {
+  if (item.status !== "running" || !isRecord(item.raw)) return [];
+  const task = subagentFallbackTask(item.raw);
+  return [{ agent: subagentFallbackAgent(item.raw, details), status: "running", task, currentTool: task }];
+}
+
+function fallbackSubagentResultRows(item: TranscriptItem, details: Record<string, unknown> | null, result: Record<string, unknown> | null): Record<string, unknown>[] {
+  if (item.status === "running" || !isRecord(item.raw)) return [];
+  const output = visibleSubagentText(item, result) || (item.status === "error" ? "Failed" : "Done");
+  const failed = item.status === "error" || isSubagentFailureText(output);
+  return [{ agent: subagentFallbackAgent(item.raw, details), status: failed ? "failed" : "completed", exitCode: failed ? 1 : 0, finalOutput: output }];
 }
 
 export function renderSubagentCard(item: TranscriptItem): string {
@@ -889,8 +933,10 @@ export function renderSubagentCard(item: TranscriptItem): string {
   const status = subagentStatus(details, item);
   const progress = subagentProgressRows(details);
   const results = subagentResultRows(details);
+  const displayProgress = progress.length > 0 ? progress : fallbackSubagentProgressRows(item, details);
+  const displayResults = results.length > 0 ? results : fallbackSubagentResultRows(item, details, result);
   const stats = subagentStats(details, item);
-  const renderedRows = item.status === "running" ? progress : results;
+  const renderedRows = item.status === "running" ? displayProgress : displayResults;
   const fallback = firstUsefulLine(item.body || textFromSubagentContent(result?.content), item.status === "running" ? "Subagent is running…" : "Subagent completed.");
   return `<article class="subagent-card ${subagentStatusClass(status)}" aria-label="Subagent ${escapeHtml(status)}">
     <div class="subagent-card-header">
@@ -901,7 +947,7 @@ export function renderSubagentCard(item: TranscriptItem): string {
       <span class="subagent-status-chip">${status === "running" ? `<span class="subagent-card-spinner" aria-hidden="true"></span>` : ""}${escapeHtml(status)}</span>
     </div>
     ${stats.length ? `<div class="subagent-card-stats">${stats.map((stat) => `<span>${escapeHtml(stat)}</span>`).join("")}</div>` : ""}
-    ${item.status === "running" ? renderSubagentProgressRows(progress) : renderSubagentResultRows(results)}
+    ${item.status === "running" ? renderSubagentProgressRows(displayProgress) : renderSubagentResultRows(displayResults)}
     ${renderedRows.length === 0 ? `<div class="subagent-output-preview">${escapeHtml(fallback)}</div>` : ""}
   </article>`;
 }
