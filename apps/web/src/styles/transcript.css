@@ -1261,6 +1261,12 @@
   font-weight: 400;
 }
 
+.message.tool .tool-action + .tool-summary::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--color-text-muted);
+}
+
 .message.collapsible.collapsed .message-body {
   display: none;
 }
