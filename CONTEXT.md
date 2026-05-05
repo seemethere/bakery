@@ -113,6 +113,23 @@ A transcript card whose data and browser component are contributed through Baker
 - Not: arbitrary DOM mutation of the transcript or a terminal TUI renderer copied directly into the browser.
 - Example: `/bakery:generate-details` returns session metadata result data, and its bundled extension card renders the title, summary, and skipped-field note.
 
+### Subagent
+
+A focused child pi coding-agent session launched by the parent agent through a runtime extension such as `pi-subagents` to perform delegated work.
+
+- Not: a native Bakery web session or browser tab.
+- Not: a replacement for the parent Agent Session; the parent remains responsible for orchestration and summarizing results.
+- Example: the parent agent asks a `reviewer` subagent to inspect a diff, then brings the review result back into the main conversation.
+
+### Subagent Card
+
+A Bakery-owned transcript card that renders an existing `pi-subagents` tool run in Bakery's card style, covering live foreground progress and final child-agent results.
+
+- Not: native web-managed subagent orchestration.
+- Not: direct reuse of the terminal TUI renderer from `pi-subagents`.
+- Not: the full background async widget/status surface; those may become follow-up UI.
+- Example: while a foreground reviewer subagent runs, Bakery shows agent status, current activity, tool/tokens/duration stats, and then the final result summary in a structured card.
+
 ### Session Metadata Generation
 
 An explicit Bakery action that generates and updates an agent session's operator-facing title and summary from the session transcript, optionally steered by operator guidance.

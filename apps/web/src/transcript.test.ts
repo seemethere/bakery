@@ -15,6 +15,8 @@ let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
 let pendingQuestionTranscriptItem: typeof import("./transcript").pendingQuestionTranscriptItem;
 let isRenderableTranscriptItem: typeof import("./transcript").isRenderableTranscriptItem;
+let hasSubagentCard: typeof import("./transcript").hasSubagentCard;
+let renderSubagentCard: typeof import("./transcript").renderSubagentCard;
 let messageToTranscriptItem: typeof import("./transcript").messageToTranscriptItem;
 let extensionCardPayload: typeof import("./extension-cards").extensionCardPayload;
 
@@ -31,7 +33,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, messageToTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -120,6 +122,67 @@ describe("transcript tool row display", () => {
     expect(shouldShowToolDuration({ id: "fast", kind: "tool", title: "read file", body: "", status: "done", durationMs: 999 }, true)).toBe(false);
     expect(shouldShowToolDuration({ id: "slow", kind: "tool", title: "read file", body: "", status: "done", durationMs: 1000 }, true)).toBe(true);
     expect(shouldShowToolDuration({ id: "expanded", kind: "tool", title: "read file", body: "", status: "done", durationMs: 20 }, false)).toBe(true);
+  });
+});
+
+describe("transcript subagent cards", () => {
+  test("renders live foreground progress as a Subagent Card", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-1",
+      kind: "tool",
+      title: "subagent",
+      body: "Reviewer is running",
+      status: "running",
+      raw: {
+        toolName: "subagent",
+        partialResult: {
+          details: {
+            mode: "single",
+            progressSummary: { toolCount: 2, tokens: 1200, durationMs: 1500 },
+            progress: [{ agent: "reviewer", status: "running", task: "Review the diff", currentTool: "read", currentPath: "apps/web/src/transcript.ts", toolCount: 2, tokens: 1200, durationMs: 1500 }],
+            results: [],
+          },
+        },
+      },
+    };
+
+    expect(hasSubagentCard(item)).toBe(true);
+    const html = renderTranscriptSegments(item, false);
+
+    expect(html).toContain("subagent-card running");
+    expect(html).toContain("Subagent");
+    expect(html).toContain("reviewer");
+    expect(html).toContain("read");
+    expect(html).toContain("2 tools");
+  });
+
+  test("renders final subagent results without raw JSON", () => {
+    const item: TranscriptItem = {
+      id: "tool:subagent-2",
+      kind: "tool",
+      title: "subagent",
+      body: "done",
+      status: "done",
+      raw: {
+        toolName: "subagent",
+        result: {
+          content: [{ type: "text", text: "Full reviewer output" }],
+          details: {
+            mode: "single",
+            progressSummary: { toolCount: 3, tokens: 2400, durationMs: 2500 },
+            results: [{ agent: "reviewer", exitCode: 0, model: "fake/model", usage: { input: 1800, output: 600, turns: 2 }, finalOutput: "Approved the slice.", savedOutputPath: "/tmp/output.md" }],
+          },
+        },
+      },
+    };
+
+    const html = renderSubagentCard(item);
+
+    expect(html).toContain("subagent-card completed");
+    expect(html).toContain("Approved the slice.");
+    expect(html).toContain("fake/model");
+    expect(html).toContain("output: /tmp/output.md");
+    expect(html).not.toContain("&quot;results&quot;");
   });
 });
 

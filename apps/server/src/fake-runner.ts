@@ -144,7 +144,8 @@ class FakeSessionHandle implements SessionHandle {
 
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
-    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript;
+    const shouldEmitSubagentCard = /(?:subagent[ -]?card|fake subagent|subagent renderer)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
@@ -153,6 +154,16 @@ class FakeSessionHandle implements SessionHandle {
 
     if (shouldEmitToolImageHeavyTranscript) {
       await this.emitToolImageHeavyTranscript();
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
+
+    if (shouldEmitSubagentCard) {
+      await this.emitFakeSubagentRun();
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -536,6 +547,61 @@ class FakeSessionHandle implements SessionHandle {
       });
       if (index % 4 === 0) await sleep(0);
     }
+  }
+
+  private async emitFakeSubagentRun(): Promise<void> {
+    const toolCallId = crypto.randomUUID();
+    const startedAt = new Date(Date.now() - 120).toISOString();
+    const args = { agent: "reviewer", task: "Review the current Bakery subagent card implementation", context: "fork" };
+    this.emit({ type: "tool_execution_start", toolCallId, toolName: "subagent", args, startedAt });
+    await sleep(80);
+    this.emit({
+      type: "tool_execution_update",
+      toolCallId,
+      toolName: "subagent",
+      args,
+      startedAt,
+      partialResult: {
+        content: [{ type: "text", text: "Reviewer is inspecting transcript rendering..." }],
+        details: {
+          mode: "single",
+          runId: "fake-subagent-run",
+          context: "fork",
+          progressSummary: { toolCount: 1, tokens: 980, durationMs: 1_200 },
+          progress: [{ index: 0, agent: "reviewer", status: "running", task: args.task, currentTool: "read", currentPath: "apps/web/src/transcript.ts", recentTools: [], toolCount: 1, tokens: 980, durationMs: 1_200 }],
+          results: [],
+        },
+      },
+    });
+    await sleep(160);
+    const endedAt = new Date().toISOString();
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId,
+      toolName: "subagent",
+      args,
+      startedAt,
+      endedAt,
+      result: {
+        content: [{ type: "text", text: "Reviewer approved the subagent card slice and recommended focused UI coverage." }],
+        details: {
+          mode: "single",
+          runId: "fake-subagent-run",
+          context: "fork",
+          progressSummary: { toolCount: 2, tokens: 1_640, durationMs: 2_400 },
+          results: [{
+            agent: "reviewer",
+            task: args.task,
+            exitCode: 0,
+            usage: { input: 1200, output: 440, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 2 },
+            model: "fake/subagent-reviewer",
+            finalOutput: "Reviewer approved the subagent card slice and recommended focused UI coverage.",
+            sessionFile: "/tmp/fake-subagent-session.jsonl",
+            savedOutputPath: "/tmp/fake-subagent-output.md",
+          }],
+        },
+      },
+    });
   }
 
   private async emitFakeToolRun(longOutput = false, runIndex = 1, fail = false): Promise<void> {

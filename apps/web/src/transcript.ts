@@ -663,6 +663,165 @@ export function mergeDuplicateToolResult(previous: TranscriptItem, current: Tran
   return true;
 }
 
+function subagentRawResult(item: TranscriptItem): Record<string, unknown> | null {
+  if (item.kind !== "tool" || !isRecord(item.raw)) return null;
+  const raw = item.raw;
+  const toolName = String(raw.toolName ?? raw.name ?? "");
+  if (toolName !== "subagent") return null;
+  const result = isRecord(raw.result) ? raw.result : isRecord(raw.partialResult) ? raw.partialResult : raw;
+  return result;
+}
+
+function subagentDetails(item: TranscriptItem): Record<string, unknown> | null {
+  const result = subagentRawResult(item);
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const details = isRecord(result?.details) ? result.details : isRecord(raw.details) ? raw.details : null;
+  if (!details) return null;
+  if (typeof details.mode === "string" || Array.isArray(details.progress) || Array.isArray(details.results)) return details;
+  return null;
+}
+
+export function hasSubagentCard(item: TranscriptItem): boolean {
+  return subagentRawResult(item) !== null;
+}
+
+function subagentStatus(details: Record<string, unknown> | null, item: TranscriptItem): "running" | "completed" | "failed" | "paused" | "detached" {
+  if (item.status === "running") return "running";
+  const results = Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+  if (results.some((result) => result.interrupted === true)) return "paused";
+  if (results.some((result) => result.detached === true)) return "detached";
+  if (item.status === "error" || results.some((result) => typeof result.exitCode === "number" && result.exitCode !== 0)) return "failed";
+  return "completed";
+}
+
+function statusGlyph(status: string): string {
+  if (status === "running") return "⠋";
+  if (status === "completed" || status === "complete") return "✓";
+  if (status === "failed") return "✗";
+  if (status === "paused" || status === "detached") return "■";
+  return "◦";
+}
+
+function compactNumber(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(value);
+}
+
+function textFromSubagentContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => isRecord(part) && part.type === "text" ? String(part.text ?? "") : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function firstUsefulLine(text: string, fallback = "No text output"): string {
+  const line = text.split(/\r?\n/).map((entry) => entry.trim()).find(Boolean) ?? fallback;
+  return line.length > 180 ? `${line.slice(0, 177).trimEnd()}…` : line;
+}
+
+function subagentStats(details: Record<string, unknown> | null, item: TranscriptItem): string[] {
+  const stats: string[] = [];
+  const progress = Array.isArray(details?.progress) ? details.progress.filter(isRecord) : [];
+  const results = Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+  const running = progress.filter((entry) => entry.status === "running").length;
+  const done = progress.filter((entry) => entry.status === "completed").length || results.filter((entry) => typeof entry.exitCode !== "number" || entry.exitCode === 0).length;
+  const total = typeof details?.totalSteps === "number" ? details.totalSteps : Math.max(progress.length, results.length);
+  if (item.status === "running" && running > 0) stats.push(`${running} running`);
+  if (total > 0) stats.push(`${done}/${total} done`);
+  const summary = isRecord(details?.progressSummary) ? details.progressSummary : null;
+  const toolCount = summary?.toolCount ?? progress.reduce((sum, entry) => sum + (typeof entry.toolCount === "number" ? entry.toolCount : 0), 0);
+  const tokens = summary?.tokens ?? progress.reduce((sum, entry) => sum + (typeof entry.tokens === "number" ? entry.tokens : 0), 0);
+  const duration = typeof summary?.durationMs === "number" ? summary.durationMs : item.durationMs;
+  if (toolCount) stats.push(`${toolCount} tool${toolCount === 1 ? "" : "s"}`);
+  const tokenText = compactNumber(tokens);
+  if (tokenText) stats.push(`${tokenText} tokens`);
+  const durationText = formatToolDuration(duration);
+  if (durationText) stats.push(durationText);
+  return stats;
+}
+
+function subagentActivity(entry: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof entry.currentTool === "string" && entry.currentTool) parts.push(entry.currentTool);
+  if (typeof entry.currentPath === "string" && entry.currentPath) parts.push(pathBasename(entry.currentPath));
+  if (typeof entry.activityState === "string" && entry.activityState) parts.push(entry.activityState.replaceAll("_", " "));
+  if (parts.length > 0) return parts.join(" · ");
+  if (entry.status === "running") return "thinking…";
+  return "";
+}
+
+function subagentStatusClass(status: string): string {
+  if (status === "running" || status === "completed" || status === "complete" || status === "failed" || status === "paused" || status === "detached" || status === "pending") return status;
+  return "pending";
+}
+
+function renderSubagentProgressRows(progress: Record<string, unknown>[]): string {
+  if (progress.length === 0) return "";
+  return `<div class="subagent-card-rows">${progress.map((entry, index) => {
+    const status = String(entry.status ?? "pending");
+    const agent = String(entry.agent ?? `agent ${index + 1}`);
+    const activity = subagentActivity(entry);
+    const task = typeof entry.task === "string" ? firstUsefulLine(entry.task, "") : "";
+    const stats = [typeof entry.toolCount === "number" && entry.toolCount > 0 ? `${entry.toolCount} tools` : "", compactNumber(entry.tokens) ? `${compactNumber(entry.tokens)} tokens` : "", formatToolDuration(typeof entry.durationMs === "number" ? entry.durationMs : undefined)].filter(Boolean).join(" · ");
+    return `<div class="subagent-result-row ${subagentStatusClass(status)}">
+      <span class="subagent-status-glyph" aria-hidden="true">${escapeHtml(statusGlyph(status))}</span>
+      <div class="subagent-result-main">
+        <div class="subagent-result-title"><strong>${escapeHtml(agent)}</strong><span>${escapeHtml(status.replaceAll("_", " "))}</span>${stats ? `<em>${escapeHtml(stats)}</em>` : ""}</div>
+        ${activity ? `<div class="subagent-activity">${escapeHtml(activity)}</div>` : task ? `<div class="subagent-activity">${escapeHtml(task)}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function renderSubagentResultRows(results: Record<string, unknown>[]): string {
+  if (results.length === 0) return "";
+  return `<div class="subagent-card-rows">${results.map((result, index) => {
+    const exitCode = typeof result.exitCode === "number" ? result.exitCode : 0;
+    const status = result.interrupted === true ? "paused" : result.detached === true ? "detached" : exitCode === 0 ? "completed" : "failed";
+    const agent = String(result.agent ?? `agent ${index + 1}`);
+    const output = typeof result.finalOutput === "string" ? result.finalOutput : textFromSubagentContent(result.content);
+    const usage = isRecord(result.usage) ? result.usage : null;
+    const stats = [typeof result.model === "string" ? result.model : "", usage && typeof usage.turns === "number" ? `${usage.turns} turns` : "", usage && typeof usage.input === "number" && typeof usage.output === "number" ? `${compactNumber(usage.input + usage.output)} tokens` : ""].filter(Boolean).join(" · ");
+    const paths = [typeof result.savedOutputPath === "string" ? `output: ${result.savedOutputPath}` : "", typeof result.sessionFile === "string" ? `session: ${result.sessionFile}` : ""].filter(Boolean);
+    return `<div class="subagent-result-row ${subagentStatusClass(status)}">
+      <span class="subagent-status-glyph" aria-hidden="true">${escapeHtml(statusGlyph(status))}</span>
+      <div class="subagent-result-main">
+        <div class="subagent-result-title"><strong>${escapeHtml(agent)}</strong><span>${escapeHtml(status)}</span>${stats ? `<em>${escapeHtml(stats)}</em>` : ""}</div>
+        <div class="subagent-output-preview">${escapeHtml(firstUsefulLine(output, exitCode === 0 ? "Done" : String(result.error ?? "Failed")))}</div>
+        ${paths.length ? `<div class="subagent-paths">${paths.map((entry) => `<code>${escapeHtml(entry)}</code>`).join("")}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+export function renderSubagentCard(item: TranscriptItem): string {
+  const details = subagentDetails(item);
+  const result = subagentRawResult(item);
+  const mode = typeof details?.mode === "string" ? details.mode : "run";
+  const status = subagentStatus(details, item);
+  const progress = Array.isArray(details?.progress) ? details.progress.filter(isRecord) : [];
+  const results = Array.isArray(details?.results) ? details.results.filter(isRecord) : [];
+  const stats = subagentStats(details, item);
+  const renderedRows = item.status === "running" ? progress : results;
+  const fallback = firstUsefulLine(item.body || textFromSubagentContent(result?.content), item.status === "running" ? "Subagent is running…" : "Subagent completed.");
+  return `<article class="subagent-card ${subagentStatusClass(status)}" aria-label="Subagent ${escapeHtml(status)}">
+    <div class="subagent-card-header">
+      <div>
+        <span class="subagent-card-kicker">Subagent</span>
+        <strong>${escapeHtml(mode)}</strong>
+      </div>
+      <span class="subagent-status-chip">${status === "running" ? `<span class="subagent-card-spinner" aria-hidden="true"></span>` : ""}${escapeHtml(status)}</span>
+    </div>
+    ${stats.length ? `<div class="subagent-card-stats">${stats.map((stat) => `<span>${escapeHtml(stat)}</span>`).join("")}</div>` : ""}
+    ${item.status === "running" ? renderSubagentProgressRows(progress) : renderSubagentResultRows(results)}
+    ${renderedRows.length === 0 ? `<div class="subagent-output-preview">${escapeHtml(fallback)}</div>` : ""}
+  </article>`;
+}
+
 function renderReadOnlyQuestionCard(item: TranscriptItem): string {
   const raw = isRecord(item.raw) ? item.raw : {};
   const details = isRecord(raw.details) ? raw.details : null;
@@ -702,6 +861,7 @@ export function renderTranscriptSegments(item: TranscriptItem, showThinking: boo
   }
 
   if (item.kind === "assistant" && item.status === "running") return renderAssistantStreamingPlaceholder();
+  if (hasSubagentCard(item)) return renderSubagentCard(item);
 
   const segments = item.segments?.length ? item.segments : [{ kind: item.kind === "tool" || item.kind === "system" || item.kind === "error" ? "pre" : "markdown", text: item.body } satisfies TranscriptSegment];
   const usePlainStreamingText = item.status === "running" && item.kind === "user";
@@ -808,8 +968,9 @@ export class PiTranscriptRow extends HTMLElement {
     const isStreamingAssistant = item.kind === "assistant" && item.status === "running";
     const planRenderState = hasPlanActions ? "plan-ready" : isGeneratingPlan ? "plan-generating" : isStreamingAssistant ? "assistant-generating" : "";
     const questionRenderState = item.kind === "question" && isRecord(item.raw) ? stringify(item.raw) : "";
+    const subagentRenderState = hasSubagentCard(item) && isRecord(item.raw) ? stringify(item.raw) : "";
     const contentRenderKey = streamingText !== null ? "streaming" : isStreamingAssistant ? "assistant-generating" : `${item.body}:${segmentKey}`;
-    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${questionRenderState}:${contentRenderKey}`;
+    const renderKey = `${item.id}:${item.kind}:${item.title}:${item.status ?? ""}:${item.startedAt ?? ""}:${item.endedAt ?? ""}:${item.durationMs ?? ""}:${toolDisplay?.action ?? ""}:${toolDisplay?.target ?? ""}:${visibleDuration}:${this.showThinking}:${this.collapsed}:${isCollapsible}:${compactSummary}:${this.actionMenuOpen}:${this.canFork}:${planRenderState}:${questionRenderState}:${subagentRenderState}:${contentRenderKey}`;
     if (renderKey === this.lastRenderKey) {
       if (canPatchText && streamingText !== this.lastStreamingText) {
         streamingTextTarget!.textContent = streamingText ?? "";
@@ -821,12 +982,13 @@ export class PiTranscriptRow extends HTMLElement {
     }
 
     const hasCustomCard = hasExtensionCard(item);
+    const hasSubagent = hasSubagentCard(item);
     const hasQuestionCard = item.kind === "question";
     const strippedPlanBody = hasPlanActions ? stripPlanActionsMarker(item.body) : "";
     const renderedItem = hasPlanActions ? { ...item, body: strippedPlanBody, segments: strippedPlanBody ? [{ kind: "markdown" as const, text: strippedPlanBody }] : [] } : item;
     const body = this.collapsed ? "" : hasPlanActions ? renderPlanCard(item, strippedPlanBody, options.localImageUrl) : isGeneratingPlan ? renderPlanGeneratingCard() : isStreamingAssistant ? renderAssistantStreamingPlaceholder() : hasCustomCard ? renderExtensionCard(item) : renderTranscriptSegments(renderedItem, this.showThinking, { cache: options.cache, localImageUrl: options.localImageUrl, suppressLocalImageArtifactPaths: options.suppressLocalImageArtifactPaths });
     const isConversationMessage = item.kind === "user" || item.kind === "assistant";
-    const isStandaloneCard = hasCustomCard || hasQuestionCard;
+    const isStandaloneCard = hasCustomCard || hasSubagent || hasQuestionCard;
     this.innerHTML = isStandaloneCard ? `
       <div class="message-body">${body}</div>` : isConversationMessage ? `
       <div class="message-body">${body}</div>
@@ -875,6 +1037,7 @@ export class PiTranscriptRow extends HTMLElement {
   }
 
   private isCollapsible(): boolean {
+    if (this.item && hasSubagentCard(this.item)) return false;
     return this.item?.kind === "tool" || this.item?.kind === "system";
   }
 
@@ -883,7 +1046,8 @@ export class PiTranscriptRow extends HTMLElement {
     const developerBashClass = isDeveloperBashItem(this.item) ? "developer-bash" : "";
     const noContextClass = isDeveloperBashNoContextItem(this.item) ? "no-context" : "";
     const metadataDetailsClass = hasExtensionCard(this.item) ? "metadata-details-result" : "";
-    return ["message", this.item.kind, this.item.status ?? "", developerBashClass, noContextClass, metadataDetailsClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
+    const subagentCardClass = hasSubagentCard(this.item) ? "subagent-card-result" : "";
+    return ["message", this.item.kind, this.item.status ?? "", developerBashClass, noContextClass, metadataDetailsClass, subagentCardClass, this.selected ? "selected" : "", this.isCollapsible() ? "collapsible" : "", this.collapsed ? "collapsed" : ""].filter(Boolean).join(" ");
   }
 
   private streamingText(): string | null {

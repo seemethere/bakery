@@ -120,6 +120,25 @@ describe("session event helpers", () => {
     expect(helpers.toolExecutionToTranscriptItem("other", {})).toBeNull();
   });
 
+  test("preserves subagent partial and final details for card rendering", () => {
+    const update = helpers.toolExecutionToTranscriptItem("tool_execution_update", {
+      toolCallId: "sub-1",
+      toolName: "subagent",
+      args: { agent: "reviewer" },
+      partialResult: { content: [{ type: "text", text: "running" }], details: { mode: "single", progress: [{ agent: "reviewer", status: "running" }] } },
+    });
+    expect(update).toMatchObject({ id: "tool:sub-1", kind: "tool", title: "subagent", status: "running" });
+    expect((update?.raw as { partialResult?: { details?: { mode?: string } } }).partialResult?.details?.mode).toBe("single");
+
+    const end = helpers.toolExecutionToTranscriptItem("tool_execution_end", {
+      toolCallId: "sub-1",
+      toolName: "subagent",
+      result: { content: [{ type: "text", text: "done" }], details: { mode: "single", results: [{ agent: "reviewer", exitCode: 0 }] } },
+    }, update ?? undefined);
+    expect(end).toMatchObject({ id: "tool:sub-1", title: "subagent", status: "done" });
+    expect((end?.raw as { result?: { details?: { results?: unknown[] } } }).result?.details?.results?.length).toBe(1);
+  });
+
   test("normalizes queue updates", () => {
     expect(helpers.queueUpdateValues({ steering: ["a"], followUp: ["b"] })).toEqual({ steering: ["a"], followUp: ["b"] });
     expect(helpers.queueUpdateValues({ steering: "nope", followUp: null })).toEqual({ steering: [], followUp: [] });

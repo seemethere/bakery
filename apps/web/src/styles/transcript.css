@@ -257,6 +257,7 @@
 }
 
 .metadata-details-card,
+.subagent-card,
 .plan-card {
   display: grid;
   gap: 12px;
@@ -270,14 +271,16 @@
   cursor: pointer;
 }
 
-.message.metadata-details-result {
+.message.metadata-details-result,
+.message.subagent-card-result {
   background: transparent;
   border: 0;
   box-shadow: none;
   padding: 0;
 }
 
-.message.metadata-details-result .message-body {
+.message.metadata-details-result .message-body,
+.message.subagent-card-result .message-body {
   padding: 0;
 }
 
@@ -294,6 +297,30 @@
   border-color: color-mix(in srgb, var(--color-error) 22%, var(--color-border));
   background:
     radial-gradient(circle at top left, color-mix(in srgb, var(--color-error) 7%, transparent), transparent 36%),
+    color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-bg-surface));
+}
+
+.subagent-card {
+  gap: 12px;
+  border-color: color-mix(in srgb, var(--color-info) 22%, var(--color-border));
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-info) 8%, transparent), transparent 36%),
+    color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-bg-surface));
+  cursor: default;
+}
+
+.subagent-card.failed {
+  border-color: color-mix(in srgb, var(--color-error) 26%, var(--color-border));
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-error) 8%, transparent), transparent 36%),
+    color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-bg-surface));
+}
+
+.subagent-card.paused,
+.subagent-card.detached {
+  border-color: color-mix(in srgb, var(--color-warning) 28%, var(--color-border));
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--color-warning) 8%, transparent), transparent 36%),
     color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-bg-surface));
 }
 
@@ -316,6 +343,7 @@
 }
 
 .metadata-details-card-header,
+.subagent-card-header,
 .plan-card-header,
 .plan-card-actions {
   display: flex;
@@ -325,6 +353,7 @@
 }
 
 .metadata-details-kicker,
+.subagent-card-kicker,
 .plan-card-kicker {
   color: var(--color-text);
   font-size: 13px;
@@ -350,6 +379,159 @@
 .metadata-details-kicker {
   color: color-mix(in srgb, var(--color-success) 55%, var(--color-text-secondary));
   text-transform: uppercase;
+}
+
+.subagent-card-kicker {
+  display: block;
+  color: color-mix(in srgb, var(--color-info) 68%, var(--color-text-secondary));
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.subagent-card-header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.subagent-card-header strong {
+  color: var(--color-text);
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1.15;
+  text-transform: capitalize;
+}
+
+.subagent-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 64%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-surface) 82%, transparent);
+  color: var(--color-text-secondary);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.subagent-card-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--color-info) 24%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-info) 86%, var(--color-text-muted));
+  border-radius: 999px;
+  animation: tool-running-spinner 900ms linear infinite;
+}
+
+.subagent-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.subagent-card-stats span {
+  border: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-surface) 70%, transparent);
+  color: var(--color-text-muted);
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.subagent-card-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.subagent-result-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+  padding-top: 10px;
+}
+
+.subagent-status-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: color-mix(in srgb, var(--color-info) 82%, var(--color-text));
+  font-weight: 900;
+}
+
+.subagent-result-row.completed .subagent-status-glyph {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: color-mix(in srgb, var(--color-success) 75%, var(--color-text));
+}
+
+.subagent-result-row.failed .subagent-status-glyph {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: color-mix(in srgb, var(--color-error) 75%, var(--color-text));
+}
+
+.subagent-result-row.paused .subagent-status-glyph,
+.subagent-result-row.detached .subagent-status-glyph {
+  background: color-mix(in srgb, var(--color-warning) 13%, transparent);
+  color: color-mix(in srgb, var(--color-warning) 74%, var(--color-text));
+}
+
+.subagent-result-main {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.subagent-result-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.subagent-result-title strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.subagent-result-title span,
+.subagent-result-title em {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.subagent-result-title span {
+  text-transform: capitalize;
+}
+
+.subagent-activity,
+.subagent-output-preview {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.subagent-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subagent-paths code {
+  border: 1px solid color-mix(in srgb, var(--color-border) 62%, transparent);
+  border-radius: 7px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
 .metadata-details-card.deferred .metadata-details-kicker {

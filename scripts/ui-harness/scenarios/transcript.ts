@@ -25,9 +25,27 @@ export const transcriptScenarios = [
   "narrow-tool-stream",
   "tool-grouping",
   "tool-image-heavy-transcript",
+  "subagent-card",
   "model-thinking",
   "context-usage",
 ] as const;
+
+export async function runSubagentCard(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please run a fake subagent card scenario for renderer validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  const runningCard = page.locator(".subagent-card.running", { hasText: "reviewer" });
+  await runningCard.waitFor({ timeout: 5_000 });
+  await runningCard.locator(".subagent-activity", { hasText: "read" }).waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
+  const finalCard = page.locator(".subagent-card.completed", { hasText: "Reviewer approved" });
+  await finalCard.waitFor({ timeout: 5_000 });
+  await finalCard.locator(".subagent-result-title", { hasText: "fake/subagent-reviewer" }).waitFor({ timeout: 5_000 });
+  await page.locator(".message.subagent-card-result").waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "subagent-card.png"), fullPage: true });
+  return collectMetrics(page);
+}
 
 export async function runStreamingResponsiveness(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
