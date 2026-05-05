@@ -281,6 +281,10 @@
   padding: 0;
 }
 
+.message.subagent-card-result .message-body {
+  overflow: visible;
+}
+
 .metadata-details-card {
   gap: 10px;
   border-color: color-mix(in srgb, var(--color-success) 18%, var(--color-border));
