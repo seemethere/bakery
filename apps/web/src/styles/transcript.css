@@ -46,12 +46,9 @@
 }
 
 .empty-transcript {
-  display: grid;
-  gap: 8px;
-  max-width: min(760px, 100%);
-  padding: 18px 20px;
-  color: var(--color-text-secondary);
-  text-align: center;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }
 
 .empty-transcript-kicker {

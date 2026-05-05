@@ -37,21 +37,5 @@ export function renderTranscriptShell(options: {
 }
 
 function renderEmptyTranscript(): string {
-  const quickStarts = [
-    { action: "plan", label: "/plan", title: "Plan next work", description: "Interview, inspect context, then hand off a small slice." },
-    { action: "screenshot", label: "Screenshot", title: "Attach visual context", description: "Paste, drop, or pick an image for the next prompt." },
-    { action: "file", label: "@file", title: "Mention workspace files", description: "Start file autocomplete for targeted context." },
-    { action: "bash", label: "!bash", title: "Run local bash", description: "Draft a command; use !! to exclude output from context." },
-  ];
-  return `<div class="empty-transcript" role="status" aria-label="Empty session">
-        <p class="empty-transcript-kicker">New pi browser session</p>
-        <strong>Start with a workflow.</strong>
-        <span>Use Bakery for visual transcript review, screenshots, and guided planning from any browser.</span>
-        <div class="empty-quick-starts" aria-label="Quick starts">
-          ${quickStarts.map((item) => `<button type="button" class="empty-quick-start" data-empty-quick-start="${escapeHtml(item.action)}">
-            <span class="empty-quick-start-label">${escapeHtml(item.label)}</span>
-            <span class="empty-quick-start-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.description)}</small></span>
-          </button>`).join("")}
-        </div>
-      </div>`;
+  return `<div class="empty-transcript" role="status" aria-label="Empty session"></div>`;
 }

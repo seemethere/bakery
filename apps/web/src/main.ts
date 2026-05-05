@@ -1021,6 +1021,7 @@ class PiWebAgentApp extends HTMLElement {
     this.patchComposerSendAvailability(input);
     if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerMode();
     this.autocomplete.updateForInput(input);
+    this.syncPromptAutosize();
   }
 
   private closeFileAutocomplete(): void {
@@ -1629,6 +1630,39 @@ class PiWebAgentApp extends HTMLElement {
     </div>`;
   }
 
+  private emptySessionQuote(): string {
+    const quotes = [
+      "Measure twice, bake once.",
+      "Let the idea proof before it goes in the oven.",
+      "Every good slice starts with a warm bench.",
+      "Whisk the context until the plan comes together.",
+      "A little mise en place makes the session rise.",
+      "Preheat the prompt, then bake the change.",
+    ];
+    const seed = this.selectedSession?.id ?? "bakery";
+    const index = Array.from(seed).reduce((sum, char) => sum + char.charCodeAt(0), 0) % quotes.length;
+    return quotes[index] ?? "Measure twice, bake once.";
+  }
+
+  private renderEmptySessionGreeting(): string {
+    return `<section class="empty-session-greeting" aria-label="Empty session greeting">
+      <p class="empty-session-kicker">New Bakery session</p>
+      <strong>${escapeHtml(this.emptySessionQuote())}</strong>
+    </section>`;
+  }
+
+  private renderEmptyQuickStartChips(): string {
+    const quickStarts = [
+      { action: "plan", label: "/plan", title: "Plan next work" },
+      { action: "screenshot", label: "Screenshot", title: "Attach visual context" },
+      { action: "file", label: "@file", title: "Mention workspace files" },
+      { action: "bash", label: "!bash", title: "Run local bash" },
+    ];
+    return `<div class="empty-quick-start-chips" aria-label="Quick starts">
+      ${quickStarts.map((item) => `<button type="button" class="empty-quick-start-chip" data-empty-quick-start="${escapeHtml(item.action)}" title="${escapeHtml(item.title)}" aria-label="${escapeHtml(item.title)}"><span>${escapeHtml(item.label)}</span></button>`).join("")}
+    </div>`;
+  }
+
   private useEmptyQuickStart(action: string): void {
     if (action === "screenshot") {
       this.querySelector<HTMLButtonElement>("#attachImages")?.click();
@@ -1792,8 +1826,10 @@ class PiWebAgentApp extends HTMLElement {
       this.patchJumpToLatest();
       bindQuestionPanel(this.questionPanelContext());
       this.syncOpenActionMenus(transcript);
+      this.syncEmptySessionLayoutState();
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
+      this.syncPromptAutosize();
       this.shellPatchDirty = false;
       recordTranscriptPatchSample(start, "structure");
       return true;
@@ -1809,8 +1845,10 @@ class PiWebAgentApp extends HTMLElement {
     this.patchJumpToLatest();
     bindQuestionPanel(this.questionPanelContext());
     this.syncOpenActionMenus(transcript);
+    this.syncEmptySessionLayoutState();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    this.syncPromptAutosize();
     this.shellPatchDirty = false;
     recordTranscriptPatchSample(start, "dirty-rows");
     return true;
@@ -1831,6 +1869,41 @@ class PiWebAgentApp extends HTMLElement {
       recordPerfEvent("renderFallback", "request-render", { delayMs, shellPatchDirty: this.shellPatchDirty, transcriptStructureDirty: this.transcriptStructureDirty, dirtyRows: this.dirtyTranscriptIds.size, forceFullRender: this.forceFullRender });
       this.render();
     }, delayMs);
+  }
+
+  private syncEmptySessionLayoutState(): void {
+    const isEmptySession = Boolean(this.selectedSession) && this.renderedTranscriptItems().length === 0 && !this.activeUiActionItem();
+    this.querySelector("main")?.classList.toggle("empty-session-main", isEmptySession);
+    this.querySelector(".transcript-shell")?.classList.toggle("empty-session-transcript-shell", isEmptySession);
+    this.querySelector("footer")?.classList.toggle("empty-session-footer", isEmptySession);
+    this.querySelector(".prompt-shell")?.classList.toggle("empty-session-prompt-shell", isEmptySession);
+    if (!isEmptySession) {
+      this.querySelector("main")?.classList.remove("empty-session-composer-grown");
+      this.querySelector("footer")?.classList.remove("empty-session-composer-grown");
+      this.querySelector(".empty-session-greeting")?.remove();
+      this.querySelector(".empty-quick-start-chips")?.remove();
+    }
+  }
+
+  private syncPromptAutosize(): void {
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    if (!input) return;
+    const computed = getComputedStyle(input);
+    const initialHeight = Number.parseFloat(computed.getPropertyValue("--prompt-initial-height")) || 56;
+    const maxHeight = Number.parseFloat(computed.getPropertyValue("--prompt-max-height")) || 148;
+    input.style.height = `${initialHeight}px`;
+    const nextHeight = Math.max(initialHeight, Math.min(input.scrollHeight, maxHeight));
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight + 1 ? "auto" : "hidden";
+
+    const footer = this.querySelector("footer");
+    const isEmptySession = Boolean(footer?.classList.contains("empty-session-footer"));
+    const composerExpanded = isEmptySession && ((input.value.trim().length > 0 && input.scrollHeight > initialHeight + 2)
+      || this.promptImages.length > 0
+      || this.isComposerNotice()
+      || Boolean(this.querySelector(".command-autocomplete, .file-autocomplete")));
+    this.querySelector("main")?.classList.toggle("empty-session-composer-grown", composerExpanded);
+    footer?.classList.toggle("empty-session-composer-grown", composerExpanded);
   }
 
   private isComposerNotice(): boolean {
@@ -1946,6 +2019,7 @@ class PiWebAgentApp extends HTMLElement {
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = isNoContextBashPromptDraft(this.promptDraft);
     const currentComposerModeLabel = composerModeLabel(this.promptDraft, this.status);
+    const isEmptySession = Boolean(this.selectedSession) && this.renderedTranscriptItems().length === 0 && !activeUiActionItem;
     const canSendFromComposer = isController && this.hasComposerSendContent();
     const promptSendDisabled = canSendFromComposer ? "" : "disabled";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
@@ -1994,7 +2068,7 @@ class PiWebAgentApp extends HTMLElement {
     this.replaceHtmlPreservingTranscript(`
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}
-      <main>
+      <main class="${isEmptySession ? "empty-session-main" : ""}">
         <header class="${headerClasses}">
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
@@ -2012,16 +2086,17 @@ class PiWebAgentApp extends HTMLElement {
         ${this.renderConnectionBanner()}
         ${this.renderAttentionNeeded()}
         ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
-        <div class="transcript-shell ${this.runningQueue.hasItems() ? "has-running-queue" : ""}">
+        <div class="transcript-shell ${this.runningQueue.hasItems() ? "has-running-queue" : ""} ${isEmptySession ? "empty-session-transcript-shell" : ""}">
           <section class="transcript ${this.renderedTranscriptItems().length === 0 ? "empty" : ""}">${this.renderTranscript()}</section>
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
         ${this.renderPlanDetailsOverlay()}
-        <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
+        <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""} ${isEmptySession ? "empty-session-footer" : ""}">
           ${this.renderQuestionCheckpointHint(isController)}
           ${activeUiActionItem ? this.renderUiActionComposerTakeover(activeUiActionItem) : `
-            <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
+            ${isEmptySession ? this.renderEmptySessionGreeting() : ""}
+            <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""} ${isEmptySession ? "empty-session-prompt-shell" : ""}">
               ${renderPromptImages(this.promptImages)}
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
                 <strong>${escapeHtml(currentComposerModeLabel)}</strong>
@@ -2041,6 +2116,7 @@ class PiWebAgentApp extends HTMLElement {
                 <button id="abort" class="danger icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Stop run" aria-label="Stop run" ${isController ? "" : "disabled"}>${stopIcon}</button>
               </div>
             </div>
+            ${isEmptySession ? this.renderEmptyQuickStartChips() : ""}
           `}
         </footer>
       </main>
@@ -2074,6 +2150,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    this.syncPromptAutosize();
     if (this.focusPendingQuestionOnNextRender) {
       this.focusPendingQuestionOnNextRender = false;
       focusQuestionPanelWithContext(this.questionPanelContext());

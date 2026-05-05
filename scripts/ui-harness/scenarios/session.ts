@@ -139,8 +139,10 @@ export async function runContextUsage(page: Page): Promise<Record<string, unknow
 
 export async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator(".empty-transcript", { hasText: "Start with a workflow." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-session-greeting").waitFor({ timeout: 5_000 });
+  await page.locator(".empty-session-greeting", { hasText: "New Bakery session" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-empty-quick-start='plan']", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "empty-session-initial.png"), fullPage: true });
   const assertPromptValue = async (expected: string) => {
     const actual = await page.locator("#prompt").inputValue();
     if (actual !== expected) throw new Error(`Expected prompt quick start ${JSON.stringify(expected)}, saw ${JSON.stringify(actual)}`);
@@ -169,18 +171,25 @@ export async function runEmptySessionLayout(page: Page): Promise<Record<string, 
       footer: rectOf("footer"),
       transcript: rectOf(".transcript"),
       controls: rectOf(".controls"),
+      chips: rectOf(".empty-quick-start-chips"),
+      greeting: rectOf(".empty-session-greeting"),
     };
   });
 
-  const promptHeight = layout.prompt?.height ?? 0;
-  const footerHeight = layout.footer?.height ?? 0;
-  const transcriptHeight = layout.transcript?.height ?? 0;
-  if (promptHeight > 80) throw new Error(`Empty session prompt is too tall: ${promptHeight}px`);
-  if (footerHeight > 125) throw new Error(`Empty session footer is too tall: ${footerHeight}px`);
-  if (transcriptHeight < 600) throw new Error(`Empty session transcript is too short: ${transcriptHeight}px`);
+  const viewportCenter = layout.viewport.height / 2;
+  const footerCenter = ((layout.footer?.top ?? 0) + (layout.footer?.bottom ?? 0)) / 2;
+  if (Math.abs(footerCenter - viewportCenter) > 180) throw new Error(`Empty session composer is not centered enough: ${JSON.stringify(layout)}`);
+  if ((layout.prompt?.height ?? 0) < 60) throw new Error(`Empty session prompt is too short: ${layout.prompt?.height}px`);
+  if ((layout.chips?.top ?? 0) <= (layout.footer?.top ?? 0)) throw new Error(`Empty session chips should render below the composer: ${JSON.stringify(layout)}`);
   if (layout.prompt && layout.controls && layout.prompt.left + layout.prompt.width > layout.controls.left) {
     throw new Error(`Empty session controls overlap prompt: prompt right ${layout.prompt.left + layout.prompt.width}px, controls left ${layout.controls.left}px`);
   }
+
+  await page.locator("#prompt").fill("Line one\nLine two\nLine three\nLine four");
+  await page.waitForFunction(() => document.querySelector("footer")?.classList.contains("empty-session-composer-grown"), null, { timeout: 5_000 });
+  await page.locator(".empty-quick-start-chips").waitFor({ state: "hidden", timeout: 5_000 });
+  await page.locator(".empty-session-greeting").waitFor({ state: "hidden", timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "empty-session-grown.png"), fullPage: true });
   return { ...(await collectMetrics(page)), layout };
 }
 

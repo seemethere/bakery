@@ -457,3 +457,25 @@ footer.model-picker-open {
   z-index: 11000;
 }
 
+main.empty-session-main {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+main.empty-session-main .transcript-shell,
+main.empty-session-main footer.empty-session-footer {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+main.empty-session-main footer.empty-session-footer {
+  box-sizing: border-box;
+  width: 100%;
+  align-self: center;
+  grid-template-columns: minmax(0, 860px);
+  padding-block: 18px;
+}
+
+main.empty-session-main footer.empty-session-footer::before {
+  display: none;
+}
+

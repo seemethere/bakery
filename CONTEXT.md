@@ -72,6 +72,14 @@ The compact transcript card Bakery shows while an assistant response is still st
 - Not: a replacement for live tool activity, Question Cards, or the completed assistant response.
 - Example: an operator sends a normal prompt, sees a small “Pi is responding…” card while the answer streams, and then sees the final rendered markdown message when streaming finishes.
 
+### Empty Session Landing
+
+The operator-facing start state for a newly created Agent Session before any transcript events exist. It centers the composer as the primary action, shows a small stable-per-session baking/cooking greeting, and offers compact quick-start chips below the composer until the composer needs more space.
+
+- Not: the layout for an Agent Session with existing transcript history.
+- Not: a replacement for the normal bottom composer during active transcript work.
+- Example: an operator opens a fresh session, sees a centered composer with a playful Bakery quote and compact `/plan`, Screenshot, `@file`, and `!bash` chips, then the helper content disappears when multiline text or attachments make the composer grow.
+
 ### Transcript Auto-scroll
 
 The transcript behavior that keeps the latest streamed assistant text, tool activity, and other new session events visible while the operator has not intentionally scrolled away.
