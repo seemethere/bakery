@@ -28,6 +28,7 @@ When the `subagent` tool is available during implementation, use subagents delib
 
 - For editing help, delegate only a clearly scoped file, module, or vertical slice; keep the parent agent responsible for reviewing and integrating the final diff.
 - For validation help, ask subagents for focused test strategy, failure triage, or independent review, but run the selected repository validation commands in the parent session and report exact results.
+- For top-level `subagent` runs in this repository, set `output: false` unless a saved artifact is explicitly needed. Builtin defaults like `context.md`/`plan.md` can dirty or case-collide with tracked root files such as `CONTEXT.md`; when saved output is needed, prefer chain-mode paths under `{chain_dir}` or an explicit temp/artifact path outside the repo root.
 - Prefer foreground subagent runs for implementation/review loops; use async/background subagents only when the task is explicitly parallelizable and the parent can continue safely.
 
 ## "What's next?" dev loop
