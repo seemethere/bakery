@@ -19,6 +19,8 @@ export type GenerateSessionDetailsCommandOptions = GenerateSessionDetailsOptions
 
 export type ExtensionCommandServices = {
   generateSessionDetails?: (options: GenerateSessionDetailsOptions) => Promise<GenerateSessionDetailsResult>;
+  getSessionCwd?: () => string | undefined;
+  hasCommand?: (name: string) => boolean;
 };
 
 export type ExtensionCommandContext = {

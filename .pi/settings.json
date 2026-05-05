@@ -1,0 +1,7 @@
+{
+  "bakery": {
+    "plan": {
+      "defaultChain": "dev-loop-plan"
+    }
+  }
+}

@@ -8,11 +8,39 @@ export type PlanWorkflowSkill = {
     kind: "bundled-workflow-skill";
     package: "bakery";
   };
-  buildPrompt(args: string): string;
+  buildPrompt(args: string, chainConfig?: PlanPromptChainConfig): string;
 };
 
-export function planPrompt(args: string): string {
+export type PlanPromptChainConfig =
+  | { kind: "resolved"; source: "project" | "user"; chainName: string; recipe: string }
+  | { kind: "warning"; source: "project"; chainName: string; reason: string }
+  | { kind: "none" };
+
+export function planPrompt(args: string, chainConfig: PlanPromptChainConfig = { kind: "none" }): string {
   const focus = args.trim();
+  const chainLines = chainConfig.kind === "resolved"
+    ? [
+        "",
+        "Configured planning chain:",
+        `- Bakery ${chainConfig.source} settings resolved default plan chain \`${chainConfig.chainName}\`.`,
+        "- Before asking operator questions or finalizing, prefer running this foreground read-only chain when the `subagent` tool is available:",
+        "",
+        "```typescript",
+        chainConfig.recipe,
+        "```",
+        "- The recipe uses relative output paths; pi-subagents resolves those under its temporary chain artifact directory, not the repository root.",
+        "- Use the chain result as evidence; the parent Agent Session still owns Question Cards and the final Plan Card.",
+        "- Do not let the chain edit repository files or create handoff files in the workspace. If the `subagent` tool is unavailable, continue normal `/plan` behavior and mention the unavailable configured chain only if it affects confidence or next steps.",
+      ]
+    : chainConfig.kind === "warning"
+      ? [
+          "",
+          "Configured planning chain warning:",
+          `- Project settings requested default plan chain \`${chainConfig.chainName}\`, but Bakery could not use it: ${chainConfig.reason}.`,
+          "- Continue normal `/plan` behavior without chain assistance.",
+          "- Mention this warning in the final plan only if it affects confidence or next steps.",
+        ]
+      : [];
   return [
     "Run the bundled `plan` workflow skill for this coding session.",
     "",
@@ -39,6 +67,7 @@ export function planPrompt(args: string): string {
     "- The parent Agent Session remains responsible for synthesis, all `ask_question` checkpoints, and the final Plan Card response; do not delegate the interactive interview to a child session.",
     "- Use synchronous foreground subagent runs by default so the parent can synthesize before asking or finishing; avoid async/background subagents unless explicitly requested.",
     "- If the `subagent` tool is unavailable, continue the normal codebase inspection and one-question-at-a-time `/plan` flow without treating that as a failure.",
+    ...chainLines,
     "",
     "Domain-doc grilling behavior:",
     "- Challenge terminology against the existing glossary immediately: if CONTEXT.md defines a term differently from the operator's usage, call out the conflict and ask which meaning should win.",

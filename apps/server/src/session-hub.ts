@@ -291,6 +291,8 @@ class SessionHub {
 
   private commandServices() {
     return {
+      getSessionCwd: () => this.handle.cwd,
+      hasCommand: (name: string) => this.handle.getCommands().some((command) => command.name === name),
       generateSessionDetails: async (options: Parameters<typeof generateAndApplySessionDetails>[2]) => {
         const webSession = this.deps.store.getSession(this.handle.id);
         if (!webSession) throw new Error("session not found");
