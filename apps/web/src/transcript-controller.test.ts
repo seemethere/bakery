@@ -77,6 +77,69 @@ describe("TranscriptController", () => {
     expect(toolCallIdForTranscriptItem(hydrated!)).toBe("call-1");
   });
 
+  test("preserves live tool output when same-id SDK tool result is blank", () => {
+    const controller = new TranscriptController(memoryStorage());
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "read PROJECT_LOG.md",
+      body: "live read output",
+      segments: [{ kind: "pre", text: "live read output" }],
+      status: "done",
+      raw: { type: "tool_execution_end", toolCallId: "read-1", toolName: "read" },
+    });
+
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "Tool result: read",
+      body: "",
+      segments: [],
+      status: "done",
+      raw: { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [] },
+    });
+
+    expect(controller.items).toHaveLength(1);
+    expect(controller.items[0]).toMatchObject({
+      id: "tool:read-1",
+      title: "read PROJECT_LOG.md",
+      body: "live read output",
+      segments: [{ kind: "pre", text: "live read output" }],
+      status: "done",
+    });
+  });
+
+  test("lets informative same-id SDK tool results update live tool output", () => {
+    const controller = new TranscriptController(memoryStorage());
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "read PROJECT_LOG.md",
+      body: "partial output",
+      segments: [{ kind: "pre", text: "partial output" }],
+      status: "running",
+    });
+
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "Tool result: read",
+      body: "final output",
+      segments: [{ kind: "pre", text: "final output" }],
+      status: "done",
+      raw: { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [{ type: "text", text: "final output" }] },
+    });
+
+    expect(controller.items).toHaveLength(1);
+    expect(controller.items[0]).toMatchObject({
+      id: "tool:read-1",
+      title: "read PROJECT_LOG.md",
+      body: "final output",
+      segments: [{ kind: "pre", text: "final output" }],
+      status: "done",
+    });
+  });
+
   test("removes pending rows and marks transcript structure dirty", () => {
     const controller = new TranscriptController(memoryStorage());
     controller.replaceItems([tool("bash:pending:1"), tool("tool:kept")]);

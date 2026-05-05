@@ -31,6 +31,31 @@ export function toolCallIdForTranscriptItem(item: TranscriptItem): string | null
   return item.id.startsWith("tool:") ? item.id.slice("tool:".length) : null;
 }
 
+function isGenericToolResultTitle(title: string): boolean {
+  return /^(?:tool result(?::|$)|result(?::|$))/i.test(title.trim());
+}
+
+function hasToolOutput(item: TranscriptItem): boolean {
+  return Boolean(item.body.trim() || item.segments?.length);
+}
+
+function mergeSameIdToolResult(existing: TranscriptItem, nextItem: TranscriptItem): TranscriptItem {
+  if (existing.kind !== "tool" || nextItem.kind !== "tool" || !isGenericToolResultTitle(nextItem.title)) return { ...existing, ...nextItem };
+  const existingHasOutput = hasToolOutput(existing);
+  const nextBody = nextItem.body.trim() || !existingHasOutput ? nextItem.body : existing.body;
+  const nextSegments = nextItem.segments?.length ? nextItem.segments : nextItem.body.trim() ? undefined : existing.segments;
+  const merged: TranscriptItem = {
+    ...existing,
+    ...nextItem,
+    title: isGenericToolResultTitle(existing.title) ? nextItem.title : existing.title,
+    body: nextBody,
+    raw: { previous: existing.raw, toolResult: nextItem.raw },
+  };
+  if (nextSegments) merged.segments = nextSegments;
+  else delete merged.segments;
+  return merged;
+}
+
 export class TranscriptController {
   readonly expansion = new Map<string, boolean>();
   readonly dirtyIds = new Set<string>();
@@ -179,7 +204,7 @@ export class TranscriptController {
 
     const previousStatus = index === -1 ? undefined : this._items[index]?.status;
     if (index === -1) this._items.push(nextItem);
-    else this._items[index] = { ...this._items[index], ...nextItem };
+    else this._items[index] = mergeSameIdToolResult(this._items[index]!, nextItem);
     const nextIndex = index === -1 ? this._items.length - 1 : index;
     this.dirtyIds.add(nextItem.id);
     const previous = this._items[nextIndex - 1];
