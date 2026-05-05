@@ -12,6 +12,7 @@ let renderAssistantStreamingPlaceholder: typeof import("./transcript").renderAss
 let stripPlanActionsMarker: typeof import("./transcript").stripPlanActionsMarker;
 let uiActionContributionForTranscriptItem: typeof import("./transcript").uiActionContributionForTranscriptItem;
 let toolHeaderDisplay: typeof import("./transcript").toolHeaderDisplay;
+let compactToolSummary: typeof import("./transcript").compactToolSummary;
 let shouldShowToolDuration: typeof import("./transcript").shouldShowToolDuration;
 let pendingQuestionTranscriptItem: typeof import("./transcript").pendingQuestionTranscriptItem;
 let isRenderableTranscriptItem: typeof import("./transcript").isRenderableTranscriptItem;
@@ -36,7 +37,7 @@ beforeAll(async () => {
     value: { location: { href: "http://127.0.0.1:5173/" } },
     configurable: true,
   });
-  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem, shouldPatchStreamingText, streamingContentRenderKey, streamingTextForTranscriptItem } = await import("./transcript"));
+  ({ PLAN_ACTIONS_MARKER, renderTranscriptSegments, mergeDuplicateDeveloperBash, hasPlanActionsMarker, isGeneratingPlanItem, renderPlanGeneratingCard, renderAssistantStreamingPlaceholder, stripPlanActionsMarker, uiActionContributionForTranscriptItem, toolHeaderDisplay, compactToolSummary, shouldShowToolDuration, pendingQuestionTranscriptItem, isRenderableTranscriptItem, hasSubagentCard, renderSubagentCard, messageToTranscriptItem, shouldPatchStreamingText, streamingContentRenderKey, streamingTextForTranscriptItem } = await import("./transcript"));
   ({ extensionCardPayload } = await import("./extension-cards"));
 });
 
@@ -178,6 +179,11 @@ describe("transcript tool row display", () => {
     expect(shouldShowToolDuration({ id: "fast", kind: "tool", title: "read file", body: "", status: "done", durationMs: 999 }, true)).toBe(false);
     expect(shouldShowToolDuration({ id: "slow", kind: "tool", title: "read file", body: "", status: "done", durationMs: 1000 }, true)).toBe(true);
     expect(shouldShowToolDuration({ id: "expanded", kind: "tool", title: "read file", body: "", status: "done", durationMs: 20 }, false)).toBe(true);
+  });
+
+  test("summarizes collapsed completed tool output", () => {
+    expect(compactToolSummary({ id: "read", kind: "tool", title: "read PROJECT_LOG.md", body: "Latest: fixed live rows\nPrevious latest: removed scrollbar", status: "done" })).toBe("Latest: fixed live rows");
+    expect(compactToolSummary({ id: "running", kind: "tool", title: "read PROJECT_LOG.md", body: "partial", status: "running" })).toBe("");
   });
 });
 
