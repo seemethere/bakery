@@ -68,7 +68,6 @@ export async function runControllerHandoffEdges(page: Page, browser: Browser): P
   await waitForPromptEnabled(page);
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await waitForPromptDisabled(viewer);
-  await viewer.close();
 
   const isolated = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const owner = await isolated.newPage();
