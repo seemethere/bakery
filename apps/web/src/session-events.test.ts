@@ -79,12 +79,36 @@ describe("session event helpers", () => {
       status: "running",
     });
 
-    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", output: "/repo\n" })).toMatchObject({
+    const firstUpdate = helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "/repo" });
+    expect(firstUpdate).toMatchObject({
+      id: "b1",
+      title: "$ pwd",
+      body: "/repo",
+      segments: [{ kind: "pre", text: "/repo" }],
+      status: "running",
+    });
+
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "\n", outputOffsetBytes: 5 }, firstUpdate ?? undefined)).toMatchObject({
       id: "b1",
       title: "$ pwd",
       body: "/repo\n",
       segments: [{ kind: "pre", text: "/repo\n" }],
       status: "running",
+    });
+
+    const literalStartingUpdate = helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "Starting…", outputOffsetBytes: 0 });
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: " real output", outputOffsetBytes: 11 }, literalStartingUpdate ?? undefined)).toMatchObject({
+      body: "Starting… real output",
+    });
+
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "tail", outputOffsetBytes: 100 })).toMatchObject({
+      body: "[Earlier output will appear when the command completes.]\ntail",
+      segments: [{ kind: "pre", text: "[Earlier output will appear when the command completes.]\ntail" }],
+    });
+
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", output: "/repo\n" })).toMatchObject({
+      body: "/repo\n",
+      segments: [{ kind: "pre", text: "/repo\n" }],
     });
 
     expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_end", id: "b1", command: "false", result: { output: "boom", exitCode: 1 } })).toMatchObject({

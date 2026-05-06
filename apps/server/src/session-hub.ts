@@ -362,7 +362,9 @@ export class SessionHub {
     if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
 
     const id = `bash:${crypto.randomUUID()}`;
-    let output = "";
+    let chunkCount = 0;
+    let outputBytes = 0;
+    let maxChunkBytes = 0;
     this.broadcast({
       type: "agent_event",
       event: {
@@ -373,13 +375,17 @@ export class SessionHub {
     });
     try {
       const result = await this.handle.executeBash(command, (chunk) => {
-        output += chunk;
+        const outputOffsetBytes = outputBytes;
+        chunkCount += 1;
+        const chunkBytes = Buffer.byteLength(chunk, "utf8");
+        outputBytes += chunkBytes;
+        maxChunkBytes = Math.max(maxChunkBytes, chunkBytes);
         this.broadcast({
           type: "agent_event",
           event: {
             type: "bash_execution_update",
             time: new Date().toISOString(),
-            data: { type: "bash_execution_update", id, command, output, excludeFromContext: excludeFromContext ?? false },
+            data: { type: "bash_execution_update", id, command, outputDelta: chunk, outputOffsetBytes, outputBytes, chunkCount, excludeFromContext: excludeFromContext ?? false },
           },
         });
       }, excludeFromContext === undefined ? undefined : { excludeFromContext });
@@ -388,7 +394,7 @@ export class SessionHub {
         event: {
           type: "bash_execution_end",
           time: new Date().toISOString(),
-          data: { type: "bash_execution_end", id, command, result, excludeFromContext: excludeFromContext ?? false },
+          data: { type: "bash_execution_end", id, command, result, stream: { chunkCount, outputBytes, maxChunkBytes }, excludeFromContext: excludeFromContext ?? false },
         },
       });
       await this.broadcastSettingsUpdate();

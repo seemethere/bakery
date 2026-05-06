@@ -41,7 +41,8 @@ export function applyTranscriptAgentEvent(context: TranscriptEventContext): void
   }
 
   if (type === "bash_execution_start" || type === "bash_execution_update" || type === "bash_execution_end") {
-    const command = bashEventCommand(context.event);
+    const event = context.event;
+    const command = bashEventCommand(event);
     if (type !== "bash_execution_end") context.setAgentStatus("running");
     else context.setAgentStatus("idle");
     if (type === "bash_execution_start") {
@@ -50,7 +51,8 @@ export function applyTranscriptAgentEvent(context: TranscriptEventContext): void
         .map((item) => item.id);
       if (pendingIds.length > 0) context.transcriptController.removeByIds(pendingIds);
     }
-    const item = bashEventToTranscriptItem(context.event);
+    const existing = context.transcriptController.items.find((item) => item.id === String(event.id ?? ""));
+    const item = bashEventToTranscriptItem(event, existing);
     if (item) upsert(item);
     if (type === "bash_execution_end") context.refreshTree();
     return;
