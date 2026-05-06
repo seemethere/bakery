@@ -127,6 +127,33 @@ export const workspaceSchema = z.object({
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
+export const addWorkspaceRequestSchema = z.object({
+  path: z.string().min(1),
+});
+export type AddWorkspaceRequest = z.infer<typeof addWorkspaceRequestSchema>;
+
+export const cloneWorkspaceRequestSchema = z.object({
+  url: z.string().min(1),
+  targetName: z.string().min(1).optional(),
+  basePath: z.string().min(1).optional(),
+});
+export type CloneWorkspaceRequest = z.infer<typeof cloneWorkspaceRequestSchema>;
+
+export const createGithubRepositoryRequestSchema = z.object({
+  name: z.string().min(1),
+  owner: z.string().min(1).optional(),
+  description: z.string().optional(),
+  private: z.boolean().optional(),
+  basePath: z.string().min(1).optional(),
+});
+export type CreateGithubRepositoryRequest = z.infer<typeof createGithubRepositoryRequestSchema>;
+
+export const workspaceActionResultSchema = z.object({
+  workspace: workspaceSchema,
+  message: z.string().optional(),
+});
+export type WorkspaceActionResult = z.infer<typeof workspaceActionResultSchema>;
+
 export const titleSourceSchema = z.enum(["unset", "first_prompt", "agent", "manual", "derived"]);
 export type TitleSource = z.infer<typeof titleSourceSchema>;
 

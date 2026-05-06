@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession } from "@pi-web-agent/protocol";
+import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
 
 export type SessionPreferences = {
   webSessionId: string;
@@ -26,6 +26,12 @@ type WebCommandResultRow = {
   is_error: number;
   data_json: string | null;
   timestamp: string;
+};
+
+type WorkspaceRow = {
+  path: string;
+  label: string;
+  created_at: string;
 };
 
 type SessionRow = {
@@ -150,6 +156,12 @@ export class MetadataStore {
         timestamp TEXT NOT NULL,
         FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS workspaces (
+        path TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
     this.addColumn("web_sessions", "isolation_kind TEXT NOT NULL DEFAULT 'none'", "isolation_kind");
     this.addColumn("web_sessions", "source_cwd TEXT", "source_cwd");
@@ -175,6 +187,20 @@ export class MetadataStore {
       const inferred: TitleSource = first && row.title === cleanTitle(first) ? "first_prompt" : "manual";
       update.run(inferred, row.id);
     }
+  }
+
+  listWorkspaces(): Workspace[] {
+    return this.db
+      .query<WorkspaceRow, []>("SELECT * FROM workspaces ORDER BY label COLLATE NOCASE ASC, path ASC")
+      .all()
+      .map((row) => ({ path: row.path, label: row.label }));
+  }
+
+  addWorkspace(workspace: Workspace): Workspace {
+    this.db
+      .query("INSERT INTO workspaces (path, label, created_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET label = excluded.label")
+      .run(workspace.path, workspace.label, new Date().toISOString());
+    return workspace;
   }
 
   listSessions(): WebSession[] {

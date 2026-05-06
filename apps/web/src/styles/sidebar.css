@@ -275,6 +275,60 @@ button:focus-visible {
   color: var(--color-text);
 }
 
+.workspace-manager {
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 78%, transparent);
+  border-radius: 14px;
+  padding: 8px 10px 10px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 36%, transparent);
+}
+
+.workspace-manager summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workspace-manager input,
+.workspace-manager select,
+.workspace-manager button {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.workspace-manager hr {
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+  margin: 12px 0;
+}
+
+.workspace-manager-note {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.workspace-manager-note code,
+.label-hint {
+  color: var(--color-text-muted);
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
 .sessions-heading {
   display: flex;
   align-items: center;

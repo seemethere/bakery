@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, appConfigSchema, appSettingsSchema, webSessionSchema, workspaceSchema, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type ForkSessionResponse, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, appConfigSchema, appSettingsSchema, webSessionSchema, workspaceActionResultSchema, workspaceSchema, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type ForkSessionResponse, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
@@ -475,6 +475,71 @@ class PiWebAgentApp extends HTMLElement {
       this.notice = `Create session failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
       return null;
+    }
+  }
+
+  private async addWorkspaceFromSidebar(): Promise<void> {
+    const input = this.querySelector<HTMLInputElement>("#addWorkspacePath");
+    const path = input?.value.trim();
+    if (!path) return;
+    try {
+      const result = await this.typedApi("/api/workspaces", workspaceActionResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      });
+      this.workspaces = [...this.workspaces.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
+      this.notice = result.message ?? "Workspace added";
+      this.render();
+    } catch (error) {
+      this.notice = `Add workspace failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private async cloneWorkspaceFromSidebar(): Promise<void> {
+    const url = this.querySelector<HTMLInputElement>("#cloneWorkspaceUrl")?.value.trim();
+    const targetName = this.querySelector<HTMLInputElement>("#cloneWorkspaceTarget")?.value.trim();
+    const basePath = this.querySelector<HTMLSelectElement>("#cloneWorkspaceBase")?.value || undefined;
+    if (!url) return;
+    try {
+      this.notice = "Cloning repository…";
+      this.render();
+      const result = await this.typedApi("/api/workspaces/clone", workspaceActionResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ url, ...(targetName ? { targetName } : {}), ...(basePath ? { basePath } : {}) }),
+      });
+      this.workspaces = [...this.workspaces.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
+      this.notice = result.message ?? "Repository cloned";
+      this.render();
+    } catch (error) {
+      this.notice = `Clone failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private async createGithubWorkspaceFromSidebar(): Promise<void> {
+    const name = this.querySelector<HTMLInputElement>("#githubRepoName")?.value.trim();
+    const owner = this.querySelector<HTMLInputElement>("#githubRepoOwner")?.value.trim();
+    const description = this.querySelector<HTMLInputElement>("#githubRepoDescription")?.value.trim();
+    const privateRepo = this.querySelector<HTMLInputElement>("#githubRepoPrivate")?.checked ?? true;
+    const basePath = this.querySelector<HTMLSelectElement>("#githubRepoBase")?.value || undefined;
+    if (!name) return;
+    try {
+      this.notice = "Creating GitHub repository…";
+      this.render();
+      const result = await this.typedApi("/api/workspaces/github", workspaceActionResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ name, private: privateRepo, ...(owner ? { owner } : {}), ...(description ? { description } : {}), ...(basePath ? { basePath } : {}) }),
+      });
+      this.workspaces = [...this.workspaces.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
+      this.notice = result.message ?? "GitHub repository created";
+      this.render();
+    } catch (error) {
+      this.notice = `Create GitHub repository failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
     }
   }
 
@@ -1216,6 +1281,9 @@ class PiWebAgentApp extends HTMLElement {
         this.render();
       },
       createSession: (workspaceId, isolationKind) => this.createSession(workspaceId, isolationKind),
+      addWorkspace: () => this.addWorkspaceFromSidebar(),
+      cloneWorkspace: () => this.cloneWorkspaceFromSidebar(),
+      createGithubWorkspace: () => this.createGithubWorkspaceFromSidebar(),
       updateMetadataModel: (model) => {
         void this.api<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify({ sessionMetadataModel: model ? { model } : null }) }).then((settings) => {
           this.appSettings = settings;

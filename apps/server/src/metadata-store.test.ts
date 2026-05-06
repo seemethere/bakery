@@ -4,6 +4,26 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { MetadataStore } from "./metadata-store.js";
 
+describe("MetadataStore workspaces", () => {
+  test("persists managed workspaces with upserted labels", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      store.addWorkspace({ path: "/repo/z", label: "Zed" });
+      store.addWorkspace({ path: "/repo/a", label: "Alpha" });
+      store.addWorkspace({ path: "/repo/z", label: "Zed renamed" });
+
+      expect(store.listWorkspaces()).toEqual([
+        { path: "/repo/a", label: "Alpha" },
+        { path: "/repo/z", label: "Zed renamed" },
+      ]);
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("MetadataStore web command results", () => {
   test("persists extension card command results for session refresh snapshots", () => {
     const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
