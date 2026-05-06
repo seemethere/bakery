@@ -1,4 +1,3 @@
-import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { AppConfig } from "@pi-web-agent/protocol";
@@ -29,12 +28,9 @@ export type ServerConfig = AppConfig & {
   fakeAgent: boolean;
 };
 
-export const DEFAULT_LOCAL_WORKSPACE_ROOT = "~/.bakery/workspaces/local";
-
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
-  const configuredWorkspaceRoots = splitList(env.PI_WEB_WORKSPACE_ROOT);
-  const workspaceRoots = configuredWorkspaceRoots.length ? configuredWorkspaceRoots.map(expandHome) : [expandHome(DEFAULT_LOCAL_WORKSPACE_ROOT)];
-  if (configuredWorkspaceRoots.length === 0) mkdirSync(workspaceRoots[0]!, { recursive: true });
+  const workspaceRoots = splitList(env.PI_WEB_WORKSPACE_ROOT).map(expandHome);
+  if (workspaceRoots.length === 0) workspaceRoots.push(resolve(process.cwd()));
 
   const dataDir = expandHome(env.PI_WEB_DATA_DIR ?? "~/.pi-web-agent");
   const authToken = env.PI_WEB_AUTH_TOKEN?.trim() || undefined;
