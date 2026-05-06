@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type ForkSessionResponse, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, appConfigSchema, appSettingsSchema, webSessionSchema, workspaceSchema, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type ForkSessionResponse, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
@@ -33,6 +33,7 @@ import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
 import { loadExtensionCatalog } from "./extension-cards";
+import { arraySchema, requestJson, type JsonSchema } from "./api-client";
 import "./styles.css";
 
 declare global {
@@ -383,6 +384,10 @@ class PiWebAgentApp extends HTMLElement {
     return response.json() as Promise<T>;
   }
 
+  private async typedApi<T>(path: string, schema: JsonSchema<T>, init?: RequestInit): Promise<T> {
+    return requestJson({ apiBase: this.apiBase, path, schema, ...(init ? { init } : {}), headers: this.headers() });
+  }
+
   private upsertTranscript(item: TranscriptItem): void {
     this.transcriptController.upsert(item, { markUnread: (id) => this.transcriptFollow.markUnread(id) });
   }
@@ -410,10 +415,10 @@ class PiWebAgentApp extends HTMLElement {
   private async refresh(): Promise<void> {
     try {
       const [workspaces, sessions, appSettings, config] = await Promise.all([
-        this.api<Workspace[]>("/api/workspaces"),
-        this.api<WebSession[]>("/api/sessions"),
-        this.api<AppSettings>("/api/settings"),
-        this.api<AppConfig>("/api/config"),
+        this.typedApi("/api/workspaces", arraySchema(workspaceSchema)),
+        this.typedApi("/api/sessions", arraySchema(webSessionSchema)),
+        this.typedApi("/api/settings", appSettingsSchema),
+        this.typedApi("/api/config", appConfigSchema),
       ]);
       this.workspaces = workspaces;
       this.sessions = sessions;
