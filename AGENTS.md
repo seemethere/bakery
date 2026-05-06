@@ -22,6 +22,24 @@ Use `PROJECT_LOG.md` for current status, handoff notes, run commands, verificati
 - Preserve local-first security assumptions from `DESIGN.md`.
 - Prefer small, incremental vertical slices over large rewrites.
 
+## Stacked cleanup/dev-loop discipline
+
+When the operator asks for a stack of cleanup, deduplication, observability, performance, or developer-experience slices:
+
+1. Plan the whole stack, but implement **one commit at a time**. Do not edit the next slice until the previous slice is validated and committed.
+2. Keep the parent session as the single writer by default. Use subagents for planner/reviewer/oracle gates and bounded risk reduction, not for concurrent broad edits.
+3. For each slice, use this rhythm:
+   - state the focused scope and expected files;
+   - make the smallest behavior-preserving or vertical change;
+   - run the most focused unit/static check first;
+   - run `bun run report:iteration --recommend <changed files>` before choosing broader validation;
+   - run only the selected focused harnesses unless escalation criteria apply;
+   - ask a fresh-context reviewer for **blocker/important findings only** after the first focused validation pass when the slice is non-trivial;
+   - fix reviewer findings, rerun only affected focused checks, then commit.
+4. If reviewer feedback arrives after broad validation, fix the issue and rerun the narrow affected checks first; rerun the full selected list only when the fix crosses the same surface area.
+5. Treat harness scenarios as shared fixed-port resources: run them serially unless a command is explicitly designed for parallelism.
+6. Prefer adding a small regression assertion or artifact check over relying on a broad scenario to imply the new behavior.
+
 ## Subagent implementation hints
 
 When the `subagent` tool is available during implementation, use subagents deliberately for bounded assistance that reduces context load or risk, not as a replacement for parent-session ownership.
@@ -30,6 +48,8 @@ When the `subagent` tool is available during implementation, use subagents delib
 - For validation help, ask subagents for focused test strategy, failure triage, or independent review, but run the selected repository validation commands in the parent session and report exact results.
 - For top-level `subagent` runs in this repository, set `output: false` unless a saved artifact is explicitly needed. Builtin defaults like `context.md`/`plan.md` can dirty or case-collide with tracked root files such as `CONTEXT.md`; when saved output is needed, prefer chain-mode paths under `{chain_dir}` or an explicit temp/artifact path outside the repo root.
 - Prefer foreground subagent runs for implementation/review loops; use async/background subagents only when the task is explicitly parallelizable and the parent can continue safely.
+- For implementation review gates, ask reviewers for blocker/important findings only, exact file/line evidence, and validation gaps. This keeps subagent output useful without turning review into another broad planning artifact.
+- For large reconnaissance, narrow each child task aggressively and consider `outputMode: "file-only"` with an explicit temp path if the result may be large. Avoid pulling broad subagent reports into parent context unless synthesis needs the full text.
 
 ## "What's next?" dev loop
 
@@ -86,6 +106,14 @@ bun run report:iteration --recommend <changed files>
 Follow the report's focused-first command list in order and stop to fix the first failure instead of continuing through later harness commands. Treat full `bun run test:web-perf` as an explicit escalation, not the default: run it when the report selects it, when protocol/session lifecycle behavior changed, when broad UI interaction paths changed, or when focused validation fails unexpectedly. For non-trivial validation choices, paste or summarize the report's `## Validation decision` block in the final handoff, including whether the full suite was run or intentionally skipped.
 
 When a focused UI harness scenario fails, locate the newest artifact before rerunning with `bun run report:iteration --latest-artifact <scenario>`; inspect the listed failure/log/screenshot paths, patch one cause, then rerun only that scenario unless escalation criteria apply.
+
+Near the end of long or validation-heavy sessions, run:
+
+```bash
+bun run report:iteration --session-context --brief
+```
+
+Use it to catch repeated validation commands, repeated broad reads, context-heavy subagent results, and edit failures before handoff. If it flags repeated validation, mention what will change next time rather than blindly rerunning another broad command.
 
 ## UI validation expectations
 

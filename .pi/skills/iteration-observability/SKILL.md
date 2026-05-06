@@ -31,6 +31,18 @@ bun run report:iteration --session-history --latest-sessions 10 --exclude-curren
 
 Use `--session-context` for the current/most recent session and `--session-history` to backfill available local JSONL session logs. Use `--session-history --days 2 --roi` for a repeatable today/yesterday optimization review; recent-day filtering uses local-calendar day boundaries and session log mtime. Use `--latest-sessions 10 --exclude-current-session` when you want recent-history evidence without counting the active conversation.
 
+## Stacked slice workflow
+
+For multi-commit cleanup or engineering-opportunity stacks, keep the process evidence-based and sequential:
+
+1. Plan the stack once, then work one slice at a time.
+2. Validate and commit each slice before editing the next slice.
+3. Prefer the parent session as the single writer; use subagents for focused planning/review/oracle gates.
+4. Ask review subagents for blocker/important findings only, plus validation gaps. Broad reviewer output is a context cost.
+5. Use a smoke-first rhythm: focused unit/static check, then `bun run report:iteration --recommend <changed files>`, then selected focused harnesses.
+6. If reviewer feedback lands after broad selected validation, fix the issue and rerun the narrow affected check first; rerun the selected harness list only when the fix crosses those surfaces.
+7. Run fixed-port UI harness scenarios serially unless the harness explicitly supports parallel execution.
+
 ## Choosing validation commands
 
 Before validating code changes, ask the selector for changed files:
@@ -49,6 +61,8 @@ In handoffs, include the report's `## Validation decision` block or summarize:
 Follow the selector's focused-first command list in order and stop to fix the first failure. Treat full `bun run test:web-perf` as an explicit escalation, not the default: run it when protocol/session lifecycle behavior changed, broad UI interaction paths changed, focused validation fails unexpectedly, or the selector selects it.
 
 When a focused `ui-harness` scenario fails, do not immediately rerun the same command. First locate the newest artifact with `bun run report:iteration --latest-artifact <scenario>`, inspect the listed artifact directory and relevant logs/screenshots, identify one failing assertion or cause, patch the smallest cause, then rerun only that focused scenario. If `bun run report:iteration --recommend ...` or `--session-history` labels the latest artifact as degraded or missing, regenerate that same focused scenario once to capture useful failure logs/screenshots before deeper debugging; do not escalate to broad validation just to replace a bad artifact. In the handoff, include the artifact path, artifact quality when reported, and explain why any repeated failed scenario reruns were necessary.
+
+For a non-trivial slice, avoid validating in the most expensive order. Run a cheap focused check first, then reviewer/oracle if useful, then the selected harness list after review-driven fixes. This reduces repeated broad validation when reviewers catch issues.
 
 ## Reading current-session telemetry
 
@@ -74,7 +88,9 @@ Turn these into concrete process changes, for example:
 - prefer focused harness scenarios over full-suite runs when the selector says the full suite is not required;
 - stop after a failing focused scenario, check artifact quality, inspect usable artifacts/logs/screenshots, patch once, and rerun that scenario instead of cycling validation blindly;
 - patch high-churn files with smaller exact replacements;
-- include key harness screenshot PNG paths in mobile/UI handoffs.
+- include key harness screenshot PNG paths in mobile/UI handoffs;
+- narrow large reconnaissance subagent tasks, use `output: false` or explicit temp/file-only outputs, and summarize instead of pasting broad reports into parent context;
+- if repeated validation is high, document which future check should move earlier/later in the slice rhythm.
 
 ## Backfilling historical session telemetry
 
