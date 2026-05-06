@@ -85,18 +85,30 @@ mkdir -p "$home_dir" /workspace/bakery /workspace/bakery/node_modules /workspace
 chown "$uid_value:$gid_value" "$home_dir" 2>/dev/null || true
 chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/bakery/node_modules
 
-# Keep the Docker socket opt-in at compose level, but make it usable by the
-# mapped user when mounted. Failure here should not block non-Docker workflows.
-if [[ -S /var/run/docker.sock ]]; then
-  socket_gid="$(stat -c '%g' /var/run/docker.sock 2>/dev/null || true)"
-  if [[ "$socket_gid" =~ ^[0-9]+$ ]]; then
-    socket_group="$(getent group "$socket_gid" | cut -d: -f1 || true)"
-    if [[ -z "$socket_group" ]]; then
-      socket_group="docker-host"
-      groupadd -g "$socket_gid" "$socket_group" 2>/dev/null || true
+add_socket_group_for_user() {
+  local socket_path="$1"
+  local fallback_group_name="$2"
+  local socket_gid=""
+  local socket_group=""
+
+  if [[ -S "$socket_path" ]]; then
+    socket_gid="$(stat -c '%g' "$socket_path" 2>/dev/null || true)"
+    if [[ "$socket_gid" =~ ^[0-9]+$ ]]; then
+      socket_group="$(getent group "$socket_gid" | cut -d: -f1 || true)"
+      if [[ -z "$socket_group" ]]; then
+        socket_group="$fallback_group_name"
+        groupadd -g "$socket_gid" "$socket_group" 2>/dev/null || true
+      fi
+      usermod -aG "$socket_gid" "$user_name" 2>/dev/null || true
     fi
-    usermod -aG "$socket_gid" "$user_name" 2>/dev/null || true
   fi
+}
+
+# Keep privileged host sockets opt-in at compose level, but make them usable by
+# the mapped user when mounted. Failure here should not block other workflows.
+add_socket_group_for_user /var/run/docker.sock docker-host
+if [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
+  add_socket_group_for_user "$SSH_AUTH_SOCK" ssh-agent-host
 fi
 
 export HOME="$home_dir"

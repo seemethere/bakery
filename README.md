@@ -74,7 +74,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. For LAN/Tailscale access, set `PI_WEB_VITE_ALLOWED_HOSTS` and `PI_WEB_PREVIEW_PUBLIC_BASE_URL` in `.env`; see [`docs/container-development.md`](docs/container-development.md#lantailscale-access). The container bind-mounts this repository at `/workspace/bakery`, uses it as the only default workspace root, and mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources. Default Compose does not mount Git/GitHub credentials; see [`docs/container-development.md#git-and-github-auth`](docs/container-development.md#git-and-github-auth) for trusted-dev SSH-agent-first auth recipes if agents need fetch, push, or PR tooling inside the container.
+Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. For LAN/Tailscale access, set `PI_WEB_VITE_ALLOWED_HOSTS` and `PI_WEB_PREVIEW_PUBLIC_BASE_URL` in `.env`; see [`docs/container-development.md`](docs/container-development.md#lantailscale-access). The container bind-mounts this repository at `/workspace/bakery`, uses it as the only default workspace root, and mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources. Default Compose does not mount Git/GitHub credentials; the image includes `gh`, and [`docs/container-development.md#git-and-github-auth`](docs/container-development.md#git-and-github-auth) covers trusted-dev SSH-agent and GitHub auth override recipes for agents that need fetch, push, or PR tooling inside the container.
 
 Docker socket access is intentionally off by default. When you need Docker commands inside the dev container, opt in explicitly:
 
