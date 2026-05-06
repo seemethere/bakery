@@ -21,6 +21,7 @@ const booleanFlags = new Set([
   "-h",
   "--exclude-current-session",
   "--exclude-current",
+  "--brief",
 ]);
 const optionalValueFlags = new Set(["--latest-artifact"]);
 const cliOptions = parseCliOptions(cliArgs);
@@ -30,6 +31,7 @@ const sessionContextMode = cliOptions.sessionContextMode;
 const sessionHistoryMode = cliOptions.sessionHistoryMode;
 const roiMode = cliOptions.roiMode;
 const helpMode = cliOptions.helpMode;
+const briefMode = cliOptions.briefMode;
 const outputPath = resolve(root, cliOptions.outputPath ?? defaultOutputPath);
 const maxCommits = Number(process.env.PI_WEB_ITERATION_COMMITS ?? 40);
 const maxHarnessRuns = Number(process.env.PI_WEB_ITERATION_HARNESS_RUNS ?? 80);
@@ -115,6 +117,20 @@ type SessionHistoryFilter = {
   calendar: "local";
 };
 
+type SubagentLoopSummary = {
+  calls: number;
+  results: number;
+  resultChars: number;
+  maxResultChars: number;
+  outputFalseCalls: number;
+  fileOnlyCalls: number;
+  explicitOutputPathCalls: number;
+  parallelDefaultOutputRiskCalls: number;
+  childSessionPathMentions: number;
+  chainArtifactPathMentions: number;
+  largestResultInput?: string;
+};
+
 type SessionContextReport = {
   sessionPath?: string;
   sessionCwd?: string;
@@ -129,6 +145,7 @@ type SessionContextReport = {
   validationCommands: Array<{ command: string; runs: number; failures: number; resultChars: number; estimatedTokens: number; maxDurationMs?: number }>;
   rerunOpportunity: RerunOpportunity;
   editAttempts: Array<{ path: string; attempts: number; successes: number; failures: number; resultChars: number }>;
+  subagentLoop: SubagentLoopSummary;
   largestToolResults: Array<{ toolName: string; chars: number; estimatedTokens: number; timestamp?: string; messageId?: string; input?: string; durationMs?: number }>;
   assistantResponsesWithUsage: number;
   latestUsage?: Record<string, unknown>;
@@ -176,6 +193,7 @@ type SessionHistoryReport = {
   largestSessions: Array<{ sessionPath: string; cwd?: string; lines: number; bytes: number; mtime: string; toolResultChars: number; validationRuns: number; editFailures: number }>;
   largestToolResults: Array<{ sessionPath?: string; toolName: string; chars: number; estimatedTokens: number; timestamp?: string; input?: string; durationMs?: number }>;
   sessionsWithEditFailures: Array<{ sessionPath?: string; failures: number; attempts: number; files: string[] }>;
+  subagentLoop: SubagentLoopSummary;
   actionRecommendations: string[];
   notes: string[];
 };
@@ -250,6 +268,7 @@ type CliOptions = {
   latestArtifactScenario?: string;
   outputPath?: string;
   excludeCurrentSessionFromHistory: boolean;
+  briefMode: boolean;
 };
 
 function parseCliOptions(args: string[]): CliOptions {
@@ -300,6 +319,7 @@ function parseCliOptions(args: string[]): CliOptions {
     latestArtifactScenario,
     outputPath: outputPath ?? positionalOutput,
     excludeCurrentSessionFromHistory: args.includes("--exclude-current-session") || args.includes("--exclude-current"),
+    briefMode: args.includes("--brief"),
   };
 }
 
@@ -502,6 +522,10 @@ function truncateOneLine(value: string, maxLength = 180): string {
   return oneLine.length > maxLength ? `${oneLine.slice(0, maxLength - 1)}…` : oneLine;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function parseToolArguments(value: unknown): Record<string, unknown> {
   if (!value) return {};
   if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
@@ -651,6 +675,95 @@ function emptySessionActionSummary(): SessionActionSummary {
   };
 }
 
+function emptySubagentLoopSummary(): SubagentLoopSummary {
+  return {
+    calls: 0,
+    results: 0,
+    resultChars: 0,
+    maxResultChars: 0,
+    outputFalseCalls: 0,
+    fileOnlyCalls: 0,
+    explicitOutputPathCalls: 0,
+    parallelDefaultOutputRiskCalls: 0,
+    childSessionPathMentions: 0,
+    chainArtifactPathMentions: 0,
+  };
+}
+
+function hasSubagentOutputFalse(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.output === false) return true;
+  return [value.tasks, value.chain].some((items) => Array.isArray(items) && items.some((item) => hasSubagentOutputFalse(item)));
+}
+
+function hasSubagentFileOnly(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.outputMode === "file-only") return true;
+  return [value.tasks, value.chain].some((items) => Array.isArray(items) && items.some((item) => hasSubagentFileOnly(item)));
+}
+
+function hasSubagentExplicitOutputPath(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value.output === "string") return true;
+  return [value.tasks, value.chain].some((items) => Array.isArray(items) && items.some((item) => hasSubagentExplicitOutputPath(item)));
+}
+
+function hasParallelDefaultOutputRisk(args: Record<string, unknown>): boolean {
+  const riskyTopLevelTasks = Array.isArray(args.tasks) && args.tasks.filter((task) => isRecord(task) && task.output === undefined).length > 1;
+  const riskyChainParallel = Array.isArray(args.chain) && args.chain.some((step) => {
+    if (!isRecord(step) || !Array.isArray(step.parallel)) return false;
+    return step.parallel.filter((task) => isRecord(task) && task.output === undefined).length > 1;
+  });
+  return Boolean(riskyTopLevelTasks || riskyChainParallel);
+}
+
+function recordSubagentCall(summary: SubagentLoopSummary, args: Record<string, unknown>): void {
+  summary.calls += 1;
+  if (hasSubagentOutputFalse(args)) summary.outputFalseCalls += 1;
+  if (hasSubagentFileOnly(args)) summary.fileOnlyCalls += 1;
+  if (hasSubagentExplicitOutputPath(args)) summary.explicitOutputPathCalls += 1;
+  if (hasParallelDefaultOutputRisk(args)) summary.parallelDefaultOutputRiskCalls += 1;
+}
+
+function recordSubagentResult(summary: SubagentLoopSummary, resultText: string, chars: number, input: string): void {
+  summary.results += 1;
+  summary.resultChars += chars;
+  if (chars > summary.maxResultChars) {
+    summary.maxResultChars = chars;
+    summary.largestResultInput = input;
+  }
+  const sessionPathMatches = resultText.match(/(?:session(?:File)?|session):\s*[^\s]+\.jsonl|[^\s]+\/sessions\/[^\s]+\.jsonl/g) ?? [];
+  const chainArtifactMatches = resultText.match(/(?:\/tmp\/pi-subagents-[^\s]+|[^\s]*chain-runs[^\s]*)/g) ?? [];
+  summary.childSessionPathMentions += new Set(sessionPathMatches).size;
+  summary.chainArtifactPathMentions += new Set(chainArtifactMatches).size;
+}
+
+function addSubagentLoopSummary(target: SubagentLoopSummary, source: SubagentLoopSummary): void {
+  const sourceHasLargest = source.maxResultChars > target.maxResultChars;
+  target.calls += source.calls;
+  target.results += source.results;
+  target.resultChars += source.resultChars;
+  target.maxResultChars = Math.max(target.maxResultChars, source.maxResultChars);
+  target.outputFalseCalls += source.outputFalseCalls;
+  target.fileOnlyCalls += source.fileOnlyCalls;
+  target.explicitOutputPathCalls += source.explicitOutputPathCalls;
+  target.parallelDefaultOutputRiskCalls += source.parallelDefaultOutputRiskCalls;
+  target.childSessionPathMentions += source.childSessionPathMentions;
+  target.chainArtifactPathMentions += source.chainArtifactPathMentions;
+  if (sourceHasLargest || !target.largestResultInput) target.largestResultInput = source.largestResultInput ?? target.largestResultInput;
+}
+
+function formatSubagentLoopSummary(summary: SubagentLoopSummary): string {
+  if (summary.calls === 0 && summary.results === 0) return "no subagent calls detected";
+  const parts = [
+    `${summary.calls.toLocaleString()} call${summary.calls === 1 ? "" : "s"}`,
+    `${summary.results.toLocaleString()} result${summary.results === 1 ? "" : "s"}`,
+    `${summary.resultChars.toLocaleString()} result chars`,
+    `largest ${summary.maxResultChars.toLocaleString()} chars`,
+  ];
+  return parts.join(", ");
+}
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
@@ -738,6 +851,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     validationCommands: [],
     rerunOpportunity: buildRerunOpportunity([]),
     editAttempts: [],
+    subagentLoop: emptySubagentLoopSummary(),
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
     actionRecommendations: [],
@@ -760,6 +874,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
     validationCommands: [],
     rerunOpportunity: buildRerunOpportunity([]),
     editAttempts: [],
+    subagentLoop: emptySubagentLoopSummary(),
     largestToolResults: [],
     assistantResponsesWithUsage: 0,
     actionRecommendations: [],
@@ -808,6 +923,7 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
           const id = typeof record.id === "string" ? record.id : undefined;
           if (id) {
             const args = parseToolArguments(record.arguments);
+            if (record.name === "subagent") recordSubagentCall(report.subagentLoop, args);
             toolCallsById[id] = {
               toolName: record.name,
               input: toolInputLabel(record.name, args),
@@ -860,6 +976,9 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
       }
       if ((toolName === "edit" || toolName === "write") && typeof toolCall?.args.path === "string") {
         incrementEditAttempt(editAttemptSummaries, toolCall.args.path, failed, chars);
+      }
+      if (toolName === "subagent") {
+        recordSubagentResult(report.subagentLoop, textFromContent(message.content), chars, input);
       }
 
       report.largestToolResults.push({
@@ -966,6 +1085,12 @@ function buildSessionContextReport(sessionPathOverride?: string): SessionContext
   const mobileValidation = report.validationCommands.find((item) => item.command === "ui-harness:mobile-layout");
   if (mobileValidation) {
     report.actionRecommendations.push("Mobile workflow: include the latest `mobile-layout` artifact directory and key PNGs in handoffs when mobile UI behavior or harness screenshots changed.");
+  }
+  if (report.subagentLoop.calls > 0 && report.subagentLoop.outputFalseCalls === 0 && report.subagentLoop.fileOnlyCalls === 0) {
+    report.actionRecommendations.push(`Subagent loop: ${report.subagentLoop.calls} call(s) returned ${report.subagentLoop.resultChars.toLocaleString()} parent-result chars; use output:false for short advisory fanout or outputMode:file-only for long child artifacts.`);
+  }
+  if (report.subagentLoop.parallelDefaultOutputRiskCalls > 0) {
+    report.actionRecommendations.push(`Subagent output paths: ${report.subagentLoop.parallelDefaultOutputRiskCalls} parallel call(s) may rely on default child output paths; set output:false or distinct outputs to avoid context.md/plan.md collisions.`);
   }
   if (report.actionRecommendations.length === 0) {
     report.actionRecommendations.push("No repeated high-cost tool pattern detected in this session; continue using targeted reads and focused validation selection.");
@@ -1104,6 +1229,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   const largestSessions: SessionHistoryReport["largestSessions"] = [];
   const largestToolResults: SessionHistoryReport["largestToolResults"] = [];
   const sessionsWithEditFailures: SessionHistoryReport["sessionsWithEditFailures"] = [];
+  const subagentLoop = emptySubagentLoopSummary();
   const actionSummary: SessionHistoryActionSummary = {
     ...emptySessionActionSummary(),
     sessionsWithValidationReruns: 0,
@@ -1148,6 +1274,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     }
     for (const item of report.readPaths) addInputSummary(readSummaries, item.path, item);
     for (const item of report.bashCommands) addInputSummary(bashSummaries, item.command, item);
+    addSubagentLoopSummary(subagentLoop, report.subagentLoop);
     const toolResultChars = Object.values(report.toolResultsByName).reduce((sum, item) => sum + item.chars, 0);
     const validationRuns = report.validationCommands.reduce((sum, item) => sum + item.runs, 0);
     const editFailures = report.editAttempts.reduce((sum, item) => sum + item.failures, 0);
@@ -1232,6 +1359,8 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   if (topContext) actionRecommendations.push(`Largest historical context contributor: ${topContext.label} produced ${topContext.chars.toLocaleString()} chars; consider a narrower report or command pattern.`);
   const mobileRuns = validationCommands.find((item) => item.command === "ui-harness:mobile-layout");
   if (mobileRuns) actionRecommendations.push(`Mobile validation appears in history (${mobileRuns.runs} runs); keep mobile artifact paths/screenshots in handoffs for mobile UI slices.`);
+  if (subagentLoop.calls > 0 && subagentLoop.outputFalseCalls === 0 && subagentLoop.fileOnlyCalls === 0) actionRecommendations.push(`Subagent loop: ${subagentLoop.calls} call(s) produced ${subagentLoop.resultChars.toLocaleString()} parent-result chars; prefer output:false for advisory fanout or file-only for long artifacts.`);
+  if (subagentLoop.parallelDefaultOutputRiskCalls > 0) actionRecommendations.push(`Subagent output paths: ${subagentLoop.parallelDefaultOutputRiskCalls} parallel call(s) had default-output collision risk; set output:false or distinct output paths for each child.`);
   if (actionRecommendations.length === 0) actionRecommendations.push("No obvious cross-session retry/context hotspot found in the backfilled JSONL logs yet.");
 
   return {
@@ -1256,6 +1385,7 @@ function buildSessionHistoryReport(): SessionHistoryReport {
     largestSessions: largestSessions.sort((a, b) => b.toolResultChars - a.toolResultChars || b.bytes - a.bytes).slice(0, 20),
     largestToolResults: largestToolResults.sort((a, b) => b.chars - a.chars).slice(0, 20),
     sessionsWithEditFailures: sessionsWithEditFailures.sort((a, b) => b.failures - a.failures || b.attempts - a.attempts).slice(0, 20),
+    subagentLoop,
     actionRecommendations,
     notes: [
       `Scanned up to ${maxSessionHistory.toLocaleString()} local JSONL session logs from ${candidateDirs.join(", ")}${excludeCurrentSessionFromHistory ? "; excluded the current/latest session log" : ""}${filter.since || filter.until ? `; filtered by session log mtime${filter.since ? ` since ${filter.since}` : ""}${filter.until ? ` until ${filter.until}` : ""}` : ""}.`,
@@ -1266,7 +1396,69 @@ function buildSessionHistoryReport(): SessionHistoryReport {
   };
 }
 
-function printSessionContextReport(report: SessionContextReport): void {
+function printSubagentLoopSummary(summary: SubagentLoopSummary): void {
+  console.log(`- ${formatSubagentLoopSummary(summary)}`);
+  if (summary.calls === 0 && summary.results === 0) return;
+  console.log(`- output discipline: output:false ${summary.outputFalseCalls.toLocaleString()}, file-only ${summary.fileOnlyCalls.toLocaleString()}, explicit output paths ${summary.explicitOutputPathCalls.toLocaleString()}`);
+  if (summary.parallelDefaultOutputRiskCalls > 0) console.log(`- default-output collision risk: ${summary.parallelDefaultOutputRiskCalls.toLocaleString()} parallel call(s); prefer output:false or distinct output paths`);
+  if (summary.childSessionPathMentions > 0 || summary.chainArtifactPathMentions > 0) console.log(`- artifact mentions: ${summary.childSessionPathMentions.toLocaleString()} child session path(s), ${summary.chainArtifactPathMentions.toLocaleString()} chain artifact path(s)`);
+  if (summary.largestResultInput) console.log(`- largest parent result input: ${summary.largestResultInput}`);
+}
+
+function printSessionContextBrief(report: SessionContextReport): void {
+  console.log("\n## Session context brief");
+  if (!report.sessionPath) {
+    report.notes.forEach((note) => console.log(`- ${note}`));
+    return;
+  }
+  const summary = report.actionSummary;
+  console.log(`- session: ${report.sessionPath}${report.lines ? ` (${report.lines.toLocaleString()} lines)` : ""}`);
+  console.log(`- tools/context: ${summary.toolCalls.toLocaleString()} calls, ${summary.toolResultChars.toLocaleString()} result chars, largest ${summary.largestToolResultChars.toLocaleString()} chars`);
+  console.log(`- validation/edit: ${summary.validationRuns.toLocaleString()} validation run(s), ${summary.validationReruns.toLocaleString()} rerun(s), ${summary.editFailures.toLocaleString()} edit failure(s)`);
+  console.log("- subagents:");
+  printSubagentLoopSummary(report.subagentLoop);
+  const largest = report.largestToolResults.slice(0, 3);
+  if (largest.length > 0) {
+    console.log("- largest results:");
+    largest.forEach((item) => console.log(`  - ${item.toolName}: ${item.chars.toLocaleString()} chars${item.input ? ` · ${item.input}` : ""}`));
+  }
+  const repeated = report.repeatedToolInputs.slice(0, 2);
+  if (repeated.length > 0) {
+    console.log("- repeated inputs:");
+    repeated.forEach((item) => console.log(`  - ${item.toolName} ${item.input}: ${item.calls} calls, ${item.resultChars.toLocaleString()} chars`));
+  }
+  console.log("- next actions:");
+  report.actionRecommendations.slice(0, 3).forEach((item) => console.log(`  - ${item}`));
+}
+
+function printSessionHistoryBrief(report: SessionHistoryReport): void {
+  console.log("\n## Session history brief");
+  const summary = report.actionSummary;
+  console.log(`- window: ${report.sessionCount.toLocaleString()} session(s), ${summary.toolResultChars.toLocaleString()} result chars, ${summary.validationRuns.toLocaleString()} validation run(s), ${summary.validationReruns.toLocaleString()} rerun(s)`);
+  console.log(`- context: largest result ${summary.largestToolResultChars.toLocaleString()} chars, largest session ${summary.largestSessionToolResultChars.toLocaleString()} chars, ${summary.uniqueReadPaths.toLocaleString()} read path(s), ${summary.uniqueBashCommands.toLocaleString()} bash command(s)`);
+  console.log("- subagents:");
+  printSubagentLoopSummary(report.subagentLoop);
+  const topContext = [...report.topReadPaths.map((item) => ({ label: `read ${item.path}`, chars: item.resultChars })), ...report.topBashCommands.map((item) => ({ label: `bash ${item.command}`, chars: item.resultChars }))]
+    .sort((a, b) => b.chars - a.chars)
+    .slice(0, 3);
+  if (topContext.length > 0) {
+    console.log("- top context sinks:");
+    topContext.forEach((item) => console.log(`  - ${item.label}: ${item.chars.toLocaleString()} chars`));
+  }
+  const topValidation = report.validationCommands.slice(0, 3);
+  if (topValidation.length > 0) {
+    console.log("- validation hotspots:");
+    topValidation.forEach((item) => console.log(`  - ${item.command}: ${item.runs} run(s), ${item.failures} failure(s)`));
+  }
+  console.log("- next actions:");
+  report.actionRecommendations.slice(0, 3).forEach((item) => console.log(`  - ${item}`));
+}
+
+function printSessionContextReport(report: SessionContextReport, options: { brief?: boolean } = {}): void {
+  if (options.brief) {
+    printSessionContextBrief(report);
+    return;
+  }
   console.log("\n## Session context estimate");
   if (!report.sessionPath) {
     report.notes.forEach((note) => console.log(`- ${note}`));
@@ -1320,6 +1512,8 @@ function printSessionContextReport(report: SessionContextReport): void {
   report.editAttempts.forEach((item) => {
     console.log(`- ${item.path}: ${item.attempts} attempts, ${item.successes} successes, ${item.failures} failures, ${item.resultChars.toLocaleString()} result chars`);
   });
+  console.log("\nSubagent loop:");
+  printSubagentLoopSummary(report.subagentLoop);
   console.log("\nRepeated tool inputs:");
   if (report.repeatedToolInputs.length === 0) console.log("- none found");
   report.repeatedToolInputs.forEach((item) => {
@@ -1342,7 +1536,11 @@ function printSessionContextReport(report: SessionContextReport): void {
   report.notes.forEach((note) => console.log(`- ${note}`));
 }
 
-function printSessionHistoryReport(report: SessionHistoryReport): void {
+function printSessionHistoryReport(report: SessionHistoryReport, options: { brief?: boolean } = {}): void {
+  if (options.brief) {
+    printSessionHistoryBrief(report);
+    return;
+  }
   console.log("\n## Session history backfill");
   console.log(`Sessions scanned: ${report.sessionCount}`);
   const filterParts = [
@@ -1396,6 +1594,8 @@ function printSessionHistoryReport(report: SessionHistoryReport): void {
   const toolResults = Object.entries(report.toolResultsByName).sort((a, b) => b[1].chars - a[1].chars);
   if (toolResults.length === 0) console.log("- none found");
   toolResults.forEach(([tool, summary]) => console.log(`- ${tool}: ${summary.calls} calls, ${summary.chars.toLocaleString()} chars (~${summary.estimatedTokens.toLocaleString()} tokens), largest ${summary.maxChars.toLocaleString()} chars`));
+  console.log("\nSubagent loop:");
+  printSubagentLoopSummary(report.subagentLoop);
   console.log("\nValidation command summary:");
   if (report.validationCommands.length === 0) console.log("- none found");
   report.validationCommands.slice(0, 12).forEach((item) => {
@@ -1986,13 +2186,13 @@ function printHelp(): void {
   bun run report:iteration --recommend <changed files...>
   bun run report:iteration --latest-artifact [scenario]
   bun run report:iteration --agent-actions [--recommend <changed files...>]
-  bun run report:iteration --session-context [--session ~/.pi-web-agent/sessions/session.jsonl]
-  bun run report:iteration --session-history [--latest-sessions 10] [--exclude-current-session]
-  bun run report:iteration --session-history --days 2 --roi
+  bun run report:iteration --session-context [--brief] [--session ~/.pi-web-agent/sessions/session.jsonl]
+  bun run report:iteration --session-history [--brief] [--latest-sessions 10] [--exclude-current-session]
+  bun run report:iteration --session-history --days 2 --roi --brief
   bun run report:iteration --session-history --since 2026-05-04 --until 2026-05-06 --latest-sessions 500
   bun run report:iteration --session-history --latest-sessions 30 --exclude-current-session --roi
 
-When --recommend is passed without files, changed files are read from git status. --latest-artifact short-circuits the generic report path and does not write test-results/iteration/iteration-report.json. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content. Session-history date filters use session log mtime: --days uses local-calendar days (for example, --days 2 means local-calendar today and yesterday through now), while --since/--until accept a date or datetime. Use --latest-sessions/--session-history-limit to cap history after date filtering and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
+When --recommend is passed without files, changed files are read from git status. --latest-artifact short-circuits the generic report path and does not write test-results/iteration/iteration-report.json. Session-context and session-history modes read local pi JSONL logs and report counts/sizes without printing tool content; add --brief to print only the highest-signal context, validation, and subagent-loop actions. Session-history date filters use session log mtime: --days uses local-calendar days (for example, --days 2 means local-calendar today and yesterday through now), while --since/--until accept a date or datetime. Use --latest-sessions/--session-history-limit to cap history after date filtering and --exclude-current-session to skip the current/latest session log. Add --roi to session-history mode to correlate the session window with commits and print conservative optimization win estimates.`);
 }
 
 function buildCandidates(report: Omit<IterationReport, "candidates">): IterationReport["candidates"] {
@@ -2083,11 +2283,11 @@ if (agentActionsMode) {
 }
 
 if (sessionContext) {
-  printSessionContextReport(sessionContext);
+  printSessionContextReport(sessionContext, { brief: briefMode });
 }
 
 if (sessionHistory) {
-  printSessionHistoryReport(sessionHistory);
+  printSessionHistoryReport(sessionHistory, { brief: briefMode });
 }
 
 if (roiEstimate) {

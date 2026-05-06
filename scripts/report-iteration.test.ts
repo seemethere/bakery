@@ -14,6 +14,14 @@ function makeRoot(): string {
   return root;
 }
 
+function writeSession(root: string, name: string, lines: unknown[]): string {
+  const dir = join(root, "sessions");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, name);
+  writeFileSync(path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+  return path;
+}
+
 function writeArtifact(root: string, dirName: string, options: { scenario?: string; scenarios?: string[]; failed?: boolean; screenshot?: string; log?: boolean } = {}): string {
   const dir = join(root, "test-results", "ui-harness", dirName);
   mkdirSync(dir, { recursive: true });
@@ -147,5 +155,51 @@ describe("report iteration latest-artifact CLI", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr.toString()).toContain("--session requires a value");
+  });
+
+  test("prints brief subagent loop telemetry", () => {
+    const root = makeRoot();
+    const sessionPath = writeSession(root, "session.jsonl", [
+      { type: "session", cwd: root, timestamp: "2026-05-05T00:00:00.000Z" },
+      {
+        type: "message",
+        timestamp: "2026-05-05T00:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call_1",
+              name: "subagent",
+              arguments: JSON.stringify({ tasks: [{ agent: "scout", task: "A" }, { agent: "scout", task: "B" }] }),
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: "2026-05-05T00:00:02.000Z",
+        message: {
+          role: "toolResult",
+          toolName: "subagent",
+          toolCallId: "call_1",
+          content: "Output saved. session: /tmp/pi/sessions/child.jsonl /tmp/pi-subagents-uid-1000/chain-runs/abc/context.md",
+        },
+      },
+    ]);
+
+    const result = Bun.spawnSync([process.execPath, scriptPath, "--session-context", "--brief", "--session", sessionPath], {
+      env: { ...process.env, PI_WEB_ITERATION_ROOT: root, PI_WEB_SESSION_DIR: join(root, "sessions") },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stdout = result.stdout.toString();
+    expect(result.exitCode).toBe(0);
+    expect(stdout).toContain("## Session context brief");
+    expect(stdout).toContain("- subagents:");
+    expect(stdout).toContain("1 call, 1 result");
+    expect(stdout).toContain("default-output collision risk: 1 parallel call");
+    expect(stdout).toContain("1 child session path");
   });
 });
