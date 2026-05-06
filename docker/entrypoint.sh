@@ -80,10 +80,10 @@ else
   useradd -m -u "$uid_value" -g "$gid_value" -d "$home_dir" -s /bin/bash "$user_name"
 fi
 
-mkdir -p "$home_dir" /workspace/bakery /workspace/bakery/node_modules /workspace/.bakery-data /workspace/.cache/bun
+mkdir -p "$home_dir" /workspace/bakery /workspace/bakery/node_modules /workspace/workspaces/docker /workspace/.bakery-data /workspace/.cache/bun
 # Do not recursively chown HOME: it may contain host mounts like ~/.pi.
 chown "$uid_value:$gid_value" "$home_dir" 2>/dev/null || true
-chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/bakery/node_modules
+chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/workspaces /workspace/bakery/node_modules
 
 add_socket_group_for_user() {
   local socket_path="$1"

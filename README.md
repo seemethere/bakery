@@ -27,7 +27,7 @@ The doctor checks that Bun is available, dependencies are installed, workspace/d
 ### 4. Start Bakery for one local machine
 
 ```bash
-PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev
+bun run dev
 ```
 
 Open:
@@ -36,7 +36,7 @@ Open:
 http://127.0.0.1:5173/
 ```
 
-The API runs on `http://127.0.0.1:3141`. In localhost-only mode, an auth token is optional; non-localhost requests are rejected unless a token is configured.
+The API runs on `http://127.0.0.1:3141`. In localhost-only mode, an auth token is optional; non-localhost requests are rejected unless a token is configured. If `PI_WEB_WORKSPACE_ROOT` is unset, Bakery creates and uses `~/.bakery/workspaces/local` as the local workspace root.
 
 ## LAN mode: use Bakery from another device
 
@@ -74,7 +74,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. For LAN/Tailscale access, set `PI_WEB_VITE_ALLOWED_HOSTS` and `PI_WEB_PREVIEW_PUBLIC_BASE_URL` in `.env`; see [`docs/container-development.md`](docs/container-development.md#lantailscale-access). The container bind-mounts this repository at `/workspace/bakery`, uses it as the only default workspace root, and mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources. Default Compose does not mount Git/GitHub credentials; the image includes `gh`, and [`docs/container-development.md#git-and-github-auth`](docs/container-development.md#git-and-github-auth) covers trusted-dev SSH-agent and GitHub auth override recipes for agents that need fetch, push, or PR tooling inside the container.
+Open `http://127.0.0.1:5173/` and use the token from `.env` if prompted. For LAN/Tailscale access, set `PI_WEB_VITE_ALLOWED_HOSTS` and `PI_WEB_PREVIEW_PUBLIC_BASE_URL` in `.env`; see [`docs/container-development.md`](docs/container-development.md#lantailscale-access). The container bind-mounts this repository at `/workspace/bakery` for running the dev server, mounts `$HOME/.bakery/workspaces/docker` at `/workspace/workspaces/docker`, and uses that mounted workspace directory as the default allowed workspace root unless `PI_WEB_WORKSPACE_ROOT` is set. It also mounts `$HOME/.pi` at `/home/bun/.pi` for normal pi auth/resources. Default Compose does not mount Git/GitHub credentials; the image includes `gh`, and [`docs/container-development.md#git-and-github-auth`](docs/container-development.md#git-and-github-auth) covers trusted-dev SSH-agent and GitHub auth override recipes for agents that need fetch, push, or PR tooling inside the container.
 
 Docker socket access is intentionally off by default. When you need Docker commands inside the dev container, opt in explicitly:
 
@@ -100,7 +100,7 @@ docker compose up --build   # Run the containerized Bakery development environme
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PI_WEB_WORKSPACE_ROOT` | current working directory | Comma-separated allowlist of directories where sessions may run. |
+| `PI_WEB_WORKSPACE_ROOT` | `~/.bakery/workspaces/local` | Comma-separated allowlist of directories where sessions may run. Docker Compose defaults this to `/workspace/workspaces/docker`, mounted from `$HOME/.bakery/workspaces/docker`. |
 | `PI_WEB_HOST` | `127.0.0.1` | Backend bind host. Use `0.0.0.0` only for LAN/container access with a token. |
 | `PI_WEB_PORT` | `3141` | Backend API/WebSocket port. |
 | `PI_WEB_AUTH_TOKEN` | unset | Required for non-localhost access; optional on localhost. |

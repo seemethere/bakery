@@ -44,6 +44,8 @@ function splitList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+const defaultLocalWorkspaceRoot = "~/.bakery/workspaces/local";
+
 function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
@@ -108,9 +110,10 @@ async function main(): Promise<void> {
   }
 
   const workspaceRoots = splitList(process.env.PI_WEB_WORKSPACE_ROOT);
-  const effectiveWorkspaceRoots = workspaceRoots.length ? workspaceRoots.map(expandHome) : [resolve(process.cwd())];
+  const usingDefaultWorkspaceRoot = workspaceRoots.length === 0;
+  const effectiveWorkspaceRoots = usingDefaultWorkspaceRoot ? [expandHome(defaultLocalWorkspaceRoot)] : workspaceRoots.map(expandHome);
   for (const [index, workspaceRoot] of effectiveWorkspaceRoots.entries()) {
-    await checkDirectory(workspaceRoot, effectiveWorkspaceRoots.length > 1 ? `Workspace root ${index + 1}` : "Workspace root");
+    await checkDirectory(workspaceRoot, effectiveWorkspaceRoots.length > 1 ? `Workspace root ${index + 1}` : "Workspace root", usingDefaultWorkspaceRoot);
   }
 
   const dataDir = expandHome(process.env.PI_WEB_DATA_DIR ?? "~/.pi-web-agent");
@@ -161,7 +164,7 @@ async function main(): Promise<void> {
   if (effectiveLanMode) {
     console.log('  PI_WEB_AUTH_TOKEN="change-me" PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev:lan');
   } else {
-    console.log('  PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev');
+    console.log('  bun run dev');
   }
 
   console.log("\nExpected URLs:");

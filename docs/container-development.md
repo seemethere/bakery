@@ -1,6 +1,6 @@
 # Containerized development
 
-Bakery's containerized development environment runs the existing Bun/Vite development workflow inside Docker while bind-mounting this checkout as the only default Bakery workspace.
+Bakery's containerized development environment runs the existing Bun/Vite development workflow inside Docker while bind-mounting this checkout for the dev server and a host workspace directory for agent sessions.
 
 This is for developing Bakery itself. It is not yet the production single-port image, the future multi-backend `bakery` CLI, or per-agent-session container isolation.
 
@@ -40,7 +40,8 @@ This is for developing Bakery itself. It is not yet the production single-port i
 
 | Host path | Container path | Purpose |
 | --- | --- | --- |
-| `.` | `/workspace/bakery` | This Bakery checkout and the only default allowed workspace root. |
+| `.` | `/workspace/bakery` | This Bakery checkout, used as the container working directory for the dev server. |
+| `$HOME/.bakery/workspaces/docker` | `/workspace/workspaces/docker` | Default allowed workspace root for container sessions when `PI_WEB_WORKSPACE_ROOT` is unset. Use this for cloned/created repositories managed from the container. |
 | `$HOME/.pi` | `/home/bun/.pi` | Existing pi auth, resources, configuration, and pi JSONL session logs. Mounted read-write for compatibility with normal pi behavior. The entrypoint points `PI_CODING_AGENT_DIR` at a container-local overlay under `/workspace/.bakery-data/pi-agent` that symlinks this config but keeps managed binaries (`fd`, `rg`) Linux-native, avoiding host macOS/Windows binaries from `~/.pi/agent/bin`. Compose sets `PI_WEB_SESSION_DIR=/home/bun/.pi/agent/sessions` so iteration telemetry can discover these logs. |
 | `bakery-node-modules` volume | `/workspace/bakery/node_modules` | Container-owned dependencies so host `node_modules` is not required. |
 | `bakery-data` volume | `/workspace/.bakery-data` | Bakery metadata, session files, artifacts, and managed worktrees for the container. |
@@ -275,7 +276,7 @@ When modifying the containerized development environment, validate from the smal
    docker compose up --build
    ```
 
-   Open `http://127.0.0.1:5173/`, enter the token from `.env`, and confirm Bakery can list or create sessions against `/workspace/bakery`.
+   Open `http://127.0.0.1:5173/`, enter the token from `.env`, and confirm Bakery can list or create sessions against `/workspace/workspaces/docker` by default.
 
 Do not run full `bun run test:web-perf` by default for Docker/docs-only changes. Escalate to focused UI harnesses or the full fake-agent suite only when the change also touches browser UI behavior, protocol/session lifecycle, server runtime behavior beyond container configuration, auth/CORS/API behavior, or when a focused Docker/manual smoke fails in a way that suggests an app-level regression.
 
