@@ -88,6 +88,71 @@ docker compose -f compose.yaml -f compose.docker.yaml up --build
 
 Without `compose.docker.yaml`, the Docker CLI is present in the image but cannot talk to the host daemon.
 
+## Git and GitHub auth
+
+Bakery piggybacks on the Git and GitHub credentials available to the backend process. In a local Bun run, the backend is your normal host process, so agents inherit the same practical auth surface as the terminal that launched Bakery: repository and global Git config, credential helpers, SSH agent environment, `gh` auth when `gh` is installed, and any exported `GH_TOKEN`/`GITHUB_TOKEN` values.
+
+The Compose dev container intentionally does **not** inherit host Git/GitHub auth by default. The default mounts do not include `$HOME/.gitconfig`, `$HOME/.ssh`, `$HOME/.config/gh`, Git credential stores, broad `$HOME` paths, or SSH agent sockets. This keeps the safe default narrow: worktree creation can use local repository metadata, but remote operations such as `git fetch`, `git push`, or PR creation require credentials that are explicitly available inside the container.
+
+Treat any Git/GitHub auth setup for the dev container as a trusted-local-development opt-in. Credentials exposed to the container are also available to agent commands running in that container.
+
+### Recommended path: forward an SSH agent
+
+Prefer forwarding an existing host SSH agent when feasible. This avoids mounting private key files or long-lived GitHub tokens directly into the container. Socket paths differ across Linux, Docker Desktop, and OrbStack, so adapt this example to the socket that exists on your machine:
+
+```yaml
+# private local override, for example compose.local-git-auth.yaml
+services:
+  bakery-dev:
+    environment:
+      SSH_AUTH_SOCK: /ssh-agent
+    volumes:
+      - ${SSH_AUTH_SOCK}:/ssh-agent
+```
+
+Start Bakery with your private override:
+
+```bash
+docker compose -f compose.yaml -f compose.local-git-auth.yaml up --build
+```
+
+If the host socket path is unset or does not exist, Docker Compose will fail before starting the container. Only add bind mounts for paths that exist on your host.
+
+### Other trusted-dev options
+
+Use these only when they match your local security tradeoff:
+
+- Mount Git identity/settings read-only, for example `${HOME}/.gitconfig:/home/bun/.gitconfig:ro`. This can provide `user.name`, `user.email`, aliases, and URL rewrites, but it is not the same as remote auth. Host configs may reference helpers or include paths that do not exist in a Linux container, such as `osxkeychain`, GPG signing tools, 1Password helpers, or absolute host paths.
+- Mount SSH configuration and keys read-only, for example `${HOME}/.ssh:/home/bun/.ssh:ro`, only for trusted local development. This exposes private key material to any command or agent running in the container; prefer SSH agent forwarding when possible.
+- Pass `GH_TOKEN` or `GITHUB_TOKEN` only to tools that need it and only from a private override or shell you control. Avoid putting real tokens in checked-in files, shell history, shared logs, or transcripts.
+- Mount `${HOME}/.config/gh:/home/bun/.config/gh:ro` only when `gh` is installed in the container. The current Bakery dev image includes `git` and `openssh-client`; it does not bundle GitHub CLI.
+
+Keep auth mounts separate from workspace roots. Do not expand `PI_WEB_WORKSPACE_ROOT` just to make credentials visible; session working directories should stay under the intended repository/workspace allowlist.
+
+### Safe verification commands
+
+Verify configuration from inside the container without printing secrets:
+
+```bash
+docker compose run --rm bakery-dev bash -lc '
+  git --version
+  ssh -V
+  git config --global --get user.name || true
+  git config --global --get user.email || true
+  ssh-add -l || true
+  command -v gh >/dev/null && gh auth status || true
+'
+```
+
+For actual remote auth, use a harmless remote read against a repository you can access:
+
+```bash
+docker compose run --rm bakery-dev \
+  bash -lc 'git ls-remote git@github.com:<owner>/<repo>.git HEAD'
+```
+
+Do not verify by echoing tokens, printing private keys, dumping credential-store files, or mounting broad home directories.
+
 ## Common commands
 
 ```bash
