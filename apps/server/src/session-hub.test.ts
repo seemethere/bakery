@@ -174,6 +174,7 @@ describe("active tool execution snapshots", () => {
     hub.add(socket, "client-1");
     listener?.({ type: "tool_execution_update", time: "2026-05-05T00:00:01.000Z", data: { type: "tool_execution_update", toolCallId: "sub-1", toolName: "subagent", partialResult: { content: "running" } } }, {});
     listener?.({ type: "tool_execution_end", time: "2026-05-05T00:00:02.000Z", data: { type: "tool_execution_end", toolCallId: "sub-1", toolName: "subagent", result: { content: "done" } } }, {});
+    expect(hub.getBroadcastMetrics()).toMatchObject({ broadcasts: 2, sentMessages: 0, bufferedMessages: 2, maxBufferedPayloads: 2, maxClients: 1, lastPayloadType: "agent_event" });
     expect(sent).toHaveLength(1);
     expect((sent[0] as { type?: string }).type).toBe("hello");
 
@@ -183,6 +184,19 @@ describe("active tool execution snapshots", () => {
 
     const envelopes = sent.slice(1) as ServerEnvelope[];
     expect(envelopes.map((entry) => entry.payload.type)).toEqual(["session_snapshot", "agent_event", "agent_event", "controller_update"]);
+    expect(hub.getBroadcastMetrics()).toMatchObject({ broadcasts: 3, sentMessages: 1, bufferedMessages: 2, maxBufferedPayloads: 2, lastPayloadType: "controller_update" });
+
+    const sent2: unknown[] = [];
+    hub.add({ send: (data: string) => sent2.push(JSON.parse(data)), close: () => undefined, on: () => undefined }, "client-2");
+    await Promise.resolve();
+    await Promise.resolve();
+    const beforeMetadata = hub.getBroadcastMetrics();
+    hub.broadcastMetadataUpdate(webSession({ id: session.id, summary: "x".repeat(1_000) }));
+    const afterMetadata = hub.getBroadcastMetrics();
+    expect(afterMetadata.sentMessages - beforeMetadata.sentMessages).toBe(2);
+    expect(afterMetadata.sentBytes - beforeMetadata.sentBytes).toBeGreaterThan(afterMetadata.maxPayloadBytes);
+    expect(afterMetadata.lastPayloadType).toBe("session_metadata_update");
+
     expect(envelopes[0]?.payload.type).toBe("session_snapshot");
     if (envelopes[0]?.payload.type === "session_snapshot") expect(envelopes[0].payload.snapshot.activeToolExecutions).toBeUndefined();
   });

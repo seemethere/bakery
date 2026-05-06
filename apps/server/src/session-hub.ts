@@ -129,6 +129,22 @@ type SocketClient = {
   socket: { send(data: string): void; close(code?: number, reason?: string): void; on(event: string, listener: (...args: never[]) => void): void };
 };
 
+export type BroadcastMetricsSnapshot = {
+  broadcasts: number;
+  sentMessages: number;
+  bufferedMessages: number;
+  sentBytes: number;
+  maxPayloadBytes: number;
+  maxBufferedPayloads: number;
+  maxClients: number;
+  slowestBroadcastMs: number;
+  lastPayloadType: ServerMessage["type"] | null;
+};
+
+function emptyBroadcastMetrics(): BroadcastMetricsSnapshot {
+  return { broadcasts: 0, sentMessages: 0, bufferedMessages: 0, sentBytes: 0, maxPayloadBytes: 0, maxBufferedPayloads: 0, maxClients: 0, slowestBroadcastMs: 0, lastPayloadType: null };
+}
+
 export type SessionBroadcaster = Pick<SessionHub, "broadcastMetadataUpdate">;
 
 export type SessionHubRegistry = {
@@ -152,6 +168,7 @@ export class SessionHub {
   private disposeTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingCommands: string[] = [];
   private flushingPendingCommands = false;
+  private readonly broadcastMetrics = emptyBroadcastMetrics();
   private readonly unsubscribe: () => void;
   private readonly unsubscribeQuestion: () => void;
 
@@ -243,16 +260,23 @@ export class SessionHub {
     };
   }
 
-  private send(client: SocketClient, payload: ServerMessage): void {
-    client.socket.send(JSON.stringify(envelope(client.seq++, payload)));
+  getBroadcastMetrics(): BroadcastMetricsSnapshot {
+    return { ...this.broadcastMetrics };
   }
 
-  private sendOrBuffer(client: SocketClient, payload: ServerMessage): void {
+  private send(client: SocketClient, payload: ServerMessage): number {
+    const data = JSON.stringify(envelope(client.seq++, payload));
+    client.socket.send(data);
+    return Buffer.byteLength(data, "utf8");
+  }
+
+  private sendOrBuffer(client: SocketClient, payload: ServerMessage): { sentBytes: number; payloadBytes: number; buffered: boolean } {
     if (client.snapshotPending) {
       client.bufferedPayloads.push(payload);
-      return;
+      return { sentBytes: 0, payloadBytes: 0, buffered: true };
     }
-    this.send(client, payload);
+    const payloadBytes = this.send(client, payload);
+    return { sentBytes: payloadBytes, payloadBytes, buffered: false };
   }
 
   private rememberActiveToolExecution(event: NormalizedAgentEvent): void {
@@ -272,7 +296,36 @@ export class SessionHub {
   }
 
   private broadcast(payload: ServerMessage): void {
-    for (const client of this.clients.values()) this.sendOrBuffer(client, payload);
+    const startedAt = performance.now();
+    let sentMessages = 0;
+    let bufferedMessages = 0;
+    let sentBytes = 0;
+    let maxPayloadBytes = 0;
+    let maxBufferedPayloads = 0;
+    for (const client of this.clients.values()) {
+      const result = this.sendOrBuffer(client, payload);
+      if (result.buffered) bufferedMessages += 1;
+      else sentMessages += 1;
+      sentBytes += result.sentBytes;
+      maxPayloadBytes = Math.max(maxPayloadBytes, result.payloadBytes);
+      maxBufferedPayloads = Math.max(maxBufferedPayloads, client.bufferedPayloads.length);
+    }
+    this.recordBroadcastMetrics(payload.type, { clientCount: this.clients.size, sentMessages, bufferedMessages, sentBytes, maxPayloadBytes, maxBufferedPayloads, elapsedMs: performance.now() - startedAt });
+  }
+
+  private recordBroadcastMetrics(payloadType: ServerMessage["type"], sample: { clientCount: number; sentMessages: number; bufferedMessages: number; sentBytes: number; maxPayloadBytes: number; maxBufferedPayloads: number; elapsedMs: number }): void {
+    this.broadcastMetrics.broadcasts += 1;
+    this.broadcastMetrics.sentMessages += sample.sentMessages;
+    this.broadcastMetrics.bufferedMessages += sample.bufferedMessages;
+    this.broadcastMetrics.sentBytes += sample.sentBytes;
+    this.broadcastMetrics.maxPayloadBytes = Math.max(this.broadcastMetrics.maxPayloadBytes, sample.maxPayloadBytes);
+    this.broadcastMetrics.maxBufferedPayloads = Math.max(this.broadcastMetrics.maxBufferedPayloads, sample.maxBufferedPayloads);
+    this.broadcastMetrics.maxClients = Math.max(this.broadcastMetrics.maxClients, sample.clientCount);
+    this.broadcastMetrics.slowestBroadcastMs = Math.max(this.broadcastMetrics.slowestBroadcastMs, Math.round(sample.elapsedMs));
+    this.broadcastMetrics.lastPayloadType = payloadType;
+    if (process.env.PI_WEB_BROADCAST_METRICS === "1" && (sample.bufferedMessages > 0 || sample.maxPayloadBytes > 64_000 || sample.elapsedMs > 25)) {
+      console.warn("[session-hub:broadcast]", JSON.stringify({ sessionId: this.handle.id, payloadType, ...sample, elapsedMs: Math.round(sample.elapsedMs) }));
+    }
   }
 
   broadcastMetadataUpdate(session: WebSession): void {
@@ -280,7 +333,21 @@ export class SessionHub {
   }
 
   private broadcastControllerUpdate(): void {
-    for (const client of this.clients.values()) this.sendOrBuffer(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
+    const startedAt = performance.now();
+    let sentMessages = 0;
+    let bufferedMessages = 0;
+    let sentBytes = 0;
+    let maxPayloadBytes = 0;
+    let maxBufferedPayloads = 0;
+    for (const client of this.clients.values()) {
+      const result = this.sendOrBuffer(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
+      if (result.buffered) bufferedMessages += 1;
+      else sentMessages += 1;
+      sentBytes += result.sentBytes;
+      maxPayloadBytes = Math.max(maxPayloadBytes, result.payloadBytes);
+      maxBufferedPayloads = Math.max(maxBufferedPayloads, client.bufferedPayloads.length);
+    }
+    this.recordBroadcastMetrics("controller_update", { clientCount: this.clients.size, sentMessages, bufferedMessages, sentBytes, maxPayloadBytes, maxBufferedPayloads, elapsedMs: performance.now() - startedAt });
   }
 
   private async broadcastSettingsUpdate(): Promise<void> {
