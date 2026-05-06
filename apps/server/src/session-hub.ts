@@ -16,6 +16,7 @@ import { parseSlashCommand, runBundledExtensionCommand } from "./extensions.js";
 import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } from "./metadata-routes.js";
 import type { MetadataStore, WebCommandResultRecord } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
+import { isBrowserOriginAllowed } from "./security-origin.js";
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
   return { seq, time: new Date().toISOString(), payload };
@@ -644,6 +645,16 @@ export function createSessionHubRegistry(deps: Omit<SessionHubDeps, "removeHub">
     },
     registerRoutes: (app) => {
       app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true }, async (socket, request) => {
+        const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
+        if (!isBrowserOriginAllowed({
+          origin,
+          requestHost: request.headers.host,
+          authRequired: deps.config.authRequired,
+          allowedOrigins: deps.config.allowedOrigins,
+        })) {
+          socket.close(1008, "browser origin is not allowed");
+          return;
+        }
         const existingSession = deps.store.getSession(request.params.id);
         if (!existingSession) {
           socket.close(1008, "session not found");

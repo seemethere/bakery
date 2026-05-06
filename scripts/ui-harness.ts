@@ -180,6 +180,7 @@ async function main(): Promise<void> {
     PI_WEB_DATA_DIR: dataDir,
     PI_WEB_FAKE_AGENT: "1",
     PI_WEB_AUTH_TOKEN: "",
+    PI_WEB_ALLOWED_ORIGINS: webBase,
     PI_WEB_LOAD_GLOBAL_RESOURCES: "false",
     PI_WEB_LOAD_PROJECT_RESOURCES: "false",
     ...(configuredExtension ? { PI_WEB_EXTENSION_PATHS: `${configuredExtension.extensionDir},${configuredExtension.missingExtensionPath}` } : {}),

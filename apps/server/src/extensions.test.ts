@@ -15,6 +15,7 @@ const baseConfig: ServerConfig = {
   artifactDir: "",
   worktreeDir: "",
   previewRuntimeDir: "",
+  allowedOrigins: [],
   fakeAgent: true,
   toolPermissionPolicy: { allowedModes: ["bypass", "confirm"], defaultMode: "bypass", confirmTools: [], denyTools: [] },
   modelPolicy: { defaultThinkingLevel: "medium", allowedThinkingLevels: ["medium"] },

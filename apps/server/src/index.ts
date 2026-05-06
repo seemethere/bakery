@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
-import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
 import Fastify from "fastify";
@@ -15,6 +14,7 @@ import { InProcessPiSessionRunner } from "./pi-runner.js";
 import { registerPreviewStackRoutes } from "./preview-stack-routes.js";
 import { PreviewStackManager } from "./preview-stacks.js";
 import { registerSearchRoutes } from "./search-routes.js";
+import { isBrowserOriginAllowed } from "./security-origin.js";
 import { createSessionHubRegistry } from "./session-hub.js";
 import { registerSessionRoutes } from "./session-routes.js";
 import { resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
@@ -31,7 +31,6 @@ const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : 
 const previewStacks = new PreviewStackManager({ config });
 await loadConfiguredBakeryExtensions(config);
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
-await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(websocket);
 
 function isLocalhost(ip: string): boolean {
@@ -40,6 +39,22 @@ function isLocalhost(ip: string): boolean {
 
 app.addHook("onRequest", async (request, reply) => {
   if (request.url === "/healthz") return;
+  const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
+  const originAllowed = isBrowserOriginAllowed({
+    origin,
+    requestHost: request.headers.host,
+    authRequired: config.authRequired,
+    allowedOrigins: config.allowedOrigins,
+  });
+  if (!originAllowed) return reply.code(403).send({ error: "browser origin is not allowed" });
+  if (origin) {
+    reply.header("Access-Control-Allow-Origin", origin);
+    reply.header("Vary", "Origin");
+    reply.header("Access-Control-Allow-Methods", "GET, HEAD, POST, PATCH, DELETE, OPTIONS");
+    reply.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    reply.header("Access-Control-Max-Age", "600");
+  }
+  if (request.method === "OPTIONS") return reply.code(204).send();
 
   if (config.authToken) {
     const header = request.headers.authorization;
