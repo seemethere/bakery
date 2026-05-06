@@ -2,6 +2,24 @@
 
 Bakery is a local-first web UI for running server-backed pi coding-agent sessions against your own workspaces. It is currently aimed at pi users and developers who are comfortable running a Bun app from a terminal.
 
+## Running Bakery
+
+The intended long-term simple case is a notebook-style launcher:
+
+```bash
+bunx bakery
+```
+
+That command should start the local backend plus browser UI for the directory where you invoked it, then print the localhost address to open. Bakery is not packaged for npm distribution yet, so this repository currently provides the same run shape as a source-checkout prototype:
+
+```bash
+bun run bakery
+```
+
+The prototype is foreground-only: it starts the backend on `http://127.0.0.1:3141`, starts the Vite UI on `http://127.0.0.1:5173/`, prints both URLs plus the selected workspace root, and stops both processes when you press Ctrl+C. Unless `PI_WEB_WORKSPACE_ROOT` is already set, the launcher uses its invocation directory as the workspace root; when running through Bun's repository `--cwd` package-script mode, set `PI_WEB_WORKSPACE_ROOT` explicitly for a different project.
+
+Because Bakery controls an agent that can read, edit, and run shell commands in allowed workspaces, run the launcher only from workspaces you trust. Localhost access keeps the no-token development default; LAN/non-localhost access should be explicit and token-protected.
+
 ## Quickstart: local Bun install
 
 ### 1. Prerequisites
@@ -26,17 +44,31 @@ The doctor checks that Bun is available, dependencies are installed, workspace/d
 
 ### 4. Start Bakery for one local machine
 
+For the notebook-style foreground launcher prototype, run from this repository when you want this checkout as the workspace:
+
 ```bash
-PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev
+bun run bakery
 ```
 
-Open:
+To point the repo-local prototype at another project before npm/`bunx` packaging exists, set the workspace root explicitly:
+
+```bash
+PI_WEB_WORKSPACE_ROOT=/path/to/project bun run bakery
+```
+
+Open the printed UI URL, usually:
 
 ```text
 http://127.0.0.1:5173/
 ```
 
 The API runs on `http://127.0.0.1:3141`. In localhost-only mode, an auth token is optional; non-localhost requests are rejected unless a token is configured.
+
+Contributors working on Bakery itself can still use the existing detached-backend development loop:
+
+```bash
+PI_WEB_WORKSPACE_ROOT="$PWD" bun run dev
+```
 
 ## LAN mode: use Bakery from another device
 
@@ -88,7 +120,8 @@ See [`docs/container-development.md`](docs/container-development.md) for mounted
 
 ```bash
 bun run doctor              # Validate local install readiness
-bun run dev                 # Start backend manager, then Vite web UI
+bun run bakery              # Start the repo-local foreground Bakery Launcher prototype
+bun run dev                 # Start backend manager, then Vite web UI for development
 bun run dev:lan             # Start backend and web UI for token-protected LAN access
 bun run dev:server:restart  # Restart only the backend during development
 bun run dev:server:logs     # Show backend logs

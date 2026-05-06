@@ -35,6 +35,14 @@ The filesystem directory that bounds an agent session's code access and project 
 - Not: the entire machine unless the configured allowed root intentionally permits it.
 - Example: `/Users/example/projects/bakery` is the workspace for a Bakery development session.
 
+### Bakery Launcher
+
+The operator-facing command that starts Bakery for an invocation workspace, keeps the local backend and browser UI processes tied to that command, and prints the localhost UI address.
+
+- Also known as: launcher, local launcher.
+- Not: the npm package name, registry publishing decision, or a guarantee that the first implementation is single-port.
+- Example: an operator runs `bun run bakery` from `/Users/example/projects/app`; Bakery starts for that workspace, prints `http://127.0.0.1:5173/`, and stops the started processes when the operator presses Ctrl+C.
+
 ### Workflow Command
 
 An operator-facing slash command that launches a guided workflow prompt for the agent.

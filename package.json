@@ -20,6 +20,7 @@
     "dev:server:watch": "bun run --cwd apps/server dev:watch",
     "dev:web": "bun run --cwd apps/web dev",
     "dev:web:lan": "bun run --cwd apps/web dev:lan",
+    "bakery": "bun scripts/bakery-cli.ts",
     "start": "bun run --cwd apps/server start",
     "check": "bun run --cwd packages/protocol check && bun run --cwd apps/server check && bun run --cwd apps/web check && bun scripts/assert-workflow-skills.ts",
     "ui:harness": "bun scripts/ui-harness.ts",
