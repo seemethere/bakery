@@ -53,6 +53,13 @@ function modeIsBash(mode: ComposerMode) {
   return mode === "bash" || mode === "bash-no-context";
 }
 
+function sendButtonModeClassName(mode: ComposerMode): string {
+  if (mode === "ask") return "bg-emerald-500 text-white hover:bg-emerald-400 focus-visible:border-emerald-300 focus-visible:ring-emerald-400/30";
+  if (mode === "plan") return "bg-yellow-500 text-black hover:bg-yellow-400 focus-visible:border-yellow-300 focus-visible:ring-yellow-400/30";
+  if (mode === "bash" || mode === "bash-no-context") return "bg-purple-500 text-white hover:bg-purple-400 focus-visible:border-purple-300 focus-visible:ring-purple-400/30";
+  return "";
+}
+
 function payloadForMode(draft: string, mode: ComposerMode): string {
   const trimmedStart = draft.trimStart();
   if (trimmedStart.startsWith("!")) return draft;
@@ -607,7 +614,15 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <Button type="button" size="icon" onClick={onSend} disabled={!canSend} title={isRunning ? "Guide active run" : "Send"} aria-label={isRunning ? "Guide active run" : "Send"}>
+      <Button
+        type="button"
+        size="icon"
+        onClick={onSend}
+        disabled={!canSend}
+        title={isRunning ? "Guide active run" : "Send"}
+        aria-label={isRunning ? "Guide active run" : "Send"}
+        className={sendButtonModeClassName(mode)}
+      >
         <SendHorizontal />
       </Button>
     </div>
