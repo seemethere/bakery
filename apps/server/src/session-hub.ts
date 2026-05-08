@@ -24,6 +24,15 @@ export function dataUrlToImageContent(value: string): ImageContent {
   return { type: "image", mimeType: match[1]!.toLowerCase(), data: match[2]!.replace(/\s/g, "") };
 }
 
+function askPrompt(text: string): string {
+  return [
+    "Answer the following operator question directly.",
+    "Treat this as an ask/explain turn: do not edit files, run shell commands, or call tools unless the operator explicitly asks you to.",
+    "",
+    text,
+  ].join("\n");
+}
+
 export function parseNameCommand(text: string): { matched: boolean; clear?: boolean; title?: string } {
   const trimmed = text.trim();
   if (!/^\/name(?:\s|$)/.test(trimmed)) return { matched: false };
@@ -340,6 +349,17 @@ class SessionHub {
         const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
         if (status === "idle") await this.runBundledCommandText(parsed.data.text);
         else await this.queueCommandUntilIdle(parsed.data.text);
+      } else if (parsed.data.type === "ask") {
+        const webSession = this.deps.store.getSession(this.handle.id);
+        if (webSession && !webSession.title) {
+          const title = firstPromptTitle(parsed.data.text);
+          if (title) {
+            const updated = this.deps.store.updateSession(webSession.id, { title, titleSource: "first_prompt" });
+            if (updated) this.broadcastMetadataUpdate(updated);
+          }
+        }
+        await this.handle.prompt(askPrompt(parsed.data.text), parsed.data.images?.map(dataUrlToImageContent));
+        await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
         if (nameCommand.matched) {

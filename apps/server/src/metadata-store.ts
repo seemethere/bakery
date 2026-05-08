@@ -27,6 +27,7 @@ type SessionRow = {
   metadata_generation_count: number;
   metadata_last_generated_at: string | null;
   auto_generate_metadata_override: AutoGenerateMetadataOverride;
+  pinned: number;
   created_at: string;
   last_opened_at: string;
 };
@@ -50,6 +51,7 @@ function mapSession(row: SessionRow): WebSession {
     metadataGenerationCount: row.metadata_generation_count,
     metadataLastGeneratedAt: row.metadata_last_generated_at,
     autoGenerateMetadataOverride: row.auto_generate_metadata_override,
+    pinned: Boolean(row.pinned),
     createdAt: row.created_at,
     lastOpenedAt: row.last_opened_at,
   };
@@ -134,6 +136,7 @@ export class MetadataStore {
     this.addColumn("web_sessions", "metadata_generation_count INTEGER NOT NULL DEFAULT 0", "metadata_generation_count");
     this.addColumn("web_sessions", "metadata_last_generated_at TEXT", "metadata_last_generated_at");
     this.addColumn("web_sessions", "auto_generate_metadata_override TEXT NOT NULL DEFAULT 'default'", "auto_generate_metadata_override");
+    this.addColumn("web_sessions", "pinned INTEGER NOT NULL DEFAULT 0", "pinned");
     this.inferExistingTitleSources();
   }
 
@@ -174,7 +177,7 @@ export class MetadataStore {
     this.db.query("UPDATE web_sessions SET last_opened_at = ? WHERE id = ?").run(new Date().toISOString(), id);
   }
 
-  updateSession(id: string, input: { title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; autoGenerateMetadataOverride?: AutoGenerateMetadataOverride; incrementGenerationCount?: boolean }): WebSession | undefined {
+  updateSession(id: string, input: { title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; autoGenerateMetadataOverride?: AutoGenerateMetadataOverride; pinned?: boolean; incrementGenerationCount?: boolean }): WebSession | undefined {
     const now = new Date().toISOString();
     if (Object.hasOwn(input, "title")) {
       this.db.query("UPDATE web_sessions SET title = ?, title_source = ? WHERE id = ?").run(input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), id);
@@ -184,6 +187,9 @@ export class MetadataStore {
     }
     if (input.autoGenerateMetadataOverride) {
       this.db.query("UPDATE web_sessions SET auto_generate_metadata_override = ? WHERE id = ?").run(input.autoGenerateMetadataOverride, id);
+    }
+    if (Object.hasOwn(input, "pinned")) {
+      this.db.query("UPDATE web_sessions SET pinned = ? WHERE id = ?").run(input.pinned ? 1 : 0, id);
     }
     if (input.incrementGenerationCount) {
       this.db.query("UPDATE web_sessions SET metadata_generation_count = metadata_generation_count + 1, metadata_last_generated_at = ? WHERE id = ?").run(now, id);
