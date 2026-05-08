@@ -32,20 +32,26 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
   await prepareSession(page);
-  await page.locator(".empty-transcript", { hasText: "Start with a workflow." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-session-greeting", { hasText: "New Bakery session" }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-quick-start-chips [data-empty-quick-start='plan']", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
   const mobileEmptyLayout = await page.evaluate(() => {
     const transcript = document.querySelector(".transcript")?.getBoundingClientRect();
-    const quickStarts = document.querySelector(".empty-quick-starts")?.getBoundingClientRect();
+    const footer = document.querySelector("footer")?.getBoundingClientRect();
+    const quickStarts = document.querySelector(".empty-quick-start-chips")?.getBoundingClientRect();
     const jumpToLatest = document.querySelector("#jumpToLatest")?.getBoundingClientRect();
     return {
+      viewport: { height: window.innerHeight, width: window.innerWidth },
       transcript: transcript ? { height: Math.round(transcript.height), width: Math.round(transcript.width) } : null,
+      footer: footer ? { top: Math.round(footer.top), bottom: Math.round(footer.bottom), height: Math.round(footer.height), width: Math.round(footer.width) } : null,
       quickStarts: quickStarts ? { height: Math.round(quickStarts.height), width: Math.round(quickStarts.width) } : null,
       hasJumpToLatest: Boolean(jumpToLatest),
     };
   });
   if (mobileEmptyLayout.hasJumpToLatest) throw new Error("Empty mobile session should not show Jump to latest");
-  if ((mobileEmptyLayout.quickStarts?.height ?? 999) > 310) throw new Error(`Mobile quick starts are too tall: ${mobileEmptyLayout.quickStarts?.height}px`);
-  if ((mobileEmptyLayout.quickStarts?.width ?? 0) > (mobileEmptyLayout.transcript?.width ?? 0)) throw new Error(`Mobile quick starts overflow transcript: ${JSON.stringify(mobileEmptyLayout)}`);
+  if ((mobileEmptyLayout.quickStarts?.height ?? 999) > 120) throw new Error(`Mobile quick start chips are too tall: ${mobileEmptyLayout.quickStarts?.height}px`);
+  if ((mobileEmptyLayout.quickStarts?.width ?? 0) > (mobileEmptyLayout.viewport.width ?? 0)) throw new Error(`Mobile quick start chips overflow viewport: ${JSON.stringify(mobileEmptyLayout)}`);
+  const footerCenter = ((mobileEmptyLayout.footer?.top ?? 0) + (mobileEmptyLayout.footer?.bottom ?? 0)) / 2;
+  if (Math.abs(footerCenter - mobileEmptyLayout.viewport.height / 2) > 170) throw new Error(`Mobile empty composer is not centered enough: ${JSON.stringify(mobileEmptyLayout)}`);
   const emptyComposerSendDisabled = await page.locator("#send").evaluate((button: HTMLButtonElement) => button.disabled);
   if (!emptyComposerSendDisabled) throw new Error("Mobile composer send should be disabled before the user enters text or attaches images.");
   await page.screenshot({ path: join(artifactDir, "mobile-empty-quick-starts.png"), fullPage: true });
@@ -56,8 +62,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".context-usage", { hasText: "Ctx" }).waitFor({ timeout: 5_000 });
-  await page.locator("#prompt").fill("Mobile layout regression draft");
-  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
+  await sendPromptAndWaitIdle(page, "Mobile layout regression draft");
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   const originalSessionId = await selectedSessionId(page);

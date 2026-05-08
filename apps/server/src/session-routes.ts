@@ -97,10 +97,15 @@ function mapTreeNode(node: PiSessionTreeNode, leafId: string | null): SessionTre
   };
 }
 
-async function createForkFile(sourceFile: string, cwd: string, entryId: string, sessionDir: string): Promise<string> {
+export async function createForkFile(sourceFile: string, cwd: string, entryId: string, sessionDir: string, position: "auto" | "before" | "at" = "auto"): Promise<{ piSessionFile: string; editorText?: string }> {
   const manager = SessionManager.open(sourceFile, sessionDir, cwd);
-  const branch = manager.getBranch(entryId);
-  if (branch.length === 0) throw new Error(`Entry not found: ${entryId}`);
+  const entry = manager.getEntry(entryId);
+  if (!entry) throw new Error(`Entry not found: ${entryId}`);
+  const isUserMessage = entry.type === "message" && (entry.message as { role?: string }).role === "user";
+  const resolvedPosition = position === "auto" ? (isUserMessage ? "before" : "at") : position;
+  const branchTargetId = resolvedPosition === "before" ? entry.parentId : entryId;
+  const branch = branchTargetId ? manager.getBranch(branchTargetId) : [];
+  const editorText = resolvedPosition === "before" && isUserMessage ? messageText((entry.message as { content?: unknown }).content) : undefined;
   const timestamp = new Date().toISOString();
   const piSessionId = crypto.randomUUID();
   const targetFile = resolve(sessionDir, `${piSessionId}.jsonl`);
@@ -114,7 +119,7 @@ async function createForkFile(sourceFile: string, cwd: string, entryId: string, 
   };
   const lines = [header, ...branch].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
   await writeFile(targetFile, lines, "utf8");
-  return targetFile;
+  return editorText ? { piSessionFile: targetFile, editorText } : { piSessionFile: targetFile };
 }
 
 export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDeps): void {
@@ -209,10 +214,10 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!source) return reply.code(404).send({ error: "session not found" });
     try {
       const id = crypto.randomUUID();
-      const piSessionFile = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId, config.sessionDir);
+      const fork = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId, config.sessionDir, parsed.data.position);
       const title = parsed.data.title ?? `Fork of ${source.title ?? source.cwd}`;
-      const session = store.createSession({ id, cwd: source.cwd, piSessionFile, title, titleSource: parsed.data.title ? "manual" : "derived", summary: source.summary, summarySource: source.summary ? "derived" : "unset" });
-      return reply.code(201).send(session);
+      const session = store.createSession({ id, cwd: source.cwd, piSessionFile: fork.piSessionFile, title, titleSource: parsed.data.title ? "manual" : "derived", summary: source.summary, summarySource: source.summary ? "derived" : "unset" });
+      return reply.code(201).send({ session, editorText: fork.editorText });
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }

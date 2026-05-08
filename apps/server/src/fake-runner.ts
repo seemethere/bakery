@@ -1,8 +1,9 @@
 import { dirname } from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { PLAN_ACTIONS_MARKER, type AnswerQuestionPayload, type CommandInfo, type ModelPolicy, type NormalizedAgentEvent, type PendingQuestion, type SessionRuntimeSettings, type SessionSnapshot, type WebSession } from "@pi-web-agent/protocol";
+import { loadConfig } from "./config.js";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
-import { getBakeryExtensionCommands, runBundledExtensionCommand } from "./extensions.js";
+import { getBakeryExtensionCommands, reloadConfiguredBakeryExtensions, runBundledExtensionCommand } from "./extensions.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -135,9 +136,16 @@ class FakeSessionHandle implements SessionHandle {
     this.sessionManager.appendMessage({ role: "user", content: userContent } as never);
     this.emit({ type: "message_end", message: user });
 
+    if (this.pendingQuestion) {
+      this.pendingQuestion = null;
+      this.questionResolver = null;
+      this.emitQuestionUpdate();
+    }
+
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
-    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript;
+    const shouldEmitSubagentCard = /(?:subagent[ -]?card|fake subagent|subagent renderer)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
@@ -146,6 +154,17 @@ class FakeSessionHandle implements SessionHandle {
 
     if (shouldEmitToolImageHeavyTranscript) {
       await this.emitToolImageHeavyTranscript();
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
+
+    if (shouldEmitSubagentCard) {
+      const slowSubagentCard = /(?:slow fake subagent card|subagent card reconnect)/i.test(text);
+      await this.emitFakeSubagentRun(slowSubagentCard ? { runningDelayMs: 4_000 } : {});
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -264,7 +283,7 @@ class FakeSessionHandle implements SessionHandle {
   }
 
   answerQuestion(payload: AnswerQuestionPayload): void {
-    if (!this.pendingQuestion || payload.questionId !== this.pendingQuestion.id || !this.questionResolver) throw new Error("No matching pending question.");
+    if (!this.pendingQuestion || payload.questionId !== this.pendingQuestion.id || !this.questionResolver) return;
     const resolver = this.questionResolver;
     this.pendingQuestion = null;
     this.questionResolver = null;
@@ -326,7 +345,11 @@ class FakeSessionHandle implements SessionHandle {
   async runBuiltinCommand(text: string): Promise<BuiltinCommandResult> {
     const trimmed = text.trim();
     if (trimmed === "/session") return { handled: true, title: "/session", body: `Fake session ${this.id}\nMessages: ${this.messages.length}` };
-    if (trimmed === "/reload") return { handled: true, title: "/reload", body: "Reloaded fake resources." };
+    if (trimmed === "/reload") {
+      const registry = await reloadConfiguredBakeryExtensions(loadConfig());
+      const issueText = registry.issues.length > 0 ? `\n\nExtension issues:\n${registry.issues.map((issue) => `- ${issue.path}: ${issue.message}`).join("\n")}` : "";
+      return { handled: true, title: "/reload", body: `Reloaded fake resources and Bakery extensions. Bakery extensions loaded: ${registry.extensions.length}.${issueText}`, isError: registry.issues.length > 0 };
+    }
     const workflowMatch = /^\/([\w:-]+(?:-[\w:-]+)*)(?:\s+([\s\S]*))?$/.exec(trimmed);
     const commandName = workflowMatch?.[1] ?? "";
     const bundledExtensionResult = commandName ? await runBundledExtensionCommand(commandName, workflowMatch?.[2]?.trim() ?? "") : undefined;
@@ -454,13 +477,9 @@ class FakeSessionHandle implements SessionHandle {
     this.emit({ type: "tool_execution_start", toolCallId, toolName: "ask_question", args });
     this.pendingQuestion = { id: crypto.randomUUID(), ...args, createdAt: new Date().toISOString() };
     this.emitQuestionUpdate();
-    const answer = await new Promise<Required<Pick<AnswerQuestionPayload, "cancelled">> & Omit<AnswerQuestionPayload, "cancelled">>((resolve) => {
-      this.questionResolver = resolve;
-    });
-    const result = answer.cancelled
-      ? { content: [{ type: "text", text: "User cancelled the question." }], details: { questionId: answer.questionId, question: args.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } }
-      : { content: [{ type: "text", text: `${answer.wasCustom ? "User wrote" : `User selected option ${(answer.selectedIndex ?? 0) + 1}`}: ${answer.answer ?? ""}` }], details: { questionId: answer.questionId, question: args.question, answer: answer.answer ?? null, selectedIndex: answer.selectedIndex ?? null, wasCustom: answer.wasCustom ?? false, cancelled: false } };
+    const result = { content: [{ type: "text", text: "Question checkpoint shown to the operator. The operator will continue in chat." }], details: { questionId: this.pendingQuestion.id, question: args.question, options: args.options, recommendedOptionIndex: args.recommendedOptionIndex ?? null, terminalCheckpoint: true, cancelled: false } };
     this.emit({ type: "tool_execution_end", toolCallId, toolName: "ask_question", result, isError: false });
+    if (!isPlanWorkflow) return;
     const planSummary = [
       "## Plan summary",
       "",
@@ -487,7 +506,7 @@ class FakeSessionHandle implements SessionHandle {
       "",
       PLAN_ACTIONS_MARKER,
     ].join("\n");
-    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: answer.cancelled ? "Question cancelled; I can rephrase or proceed with assumptions." : isPlanWorkflow ? planSummary : `Thanks — I'll proceed with: ${answer.answer}.` };
+    const assistant: FakeChatMessage = { id: crypto.randomUUID(), role: "assistant", timestamp: new Date().toISOString(), content: planSummary };
     this.messages.push(assistant);
     this.sessionManager.appendMessage({ role: "assistant", content: assistant.content } as never);
     this.emit({ type: "message_end", message: assistant });
@@ -529,6 +548,62 @@ class FakeSessionHandle implements SessionHandle {
       });
       if (index % 4 === 0) await sleep(0);
     }
+  }
+
+  private async emitFakeSubagentRun(options: { runningDelayMs?: number } = {}): Promise<void> {
+    const toolCallId = crypto.randomUUID();
+    const startedAt = new Date(Date.now() - 120).toISOString();
+    const args = { agent: "reviewer", task: "Review the current Bakery subagent card implementation", context: "fork" };
+    this.emit({ type: "tool_execution_start", toolCallId, toolName: "subagent", args, startedAt });
+    await sleep(80);
+    this.emit({
+      type: "tool_execution_update",
+      toolCallId,
+      toolName: "subagent",
+      args,
+      startedAt,
+      partialResult: {
+        content: [{ type: "text", text: "Reviewer is inspecting transcript rendering..." }],
+        details: {
+          mode: "single",
+          runId: "fake-subagent-run",
+          context: "fork",
+          progressSummary: { toolCount: 1, tokens: 980, durationMs: 1_200 },
+          progress: [{ index: 0, agent: "reviewer", status: "running", task: args.task, currentTool: "read", currentPath: "apps/web/src/transcript.ts", recentTools: [], toolCount: 1, tokens: 980, durationMs: 1_200 }],
+          results: [],
+        },
+      },
+    });
+    // Keep the live progress state observable long enough for focused UI harness layout assertions.
+    await sleep(options.runningDelayMs ?? 750);
+    const endedAt = new Date().toISOString();
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId,
+      toolName: "subagent",
+      args,
+      startedAt,
+      endedAt,
+      result: {
+        content: [{ type: "text", text: "Reviewer approved the subagent card slice and recommended focused UI coverage." }],
+        details: {
+          mode: "single",
+          runId: "fake-subagent-run",
+          context: "fork",
+          progressSummary: { toolCount: 2, tokens: 1_640, durationMs: 2_400 },
+          results: [{
+            agent: "reviewer",
+            task: args.task,
+            exitCode: 0,
+            usage: { input: 1200, output: 440, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 2 },
+            model: "fake/subagent-reviewer",
+            finalOutput: "Reviewer approved the subagent card slice and recommended focused UI coverage.",
+            sessionFile: "/tmp/fake-subagent-session.jsonl",
+            savedOutputPath: "/tmp/fake-subagent-output.md",
+          }],
+        },
+      },
+    });
   }
 
   private async emitFakeToolRun(longOutput = false, runIndex = 1, fail = false): Promise<void> {

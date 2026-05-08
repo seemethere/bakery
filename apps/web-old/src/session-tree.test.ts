@@ -16,9 +16,11 @@ function node(overrides: Partial<SessionTreeNode> & Pick<SessionTreeNode, "id" |
 
 const root = node({ id: "root", title: "system: Root", type: "system", role: undefined });
 const user = node({ id: "u1", parentId: "root", role: "user", title: "user: Build the tree", timestamp: "2026-01-01T00:00:00.000Z" });
-const assistant = node({ id: "a1", parentId: "u1", role: "assistant", title: "assistant: Done", current: true });
+const assistant = node({ id: "a1", parentId: "u1", role: "assistant", title: "assistant: Done", timestamp: "2026-01-01T00:00:01.000Z", current: true });
+const tool = node({ id: "t1", parentId: "a1", role: "toolResult", title: "Tool result: read", timestamp: "2026-01-01T00:00:02.000Z" });
 root.children = [user];
 user.children = [assistant];
+assistant.children = [tool];
 
 const tree: SessionTreeResponse = {
   sessionId: "session-1",
@@ -28,7 +30,7 @@ const tree: SessionTreeResponse = {
 
 describe("session tree helpers", () => {
   test("flattens trees and resolves the current path", () => {
-    expect(flattenSessionTree(tree.tree).map((item) => item.id)).toEqual(["root", "u1", "a1"]);
+    expect(flattenSessionTree(tree.tree).map((item) => item.id)).toEqual(["root", "u1", "a1", "t1"]);
     expect(currentSessionTreePath(tree).map((item) => item.id)).toEqual(["root", "u1", "a1"]);
     expect(currentSessionTreeEntryId(tree)).toBe("a1");
   });
@@ -49,9 +51,17 @@ describe("session tree helpers", () => {
     expect(html).toContain('title="user: Build the tree"');
   });
 
-  test("matches transcript user items to forkable tree entries", () => {
-    expect(forkEntryIdForTranscriptItem({ id: "user:other", kind: "user", body: "Build the tree" }, flattenSessionTree(tree.tree))).toBe("u1");
-    expect(forkEntryIdForTranscriptItem({ id: "x", kind: "assistant", body: "Build the tree" }, flattenSessionTree(tree.tree))).toBeNull();
+  test("matches transcript items to forkable tree entries", () => {
+    const nodes = flattenSessionTree(tree.tree);
+    expect(forkEntryIdForTranscriptItem({ id: "user:other", kind: "user", body: "Build the tree" }, nodes)).toBe("u1");
+    expect(forkEntryIdForTranscriptItem({ id: "assistant:2026-01-01T00:00:01.000Z", kind: "assistant", body: "Done" }, nodes)).toBe("a1");
+    expect(forkEntryIdForTranscriptItem({ id: "snapshot:2", kind: "assistant", body: "Done" }, nodes)).toBe("a1");
+    expect(forkEntryIdForTranscriptItem(
+      { id: "assistant:numeric", kind: "assistant", body: "Done with enough extra text to prove a tree title truncated on a word boundary still matches." },
+      [node({ id: "a2", role: "assistant", title: "assistant: Done with enough extra text to prove a tree title truncated on a word boundary", timestamp: "2026-01-01T00:00:03.000Z" })],
+    )).toBe("a2");
+    expect(forkEntryIdForTranscriptItem({ id: "tool:other", kind: "tool", title: "Tool result: read", body: "read output", raw: { timestamp: "2026-01-01T00:00:02.000Z" } }, nodes)).toBe("t1");
+    expect(forkEntryIdForTranscriptItem({ id: "x", kind: "assistant", body: "Build the tree" }, nodes)).toBeNull();
   });
 
   test("renders newest-first tree rows with path, active, and fork affordances", () => {

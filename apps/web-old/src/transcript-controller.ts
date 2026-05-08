@@ -1,4 +1,4 @@
-import { isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, shouldPreferPendingToolTitle, toolCallTitlesForItem, type TranscriptItem } from "./transcript";
+import { isRenderableTranscriptItem, isToolCallOnlyAssistant, mergeDuplicateDeveloperBash, mergeDuplicateToolResult, shouldPreferPendingToolTitle, toolCallTitlesForItem, toolHeaderDisplay, type TranscriptItem } from "./transcript";
 import { isRecord } from "./utils";
 
 export type ToolTimingCacheEntry = { startedAt?: string; endedAt?: string; durationMs?: number };
@@ -29,6 +29,45 @@ function saveToolTimingCache(storage: Storage, sessionId: string, cache: Readonl
 export function toolCallIdForTranscriptItem(item: TranscriptItem): string | null {
   if (isRecord(item.raw) && typeof item.raw.toolCallId === "string") return item.raw.toolCallId;
   return item.id.startsWith("tool:") ? item.id.slice("tool:".length) : null;
+}
+
+function isGenericToolResultTitle(title: string): boolean {
+  return /^(?:tool result(?::|$)|result(?::|$))/i.test(title.trim());
+}
+
+function hasToolOutput(item: TranscriptItem): boolean {
+  return Boolean(item.body.trim() || item.segments?.length);
+}
+
+function shouldPreserveExistingToolTitle(existing: TranscriptItem, nextItem: TranscriptItem): boolean {
+  if (existing.kind !== "tool" || nextItem.kind !== "tool") return false;
+  if (isGenericToolResultTitle(nextItem.title)) return true;
+  const existingDisplay = toolHeaderDisplay(existing);
+  const nextDisplay = toolHeaderDisplay(nextItem);
+  return Boolean(existingDisplay.target && !nextDisplay.target && existingDisplay.action === nextDisplay.action);
+}
+
+function mergeSameIdToolResult(existing: TranscriptItem, nextItem: TranscriptItem): TranscriptItem {
+  if (existing.kind !== "tool" || nextItem.kind !== "tool") return { ...existing, ...nextItem };
+  const existingHasOutput = hasToolOutput(existing);
+  const nextHasOutput = hasToolOutput(nextItem);
+  const nextBody = nextHasOutput || !existingHasOutput ? nextItem.body : existing.body;
+  const nextSegments = nextItem.segments?.length ? nextItem.segments : nextItem.body.trim() ? undefined : existing.segments;
+  const title = isGenericToolResultTitle(existing.title)
+    ? nextItem.title
+    : shouldPreserveExistingToolTitle(existing, nextItem)
+      ? existing.title
+      : nextItem.title;
+  const merged: TranscriptItem = {
+    ...existing,
+    ...nextItem,
+    title,
+    body: nextBody,
+    raw: { previous: existing.raw, toolResult: nextItem.raw },
+  };
+  if (nextSegments) merged.segments = nextSegments;
+  else delete merged.segments;
+  return merged;
 }
 
 export class TranscriptController {
@@ -179,7 +218,7 @@ export class TranscriptController {
 
     const previousStatus = index === -1 ? undefined : this._items[index]?.status;
     if (index === -1) this._items.push(nextItem);
-    else this._items[index] = { ...this._items[index], ...nextItem };
+    else this._items[index] = mergeSameIdToolResult(this._items[index]!, nextItem);
     const nextIndex = index === -1 ? this._items.length - 1 : index;
     this.dirtyIds.add(nextItem.id);
     const previous = this._items[nextIndex - 1];

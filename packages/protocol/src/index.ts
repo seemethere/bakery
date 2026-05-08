@@ -127,6 +127,33 @@ export const workspaceSchema = z.object({
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
+export const addWorkspaceRequestSchema = z.object({
+  path: z.string().min(1),
+});
+export type AddWorkspaceRequest = z.infer<typeof addWorkspaceRequestSchema>;
+
+export const cloneWorkspaceRequestSchema = z.object({
+  url: z.string().min(1),
+  targetName: z.string().min(1).optional(),
+  basePath: z.string().min(1).optional(),
+});
+export type CloneWorkspaceRequest = z.infer<typeof cloneWorkspaceRequestSchema>;
+
+export const createGithubRepositoryRequestSchema = z.object({
+  name: z.string().min(1),
+  owner: z.string().min(1).optional(),
+  description: z.string().optional(),
+  private: z.boolean().optional(),
+  basePath: z.string().min(1).optional(),
+});
+export type CreateGithubRepositoryRequest = z.infer<typeof createGithubRepositoryRequestSchema>;
+
+export const workspaceActionResultSchema = z.object({
+  workspace: workspaceSchema,
+  message: z.string().optional(),
+});
+export type WorkspaceActionResult = z.infer<typeof workspaceActionResultSchema>;
+
 export const titleSourceSchema = z.enum(["unset", "first_prompt", "agent", "manual", "derived"]);
 export type TitleSource = z.infer<typeof titleSourceSchema>;
 
@@ -329,11 +356,21 @@ export const sessionTreeResponseSchema = z.object({
 });
 export type SessionTreeResponse = z.infer<typeof sessionTreeResponseSchema>;
 
+export const forkSessionPositionSchema = z.enum(["auto", "before", "at"]);
+export type ForkSessionPosition = z.infer<typeof forkSessionPositionSchema>;
+
 export const forkSessionRequestSchema = z.object({
   entryId: z.string().min(1),
   title: z.string().min(1).max(120).optional(),
+  position: forkSessionPositionSchema.optional().default("auto"),
 });
 export type ForkSessionRequest = z.infer<typeof forkSessionRequestSchema>;
+
+export const forkSessionResponseSchema = z.object({
+  session: webSessionSchema,
+  editorText: z.string().optional(),
+});
+export type ForkSessionResponse = z.infer<typeof forkSessionResponseSchema>;
 
 export const navigateTreeRequestSchema = z.object({
   entryId: z.string().min(1),
@@ -403,6 +440,17 @@ export const answerQuestionPayloadSchema = z.object({
 });
 export type AnswerQuestionPayload = z.infer<typeof answerQuestionPayloadSchema>;
 
+export const activeToolExecutionSnapshotSchema = z.object({
+  type: z.enum(["tool_execution_start", "tool_execution_update"]),
+  toolCallId: z.string().min(1),
+  toolName: z.unknown().optional(),
+  args: z.unknown().optional(),
+  startedAt: z.string().optional(),
+  partialResult: z.unknown().optional(),
+  eventTime: z.string().optional(),
+}).passthrough();
+export type ActiveToolExecutionSnapshot = z.infer<typeof activeToolExecutionSnapshotSchema>;
+
 export const sessionSnapshotSchema = z.object({
   session: webSessionSchema,
   status: agentStatusSchema,
@@ -410,6 +458,7 @@ export const sessionSnapshotSchema = z.object({
   controller: controllerInfoSchema.optional(),
   settings: sessionRuntimeSettingsSchema.optional(),
   pendingQuestion: pendingQuestionSchema.nullable().optional(),
+  activeToolExecutions: z.array(activeToolExecutionSnapshotSchema).optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 

@@ -77,6 +77,124 @@ describe("TranscriptController", () => {
     expect(toolCallIdForTranscriptItem(hydrated!)).toBe("call-1");
   });
 
+  test("preserves live tool output when same-id SDK tool result is blank", () => {
+    const controller = new TranscriptController(memoryStorage());
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "read PROJECT_LOG.md",
+      body: "live read output",
+      segments: [{ kind: "pre", text: "live read output" }],
+      status: "done",
+      raw: { type: "tool_execution_end", toolCallId: "read-1", toolName: "read" },
+    });
+
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "Tool result: read",
+      body: "",
+      segments: [],
+      status: "done",
+      raw: { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [] },
+    });
+
+    expect(controller.items).toHaveLength(1);
+    expect(controller.items[0]).toMatchObject({
+      id: "tool:read-1",
+      title: "read PROJECT_LOG.md",
+      body: "live read output",
+      segments: [{ kind: "pre", text: "live read output" }],
+      status: "done",
+    });
+  });
+
+  test("lets informative same-id SDK tool results update live tool output", () => {
+    const controller = new TranscriptController(memoryStorage());
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "read PROJECT_LOG.md",
+      body: "partial output",
+      segments: [{ kind: "pre", text: "partial output" }],
+      status: "running",
+    });
+
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "Tool result: read",
+      body: "final output",
+      segments: [{ kind: "pre", text: "final output" }],
+      status: "done",
+      raw: { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [{ type: "text", text: "final output" }] },
+    });
+
+    expect(controller.items).toHaveLength(1);
+    expect(controller.items[0]).toMatchObject({
+      id: "tool:read-1",
+      title: "read PROJECT_LOG.md",
+      body: "final output",
+      segments: [{ kind: "pre", text: "final output" }],
+      status: "done",
+    });
+  });
+
+  test("preserves specific read and edit titles when sparse final updates reuse the same id", () => {
+    const controller = new TranscriptController(memoryStorage());
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "read apps/web/src/transcript.ts",
+      body: "Loading…",
+      segments: [{ kind: "pre", text: "Loading…" }],
+      status: "running",
+      raw: { toolName: "read", args: { path: "apps/web/src/transcript.ts" } },
+    });
+    controller.upsert({
+      id: "tool:edit-1",
+      kind: "tool",
+      title: "edit apps/web/src/transcript.ts",
+      body: "Applying edit…",
+      segments: [{ kind: "pre", text: "Applying edit…" }],
+      status: "running",
+      raw: { toolName: "edit", args: { path: "apps/web/src/transcript.ts" } },
+    });
+
+    controller.upsert({
+      id: "tool:read-1",
+      kind: "tool",
+      title: "read",
+      body: "File contents",
+      segments: [{ kind: "pre", text: "File contents" }],
+      status: "done",
+      raw: { toolName: "read" },
+    });
+    controller.upsert({
+      id: "tool:edit-1",
+      kind: "tool",
+      title: "edit",
+      body: "Successfully replaced 1 block",
+      segments: [{ kind: "pre", text: "Successfully replaced 1 block" }],
+      status: "done",
+      raw: { toolName: "edit" },
+    });
+
+    expect(controller.items).toHaveLength(2);
+    expect(controller.items[0]).toMatchObject({
+      id: "tool:read-1",
+      title: "read apps/web/src/transcript.ts",
+      body: "File contents",
+      status: "done",
+    });
+    expect(controller.items[1]).toMatchObject({
+      id: "tool:edit-1",
+      title: "edit apps/web/src/transcript.ts",
+      body: "Successfully replaced 1 block",
+      status: "done",
+    });
+  });
+
   test("removes pending rows and marks transcript structure dirty", () => {
     const controller = new TranscriptController(memoryStorage());
     controller.replaceItems([tool("bash:pending:1"), tool("tool:kept")]);

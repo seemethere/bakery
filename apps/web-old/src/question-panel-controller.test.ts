@@ -15,7 +15,7 @@ const question: PendingQuestion = {
   createdAt: "2026-04-29T00:00:00.000Z",
 };
 
-describe("question panel controller", () => {
+describe("question card controller", () => {
   test("derives a recommended option from recommendation copy", () => {
     expect(recommendedQuestionOptionIndex(question)).toBe(0);
     expect(recommendedQuestionOptionIndex({ ...question, recommendedOptionIndex: 1 })).toBe(1);
@@ -24,6 +24,7 @@ describe("question panel controller", () => {
   test("renders disabled viewer state", () => {
     const html = renderQuestionPanel(question, false, true);
 
+    expect(html).toContain("question-card pending");
     expect(html).toContain("Take control to answer this question");
     expect(html).toContain("disabled");
     expect(html).toContain("Recommended");
@@ -38,11 +39,20 @@ describe("question panel controller", () => {
     expect(html).toContain("<strong>Safe</strong><em>Recommended</em>");
   });
 
-  test("collapses custom answers behind a desktop toggle when options exist", () => {
+  test("uses the normal composer for freeform answers", () => {
     const html = renderQuestionPanel(question, true, true);
 
-    expect(html).toContain("question-custom is-collapsed");
-    expect(html).toContain("questionCustomToggle");
-    expect(html).toContain("Custom answer");
+    expect(html).not.toContain("questionCustomToggle");
+    expect(html).not.toContain("Custom answer");
+    expect(html).toContain("Or reply normally in the composer.");
+  });
+
+  test("renders a disabled submitting state while an answer is in flight", () => {
+    const html = renderQuestionPanel(question, true, true, true);
+
+    expect(html).toContain("question-card pending is-submitting");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Submitting answer…");
+    expect(html).toContain("disabled");
   });
 });

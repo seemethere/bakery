@@ -22,5 +22,8 @@ describe("session sidebar controller", () => {
     expect(html).toContain("active");
     expect(html).toContain("Repo &amp; test");
     expect(html).toContain("/tmp/&lt;repo&gt;");
+    expect(html).toContain("Add workspace");
+    expect(html).toContain("cloneWorkspaceUrl");
+    expect(html).toContain("githubRepoName");
   });
 });

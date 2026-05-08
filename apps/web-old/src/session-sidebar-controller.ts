@@ -50,6 +50,44 @@ export function renderSessionSidebar(options: SessionSidebarRenderOptions): stri
               <button id="newSession">New session</button>
               <button id="newIsolatedSession" title="Create a Git worktree session on its own branch">New isolated session</button>
             </div>
+            <details class="workspace-manager">
+              <summary>Add workspace</summary>
+              <label>Existing path
+                <input id="addWorkspacePath" type="text" placeholder="/path/to/repo" />
+              </label>
+              <button id="addWorkspace" type="button">Add path</button>
+              <hr />
+              <label>Clone Git repository
+                <input id="cloneWorkspaceUrl" type="url" placeholder="https://github.com/owner/repo.git" />
+              </label>
+              <label>Directory name <span class="label-hint">optional</span>
+                <input id="cloneWorkspaceTarget" type="text" placeholder="repo" />
+              </label>
+              <label>Clone under
+                <select id="cloneWorkspaceBase">
+                  ${options.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
+                </select>
+              </label>
+              <button id="cloneWorkspace" type="button">Clone</button>
+              <hr />
+              <label>New GitHub repository
+                <input id="githubRepoName" type="text" placeholder="repo-name" />
+              </label>
+              <label>Owner/org <span class="label-hint">optional</span>
+                <input id="githubRepoOwner" type="text" placeholder="default authenticated user" />
+              </label>
+              <label>Description <span class="label-hint">optional</span>
+                <input id="githubRepoDescription" type="text" />
+              </label>
+              <label>Clone under
+                <select id="githubRepoBase">
+                  ${options.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.path)}">${escapeHtml(workspace.label)} — ${escapeHtml(workspace.path)}</option>`).join("")}
+                </select>
+              </label>
+              <label class="checkbox-row"><input id="githubRepoPrivate" type="checkbox" checked /> Private repository</label>
+              <button id="createGithubWorkspace" type="button">Create on GitHub</button>
+              <p class="workspace-manager-note">GitHub creation uses backend <code>GH_TOKEN</code>/<code>GITHUB_TOKEN</code> or <code>gh</code> auth when available.</p>
+            </details>
           </div>
           <div class="sidebar-section sidebar-settings-nav-section">
             <hr />

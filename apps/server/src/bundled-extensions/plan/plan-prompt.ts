@@ -8,11 +8,39 @@ export type PlanWorkflowSkill = {
     kind: "bundled-workflow-skill";
     package: "bakery";
   };
-  buildPrompt(args: string): string;
+  buildPrompt(args: string, chainConfig?: PlanPromptChainConfig): string;
 };
 
-export function planPrompt(args: string): string {
+export type PlanPromptChainConfig =
+  | { kind: "resolved"; source: "project" | "user"; chainName: string; recipe: string }
+  | { kind: "warning"; source: "project"; chainName: string; reason: string }
+  | { kind: "none" };
+
+export function planPrompt(args: string, chainConfig: PlanPromptChainConfig = { kind: "none" }): string {
   const focus = args.trim();
+  const chainLines = chainConfig.kind === "resolved"
+    ? [
+        "",
+        "Configured planning chain:",
+        `- Bakery ${chainConfig.source} settings resolved default plan chain \`${chainConfig.chainName}\`.`,
+        "- Before asking operator questions or finalizing, prefer running this foreground read-only chain when the `subagent` tool is available:",
+        "",
+        "```typescript",
+        chainConfig.recipe,
+        "```",
+        "- The recipe uses relative output paths; pi-subagents resolves those under its temporary chain artifact directory, not the repository root.",
+        "- Use the chain result as evidence; the parent Agent Session still owns Question Cards and the final Plan Card.",
+        "- Do not let the chain edit repository files or create handoff files in the workspace. If the `subagent` tool is unavailable, continue normal `/plan` behavior and mention the unavailable configured chain only if it affects confidence or next steps.",
+      ]
+    : chainConfig.kind === "warning"
+      ? [
+          "",
+          "Configured planning chain warning:",
+          `- Project settings requested default plan chain \`${chainConfig.chainName}\`, but Bakery could not use it: ${chainConfig.reason}.`,
+          "- Continue normal `/plan` behavior without chain assistance.",
+          "- Mention this warning in the final plan only if it affects confidence or next steps.",
+        ]
+      : [];
   return [
     "Run the bundled `plan` workflow skill for this coding session.",
     "",
@@ -31,6 +59,15 @@ export function planPrompt(args: string): string {
     "- Discover domain documentation before asking documentation or terminology questions: look for CONTEXT-MAP.md, CONTEXT.md, docs/adr/, CONTEXT-FORMAT.md, and ADR-FORMAT.md.",
     "- If a CONTEXT-MAP.md exists, use it to find the relevant context-specific CONTEXT.md and docs/adr/ directory; otherwise treat the root CONTEXT.md and docs/adr/ as the default context.",
     "- If the operator asks what's next or to continue planning, follow the repository dev loop: summarize the top 1-3 candidate next slices in priority order, recommend one small default slice, then clarify only what is needed.",
+    "",
+    "Subagent-assisted planning discipline:",
+    "- When the `subagent` tool is available and the planning uncertainty is non-trivial, prefer using it for bounded read-only reconnaissance that would otherwise consume parent context or make operator questions less concrete.",
+    "- Prefer one direct foreground `subagent(...)` tool call by default, usually a `scout` or `context-builder` child for local codebase context; escalate to `researcher`, `oracle`, or parallel children only when external facts, architectural risk, or broad scope justify it.",
+    "- Ask child agents for concise evidence, risks, likely files, and candidate operator questions; do not ask them to edit files, run implementation, or own the final plan.",
+    "- The parent Agent Session remains responsible for synthesis, all `ask_question` checkpoints, and the final Plan Card response; do not delegate the interactive interview to a child session.",
+    "- Use synchronous foreground subagent runs by default so the parent can synthesize before asking or finishing; avoid async/background subagents unless explicitly requested.",
+    "- If the `subagent` tool is unavailable, continue the normal codebase inspection and one-question-at-a-time `/plan` flow without treating that as a failure.",
+    ...chainLines,
     "",
     "Domain-doc grilling behavior:",
     "- Challenge terminology against the existing glossary immediately: if CONTEXT.md defines a term differently from the operator's usage, call out the conflict and ask which meaning should win.",

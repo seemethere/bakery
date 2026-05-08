@@ -1,0 +1,16 @@
+# Opt-in trusted-local-development GitHub CLI auth forwarding.
+# Usage with an existing host gh login:
+#   docker compose -f compose.yaml -f compose.gh-auth.example.yaml up --build
+#
+# Credentials exposed by this mount are available to commands and agents in the
+# container. For token-based auth instead, copy this file locally and pass only
+# the specific GH_TOKEN/GITHUB_TOKEN environment variable you intend to expose.
+services:
+  bakery-dev:
+    volumes:
+      - type: bind
+        source: ${HOME}/.config/gh
+        target: /home/bun/.config/gh
+        read_only: true
+        bind:
+          create_host_path: false

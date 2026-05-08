@@ -1,40 +1,7 @@
-export const allScenarios = [
-  "empty-session-layout",
-  "mobile-layout",
-  "session-routing",
-  "sessions-page",
-  "streaming-responsiveness",
-  "queued-follow-up",
-  "transcript-scroll-stability",
-  "transcript-text-selection",
-  "session-metadata",
-  "inspector-preview",
-  "slash-commands",
-  "bash-commands",
-  "question-answer",
-  "tree-fork-navigation",
-  "reconnect-controller",
-  "controller-handoff-edges",
-  "reconnect-draft",
-  "backend-restart",
-  "narrow-tool-stream",
-  "tool-grouping",
-  "tool-image-heavy-transcript",
-  "mobile-long-transcript-controls",
-  "mobile-image-stream-stability",
-  "file-autocomplete",
-  "image-attachments",
-  "image-artifact-drop-upload",
-  "image-artifact-paths",
-  "repeated-image-artifact-paths",
-  "artifact-path-formats",
-  "remote-image-artifact-paths",
-  "remote-image-artifact-upload",
-  "missing-remote-image-artifact",
-  "model-thinking",
-  "context-usage",
-  "themes",
-  "theme-gallery",
-] as const;
+import { scenarioDefinitions, type RegisteredHarnessScenarioName } from "./metadata";
 
-export type HarnessScenarioName = typeof allScenarios[number] | "manual";
+export const allScenarios = scenarioDefinitions
+  .filter((definition) => definition.includeInAll !== false)
+  .map((definition) => definition.name);
+
+export type HarnessScenarioName = RegisteredHarnessScenarioName | "manual";

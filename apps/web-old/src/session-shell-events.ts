@@ -9,6 +9,9 @@ export interface SessionShellEventContext {
   navigateToPath(path: string): void;
   setSessionsSearch(query: string): void;
   createSession(workspaceId?: string, isolationKind?: SessionIsolationKind): Promise<unknown>;
+  addWorkspace(): Promise<unknown>;
+  cloneWorkspace(): Promise<unknown>;
+  createGithubWorkspace(): Promise<unknown>;
   updateMetadataModel(model: string): void;
   toggleSessionSidebar(buttonId: string): void;
   hideSessionSidebarFromBackdrop(): void;
@@ -37,6 +40,9 @@ export function bindSessionShellEvents(root: ParentNode, context: SessionShellEv
 
   root.querySelector<HTMLButtonElement>("#newSession")?.addEventListener("click", () => void context.createSession());
   root.querySelector<HTMLButtonElement>("#newIsolatedSession")?.addEventListener("click", () => void context.createSession(undefined, "git_worktree"));
+  root.querySelector<HTMLButtonElement>("#addWorkspace")?.addEventListener("click", () => void context.addWorkspace());
+  root.querySelector<HTMLButtonElement>("#cloneWorkspace")?.addEventListener("click", () => void context.cloneWorkspace());
+  root.querySelector<HTMLButtonElement>("#createGithubWorkspace")?.addEventListener("click", () => void context.createGithubWorkspace());
 
   root.querySelector<HTMLSelectElement>("#metadataModelSetting")?.addEventListener("change", (event) => {
     context.updateMetadataModel((event.currentTarget as HTMLSelectElement).value);

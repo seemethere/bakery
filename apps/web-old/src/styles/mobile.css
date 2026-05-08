@@ -563,7 +563,7 @@
   }
 
   footer::before {
-    inset: -64px 0 0;
+    inset: -24px 0 0;
   }
 
   .prompt-shell,
@@ -583,12 +583,13 @@
     grid-column: 1;
   }
 
-  .question-panel {
+  .question-card {
     gap: 9px;
     border-radius: 18px;
     padding: 10px;
   }
 
+  .question-card-header,
   .question-panel-heading {
     flex-wrap: wrap;
     gap: 6px;
@@ -610,6 +611,11 @@
 
   .question-options .option-shortcut {
     display: none;
+  }
+
+  .question-composer-hint {
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .question-custom {
@@ -683,8 +689,18 @@
     flex-direction: column;
   }
 
-  .plan-card-actions .primary-action {
+  .plan-card-action-buttons {
     width: 100%;
+  }
+
+  .plan-card-actions .primary-action,
+  .plan-action-state {
+    flex: 1;
+    width: 100%;
+  }
+
+  .plan-reject-action {
+    min-width: 40px;
   }
 
   .plan-details-backdrop {
@@ -753,9 +769,35 @@
   }
 
   #prompt {
-    height: 54px;
-    max-height: 104px;
+    --prompt-initial-height: 54px;
+    --prompt-max-height: 104px;
+    height: var(--prompt-initial-height);
+    max-height: var(--prompt-max-height);
     font-size: 16px;
+  }
+
+  main.empty-session-main footer.empty-session-footer {
+    align-self: center;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .empty-session-greeting strong {
+    font-size: clamp(20px, 7vw, 30px);
+  }
+
+  .empty-session-prompt-shell #prompt {
+    --prompt-initial-height: 64px;
+    --prompt-max-height: min(30vh, 150px);
+  }
+
+  .empty-quick-start-chips {
+    gap: 6px;
+  }
+
+  .empty-quick-start-chip {
+    min-height: 34px;
+    padding: 6px 10px;
   }
 
   .controls {

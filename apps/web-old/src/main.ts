@@ -1,15 +1,15 @@
-import { PROTOCOL_VERSION, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
+import { PROTOCOL_VERSION, appConfigSchema, appSettingsSchema, webSessionSchema, workspaceActionResultSchema, workspaceSchema, type AppConfig, type AppSettings, type ContextUsage, type ControllerInfo, type ExtensionCatalog, type ForkSessionResponse, type HelloMessage, type PendingQuestion, type PreviewStackStatus, type ServerEnvelope, type SessionIsolationKind, type SessionMetadataSuggestion, type SessionRuntimeSettings, type SessionSnapshot, type SessionTreeNode, type SessionTreeResponse, type WebSession, type Workspace } from "@pi-web-agent/protocol";
 import { renderCommandAutocomplete, renderFileAutocomplete } from "./autocomplete";
 import { AutocompleteController } from "./autocomplete-controller";
 import { flattenSessionTree, forkEntryIdForTranscriptItem as findForkEntryIdForTranscriptItem } from "./session-tree";
-import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
+import { compactSnapshotTranscript, compactWorkflowLaunchSummary, messageToTranscriptItem, pendingQuestionTranscriptItem, renderPlanActionControls, renderTranscriptSegments, stripPlanActionsMarker, toolResultToText, type TranscriptItem } from "./transcript";
 import { formatMetadataError, metadataPatchForSuggestion, provisionalTitleFromPrompt, renderMetadataSuggestion as renderMetadataSuggestionHtml, sessionMetadataLabel, sessionTitlePlaceholder, type MetadataAcceptKind, type MetadataSuggestionDraft } from "./session-metadata";
 import { renderSelectedSessionSummary, renderSessionDetails as renderSessionDetailsPanel, renderSettingsMain as renderSettingsMainPanel } from "./settings-panel";
 import { storedCollapsedSessionGroups, type SessionRecencyGroupId } from "./session-sidebar";
 import { mobileSessionSidebarToggleLabel, renderSessionSidebar as renderSessionSidebarHtml, renderSessionSidebarBackdrop as renderSessionSidebarBackdropHtml, sessionSidebarOverlayOpen } from "./session-sidebar-controller";
 import { bindSessionShellEvents } from "./session-shell-events";
 import { patchConnectionBanner as patchConnectionBannerWithState, patchHeaderStatus as patchHeaderStatusWithHtml, renderAttentionNeeded as renderAttentionNeededHtml, renderConnectionBanner as renderConnectionBannerHtml, renderConnectionBannerContent as renderConnectionBannerContentHtml, renderStatusPill as renderStatusPillHtml, renderViewerCount as renderViewerCountHtml, shouldRenderConnectionBanner as shouldRenderConnectionBannerForState, type AgentStatus, type ConnectionState } from "./session-status-controller";
-import { mergeSessionMetadataUpdate } from "./session-events";
+import { activeToolExecutionSnapshotToTranscriptItem, mergeSessionMetadataUpdate } from "./session-events";
 import { buildComposerSendPayload, composerQueueItem, consumePromptAttachmentWarning, loadPromptDraftForSession, parseBashPrompt, persistPromptAttachmentWarning, promptTextFromInput, savePromptDraftForSession, type ClientMessageType } from "./composer-actions";
 import { bindComposerControls } from "./composer-controller";
 import { composerModeLabel, hasComposerSendContent as composerHasSendContent, isBashPromptDraft as isComposerBashPromptDraft, isComposerNotice as isComposerNoticeMessage, isNoContextBashPromptDraft, patchComposerMode as patchComposerModeWithState, patchComposerSendAvailability as patchComposerSendAvailabilityWithState, renderComposerNotice as renderComposerNoticeHtml } from "./composer-mode-controller";
@@ -25,13 +25,15 @@ import { renderPromptImages, type PromptImage } from "./prompt-images";
 import { addRunningQueueItem } from "./running-queue";
 import { RunningQueueController } from "./running-queue-controller";
 import { renderModelThinkingPicker, renderModelThinkingPopover } from "./model-thinking-picker";
-import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, renderQuestionPanel as renderQuestionPanelHtml, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
+import { bindQuestionPanel, focusQuestionPanel as focusQuestionPanelWithContext, handleQuestionPanelKeydown, type QuestionAnswerPayload, type QuestionPanelContext } from "./question-panel-controller";
 import { connectSessionWebSocket, type SessionConnectionContext } from "./session-connection-controller";
 import { handleTranscriptRowAction as handleTranscriptRowActionWithContext, type TranscriptRowAction, type TranscriptRowMenuAction } from "./transcript-row-actions";
+import { copyTextToClipboard } from "./clipboard";
 import { parseAppRoute, sessionRoutePath } from "./router";
 import { escapeHtml, isRecord, recordPerfEvent, recordPerfSample } from "./utils";
 import { renderSessionsPage } from "./sessions-page";
 import { loadExtensionCatalog } from "./extension-cards";
+import { arraySchema, requestJson, type JsonSchema } from "./api-client";
 import "./styles.css";
 
 declare global {
@@ -154,6 +156,7 @@ class PiWebAgentApp extends HTMLElement {
     },
     focusPromptOnNextReadyRender: () => { this.focusPromptOnNextReadyRender = true; },
     setNotice: (notice) => { this.notice = notice; },
+    markTranscriptDirty: (transcriptId) => this.dirtyTranscriptIds.add(transcriptId),
     render: () => this.render(),
   });
   private promptDraft = "";
@@ -189,6 +192,7 @@ class PiWebAgentApp extends HTMLElement {
   private shellPatchDirty = false;
   private focusPromptOnNextReadyRender = false;
   private focusPendingQuestionOnNextRender = false;
+  private answeringQuestionId: string | null = null;
   private renderedSegmentCache = new Map<string, string>();
   private failedImageUrls = new Map<string, number>();
   private readonly themeMedia = window.matchMedia(themeMediaQuery);
@@ -210,6 +214,16 @@ class PiWebAgentApp extends HTMLElement {
   };
   private readonly viewportResizeHandler = () => {
     if (this.autoScroll) this.scheduleTranscriptFollow();
+  };
+  private readonly uiActionClickHandler = (event: Event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest<HTMLButtonElement>("button[data-ui-action]");
+    if (!button || !this.contains(button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (button.disabled || button.getAttribute("aria-disabled") === "true") return;
+    button.blur();
+    this.handleUiAction(button.dataset.uiContributionId ?? "", button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
   };
   private get autoScroll(): boolean {
     return this.transcriptFollow.autoScroll;
@@ -266,9 +280,9 @@ class PiWebAgentApp extends HTMLElement {
     void this.openRouteFromLocation();
   };
   private readonly questionKeyHandler = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-panel")) return;
+    if (event.defaultPrevented || !this.pendingQuestion || !this.querySelector(".question-card.pending")) return;
     const target = event.target as HTMLElement | null;
-    if (target?.closest(".question-panel")) return;
+    if (target?.closest(".question-card")) return;
     if (["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End", "Enter", " ", "Escape"].includes(event.key) || /^[1-9]$/.test(event.key) || event.key.toLowerCase() === "c") {
       this.handleQuestionPanelKeydown(event);
     }
@@ -295,6 +309,7 @@ class PiWebAgentApp extends HTMLElement {
     window.addEventListener("keydown", this.sidebarKeyHandler);
     window.addEventListener("resize", this.viewportResizeHandler);
     window.addEventListener("popstate", this.popstateHandler);
+    this.addEventListener("click", this.uiActionClickHandler, true);
     window.visualViewport?.addEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.addEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.addEventListener("change", this.mobileLayoutHandler);
@@ -310,6 +325,7 @@ class PiWebAgentApp extends HTMLElement {
     window.removeEventListener("keydown", this.sidebarKeyHandler);
     window.removeEventListener("resize", this.viewportResizeHandler);
     window.removeEventListener("popstate", this.popstateHandler);
+    this.removeEventListener("click", this.uiActionClickHandler, true);
     window.visualViewport?.removeEventListener("resize", this.viewportResizeHandler);
     this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     this.mobileLayoutMedia.removeEventListener("change", this.mobileLayoutHandler);
@@ -368,6 +384,10 @@ class PiWebAgentApp extends HTMLElement {
     return response.json() as Promise<T>;
   }
 
+  private async typedApi<T>(path: string, schema: JsonSchema<T>, init?: RequestInit): Promise<T> {
+    return requestJson({ apiBase: this.apiBase, path, schema, ...(init ? { init } : {}), headers: this.headers() });
+  }
+
   private upsertTranscript(item: TranscriptItem): void {
     this.transcriptController.upsert(item, { markUnread: (id) => this.transcriptFollow.markUnread(id) });
   }
@@ -395,10 +415,10 @@ class PiWebAgentApp extends HTMLElement {
   private async refresh(): Promise<void> {
     try {
       const [workspaces, sessions, appSettings, config] = await Promise.all([
-        this.api<Workspace[]>("/api/workspaces"),
-        this.api<WebSession[]>("/api/sessions"),
-        this.api<AppSettings>("/api/settings"),
-        this.api<AppConfig>("/api/config"),
+        this.typedApi("/api/workspaces", arraySchema(workspaceSchema)),
+        this.typedApi("/api/sessions", arraySchema(webSessionSchema)),
+        this.typedApi("/api/settings", appSettingsSchema),
+        this.typedApi("/api/config", appConfigSchema),
       ]);
       this.workspaces = workspaces;
       this.sessions = sessions;
@@ -455,6 +475,71 @@ class PiWebAgentApp extends HTMLElement {
       this.notice = `Create session failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
       return null;
+    }
+  }
+
+  private async addWorkspaceFromSidebar(): Promise<void> {
+    const input = this.querySelector<HTMLInputElement>("#addWorkspacePath");
+    const path = input?.value.trim();
+    if (!path) return;
+    try {
+      const result = await this.typedApi("/api/workspaces", workspaceActionResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      });
+      this.workspaces = [...this.workspaces.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
+      this.notice = result.message ?? "Workspace added";
+      this.render();
+    } catch (error) {
+      this.notice = `Add workspace failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private async cloneWorkspaceFromSidebar(): Promise<void> {
+    const url = this.querySelector<HTMLInputElement>("#cloneWorkspaceUrl")?.value.trim();
+    const targetName = this.querySelector<HTMLInputElement>("#cloneWorkspaceTarget")?.value.trim();
+    const basePath = this.querySelector<HTMLSelectElement>("#cloneWorkspaceBase")?.value || undefined;
+    if (!url) return;
+    try {
+      this.notice = "Cloning repository…";
+      this.render();
+      const result = await this.typedApi("/api/workspaces/clone", workspaceActionResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ url, ...(targetName ? { targetName } : {}), ...(basePath ? { basePath } : {}) }),
+      });
+      this.workspaces = [...this.workspaces.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
+      this.notice = result.message ?? "Repository cloned";
+      this.render();
+    } catch (error) {
+      this.notice = `Clone failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+
+  private async createGithubWorkspaceFromSidebar(): Promise<void> {
+    const name = this.querySelector<HTMLInputElement>("#githubRepoName")?.value.trim();
+    const owner = this.querySelector<HTMLInputElement>("#githubRepoOwner")?.value.trim();
+    const description = this.querySelector<HTMLInputElement>("#githubRepoDescription")?.value.trim();
+    const privateRepo = this.querySelector<HTMLInputElement>("#githubRepoPrivate")?.checked ?? true;
+    const basePath = this.querySelector<HTMLSelectElement>("#githubRepoBase")?.value || undefined;
+    if (!name) return;
+    try {
+      this.notice = "Creating GitHub repository…";
+      this.render();
+      const result = await this.typedApi("/api/workspaces/github", workspaceActionResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ name, private: privateRepo, ...(owner ? { owner } : {}), ...(description ? { description } : {}), ...(basePath ? { basePath } : {}) }),
+      });
+      this.workspaces = [...this.workspaces.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
+      this.notice = result.message ?? "GitHub repository created";
+      this.render();
+    } catch (error) {
+      this.notice = `Create GitHub repository failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
     }
   }
 
@@ -600,9 +685,19 @@ class PiWebAgentApp extends HTMLElement {
     this.settings = snapshot.settings ?? this.settings;
     const previousQuestionId = this.pendingQuestion?.id ?? null;
     this.pendingQuestion = snapshot.pendingQuestion ?? null;
+    if (!this.pendingQuestion || this.pendingQuestion.id !== this.answeringQuestionId) this.answeringQuestionId = null;
     if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
     this.transcriptController.loadToolTimings(session.id);
-    this.transcriptController.replaceItems(this.transcriptController.applyCachedToolTimings(compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)))));
+    const snapshotItems = compactSnapshotTranscript(snapshot.messages.map((message, index) => messageToTranscriptItem(message, `snapshot:${index}`)));
+    for (const activeTool of snapshot.activeToolExecutions ?? []) {
+      const existing = snapshotItems.find((item) => item.id === `tool:${activeTool.toolCallId}`);
+      const item = activeToolExecutionSnapshotToTranscriptItem(activeTool, existing);
+      if (!item) continue;
+      const index = snapshotItems.findIndex((candidate) => candidate.id === item.id);
+      if (index === -1) snapshotItems.push(item);
+      else snapshotItems[index] = item;
+    }
+    this.transcriptController.replaceItems(this.transcriptController.applyCachedToolTimings(snapshotItems));
     this.runningQueue.reset();
     this.transcriptFollow.clearUnread();
     this.forceFullRender = true;
@@ -642,6 +737,7 @@ class PiWebAgentApp extends HTMLElement {
     } else if (payload.type === "question_update") {
       const previousQuestionId = this.pendingQuestion?.id ?? null;
       this.pendingQuestion = payload.question;
+      if (!this.pendingQuestion || this.pendingQuestion.id !== this.answeringQuestionId) this.answeringQuestionId = null;
       if (this.pendingQuestion && this.pendingQuestion.id !== previousQuestionId) this.focusPendingQuestionOnNextRender = true;
       this.forceFullRender = true;
     } else if (payload.type === "session_metadata_update") {
@@ -693,6 +789,7 @@ class PiWebAgentApp extends HTMLElement {
     if (!this.selectedSession) return;
     try {
       this.sessionTree = await this.api<SessionTreeResponse>(`/api/sessions/${this.selectedSession.id}/tree`);
+      for (const item of this.renderedTranscriptItems()) this.dirtyTranscriptIds.add(item.id);
       this.requestRender(0);
     } catch (error) {
       this.notice = `Tree refresh failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -703,12 +800,19 @@ class PiWebAgentApp extends HTMLElement {
   private async forkFromEntry(entryId: string): Promise<void> {
     if (!this.selectedSession) return;
     try {
-      const session = await this.api<WebSession>(`/api/sessions/${this.selectedSession.id}/fork`, {
+      const fork = await this.api<ForkSessionResponse>(`/api/sessions/${this.selectedSession.id}/fork`, {
         method: "POST",
         body: JSON.stringify({ entryId }),
       });
-      this.sessions = [session, ...this.sessions];
-      this.openSession(session);
+      this.sessions = [fork.session, ...this.sessions];
+      this.openSession(fork.session);
+      if (fork.editorText) {
+        this.promptDraft = fork.editorText;
+        this.savePromptDraft();
+        this.focusPromptOnNextReadyRender = true;
+        this.notice = "Fork created. Edit the restored prompt, then send it to continue from that point.";
+        this.render();
+      }
     } catch (error) {
       this.notice = `Fork failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render();
@@ -717,7 +821,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private async copyText(value: string): Promise<void> {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyTextToClipboard(value);
       this.notice = "";
     } catch (error) {
       this.notice = `Copy failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -878,6 +982,7 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
+    this.uiActions.markLatestPendingDiscussing();
     const images = this.promptImages.map((image) => image.dataUrl);
     this.ws.send(JSON.stringify(buildComposerSendPayload(type, text, images)));
     const shouldOptimisticallyShowRunning = type === "prompt" && !bash && !text.trimStart().startsWith("/");
@@ -931,7 +1036,8 @@ class PiWebAgentApp extends HTMLElement {
       this.sendClientMessage("prompt");
       return;
     }
-    if (this.status === "running" && /^\/bakery:generate-details(?:\s|$)/i.test(text)) this.sendClientMessage("command");
+    if (this.pendingQuestion) this.sendClientMessage("prompt");
+    else if (this.status === "running" && /^\/bakery:generate-details(?:\s|$)/i.test(text)) this.sendClientMessage("command");
     else if (this.status === "running") this.sendClientMessage(followUp ? "follow_up" : "steer");
     else this.sendClientMessage("prompt");
   }
@@ -1008,6 +1114,7 @@ class PiWebAgentApp extends HTMLElement {
     this.patchComposerSendAvailability(input);
     if (wasBashDraft !== this.isBashPromptDraft()) this.patchComposerMode();
     this.autocomplete.updateForInput(input);
+    this.syncPromptAutosize();
   }
 
   private closeFileAutocomplete(): void {
@@ -1031,6 +1138,7 @@ class PiWebAgentApp extends HTMLElement {
       pendingQuestion: () => this.pendingQuestion,
       isController: () => this.controller?.isController ?? true,
       isConnected: () => this.connectionState === "connected",
+      isSubmitting: () => Boolean(this.pendingQuestion && this.answeringQuestionId === this.pendingQuestion.id),
       root: () => this,
       answer: (payload) => this.answerPendingQuestion(payload),
       setNotice: (notice) => { this.notice = notice; },
@@ -1039,7 +1147,8 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private answerPendingQuestion(payload: QuestionAnswerPayload): void {
-    if (!this.pendingQuestion) return;
+    if (!this.pendingQuestion || !payload.answer || payload.cancelled) return;
+    if (this.answeringQuestionId === this.pendingQuestion.id) return;
     if (!(this.controller?.isController ?? true)) {
       this.notice = "Take control before answering this question.";
       this.render();
@@ -1050,17 +1159,20 @@ class PiWebAgentApp extends HTMLElement {
       this.render();
       return;
     }
+    const text = payload.answer.trim();
+    if (!text) return;
     this.focusPromptOnNextReadyRender = true;
-    this.ws.send(JSON.stringify({
-      type: "answer_question",
-      payload: {
-        questionId: this.pendingQuestion.id,
-        selectedIndex: payload.selectedIndex ?? null,
-        wasCustom: payload.wasCustom ?? false,
-        cancelled: payload.cancelled ?? false,
-        ...(payload.answer ? { answer: payload.answer } : {}),
-      },
-    }));
+    this.answeringQuestionId = this.pendingQuestion.id;
+    this.pendingQuestion = null;
+    this.forceFullRender = true;
+    this.ws.send(JSON.stringify(buildComposerSendPayload("prompt", text, [])));
+    this.setAgentStatus("running");
+    this.promptDraft = "";
+    this.savePromptDraft();
+    this.promptImages = [];
+    this.closeFileAutocomplete();
+    this.closeCommandAutocomplete();
+    this.requestRender(0);
   }
 
   private handleQuestionPanelKeydown(event: KeyboardEvent): void {
@@ -1169,6 +1281,9 @@ class PiWebAgentApp extends HTMLElement {
         this.render();
       },
       createSession: (workspaceId, isolationKind) => this.createSession(workspaceId, isolationKind),
+      addWorkspace: () => this.addWorkspaceFromSidebar(),
+      cloneWorkspace: () => this.cloneWorkspaceFromSidebar(),
+      createGithubWorkspace: () => this.createGithubWorkspaceFromSidebar(),
       updateMetadataModel: (model) => {
         void this.api<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify({ sessionMetadataModel: model ? { model } : null }) }).then((settings) => {
           this.appSettings = settings;
@@ -1359,14 +1474,6 @@ class PiWebAgentApp extends HTMLElement {
         scheduleFollow: () => this.scheduleTranscriptFollow(),
       });
     });
-    this.querySelectorAll<HTMLButtonElement>("[data-ui-action]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        button.blur();
-        this.handleUiAction(button.dataset.uiContributionId ?? "", button.dataset.uiAction ?? "", button.dataset.transcriptId ?? "");
-      });
-    });
     this.querySelectorAll<HTMLElement>("[data-plan-detail-id]").forEach((card) => {
       const open = (event: Event) => {
         if ((event.target as HTMLElement | null)?.closest("button,a")) return;
@@ -1485,12 +1592,7 @@ class PiWebAgentApp extends HTMLElement {
   private copyPreviewStackUrl(): void {
     const url = this.previewStackStatus?.url;
     if (!url) return;
-    if (!navigator.clipboard?.writeText) {
-      this.notice = "Clipboard access is not available in this browser.";
-      this.render();
-      return;
-    }
-    void navigator.clipboard.writeText(url).then(() => {
+    void copyTextToClipboard(url).then(() => {
       this.notice = "Preview stack URL copied.";
       this.render();
     }).catch((error) => {
@@ -1501,12 +1603,7 @@ class PiWebAgentApp extends HTMLElement {
 
   private copyWorkspacePath(): void {
     if (!this.selectedSession) return;
-    if (!navigator.clipboard?.writeText) {
-      this.notice = "Clipboard access is not available in this browser.";
-      this.render();
-      return;
-    }
-    void navigator.clipboard.writeText(this.selectedSession.cwd).then(() => {
+    void copyTextToClipboard(this.selectedSession.cwd).then(() => {
       this.notice = "Workspace path copied.";
       this.sessionDetailsOpen = false;
       this.render();
@@ -1556,8 +1653,24 @@ class PiWebAgentApp extends HTMLElement {
   }
 
 
-  private renderQuestionPanel(isController: boolean): string {
-    return renderQuestionPanelHtml(this.pendingQuestion, isController, this.connectionState === "connected");
+  private renderQuestionCheckpointHint(isController: boolean): string {
+    if (!this.pendingQuestion) return "";
+    const text = !isController
+      ? "Take control to answer this question."
+      : this.connectionState !== "connected"
+        ? "Reconnect to answer this question."
+        : "Reply below or choose an option from the question card.";
+    return `<section class="question-composer-hint" aria-live="polite">${escapeHtml(text)}</section>`;
+  }
+
+  private renderedTranscriptItems(): TranscriptItem[] {
+    if (!this.pendingQuestion) return this.transcript;
+    const isController = this.controller?.isController ?? true;
+    const transcript = this.transcript.filter((item) => {
+      const details = isRecord(item.raw) && isRecord(item.raw.details) ? item.raw.details : null;
+      return !(item.kind === "question" && details?.terminalCheckpoint === true && details.question === this.pendingQuestion?.question);
+    });
+    return [...transcript, pendingQuestionTranscriptItem(this.pendingQuestion, { isController, isConnected: this.connectionState === "connected", isSubmitting: this.answeringQuestionId === this.pendingQuestion.id })];
   }
 
 
@@ -1580,7 +1693,7 @@ class PiWebAgentApp extends HTMLElement {
   private renderTranscript(): string {
     return renderTranscriptShell({
       selectedSession: Boolean(this.selectedSession),
-      transcript: this.transcript,
+      transcript: this.renderedTranscriptItems(),
       status: this.status,
     });
   }
@@ -1590,6 +1703,7 @@ class PiWebAgentApp extends HTMLElement {
     const item = this.transcript.find((entry) => entry.id === this.openPlanDetailsId);
     if (!item) return "";
     const body = stripPlanActionsMarker(item.body);
+    const outcome = this.uiActions.outcomeFor(item.id);
     return `<div class="plan-details-backdrop" role="presentation">
       <section class="plan-details-dialog" role="dialog" aria-modal="true" aria-label="Full plan">
         <header class="plan-details-header">
@@ -1599,9 +1713,42 @@ class PiWebAgentApp extends HTMLElement {
         <div class="plan-details-body">${renderTranscriptSegments({ ...item, body, segments: [{ kind: "markdown", text: body }] }, this.showThinking, { cache: this.renderedSegmentCache, localImageUrl: (path) => this.localImageUrl(path) })}</div>
         <footer class="plan-details-actions">
           <button type="button" data-close-plan-details>Close</button>
-          <button type="button" class="primary-action" data-ui-action="accept" data-plan-action="accept" data-ui-contribution-id="bakery.workflow.plan.actions" data-transcript-id="${escapeHtml(item.id)}">Accept plan</button>
+          <div class="plan-card-action-buttons">${renderPlanActionControls(item.id, outcome)}</div>
         </footer>
       </section>
+    </div>`;
+  }
+
+  private emptySessionQuote(): string {
+    const quotes = [
+      "Measure twice, bake once.",
+      "Let the idea proof before it goes in the oven.",
+      "Every good slice starts with a warm bench.",
+      "Whisk the context until the plan comes together.",
+      "A little mise en place makes the session rise.",
+      "Preheat the prompt, then bake the change.",
+    ];
+    const seed = this.selectedSession?.id ?? "bakery";
+    const index = Array.from(seed).reduce((sum, char) => sum + char.charCodeAt(0), 0) % quotes.length;
+    return quotes[index] ?? "Measure twice, bake once.";
+  }
+
+  private renderEmptySessionGreeting(): string {
+    return `<section class="empty-session-greeting" aria-label="Empty session greeting">
+      <p class="empty-session-kicker">New Bakery session</p>
+      <strong>${escapeHtml(this.emptySessionQuote())}</strong>
+    </section>`;
+  }
+
+  private renderEmptyQuickStartChips(): string {
+    const quickStarts = [
+      { action: "plan", label: "/plan", title: "Plan next work" },
+      { action: "screenshot", label: "Screenshot", title: "Attach visual context" },
+      { action: "file", label: "@file", title: "Mention workspace files" },
+      { action: "bash", label: "!bash", title: "Run local bash" },
+    ];
+    return `<div class="empty-quick-start-chips" aria-label="Quick starts">
+      ${quickStarts.map((item) => `<button type="button" class="empty-quick-start-chip" data-empty-quick-start="${escapeHtml(item.action)}" title="${escapeHtml(item.title)}" aria-label="${escapeHtml(item.title)}"><span>${escapeHtml(item.label)}</span></button>`).join("")}
     </div>`;
   }
 
@@ -1670,6 +1817,7 @@ class PiWebAgentApp extends HTMLElement {
       canFork: (item) => Boolean(this.forkEntryIdForTranscriptItem(item)),
       renderedSegmentCache: this.renderedSegmentCache,
       localImageUrl: (path) => this.localImageUrl(path),
+      planActionOutcomeFor: (transcriptId) => this.uiActions.outcomeFor(transcriptId),
     };
   }
 
@@ -1681,7 +1829,7 @@ class PiWebAgentApp extends HTMLElement {
   }
 
   private hydrateTranscriptRows(): void {
-    hydrateTranscriptDomRows(this, this.transcript, this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
+    hydrateTranscriptDomRows(this, this.renderedTranscriptItems(), this.transcriptRowStateOptions(), this.transcriptBindingState, this.transcriptBindingOptions());
   }
 
   private renderStatusPill(): string {
@@ -1738,7 +1886,7 @@ class PiWebAgentApp extends HTMLElement {
     patchTranscriptStructureHtml({
       host: this,
       transcript,
-      items: this.transcript,
+      items: this.renderedTranscriptItems(),
       dirtyIds: this.dirtyTranscriptIds,
       renderTranscript: () => this.renderTranscript(),
       hydrateRows: () => this.hydrateTranscriptRows(),
@@ -1766,25 +1914,31 @@ class PiWebAgentApp extends HTMLElement {
       this.patchComposerMode();
       this.patchRunningQueue();
       this.patchJumpToLatest();
+      bindQuestionPanel(this.questionPanelContext());
       this.syncOpenActionMenus(transcript);
+      this.syncEmptySessionLayoutState();
       this.syncTranscriptScroll();
       this.syncAutocompleteScroll();
+      this.syncPromptAutosize();
       this.shellPatchDirty = false;
       recordTranscriptPatchSample(start, "structure");
       return true;
     }
 
     const rowOptions = this.transcriptRowStateOptions();
-    patchDirtyTranscriptRows(this, transcript, this.transcript, this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
+    patchDirtyTranscriptRows(this, transcript, this.renderedTranscriptItems(), this.dirtyTranscriptIds, rowOptions, this.transcriptBindingState, this.transcriptBindingOptions());
     this.dirtyTranscriptIds.clear();
     this.patchHeaderStatus();
     this.patchConnectionBanner();
     this.patchComposerMode();
     this.patchRunningQueue();
     this.patchJumpToLatest();
+    bindQuestionPanel(this.questionPanelContext());
     this.syncOpenActionMenus(transcript);
+    this.syncEmptySessionLayoutState();
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    this.syncPromptAutosize();
     this.shellPatchDirty = false;
     recordTranscriptPatchSample(start, "dirty-rows");
     return true;
@@ -1805,6 +1959,41 @@ class PiWebAgentApp extends HTMLElement {
       recordPerfEvent("renderFallback", "request-render", { delayMs, shellPatchDirty: this.shellPatchDirty, transcriptStructureDirty: this.transcriptStructureDirty, dirtyRows: this.dirtyTranscriptIds.size, forceFullRender: this.forceFullRender });
       this.render();
     }, delayMs);
+  }
+
+  private syncEmptySessionLayoutState(): void {
+    const isEmptySession = Boolean(this.selectedSession) && this.renderedTranscriptItems().length === 0 && !this.activeUiActionItem();
+    this.querySelector("main")?.classList.toggle("empty-session-main", isEmptySession);
+    this.querySelector(".transcript-shell")?.classList.toggle("empty-session-transcript-shell", isEmptySession);
+    this.querySelector("footer")?.classList.toggle("empty-session-footer", isEmptySession);
+    this.querySelector(".prompt-shell")?.classList.toggle("empty-session-prompt-shell", isEmptySession);
+    if (!isEmptySession) {
+      this.querySelector("main")?.classList.remove("empty-session-composer-grown");
+      this.querySelector("footer")?.classList.remove("empty-session-composer-grown");
+      this.querySelector(".empty-session-greeting")?.remove();
+      this.querySelector(".empty-quick-start-chips")?.remove();
+    }
+  }
+
+  private syncPromptAutosize(): void {
+    const input = this.querySelector<HTMLTextAreaElement>("#prompt");
+    if (!input) return;
+    const computed = getComputedStyle(input);
+    const initialHeight = Number.parseFloat(computed.getPropertyValue("--prompt-initial-height")) || 56;
+    const maxHeight = Number.parseFloat(computed.getPropertyValue("--prompt-max-height")) || 148;
+    input.style.height = `${initialHeight}px`;
+    const nextHeight = Math.max(initialHeight, Math.min(input.scrollHeight, maxHeight));
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight + 1 ? "auto" : "hidden";
+
+    const footer = this.querySelector("footer");
+    const isEmptySession = Boolean(footer?.classList.contains("empty-session-footer"));
+    const composerExpanded = isEmptySession && ((input.value.trim().length > 0 && input.scrollHeight > initialHeight + 2)
+      || this.promptImages.length > 0
+      || this.isComposerNotice()
+      || Boolean(this.querySelector(".command-autocomplete, .file-autocomplete")));
+    this.querySelector("main")?.classList.toggle("empty-session-composer-grown", composerExpanded);
+    footer?.classList.toggle("empty-session-composer-grown", composerExpanded);
   }
 
   private isComposerNotice(): boolean {
@@ -1920,6 +2109,7 @@ class PiWebAgentApp extends HTMLElement {
     const isBashDraft = this.isBashPromptDraft();
     const bashNoContext = isNoContextBashPromptDraft(this.promptDraft);
     const currentComposerModeLabel = composerModeLabel(this.promptDraft, this.status);
+    const isEmptySession = Boolean(this.selectedSession) && this.renderedTranscriptItems().length === 0 && !activeUiActionItem;
     const canSendFromComposer = isController && this.hasComposerSendContent();
     const promptSendDisabled = canSendFromComposer ? "" : "disabled";
     const attachIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5 12.4 21a6 6 0 0 1-8.5-8.5l9.2-9.1a4 4 0 0 1 5.6 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>`;
@@ -1968,7 +2158,7 @@ class PiWebAgentApp extends HTMLElement {
     this.replaceHtmlPreservingTranscript(`
       ${this.renderSessionSidebarBackdrop()}
       ${this.renderSessionSidebar()}
-      <main>
+      <main class="${isEmptySession ? "empty-session-main" : ""}">
         <header class="${headerClasses}">
           <button id="toggleSessionSidebarMobile" class="mobile-menu-button" type="button" title="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}" aria-label="${this.sessionSidebarCollapsed ? "Show sessions" : "Hide sessions"}">☰</button>
           <div class="session-identity">
@@ -1986,16 +2176,17 @@ class PiWebAgentApp extends HTMLElement {
         ${this.renderConnectionBanner()}
         ${this.renderAttentionNeeded()}
         ${this.notice && !this.isComposerNotice() ? `<p class="notice app-notice">${escapeHtml(this.notice)}</p>` : ""}
-        <div class="transcript-shell ${this.runningQueue.hasItems() ? "has-running-queue" : ""}">
-          <section class="transcript ${this.transcript.length === 0 ? "empty" : ""}">${this.renderTranscript()}</section>
+        <div class="transcript-shell ${this.runningQueue.hasItems() ? "has-running-queue" : ""} ${isEmptySession ? "empty-session-transcript-shell" : ""}">
+          <section class="transcript ${this.renderedTranscriptItems().length === 0 ? "empty" : ""}">${this.renderTranscript()}</section>
           ${this.renderRunningQueueHtml()}
           ${this.renderJumpToLatest()}
         </div>
         ${this.renderPlanDetailsOverlay()}
-        <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
-          ${this.renderQuestionPanel(isController)}
+        <footer class="${isRunning ? "running-footer" : ""} ${activeUiActionItem ? "ui-action-takeover-footer plan-takeover-footer" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""} ${isEmptySession ? "empty-session-footer" : ""}">
+          ${this.renderQuestionCheckpointHint(isController)}
           ${activeUiActionItem ? this.renderUiActionComposerTakeover(activeUiActionItem) : `
-            <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""}">
+            ${isEmptySession ? this.renderEmptySessionGreeting() : ""}
+            <div class="prompt-shell ${isBashDraft ? "bash-mode" : ""} ${bashNoContext ? "no-context" : ""} ${isEmptySession ? "empty-session-prompt-shell" : ""}">
               ${renderPromptImages(this.promptImages)}
               <div class="composer-mode ${isBashDraft ? "bash-mode" : isRunning ? "running" : "idle"} ${bashNoContext ? "no-context" : ""} ${this.modelThinkingPickerOpen ? "model-picker-open" : ""}">
                 <strong>${escapeHtml(currentComposerModeLabel)}</strong>
@@ -2004,7 +2195,7 @@ class PiWebAgentApp extends HTMLElement {
                 ${this.renderViewerCount()}
                 ${this.renderContextUsageNotice()}
               </div>
-              <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
+              <textarea id="prompt" rows="2" ${isController ? "" : "disabled"} placeholder="${isController ? (this.pendingQuestion ? "Reply to the question... Paste/drop screenshots, type / for commands or @ for files." : isRunning ? "Steer the active run..." : "Ask pi... Paste/drop screenshots, type / for commands or @ for files.") : "Viewer mode — take control to send"}">${escapeHtml(this.promptDraft)}</textarea>
               ${this.renderComposerNotice()}
               ${renderCommandAutocomplete(this.autocomplete.command)}
               ${renderFileAutocomplete(this.autocomplete.file)}
@@ -2015,6 +2206,7 @@ class PiWebAgentApp extends HTMLElement {
                 <button id="abort" class="danger icon-button ${isRunning ? "" : "hidden"}" data-tooltip="Stop run" aria-label="Stop run" ${isController ? "" : "disabled"}>${stopIcon}</button>
               </div>
             </div>
+            ${isEmptySession ? this.renderEmptyQuickStartChips() : ""}
           `}
         </footer>
       </main>
@@ -2048,6 +2240,7 @@ class PiWebAgentApp extends HTMLElement {
     }
     this.syncTranscriptScroll();
     this.syncAutocompleteScroll();
+    this.syncPromptAutosize();
     if (this.focusPendingQuestionOnNextRender) {
       this.focusPendingQuestionOnNextRender = false;
       focusQuestionPanelWithContext(this.questionPanelContext());

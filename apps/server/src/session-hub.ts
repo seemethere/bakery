@@ -2,17 +2,21 @@ import type { FastifyInstance } from "fastify";
 import {
   PROTOCOL_VERSION,
   clientMessageSchema,
+  type ActiveToolExecutionSnapshot,
   type ControllerInfo,
   type HelloMessage,
+  type NormalizedAgentEvent,
   type ServerEnvelope,
   type ServerMessage,
+  type SessionSnapshot,
   type WebSession,
 } from "@pi-web-agent/protocol";
 import type { ServerConfig } from "./config.js";
 import { parseSlashCommand, runBundledExtensionCommand } from "./extensions.js";
 import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } from "./metadata-routes.js";
-import type { MetadataStore } from "./metadata-store.js";
+import type { MetadataStore, WebCommandResultRecord } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
+import { isBrowserOriginAllowed } from "./security-origin.js";
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
   return { seq, time: new Date().toISOString(), payload };
@@ -42,11 +46,114 @@ export function parseNameCommand(text: string): { matched: boolean; clear?: bool
   return { matched: true, title: cleanMetadataText(args, 120) };
 }
 
+type WebCommandResultSnapshotMessage = {
+  role: "webCommandResult";
+  id: string;
+  title: string;
+  body: string;
+  isError: boolean;
+  timestamp: string;
+  data?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function timestampMs(value: unknown): number | null {
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = typeof value === "number" ? value : Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function messageTimestampMs(message: unknown): number | null {
+  if (!isRecord(message)) return null;
+  return timestampMs(message.timestamp);
+}
+
+function webCommandResultSnapshotMessage(record: WebCommandResultRecord): WebCommandResultSnapshotMessage {
+  return {
+    role: "webCommandResult",
+    id: record.id,
+    title: record.title,
+    body: record.body,
+    isError: record.isError,
+    timestamp: record.timestamp,
+    ...(record.data !== undefined ? { data: record.data } : {}),
+  };
+}
+
+export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], records: WebCommandResultRecord[]): unknown[] {
+  const commandMessages = records.map(webCommandResultSnapshotMessage);
+  if (messages.length === 0) return commandMessages;
+  if (commandMessages.length === 0) return messages;
+
+  const messageEntries = messages.map((message, index) => ({ kind: "message" as const, value: message, time: messageTimestampMs(message), index }));
+  const commandEntries = commandMessages.map((message, index) => ({ kind: "command" as const, value: message, time: timestampMs(message.timestamp), index }));
+
+  // If the runner snapshot lacks reliable timestamps, fall back to the previous
+  // append behavior rather than guessing where persisted web-only cards belong.
+  if (messageEntries.some((entry) => entry.time === null) || commandEntries.some((entry) => entry.time === null)) return [...messages, ...commandMessages];
+
+  return [...messageEntries, ...commandEntries]
+    .sort((left, right) => {
+      const byTime = left.time! - right.time!;
+      if (byTime !== 0) return byTime;
+      if (left.kind !== right.kind) return left.kind === "message" ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map((entry) => entry.value);
+}
+
+export function activeToolCallId(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const id = value.toolCallId;
+  return typeof id === "string" && id.trim() ? id : null;
+}
+
+export function activeToolSnapshotFromEvent(event: NormalizedAgentEvent, existing?: ActiveToolExecutionSnapshot): ActiveToolExecutionSnapshot | null {
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_update") return null;
+  if (!isRecord(event.data)) return null;
+  const toolCallId = activeToolCallId(event.data);
+  if (!toolCallId) return null;
+  const snapshot: ActiveToolExecutionSnapshot = {
+    ...existing,
+    ...event.data,
+    type: event.type,
+    toolCallId,
+    ...(typeof event.time === "string" ? { eventTime: event.time } : {}),
+  };
+  if (existing?.toolName !== undefined && snapshot.toolName === undefined) snapshot.toolName = existing.toolName;
+  if (existing?.args !== undefined && snapshot.args === undefined) snapshot.args = existing.args;
+  if (existing?.startedAt !== undefined && snapshot.startedAt === undefined) snapshot.startedAt = existing.startedAt;
+  return snapshot;
+}
+
 type SocketClient = {
   clientId: string;
   seq: number;
+  snapshotPending: boolean;
+  bufferedPayloads: ServerMessage[];
   socket: { send(data: string): void; close(code?: number, reason?: string): void; on(event: string, listener: (...args: never[]) => void): void };
 };
+
+export type BroadcastMetricsSnapshot = {
+  broadcasts: number;
+  sentMessages: number;
+  bufferedMessages: number;
+  sentBytes: number;
+  maxPayloadBytes: number;
+  maxBufferedPayloads: number;
+  maxClients: number;
+  slowestBroadcastMs: number;
+  lastPayloadType: ServerMessage["type"] | null;
+};
+
+function emptyBroadcastMetrics(): BroadcastMetricsSnapshot {
+  return { broadcasts: 0, sentMessages: 0, bufferedMessages: 0, sentBytes: 0, maxPayloadBytes: 0, maxBufferedPayloads: 0, maxClients: 0, slowestBroadcastMs: 0, lastPayloadType: null };
+}
 
 export type SessionBroadcaster = Pick<SessionHub, "broadcastMetadataUpdate">;
 
@@ -64,17 +171,20 @@ type SessionHubDeps = {
   removeHub(sessionId: string): void;
 };
 
-class SessionHub {
+export class SessionHub {
   private readonly clients = new Map<string, SocketClient>();
+  private readonly activeToolExecutions = new Map<string, ActiveToolExecutionSnapshot>();
   private controllerId: string | null = null;
   private disposeTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingCommands: string[] = [];
   private flushingPendingCommands = false;
+  private readonly broadcastMetrics = emptyBroadcastMetrics();
   private readonly unsubscribe: () => void;
   private readonly unsubscribeQuestion: () => void;
 
   constructor(private readonly handle: SessionHandle, private readonly deps: SessionHubDeps) {
     this.unsubscribe = handle.subscribe((event, raw) => {
+      this.rememberActiveToolExecution(event);
       this.broadcast({ type: "agent_event", event, raw });
       if (event.type === "agent_end" || event.type === "turn_end") {
         void this.broadcastSettingsUpdate();
@@ -97,7 +207,7 @@ class SessionHub {
     this.disposeTimer = undefined;
 
     const clientId = requestedClientId && !this.clients.has(requestedClientId) ? requestedClientId : crypto.randomUUID();
-    const client: SocketClient = { clientId, seq: 0, socket };
+    const client: SocketClient = { clientId, seq: 0, snapshotPending: true, bufferedPayloads: [], socket };
     this.clients.set(clientId, client);
     if (!this.controllerId) this.controllerId = clientId;
 
@@ -115,10 +225,6 @@ class SessionHub {
       clientId,
     };
     socket.send(JSON.stringify(hello));
-    void this.handle.snapshot(webSession).then((snapshot) => {
-      this.send(client, { type: "session_snapshot", snapshot: { ...snapshot, controller: this.controllerFor(clientId) } });
-      this.broadcastControllerUpdate();
-    });
 
     socket.on("message", (...args: never[]) => {
       const [raw] = args as unknown as [Buffer | string];
@@ -127,11 +233,22 @@ class SessionHub {
 
     socket.on("close", () => {
       this.clients.delete(clientId);
+      client.bufferedPayloads = [];
       if (this.controllerId === clientId) {
         this.controllerId = this.clients.keys().next().value ?? null;
       }
       this.broadcastControllerUpdate();
       if (this.clients.size === 0) this.scheduleDispose();
+    });
+
+    void this.snapshotWithWebCommands(webSession).then((snapshot) => {
+      if (this.clients.get(clientId) !== client) return;
+      this.send(client, { type: "session_snapshot", snapshot: { ...snapshot, controller: this.controllerFor(clientId) } });
+      client.snapshotPending = false;
+      const buffered = client.bufferedPayloads;
+      client.bufferedPayloads = [];
+      for (const payload of buffered) this.send(client, payload);
+      this.broadcastControllerUpdate();
     });
   }
 
@@ -153,8 +270,33 @@ class SessionHub {
     };
   }
 
-  private send(client: SocketClient, payload: ServerMessage): void {
-    client.socket.send(JSON.stringify(envelope(client.seq++, payload)));
+  getBroadcastMetrics(): BroadcastMetricsSnapshot {
+    return { ...this.broadcastMetrics };
+  }
+
+  private send(client: SocketClient, payload: ServerMessage): number {
+    const data = JSON.stringify(envelope(client.seq++, payload));
+    client.socket.send(data);
+    return Buffer.byteLength(data, "utf8");
+  }
+
+  private sendOrBuffer(client: SocketClient, payload: ServerMessage): { sentBytes: number; payloadBytes: number; buffered: boolean } {
+    if (client.snapshotPending) {
+      client.bufferedPayloads.push(payload);
+      return { sentBytes: 0, payloadBytes: 0, buffered: true };
+    }
+    const payloadBytes = this.send(client, payload);
+    return { sentBytes: payloadBytes, payloadBytes, buffered: false };
+  }
+
+  private rememberActiveToolExecution(event: NormalizedAgentEvent): void {
+    if (event.type === "tool_execution_end") {
+      const toolCallId = activeToolCallId(event.data);
+      if (toolCallId) this.activeToolExecutions.delete(toolCallId);
+      return;
+    }
+    const snapshot = activeToolSnapshotFromEvent(event, activeToolCallId(event.data) ? this.activeToolExecutions.get(activeToolCallId(event.data)!) : undefined);
+    if (snapshot) this.activeToolExecutions.set(snapshot.toolCallId, snapshot);
   }
 
   private grantControl(requesterId: string): void {
@@ -164,7 +306,36 @@ class SessionHub {
   }
 
   private broadcast(payload: ServerMessage): void {
-    for (const client of this.clients.values()) this.send(client, payload);
+    const startedAt = performance.now();
+    let sentMessages = 0;
+    let bufferedMessages = 0;
+    let sentBytes = 0;
+    let maxPayloadBytes = 0;
+    let maxBufferedPayloads = 0;
+    for (const client of this.clients.values()) {
+      const result = this.sendOrBuffer(client, payload);
+      if (result.buffered) bufferedMessages += 1;
+      else sentMessages += 1;
+      sentBytes += result.sentBytes;
+      maxPayloadBytes = Math.max(maxPayloadBytes, result.payloadBytes);
+      maxBufferedPayloads = Math.max(maxBufferedPayloads, client.bufferedPayloads.length);
+    }
+    this.recordBroadcastMetrics(payload.type, { clientCount: this.clients.size, sentMessages, bufferedMessages, sentBytes, maxPayloadBytes, maxBufferedPayloads, elapsedMs: performance.now() - startedAt });
+  }
+
+  private recordBroadcastMetrics(payloadType: ServerMessage["type"], sample: { clientCount: number; sentMessages: number; bufferedMessages: number; sentBytes: number; maxPayloadBytes: number; maxBufferedPayloads: number; elapsedMs: number }): void {
+    this.broadcastMetrics.broadcasts += 1;
+    this.broadcastMetrics.sentMessages += sample.sentMessages;
+    this.broadcastMetrics.bufferedMessages += sample.bufferedMessages;
+    this.broadcastMetrics.sentBytes += sample.sentBytes;
+    this.broadcastMetrics.maxPayloadBytes = Math.max(this.broadcastMetrics.maxPayloadBytes, sample.maxPayloadBytes);
+    this.broadcastMetrics.maxBufferedPayloads = Math.max(this.broadcastMetrics.maxBufferedPayloads, sample.maxBufferedPayloads);
+    this.broadcastMetrics.maxClients = Math.max(this.broadcastMetrics.maxClients, sample.clientCount);
+    this.broadcastMetrics.slowestBroadcastMs = Math.max(this.broadcastMetrics.slowestBroadcastMs, Math.round(sample.elapsedMs));
+    this.broadcastMetrics.lastPayloadType = payloadType;
+    if (process.env.PI_WEB_BROADCAST_METRICS === "1" && (sample.bufferedMessages > 0 || sample.maxPayloadBytes > 64_000 || sample.elapsedMs > 25)) {
+      console.warn("[session-hub:broadcast]", JSON.stringify({ sessionId: this.handle.id, payloadType, ...sample, elapsedMs: Math.round(sample.elapsedMs) }));
+    }
   }
 
   broadcastMetadataUpdate(session: WebSession): void {
@@ -172,7 +343,21 @@ class SessionHub {
   }
 
   private broadcastControllerUpdate(): void {
-    for (const client of this.clients.values()) this.send(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
+    const startedAt = performance.now();
+    let sentMessages = 0;
+    let bufferedMessages = 0;
+    let sentBytes = 0;
+    let maxPayloadBytes = 0;
+    let maxBufferedPayloads = 0;
+    for (const client of this.clients.values()) {
+      const result = this.sendOrBuffer(client, { type: "controller_update", controller: this.controllerFor(client.clientId) });
+      if (result.buffered) bufferedMessages += 1;
+      else sentMessages += 1;
+      sentBytes += result.sentBytes;
+      maxPayloadBytes = Math.max(maxPayloadBytes, result.payloadBytes);
+      maxBufferedPayloads = Math.max(maxBufferedPayloads, client.bufferedPayloads.length);
+    }
+    this.recordBroadcastMetrics("controller_update", { clientCount: this.clients.size, sentMessages, bufferedMessages, sentBytes, maxPayloadBytes, maxBufferedPayloads, elapsedMs: performance.now() - startedAt });
   }
 
   private async broadcastSettingsUpdate(): Promise<void> {
@@ -187,7 +372,9 @@ class SessionHub {
     if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
 
     const id = `bash:${crypto.randomUUID()}`;
-    let output = "";
+    let chunkCount = 0;
+    let outputBytes = 0;
+    let maxChunkBytes = 0;
     this.broadcast({
       type: "agent_event",
       event: {
@@ -198,13 +385,17 @@ class SessionHub {
     });
     try {
       const result = await this.handle.executeBash(command, (chunk) => {
-        output += chunk;
+        const outputOffsetBytes = outputBytes;
+        chunkCount += 1;
+        const chunkBytes = Buffer.byteLength(chunk, "utf8");
+        outputBytes += chunkBytes;
+        maxChunkBytes = Math.max(maxChunkBytes, chunkBytes);
         this.broadcast({
           type: "agent_event",
           event: {
             type: "bash_execution_update",
             time: new Date().toISOString(),
-            data: { type: "bash_execution_update", id, command, output, excludeFromContext: excludeFromContext ?? false },
+            data: { type: "bash_execution_update", id, command, outputDelta: chunk, outputOffsetBytes, outputBytes, chunkCount, excludeFromContext: excludeFromContext ?? false },
           },
         });
       }, excludeFromContext === undefined ? undefined : { excludeFromContext });
@@ -213,7 +404,7 @@ class SessionHub {
         event: {
           type: "bash_execution_end",
           time: new Date().toISOString(),
-          data: { type: "bash_execution_end", id, command, result, excludeFromContext: excludeFromContext ?? false },
+          data: { type: "bash_execution_end", id, command, result, stream: { chunkCount, outputBytes, maxChunkBytes }, excludeFromContext: excludeFromContext ?? false },
         },
       });
       await this.broadcastSettingsUpdate();
@@ -230,8 +421,21 @@ class SessionHub {
     }
   }
 
+  private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
+    const snapshot = await this.handle.snapshot(webSession);
+    const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+    const activeToolExecutions = [...this.activeToolExecutions.values()];
+    return {
+      ...snapshot,
+      messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords),
+      ...(activeToolExecutions.length > 0 ? { activeToolExecutions } : {}),
+    };
+  }
+
   private commandServices() {
     return {
+      getSessionCwd: () => this.handle.cwd,
+      hasCommand: (name: string) => this.handle.getCommands().some((command) => command.name === name),
       generateSessionDetails: async (options: Parameters<typeof generateAndApplySessionDetails>[2]) => {
         const webSession = this.deps.store.getSession(this.handle.id);
         if (!webSession) throw new Error("session not found");
@@ -246,12 +450,13 @@ class SessionHub {
   }
 
   private async emitCommandResult(title: string, body: string, isError = false, data?: unknown): Promise<void> {
+    const record = this.deps.store.addWebCommandResult(this.handle.id, { title, body, isError, ...(data !== undefined ? { data } : {}) });
     this.broadcast({
       type: "agent_event",
       event: {
         type: "web_command_result",
-        time: new Date().toISOString(),
-        data: { type: "web_command_result", id: `command:${Date.now()}`, title, body, isError, ...(data !== undefined ? { data } : {}) },
+        time: record.timestamp,
+        data: { type: "web_command_result", id: record.id, title: record.title, body: record.body, isError: record.isError, ...(record.data !== undefined ? { data: record.data } : {}) },
       },
     });
     await this.broadcastSettingsUpdate();
@@ -378,14 +583,7 @@ class SessionHub {
           } else {
             body = `Current title: ${webSession.title ?? "(unset)"}\nSource: ${webSession.titleSource}\nUsage: /name <title> or /name --clear`;
           }
-          this.broadcast({
-            type: "agent_event",
-            event: {
-              type: "web_command_result",
-              time: new Date().toISOString(),
-              data: { type: "web_command_result", id: `command:${Date.now()}`, title: "/name", body },
-            },
-          });
+          await this.emitCommandResult("/name", body);
           return;
         }
         if (await this.runBundledCommandText(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent))) return;
@@ -401,22 +599,7 @@ class SessionHub {
             await this.broadcastSettingsUpdate();
             return;
           }
-          this.broadcast({
-            type: "agent_event",
-            event: {
-              type: "web_command_result",
-              time: new Date().toISOString(),
-              data: {
-                type: "web_command_result",
-                id: `command:${Date.now()}`,
-                title: builtinResult.title ?? "Slash command",
-                body: builtinResult.body ?? "",
-                isError: builtinResult.isError ?? false,
-                ...(builtinResult.data !== undefined ? { data: builtinResult.data } : {}),
-              },
-            },
-          });
-          await this.broadcastSettingsUpdate();
+          await this.emitCommandResult(builtinResult.title ?? "Slash command", builtinResult.body ?? "", builtinResult.isError ?? false, builtinResult.data);
           return;
         }
         const webSession = this.deps.store.getSession(this.handle.id);
@@ -482,6 +665,16 @@ export function createSessionHubRegistry(deps: Omit<SessionHubDeps, "removeHub">
     },
     registerRoutes: (app) => {
       app.get<{ Params: { id: string } }>("/api/sessions/:id/ws", { websocket: true }, async (socket, request) => {
+        const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
+        if (!isBrowserOriginAllowed({
+          origin,
+          requestHost: request.headers.host,
+          authRequired: deps.config.authRequired,
+          allowedOrigins: deps.config.allowedOrigins,
+        })) {
+          socket.close(1008, "browser origin is not allowed");
+          return;
+        }
         const existingSession = deps.store.getSession(request.params.id);
         if (!existingSession) {
           socket.close(1008, "session not found");

@@ -1,0 +1,14 @@
+# Opt-in trusted-local-development SSH agent forwarding.
+# Usage:
+#   docker compose -f compose.yaml -f compose.ssh-auth.example.yaml up --build
+#
+# Requires SSH_AUTH_SOCK to point at an existing host agent socket. Credentials
+# exposed through the socket are available to commands and agents in the container.
+services:
+  bakery-dev:
+    environment:
+      SSH_AUTH_SOCK: /ssh-agent
+    volumes:
+      - type: bind
+        source: ${SSH_AUTH_SOCK:?Set SSH_AUTH_SOCK to an existing host SSH agent socket}
+        target: /ssh-agent

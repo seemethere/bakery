@@ -74,6 +74,12 @@ PI_WEB_AUTH_TOKEN=...
 bun run start
 ```
 
+### Local CLI distribution
+
+The intended local distribution shape is a notebook-style Bakery Launcher: the operator runs a command from a workspace, Bakery starts the local backend and browser UI, and the command prints the localhost UI address. The simple future target is `bunx bakery`, but npm packaging is not part of the first launcher slice.
+
+The initial source-checkout prototype may keep the current two-process shape: backend API/WebSocket service plus Vite frontend on separate localhost ports. Local-first security assumptions stay the same: localhost by default, token required for non-localhost access, and session cwd constrained to backend-allowlisted workspace roots. Later packaging must decide the npm package name/scope, `bin` metadata, included build artifacts, whether the backend serves static frontend assets on one port, and how dependencies are bundled or installed.
+
 Container:
 
 ```bash

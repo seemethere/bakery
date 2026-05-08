@@ -7,14 +7,15 @@ export type QuestionPanelContext = {
   pendingQuestion: () => PendingQuestion | null;
   isController: () => boolean;
   isConnected: () => boolean;
+  isSubmitting: () => boolean;
   root: () => ParentNode;
   answer: (payload: QuestionAnswerPayload) => void;
   setNotice: (notice: string) => void;
   render: () => void;
 };
 
-export function canAnswerPendingQuestion(ctx: Pick<QuestionPanelContext, "pendingQuestion" | "isController" | "isConnected">): boolean {
-  return Boolean(ctx.pendingQuestion() && ctx.isController() && ctx.isConnected());
+export function canAnswerPendingQuestion(ctx: Pick<QuestionPanelContext, "pendingQuestion" | "isController" | "isConnected" | "isSubmitting">): boolean {
+  return Boolean(ctx.pendingQuestion() && ctx.isController() && ctx.isConnected() && !ctx.isSubmitting());
 }
 
 export function recommendedQuestionOptionIndex(question: PendingQuestion | null): number {
@@ -30,23 +31,6 @@ export function recommendedQuestionOptionIndex(question: PendingQuestion | null)
   });
 }
 
-export function expandCustomQuestionAnswer(ctx: Pick<QuestionPanelContext, "root">): void {
-  const root = ctx.root();
-  root.querySelector<HTMLElement>(".question-custom")?.classList.remove("is-collapsed");
-  root.querySelector<HTMLElement>(".question-custom")?.classList.add("is-expanded");
-  root.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)")?.focus();
-}
-
-export function submitCustomQuestionAnswer(ctx: QuestionPanelContext): void {
-  const input = ctx.root().querySelector<HTMLInputElement>("#questionCustomAnswer");
-  const answer = input?.value.trim() ?? "";
-  if (!answer) {
-    expandCustomQuestionAnswer(ctx);
-    ctx.setNotice("Type an answer before submitting, or choose Cancel.");
-    return;
-  }
-  ctx.answer({ answer, selectedIndex: null, wasCustom: true });
-}
 
 export function focusQuestionPanel(ctx: Pick<QuestionPanelContext, "pendingQuestion" | "root">): void {
   const root = ctx.root();
@@ -57,97 +41,61 @@ export function focusQuestionPanel(ctx: Pick<QuestionPanelContext, "pendingQuest
     (target ?? buttons[0])?.focus();
     return;
   }
-  const customInput = root.querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)");
-  if (customInput) {
-    customInput.focus();
-    return;
-  }
-  root.querySelector<HTMLElement>(".question-panel")?.focus();
+  root.querySelector<HTMLElement>(".question-card.pending")?.focus();
 }
 
 export function handleQuestionPanelKeydown(ctx: QuestionPanelContext, event: KeyboardEvent): void {
   const question = ctx.pendingQuestion();
   if (!question) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    if (canAnswerPendingQuestion(ctx)) ctx.answer({ cancelled: true, selectedIndex: null, wasCustom: false });
-    return;
-  }
-  const active = document.activeElement as HTMLElement | null;
-  if (active?.id === "questionCustomAnswer") return;
   const buttons = Array.from(ctx.root().querySelectorAll<HTMLButtonElement>("[data-question-option-index]:not(:disabled)"));
   if (buttons.length === 0) return;
-  const focusedIndex = buttons.findIndex((button) => button === active);
   const recommendedIndex = recommendedQuestionOptionIndex(question);
-  const currentIndex = focusedIndex >= 0 ? focusedIndex : recommendedIndex >= 0 ? buttons.findIndex((button) => Number(button.dataset.questionOptionIndex ?? "-1") === recommendedIndex) : 0;
-  const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
-  const focusButton = (index: number) => buttons[(index + buttons.length) % buttons.length]?.focus();
-  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-    event.preventDefault();
-    focusButton(focusedIndex >= 0 ? safeCurrentIndex + 1 : safeCurrentIndex);
-  } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-    event.preventDefault();
-    focusButton(focusedIndex >= 0 ? safeCurrentIndex - 1 : safeCurrentIndex);
-  } else if (event.key === "Home") {
-    event.preventDefault();
-    buttons[0]?.focus();
-  } else if (event.key === "End") {
-    event.preventDefault();
-    buttons[buttons.length - 1]?.focus();
-  } else if (event.key === "Enter" || event.key === " ") {
-    const button = buttons[safeCurrentIndex];
-    const index = Number(button?.dataset.questionOptionIndex ?? "-1");
-    const option = question.options[index];
+  if (event.key === "Enter" && recommendedIndex >= 0) {
+    const option = question.options[recommendedIndex];
     if (option && canAnswerPendingQuestion(ctx)) {
       event.preventDefault();
-      ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
+      ctx.answer({ answer: option.label, selectedIndex: recommendedIndex, wasCustom: false });
     }
   } else if (/^[1-9]$/.test(event.key)) {
     const index = Number(event.key) - 1;
     const option = question.options[index];
-    if (option) {
+    if (option && canAnswerPendingQuestion(ctx)) {
       event.preventDefault();
       ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
-    }
-  } else if (event.key.toLowerCase() === "c" && question.allowCustomAnswer) {
-    const customInput = ctx.root().querySelector<HTMLInputElement>("#questionCustomAnswer:not(:disabled)");
-    if (customInput) {
-      event.preventDefault();
-      expandCustomQuestionAnswer(ctx);
     }
   }
 }
 
 export function bindQuestionPanel(ctx: QuestionPanelContext): void {
   const root = ctx.root();
-  root.querySelector<HTMLElement>(".question-panel")?.addEventListener("keydown", (event) => handleQuestionPanelKeydown(ctx, event));
-  root.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
+  const card = root.querySelector<HTMLElement>(".question-card.pending");
+  if (!card || card.dataset.questionBound === "true") return;
+  card.dataset.questionBound = "true";
+  card.addEventListener("keydown", (event) => handleQuestionPanelKeydown(ctx, event));
+  card.querySelectorAll<HTMLButtonElement>("[data-question-option-index]").forEach((button) => {
     button.addEventListener("click", () => {
       const index = Number(button.dataset.questionOptionIndex ?? "-1");
       const option = ctx.pendingQuestion()?.options[index];
-      if (option && index >= 0) ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
+      if (option && index >= 0 && canAnswerPendingQuestion(ctx)) ctx.answer({ answer: option.label, selectedIndex: index, wasCustom: false });
     });
   });
-  root.querySelector<HTMLButtonElement>("#questionCustomToggle")?.addEventListener("click", () => expandCustomQuestionAnswer(ctx));
-  root.querySelector<HTMLButtonElement>("#questionCustomSubmit")?.addEventListener("click", () => submitCustomQuestionAnswer(ctx));
-  root.querySelector<HTMLInputElement>("#questionCustomAnswer")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submitCustomQuestionAnswer(ctx);
-    }
-  });
-  root.querySelector<HTMLButtonElement>("#questionCancel")?.addEventListener("click", () => ctx.answer({ cancelled: true, selectedIndex: null, wasCustom: false }));
 }
 
-export function renderQuestionPanel(question: PendingQuestion | null, isController: boolean, isConnected: boolean): string {
+export function renderQuestionPanel(question: PendingQuestion | null, isController: boolean, isConnected: boolean, isSubmitting = false): string {
   if (!question) return "";
-  const disabled = !isController || !isConnected;
-  const viewerCopy = !isController ? `<p class="question-viewer-copy">Take control to answer this question. Keyboard answer shortcuts are disabled in viewer mode.</p>` : !isConnected ? `<p class="question-viewer-copy">Reconnect before answering. Keyboard answer shortcuts are disabled while disconnected.</p>` : "";
+  const disabled = !isController || !isConnected || isSubmitting;
+  const viewerCopy = isSubmitting
+    ? `<p class="question-viewer-copy">Submitting answer…</p>`
+    : !isController
+      ? `<p class="question-viewer-copy">Take control to answer this question.</p>`
+      : !isConnected
+        ? `<p class="question-viewer-copy">Reconnect before answering.</p>`
+        : "";
   const recommendedOptionIndex = recommendedQuestionOptionIndex(question);
   return `
-      <section class="question-panel" aria-label="Answer needed" tabindex="-1">
-        <div class="question-panel-heading">
-          <strong>Answer needed</strong>
+      <section class="question-card pending${isSubmitting ? " is-submitting" : ""}" aria-label="Answer needed" tabindex="-1" data-question-id="${escapeHtml(question.id)}" aria-busy="${isSubmitting ? "true" : "false"}">
+        <div class="question-card-header question-panel-heading">
+          <span class="question-card-kicker">Answer needed</span>
           ${question.title ? `<span>${escapeHtml(question.title)}</span>` : `<span>Choose how to continue</span>`}
         </div>
         <p class="question-text">${escapeHtml(question.question)}</p>
@@ -161,16 +109,10 @@ export function renderQuestionPanel(question: PendingQuestion | null, isControll
             </button>`;
           }).join("")}
         </div>` : ""}
-        ${question.allowCustomAnswer ? `<div class="question-custom ${question.options.length ? "is-collapsed" : "is-expanded"}">
-          <button id="questionCustomToggle" class="question-custom-toggle" type="button" ${disabled ? "disabled" : ""}><kbd>C</kbd> Custom answer…</button>
-          <label class="question-custom-field"><span><kbd>C</kbd> Custom</span><input id="questionCustomAnswer" type="text" ${disabled ? "disabled" : ""} placeholder="Type a custom answer…" /></label>
-          <button id="questionCustomSubmit" type="button" ${disabled ? "disabled" : ""}>Answer <kbd>Enter</kbd></button>
-        </div>` : ""}
         <div class="question-actions">
           ${viewerCopy}
-          <span class="question-key-hint"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>1-9</kbd> answer · <kbd>C</kbd> custom · <kbd>Esc</kbd> cancel</span>
-          <span class="question-touch-hint">Tap an option or type a custom answer.</span>
-          <button id="questionCancel" type="button" aria-keyshortcuts="Escape" ${disabled ? "disabled" : ""}>Cancel question</button>
+          <span class="question-key-hint">Choose with <kbd>1-9</kbd>${recommendedOptionIndex >= 0 ? ` · recommended <kbd>Enter</kbd>` : ""}. Or reply normally in the composer.</span>
+          <span class="question-touch-hint">Reply below or tap an option.</span>
         </div>
       </section>`;
 }

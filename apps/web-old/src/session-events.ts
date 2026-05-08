@@ -1,4 +1,4 @@
-import type { WebSession } from "@pi-web-agent/protocol";
+import type { ActiveToolExecutionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { formatToolTitle, messageToTranscriptItem, questionSummaryFromTool, toolArgsToText, toolResultToSegments, toolResultToText, type TranscriptItem } from "./transcript";
 import { isRecord, stringify } from "./utils";
 
@@ -38,7 +38,7 @@ export function bashEventCommand(event: Record<string, unknown>): string {
   return String(event.command ?? "bash");
 }
 
-export function bashEventToTranscriptItem(event: Record<string, unknown>): TranscriptItem | null {
+export function bashEventToTranscriptItem(event: Record<string, unknown>, existing?: TranscriptItem): TranscriptItem | null {
   const type = String(event.type ?? "event");
   const command = bashEventCommand(event);
   const excludeFromContext = Boolean(event.excludeFromContext);
@@ -48,7 +48,14 @@ export function bashEventToTranscriptItem(event: Record<string, unknown>): Trans
     return { id, kind: "tool", title, body: "Starting…", status: "running", raw: event };
   }
   if (type === "bash_execution_update") {
-    const output = String(event.output ?? "");
+    const existingIsStartPlaceholder = isRecord(existing?.raw) && existing.raw.type === "bash_execution_start";
+    const existingOutput = existing && !existingIsStartPlaceholder ? existing.body : "";
+    const missingPrefix = !existingOutput && typeof event.outputOffsetBytes === "number" && event.outputOffsetBytes > 0 ? "[Earlier output will appear when the command completes.]\n" : "";
+    const output = typeof event.output === "string"
+      ? event.output
+      : typeof event.outputDelta === "string"
+        ? `${existingOutput || missingPrefix}${event.outputDelta}`
+        : "";
     return { id, kind: "tool", title, body: output, segments: [{ kind: "pre", text: output }], status: "running", raw: event };
   }
   if (type === "bash_execution_end") {
@@ -123,6 +130,12 @@ export function toolExecutionToTranscriptItem(type: string, event: Record<string
     };
   }
   return null;
+}
+
+export function activeToolExecutionSnapshotToTranscriptItem(event: ActiveToolExecutionSnapshot, existing?: TranscriptItem): TranscriptItem | null {
+  if (typeof event.toolCallId !== "string" || !event.toolCallId.trim()) return null;
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_update") return null;
+  return toolExecutionToTranscriptItem(event.type, event, existing);
 }
 
 export function questionSummaryForToolItem(item: TranscriptItem): TranscriptItem | null {

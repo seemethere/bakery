@@ -36,7 +36,7 @@ export async function handleTranscriptRowAction(context: TranscriptRowActionCont
   if (action === "menu") {
     context.setOpenActionMenuId(context.openActionMenuId === transcriptId ? "" : transcriptId);
     context.selectItem(transcriptId, false);
-    if (item.kind === "user" && !context.forkEntryIdForItem(item)) await context.refreshTree();
+    if (!context.forkEntryIdForItem(item)) await context.refreshTree();
     context.render();
     return;
   }
@@ -51,7 +51,7 @@ export async function handleTranscriptRowAction(context: TranscriptRowActionCont
     const entryId = context.forkEntryIdForItem(item);
     if (entryId) await context.forkFromEntry(entryId);
     else {
-      context.setNotice("Fork is only available after this user message appears in the session tree.");
+      context.setNotice("Fork is only available after this event appears in the session tree.");
       context.render();
     }
   }

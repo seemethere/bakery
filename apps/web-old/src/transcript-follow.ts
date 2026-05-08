@@ -92,7 +92,10 @@ export class TranscriptFollowController {
   }
 
   scheduleFollow(root: ParentNode, reason = "scheduled-follow"): void {
-    requestAnimationFrame(() => this.scrollToBottom(root, reason));
+    requestAnimationFrame(() => {
+      if (!this.autoScrollValue) return;
+      this.scrollToBottom(root, reason);
+    });
   }
 
   syncScroll(root: ParentNode): void {
@@ -134,7 +137,11 @@ export class TranscriptFollowController {
   }
 
   disableFollowIfDetached(transcript: HTMLElement | null | undefined): void {
-    if (this.autoScrollValue && transcript && !this.isNearBottom(transcript)) this.setAutoScroll(false, "detached-during-patch");
+    if (!this.autoScrollValue || !transcript || this.isNearBottom(transcript)) return;
+    if (this.hasUserScrollIntent()) {
+      this.setAutoScroll(false, "detached-during-user-scroll");
+      return;
+    }
   }
 
   handleScroll(event: Event, callbacks: { requestRender: () => void; patchJumpToLatest: () => void; scheduleFollow: () => void }): void {
@@ -150,7 +157,7 @@ export class TranscriptFollowController {
     }
 
     if (this.autoScrollValue) {
-      const userInitiatedScroll = Date.now() <= this.userScrollIntentUntil || !event.isTrusted;
+      const userInitiatedScroll = this.hasUserScrollIntent() || !event.isTrusted;
       if (!userInitiatedScroll) {
         callbacks.scheduleFollow();
         return;
@@ -161,6 +168,10 @@ export class TranscriptFollowController {
     }
 
     callbacks.patchJumpToLatest();
+  }
+
+  private hasUserScrollIntent(): boolean {
+    return Date.now() <= this.userScrollIntentUntil;
   }
 
   private jumpToLatestLabel(): string {

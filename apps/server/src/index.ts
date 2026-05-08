@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
-import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
+import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
 import { getBakeryExtensionCardContributions, getBakeryExtensionRegistry, getBakeryExtensionWebModules, loadConfiguredBakeryExtensions } from "./extensions.js";
@@ -15,12 +14,14 @@ import { InProcessPiSessionRunner } from "./pi-runner.js";
 import { registerPreviewStackRoutes } from "./preview-stack-routes.js";
 import { PreviewStackManager } from "./preview-stacks.js";
 import { registerSearchRoutes } from "./search-routes.js";
+import { isBrowserOriginAllowed } from "./security-origin.js";
 import { createSessionHubRegistry } from "./session-hub.js";
 import { registerSessionRoutes } from "./session-routes.js";
-import { resolveWorkspaceRoots, toWorkspaces } from "./workspaces.js";
+import { addExistingWorkspace, assertAllowedCwd, cloneWorkspace, createGithubRepositoryWorkspace, mergeWorkspaces, resolveWorkspaceRoots } from "./workspaces.js";
 
 const config = loadConfig();
-const workspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
+const configWorkspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
+const workspaceRoots = configWorkspaceRoots;
 mkdirSync(config.sessionDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
 mkdirSync(config.worktreeDir, { recursive: true });
@@ -29,9 +30,8 @@ mkdirSync(config.previewRuntimeDir, { recursive: true });
 const store = new MetadataStore(config.metadataDbPath);
 const runner = config.fakeAgent ? new FakePiSessionRunner(config.modelPolicy) : new InProcessPiSessionRunner(config.modelPolicy);
 const previewStacks = new PreviewStackManager({ config });
-const extensionRegistry = await loadConfiguredBakeryExtensions(config);
+await loadConfiguredBakeryExtensions(config);
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
-await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(websocket);
 
 function isLocalhost(ip: string): boolean {
@@ -40,6 +40,22 @@ function isLocalhost(ip: string): boolean {
 
 app.addHook("onRequest", async (request, reply) => {
   if (request.url === "/healthz") return;
+  const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
+  const originAllowed = isBrowserOriginAllowed({
+    origin,
+    requestHost: request.headers.host,
+    authRequired: config.authRequired,
+    allowedOrigins: config.allowedOrigins,
+  });
+  if (!originAllowed) return reply.code(403).send({ error: "browser origin is not allowed" });
+  if (origin) {
+    reply.header("Access-Control-Allow-Origin", origin);
+    reply.header("Vary", "Origin");
+    reply.header("Access-Control-Allow-Methods", "GET, HEAD, POST, PATCH, DELETE, OPTIONS");
+    reply.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    reply.header("Access-Control-Max-Age", "600");
+  }
+  if (request.method === "OPTIONS") return reply.code(204).send();
 
   if (config.authToken) {
     const header = request.headers.authorization;
@@ -70,7 +86,67 @@ app.get("/api/config", async () => ({
   previewPublicBaseUrl: config.previewPublicBaseUrl ?? null,
 }));
 
-app.get("/api/workspaces", async () => toWorkspaces(workspaceRoots));
+function listVisibleWorkspaces() {
+  return mergeWorkspaces(configWorkspaceRoots, store.listWorkspaces());
+}
+
+async function assertAllowedWorkspaceBase(path: string): Promise<void> {
+  await assertAllowedCwd(path, configWorkspaceRoots);
+}
+
+
+app.get("/api/workspaces", async () => listVisibleWorkspaces());
+
+app.post("/api/workspaces", async (request, reply) => {
+  const parsed = addWorkspaceRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  try {
+    const candidate = await addExistingWorkspace(parsed.data.path);
+    await assertAllowedWorkspaceBase(candidate.path);
+    const workspace = store.addWorkspace(candidate);
+    return reply.code(201).send({ workspace, message: "Workspace added" });
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/api/workspaces/clone", async (request, reply) => {
+  const parsed = cloneWorkspaceRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  try {
+    const basePath = await addExistingWorkspace(parsed.data.basePath ?? configWorkspaceRoots[0] ?? process.cwd());
+    await assertAllowedWorkspaceBase(basePath.path);
+    const workspace = store.addWorkspace(await cloneWorkspace({
+      url: parsed.data.url,
+      basePath: basePath.path,
+      ...(parsed.data.targetName ? { targetName: parsed.data.targetName } : {}),
+    }));
+    return reply.code(201).send({ workspace, message: "Repository cloned" });
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/api/workspaces/github", async (request, reply) => {
+  const parsed = createGithubRepositoryRequestSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  try {
+    const basePath = await addExistingWorkspace(parsed.data.basePath ?? configWorkspaceRoots[0] ?? process.cwd());
+    await assertAllowedWorkspaceBase(basePath.path);
+    const githubToken = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+    const workspace = store.addWorkspace(await createGithubRepositoryWorkspace({
+      name: parsed.data.name,
+      basePath: basePath.path,
+      ...(parsed.data.owner ? { owner: parsed.data.owner } : {}),
+      ...(parsed.data.description ? { description: parsed.data.description } : {}),
+      ...(parsed.data.private !== undefined ? { private: parsed.data.private } : {}),
+      ...(githubToken ? { token: githubToken } : {}),
+    }));
+    return reply.code(201).send({ workspace, message: "GitHub repository created and cloned" });
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
 
 app.get("/api/extensions", async () => ({
   webModules: getBakeryExtensionWebModules(),
@@ -79,7 +155,7 @@ app.get("/api/extensions", async () => ({
 }));
 
 app.get<{ Params: { extensionId: string; "*": string } }>("/api/extensions/:extensionId/web/*", async (request, reply) => {
-  const extension = extensionRegistry.extensions.find((candidate) => candidate.id === request.params.extensionId);
+  const extension = getBakeryExtensionRegistry().extensions.find((candidate) => candidate.id === request.params.extensionId);
   if (!extension?.rootDir) return reply.code(404).send({ error: "extension not found" });
   const relativePath = request.params["*"];
   const filePath = resolve(extension.rootDir, relativePath);

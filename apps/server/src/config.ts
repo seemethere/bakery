@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { AppConfig } from "@pi-web-agent/protocol";
+import { parseAllowedOrigins } from "./security-origin.js";
 
 function splitList(value: string | undefined): string[] {
   return (value ?? "")
@@ -23,6 +24,7 @@ export type ServerConfig = AppConfig & {
   worktreeDir: string;
   previewRuntimeDir: string;
   previewPublicBaseUrl?: string | undefined;
+  allowedOrigins: string[];
   fakeAgent: boolean;
 };
 
@@ -45,6 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     worktreeDir: env.PI_WEB_WORKTREE_DIR ? expandHome(env.PI_WEB_WORKTREE_DIR) : resolve(dataDir, "worktrees"),
     previewRuntimeDir: env.PI_WEB_PREVIEW_RUNTIME_DIR ? expandHome(env.PI_WEB_PREVIEW_RUNTIME_DIR) : resolve(dataDir, "preview-stacks"),
     previewPublicBaseUrl: env.PI_WEB_PREVIEW_PUBLIC_BASE_URL?.trim() || undefined,
+    allowedOrigins: parseAllowedOrigins(env.PI_WEB_ALLOWED_ORIGINS),
     fakeAgent: env.PI_WEB_FAKE_AGENT === "true" || env.PI_WEB_FAKE_AGENT === "1",
     toolPermissionPolicy: {
       allowedModes: ["bypass", "confirm"],

@@ -10,7 +10,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
-import { getBakeryExtensionCommands, isBundledExtensionCommand, runBundledExtensionCommand } from "./extensions.js";
+import { loadConfig } from "./config.js";
+import { getBakeryExtensionCommands, isBundledExtensionCommand, reloadConfiguredBakeryExtensions, runBundledExtensionCommand } from "./extensions.js";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
 export type BashResult = { output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string };
@@ -154,7 +155,7 @@ class QuestionBroker {
   }
 
   answer(payload: AnswerQuestionPayload): void {
-    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) throw new Error("No matching pending question.");
+    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) return;
     const resolver = this.resolver;
     this.pending = null;
     this.resolver = null;
@@ -171,6 +172,29 @@ class QuestionBroker {
   cancel(): void {
     if (!this.pending || !this.resolver) return;
     this.answer({ questionId: this.pending.id, cancelled: true, selectedIndex: null, wasCustom: false });
+  }
+
+  clear(): void {
+    this.pending = null;
+    this.resolver = null;
+    this.notify();
+  }
+
+  askCheckpoint(input: { title?: string; question: string; recommendation?: string; options?: Array<{ label: string; description?: string }>; recommendedOptionIndex?: number; allowCustomAnswer?: boolean }): PendingQuestion {
+    if (this.pending) throw new Error("A question is already pending for this session.");
+    const question: PendingQuestion = {
+      id: crypto.randomUUID(),
+      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+      question: input.question,
+      ...(input.recommendation?.trim() ? { recommendation: input.recommendation.trim() } : {}),
+      options: input.options ?? [],
+      ...(typeof input.recommendedOptionIndex === "number" && input.recommendedOptionIndex >= 0 && input.recommendedOptionIndex < (input.options?.length ?? 0) ? { recommendedOptionIndex: input.recommendedOptionIndex } : {}),
+      allowCustomAnswer: input.allowCustomAnswer ?? true,
+      createdAt: new Date().toISOString(),
+    };
+    this.pending = question;
+    this.notify();
+    return question;
   }
 
   async ask(input: { title?: string; question: string; recommendation?: string; options?: Array<{ label: string; description?: string }>; recommendedOptionIndex?: number; allowCustomAnswer?: boolean }, signal?: AbortSignal): Promise<QuestionAnswer> {
@@ -220,26 +244,17 @@ function createAskQuestionTool(broker: QuestionBroker) {
       recommendedOptionIndex: Type.Optional(Type.Number({ description: "Zero-based index of the recommended option when options are provided. The UI highlights and initially focuses this option." })),
       allowCustomAnswer: Type.Optional(Type.Boolean({ description: "Whether the user may type a custom answer. Defaults to true." })),
     }),
-    async execute(_toolCallId, params, signal) {
+    async execute(_toolCallId, params, _signal) {
       try {
-        const answer = await broker.ask(params, signal);
-        if (answer.cancelled) {
-          return {
-            content: [{ type: "text" as const, text: "User cancelled the question." }],
-            details: { questionId: answer.questionId, question: params.question, answer: null, selectedIndex: null, wasCustom: false, cancelled: true } as Record<string, unknown>,
-          };
-        }
-        const selected = typeof answer.selectedIndex === "number" ? params.options?.[answer.selectedIndex] : undefined;
-        const prefix = answer.wasCustom ? "User wrote" : selected ? `User selected option ${answer.selectedIndex! + 1}` : "User answered";
+        const question = broker.askCheckpoint(params);
         return {
-          content: [{ type: "text" as const, text: `${prefix}: ${answer.answer ?? ""}` }],
+          content: [{ type: "text" as const, text: "Question checkpoint shown to the operator. Stop here; the operator will continue in chat." }],
           details: {
-            questionId: answer.questionId,
+            questionId: question.id,
             question: params.question,
-            answer: answer.answer ?? null,
-            selectedIndex: answer.selectedIndex ?? null,
-            optionLabel: selected?.label,
-            wasCustom: answer.wasCustom ?? false,
+            options: params.options ?? [],
+            recommendedOptionIndex: params.recommendedOptionIndex ?? null,
+            terminalCheckpoint: true,
             cancelled: false,
           } as Record<string, unknown>,
         };
@@ -264,6 +279,9 @@ class InProcessSessionHandle implements SessionHandle {
   ) {}
 
   async prompt(text: string, images?: ImageContent[]): Promise<void> {
+    const pendingQuestion = this.questionBroker.getPendingQuestion();
+    if (pendingQuestion && (this.session.isStreaming || this.session.isBashRunning)) await this.session.abort();
+    if (pendingQuestion) this.questionBroker.clear();
     await this.session.prompt(text, images?.length ? { images } : undefined);
   }
 
@@ -408,7 +426,9 @@ class InProcessSessionHandle implements SessionHandle {
 
     if (parsed.name === "reload") {
       await this.session.reload();
-      return { handled: true, title: "/reload", body: "Reloaded extensions, skills, prompt templates, and context resources." };
+      const registry = await reloadConfiguredBakeryExtensions(loadConfig());
+      const issueText = registry.issues.length > 0 ? `\n\nExtension issues:\n${registry.issues.map((issue) => `- ${issue.path}: ${issue.message}`).join("\n")}` : "";
+      return { handled: true, title: "/reload", body: `Reloaded extensions, skills, prompt templates, and context resources. Bakery extensions loaded: ${registry.extensions.length}.${issueText}`, isError: registry.issues.length > 0 };
     }
     if (parsed.name === "compact") {
       const result = await this.session.compact(parsed.args || undefined);

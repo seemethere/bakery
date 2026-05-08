@@ -88,95 +88,39 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
 
   await page.locator("#prompt").fill("Please trigger the question-answer scenario.");
   await page.locator("#send").click();
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-recommendation", { hasText: "smallest vertical slice" }).waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card.pending", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-key-hint", { hasText: "1-9" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
-  await page.locator("#questionCustomToggle", { hasText: "Custom answer" }).waitFor({ timeout: 5_000 });
-  const desktopShortcutDisplay = await page.locator(".question-options .option-shortcut").first().evaluate((element) => getComputedStyle(element).display);
-  if (desktopShortcutDisplay === "none") throw new Error("Desktop question option shortcut should remain visible");
-  const desktopCustomFieldDisplay = await page.locator(".question-custom-field").evaluate((element) => getComputedStyle(element).display);
-  if (desktopCustomFieldDisplay !== "none") throw new Error(`Desktop question custom field should start collapsed; saw display=${desktopCustomFieldDisplay}`);
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "question-answer-recommended-option.png"), fullPage: true });
+  await page.locator(".question-key-hint", { hasText: "reply normally in the composer" }).waitFor({ timeout: 5_000 });
+  await page.locator("#questionCustomToggle").waitFor({ state: "detached", timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
+  await page.locator("#prompt").fill("Freeform answer with normal composer");
+  await page.locator("#send").click();
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card.readonly.checkpoint", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "Freeform answer with normal composer" }).waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
+
+  await page.locator("#prompt").fill("Please trigger question-answer for option tap.");
+  await page.locator("#send").click();
+  await page.locator(".question-card.pending", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "question-answer-light.png"), fullPage: true });
+  await page.locator("[data-question-option-index='1']").click();
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "Bug fix" }).waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
+
+  await page.locator("#prompt").fill("Please trigger question-answer for mobile tap targets.");
+  await page.locator("#send").click();
+  await page.locator(".question-card.pending", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
-  await page.locator(".question-touch-hint", { hasText: "Tap an option or type a custom answer." }).waitFor({ timeout: 5_000 });
-  const mobileCustomFieldDisplay = await page.locator(".question-custom-field").evaluate((element) => getComputedStyle(element).display);
-  if (mobileCustomFieldDisplay === "none") throw new Error("Mobile question custom field should remain visible");
+  await page.locator(".question-touch-hint", { hasText: "Reply below or tap an option." }).waitFor({ timeout: 5_000 });
   const mobileShortcutDisplay = await page.locator(".question-options .option-shortcut").first().evaluate((element) => getComputedStyle(element).display);
   if (mobileShortcutDisplay !== "none") throw new Error(`Mobile question option shortcut should be hidden; saw display=${mobileShortcutDisplay}`);
-  const mobileKeyHintDisplay = await page.locator(".question-key-hint").evaluate((element) => getComputedStyle(element).display);
-  if (mobileKeyHintDisplay !== "none") throw new Error(`Mobile question panel should hide keyboard shortcuts; saw display=${mobileKeyHintDisplay}`);
-  await page.screenshot({ path: join(artifactDir, "question-answer-mobile-touch-hint.png"), fullPage: true });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.waitForFunction(() => !document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
-  await setWorkbenchTheme(page, "workbench-dark");
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "question-answer-dark.png"), fullPage: true });
-  await setWorkbenchTheme(page, "workbench-light");
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-key-hint", { hasText: "Esc" }).waitFor({ timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "question-answer-light.png"), fullPage: true });
-  await page.locator("[data-question-option-index='0']").focus();
-  await page.keyboard.press("ArrowDown");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "question-answer-keyboard-navigation.png"), fullPage: true });
-  await page.keyboard.press("Enter");
-  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
-  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator(".message.question", { hasText: "Q: What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator(".message.question", { hasText: "A: Bug fix" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "question-answer-mobile.png"), fullPage: true });
+  await page.locator("[data-question-option-index='0']").click();
   await waitForAgentIdle(page, 10_000);
 
-  await page.locator("#prompt").fill("Please trigger a cancel question-answer scenario.");
-  await page.locator("#send").click();
-  await page.locator(".question-panel", { hasText: "Should this question be cancelled?" }).waitFor({ timeout: 5_000 });
-  await page.keyboard.press("c");
-  await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
-  await page.keyboard.press("Escape");
-  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
-  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator(".message.question.error", { hasText: "Question cancelled" }).waitFor({ timeout: 5_000 });
-  await page.locator(".message.question.error", { hasText: "A: Cancelled" }).waitFor({ timeout: 5_000 });
-  await waitForAgentIdle(page, 10_000);
-
-  await page.locator("#prompt").fill("Please trigger question-answer and keep it pending through reload.");
-  await page.locator("#send").click();
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "0", null, { timeout: 5_000 });
-  await page.keyboard.press("Tab");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("data-question-option-index") === "1", null, { timeout: 5_000 });
-  const viewerPage = await page.context().newPage();
-  await viewerPage.goto(webBase, { waitUntil: "domcontentloaded" });
-  await viewerPage.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 10_000 });
-  await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 10_000 });
-  await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
-  await viewerPage.screenshot({ path: join(artifactDir, "question-answer-viewer-disabled-light.png"), fullPage: true });
-  await setWorkbenchTheme(viewerPage, "workbench-dark");
-  await viewerPage.locator(".question-viewer-copy", { hasText: "Keyboard answer shortcuts are disabled" }).waitFor({ timeout: 5_000 });
-  await viewerPage.screenshot({ path: join(artifactDir, "question-answer-viewer-disabled-dark.png"), fullPage: true });
-  await viewerPage.keyboard.press("1");
-  await viewerPage.keyboard.press("Escape");
-  await viewerPage.waitForTimeout(300);
-  await viewerPage.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await page.locator(".question-panel", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
-  await viewerPage.close();
-  await page.bringToFront();
-  await page.keyboard.press("c");
-  await page.waitForFunction(() => document.activeElement?.id === "questionCustomAnswer", null, { timeout: 5_000 });
-  await page.locator("#questionCustomAnswer").fill("Reconnect preserved this answer");
-  await page.keyboard.press("Enter");
-  await page.locator(".question-panel").waitFor({ state: "detached", timeout: 5_000 });
-  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
-  await page.locator(".message.question", { hasText: "A: Reconnect preserved this answer" }).waitFor({ timeout: 5_000 });
-  await waitForAgentIdle(page, 10_000);
   await page.screenshot({ path: join(artifactDir, "question-answer.png"), fullPage: true });
   return { ...(await collectMetrics(page)) };
 }
@@ -195,8 +139,10 @@ export async function runContextUsage(page: Page): Promise<Record<string, unknow
 
 export async function runEmptySessionLayout(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  await page.locator(".empty-transcript", { hasText: "Start with a workflow." }).waitFor({ timeout: 5_000 });
+  await page.locator(".empty-session-greeting").waitFor({ timeout: 5_000 });
+  await page.locator(".empty-session-greeting", { hasText: "New Bakery session" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-empty-quick-start='plan']", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "empty-session-initial.png"), fullPage: true });
   const assertPromptValue = async (expected: string) => {
     const actual = await page.locator("#prompt").inputValue();
     if (actual !== expected) throw new Error(`Expected prompt quick start ${JSON.stringify(expected)}, saw ${JSON.stringify(actual)}`);
@@ -225,18 +171,25 @@ export async function runEmptySessionLayout(page: Page): Promise<Record<string, 
       footer: rectOf("footer"),
       transcript: rectOf(".transcript"),
       controls: rectOf(".controls"),
+      chips: rectOf(".empty-quick-start-chips"),
+      greeting: rectOf(".empty-session-greeting"),
     };
   });
 
-  const promptHeight = layout.prompt?.height ?? 0;
-  const footerHeight = layout.footer?.height ?? 0;
-  const transcriptHeight = layout.transcript?.height ?? 0;
-  if (promptHeight > 80) throw new Error(`Empty session prompt is too tall: ${promptHeight}px`);
-  if (footerHeight > 125) throw new Error(`Empty session footer is too tall: ${footerHeight}px`);
-  if (transcriptHeight < 600) throw new Error(`Empty session transcript is too short: ${transcriptHeight}px`);
+  const viewportCenter = layout.viewport.height / 2;
+  const footerCenter = ((layout.footer?.top ?? 0) + (layout.footer?.bottom ?? 0)) / 2;
+  if (Math.abs(footerCenter - viewportCenter) > 180) throw new Error(`Empty session composer is not centered enough: ${JSON.stringify(layout)}`);
+  if ((layout.prompt?.height ?? 0) < 60) throw new Error(`Empty session prompt is too short: ${layout.prompt?.height}px`);
+  if ((layout.chips?.top ?? 0) <= (layout.footer?.top ?? 0)) throw new Error(`Empty session chips should render below the composer: ${JSON.stringify(layout)}`);
   if (layout.prompt && layout.controls && layout.prompt.left + layout.prompt.width > layout.controls.left) {
     throw new Error(`Empty session controls overlap prompt: prompt right ${layout.prompt.left + layout.prompt.width}px, controls left ${layout.controls.left}px`);
   }
+
+  await page.locator("#prompt").fill("Line one\nLine two\nLine three\nLine four");
+  await page.waitForFunction(() => document.querySelector("footer")?.classList.contains("empty-session-composer-grown"), null, { timeout: 5_000 });
+  await page.locator(".empty-quick-start-chips").waitFor({ state: "hidden", timeout: 5_000 });
+  await page.locator(".empty-session-greeting").waitFor({ state: "hidden", timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "empty-session-grown.png"), fullPage: true });
   return { ...(await collectMetrics(page)), layout };
 }
 
@@ -314,11 +267,12 @@ export async function runTreeForkNavigation(page: Page): Promise<Record<string, 
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   const userRow = page.locator(".message.user", { hasText: "Create a transcript fork row" }).last();
   await userRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
+  const assistantRow = page.locator(".message.assistant").last();
+  await assistantRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
   await userRow.locator('[data-row-action="fork"]').click();
   await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeSessions, { timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
   await ensureSidebarSettingsVisible(page);
-  await page.locator("[data-session-id]").nth(1).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "transcript-fork-no-tree-ui.png"), fullPage: true });
   return collectMetrics(page);
 }

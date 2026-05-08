@@ -1,4 +1,4 @@
-import { isRenderableTranscriptItem, PiTranscriptRow, type TranscriptItem } from "./transcript";
+import { isRenderableTranscriptItem, PiTranscriptRow, type PlanActionOutcome, type TranscriptItem } from "./transcript";
 import { isAfterRunningTool, toolGroupPositionFor, transcriptElementOrderIndex } from "./transcript-renderer";
 
 export type TranscriptPointerDown = { id: string; x: number; y: number } | null;
@@ -20,6 +20,7 @@ export type TranscriptRowStateOptions = {
   canFork: (item: TranscriptItem) => boolean;
   renderedSegmentCache: Map<string, string>;
   localImageUrl: (path: string) => string | null;
+  planActionOutcomeFor: (transcriptId: string) => PlanActionOutcome | undefined;
 };
 
 export function findTranscriptElement(root: ParentNode, id: string): PiTranscriptRow | null {
@@ -75,6 +76,7 @@ export function updateTranscriptRow(row: PiTranscriptRow, transcript: Transcript
     canFork: options.canFork(item),
     afterRunningTool: isAfterRunningTool(transcript, item),
     toolGroupPosition: toolGroupPositionFor(transcript, item),
+    planActionOutcome: options.planActionOutcomeFor(item.id),
     cache: options.renderedSegmentCache,
     localImageUrl: options.localImageUrl,
   });

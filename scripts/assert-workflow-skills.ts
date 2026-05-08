@@ -34,6 +34,17 @@ const requiredSnippets = [
   "resolving dependencies between decisions one-by-one",
   "If a question can be answered by exploring the codebase or project notes, explore instead of asking",
   "top 1-3 candidate next slices",
+  "Subagent-assisted planning discipline",
+  "When the `subagent` tool is available",
+  "bounded read-only reconnaissance",
+  "one direct foreground `subagent(...)` tool call by default",
+  "`scout` or `context-builder` child",
+  "do not ask them to edit files, run implementation",
+  "synchronous foreground subagent runs by default",
+  "The parent Agent Session remains responsible",
+  "all `ask_question` checkpoints",
+  "do not delegate the interactive interview to a child session",
+  "If the `subagent` tool is unavailable",
   "Challenge terminology against the existing glossary immediately",
   "Sharpen fuzzy or overloaded language",
   "Stress-test domain relationships with concrete scenarios",
@@ -87,6 +98,10 @@ const guidanceSnippets = [
   "bun run report:iteration --session-history",
   ".pi/skills/iteration-observability/SKILL.md",
   "per-tool result payload size",
+  "## Subagent implementation hints",
+  "delegate only a clearly scoped file, module, or vertical slice",
+  "For validation help, ask subagents for focused test strategy",
+  "run the selected repository validation commands in the parent session",
 ];
 
 for (const snippet of guidanceSnippets) {

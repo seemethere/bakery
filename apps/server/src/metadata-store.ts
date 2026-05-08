@@ -1,12 +1,37 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession } from "@pi-web-agent/protocol";
+import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
 
 export type SessionPreferences = {
   webSessionId: string;
   toolPermissionMode: ToolPermissionMode | null;
   uiStateJson: string | null;
+};
+
+export type WebCommandResultRecord = {
+  id: string;
+  title: string;
+  body: string;
+  isError: boolean;
+  data?: unknown;
+  timestamp: string;
+};
+
+type WebCommandResultRow = {
+  id: string;
+  web_session_id: string;
+  title: string;
+  body: string;
+  is_error: number;
+  data_json: string | null;
+  timestamp: string;
+};
+
+type WorkspaceRow = {
+  path: string;
+  label: string;
+  created_at: string;
 };
 
 type SessionRow = {
@@ -122,6 +147,23 @@ export class MetadataStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS web_command_results (
+        id TEXT PRIMARY KEY,
+        web_session_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        is_error INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT,
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS workspaces (
+        path TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
     this.addColumn("web_sessions", "isolation_kind TEXT NOT NULL DEFAULT 'none'", "isolation_kind");
     this.addColumn("web_sessions", "source_cwd TEXT", "source_cwd");
@@ -148,6 +190,20 @@ export class MetadataStore {
       const inferred: TitleSource = first && row.title === cleanTitle(first) ? "first_prompt" : "manual";
       update.run(inferred, row.id);
     }
+  }
+
+  listWorkspaces(): Workspace[] {
+    return this.db
+      .query<WorkspaceRow, []>("SELECT * FROM workspaces ORDER BY label COLLATE NOCASE ASC, path ASC")
+      .all()
+      .map((row) => ({ path: row.path, label: row.label }));
+  }
+
+  addWorkspace(workspace: Workspace): Workspace {
+    this.db
+      .query("INSERT INTO workspaces (path, label, created_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET label = excluded.label")
+      .run(workspace.path, workspace.label, new Date().toISOString());
+    return workspace;
   }
 
   listSessions(): WebSession[] {
@@ -207,6 +263,35 @@ export class MetadataStore {
            ui_state_json = COALESCE(excluded.ui_state_json, session_preferences.ui_state_json)`,
       )
       .run(id, input.toolPermissionMode ?? null, input.uiStateJson ?? null);
+  }
+
+  addWebCommandResult(sessionId: string, input: { id?: string; title: string; body: string; isError?: boolean; data?: unknown; timestamp?: string }): WebCommandResultRecord {
+    const record: WebCommandResultRecord = {
+      id: input.id ?? `command:${crypto.randomUUID()}`,
+      title: input.title,
+      body: input.body,
+      isError: Boolean(input.isError),
+      ...(input.data !== undefined ? { data: input.data } : {}),
+      timestamp: input.timestamp ?? new Date().toISOString(),
+    };
+    this.db
+      .query("INSERT OR REPLACE INTO web_command_results (id, web_session_id, title, body, is_error, data_json, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(record.id, sessionId, record.title, record.body, record.isError ? 1 : 0, record.data === undefined ? null : JSON.stringify(record.data), record.timestamp);
+    return record;
+  }
+
+  listWebCommandResults(sessionId: string): WebCommandResultRecord[] {
+    return this.db
+      .query<WebCommandResultRow, [string]>("SELECT * FROM web_command_results WHERE web_session_id = ? ORDER BY timestamp ASC, id ASC")
+      .all(sessionId)
+      .map((row) => ({
+        id: row.id,
+        title: row.title,
+        body: row.body,
+        isError: Boolean(row.is_error),
+        ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
+        timestamp: row.timestamp,
+      }));
   }
 
   getSettings(): AppSettings {

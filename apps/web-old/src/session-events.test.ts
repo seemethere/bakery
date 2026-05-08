@@ -79,12 +79,36 @@ describe("session event helpers", () => {
       status: "running",
     });
 
-    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", output: "/repo\n" })).toMatchObject({
+    const firstUpdate = helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "/repo" });
+    expect(firstUpdate).toMatchObject({
+      id: "b1",
+      title: "$ pwd",
+      body: "/repo",
+      segments: [{ kind: "pre", text: "/repo" }],
+      status: "running",
+    });
+
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "\n", outputOffsetBytes: 5 }, firstUpdate ?? undefined)).toMatchObject({
       id: "b1",
       title: "$ pwd",
       body: "/repo\n",
       segments: [{ kind: "pre", text: "/repo\n" }],
       status: "running",
+    });
+
+    const literalStartingUpdate = helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "Starting…", outputOffsetBytes: 0 });
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: " real output", outputOffsetBytes: 11 }, literalStartingUpdate ?? undefined)).toMatchObject({
+      body: "Starting… real output",
+    });
+
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", outputDelta: "tail", outputOffsetBytes: 100 })).toMatchObject({
+      body: "[Earlier output will appear when the command completes.]\ntail",
+      segments: [{ kind: "pre", text: "[Earlier output will appear when the command completes.]\ntail" }],
+    });
+
+    expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_update", id: "b1", command: "pwd", output: "/repo\n" })).toMatchObject({
+      body: "/repo\n",
+      segments: [{ kind: "pre", text: "/repo\n" }],
     });
 
     expect(helpers.bashEventToTranscriptItem({ type: "bash_execution_end", id: "b1", command: "false", result: { output: "boom", exitCode: 1 } })).toMatchObject({
@@ -118,6 +142,59 @@ describe("session event helpers", () => {
     const failed = helpers.toolExecutionToTranscriptItem("tool_execution_end", { toolCallId: "t2", toolName: "bash", isError: true, result: { error: "nope" } });
     expect(failed?.status).toBe("error");
     expect(helpers.toolExecutionToTranscriptItem("other", {})).toBeNull();
+  });
+
+  test("hydrates active tool execution snapshots with stable ids", () => {
+    const start = helpers.activeToolExecutionSnapshotToTranscriptItem({
+      type: "tool_execution_start",
+      toolCallId: "sub-active",
+      toolName: "subagent",
+      args: { agent: "reviewer", task: "Review reconnect handling" },
+      startedAt: "2026-05-05T00:00:00.000Z",
+      eventTime: "2026-05-05T00:00:00.000Z",
+    });
+    expect(start).toMatchObject({ id: "tool:sub-active", title: "subagent", status: "running", startedAt: "2026-05-05T00:00:00.000Z" });
+
+    const update = helpers.activeToolExecutionSnapshotToTranscriptItem({
+      type: "tool_execution_update",
+      toolCallId: "sub-active",
+      toolName: "subagent",
+      args: { agent: "reviewer", task: "Review reconnect handling" },
+      startedAt: "2026-05-05T00:00:00.000Z",
+      partialResult: { content: [{ type: "text", text: "running" }], details: { mode: "single", progress: [{ agent: "reviewer", status: "running" }] } },
+      eventTime: "2026-05-05T00:00:01.000Z",
+    }, start ?? undefined);
+    expect(update).toMatchObject({ id: "tool:sub-active", title: "subagent", status: "running", startedAt: "2026-05-05T00:00:00.000Z" });
+    expect((update?.raw as { partialResult?: { details?: { progress?: unknown[] } } }).partialResult?.details?.progress?.length).toBe(1);
+    expect(helpers.activeToolExecutionSnapshotToTranscriptItem({ type: "tool_execution_update", toolCallId: "" } as never)).toBeNull();
+  });
+
+  test("preserves subagent partial and final details for card rendering", () => {
+    const update = helpers.toolExecutionToTranscriptItem("tool_execution_update", {
+      toolCallId: "sub-1",
+      toolName: "subagent",
+      args: { agent: "reviewer" },
+      partialResult: { content: [{ type: "text", text: "running" }], details: { mode: "single", progress: [{ agent: "reviewer", status: "running" }] } },
+    });
+    expect(update).toMatchObject({ id: "tool:sub-1", kind: "tool", title: "subagent", status: "running" });
+    expect((update?.raw as { partialResult?: { details?: { mode?: string } } }).partialResult?.details?.mode).toBe("single");
+    expect((update?.raw as { args?: { agent?: string } }).args?.agent).toBe("reviewer");
+
+    const sparseStart = helpers.toolExecutionToTranscriptItem("tool_execution_start", {
+      toolCallId: "sub-2",
+      toolName: "subagent",
+      args: { agent: "scout", task: "Inspect the mobile card layout" },
+    });
+    expect(sparseStart).toMatchObject({ id: "tool:sub-2", kind: "tool", title: "subagent", status: "running" });
+    expect((sparseStart?.raw as { args?: { task?: string } }).args?.task).toBe("Inspect the mobile card layout");
+
+    const end = helpers.toolExecutionToTranscriptItem("tool_execution_end", {
+      toolCallId: "sub-1",
+      toolName: "subagent",
+      result: { content: [{ type: "text", text: "done" }], details: { mode: "single", results: [{ agent: "reviewer", exitCode: 0 }] } },
+    }, update ?? undefined);
+    expect(end).toMatchObject({ id: "tool:sub-1", title: "subagent", status: "done" });
+    expect((end?.raw as { result?: { details?: { results?: unknown[] } } }).result?.details?.results?.length).toBe(1);
   });
 
   test("normalizes queue updates", () => {

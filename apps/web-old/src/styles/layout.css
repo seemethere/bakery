@@ -430,12 +430,12 @@ footer {
 footer::before {
   content: "";
   position: absolute;
-  inset: -104px 0 0;
+  inset: -28px 0 0;
   z-index: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 9%, transparent) 36%, color-mix(in srgb, var(--color-footer-bg) 38%, transparent) 68%, color-mix(in srgb, var(--color-footer-bg) 78%, transparent) 100%),
-    radial-gradient(ellipse at 50% 112%, color-mix(in srgb, var(--color-footer-bg) 78%, transparent) 0%, color-mix(in srgb, var(--color-footer-bg) 42%, transparent) 48%, transparent 72%);
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 5%, transparent) 42%, color-mix(in srgb, var(--color-footer-bg) 24%, transparent) 72%, color-mix(in srgb, var(--color-footer-bg) 72%, transparent) 100%),
+    radial-gradient(ellipse at 50% 112%, color-mix(in srgb, var(--color-footer-bg) 64%, transparent) 0%, color-mix(in srgb, var(--color-footer-bg) 30%, transparent) 44%, transparent 68%);
 }
 
 footer > * {
@@ -449,11 +449,33 @@ footer.running-footer {
 
 footer.running-footer::before {
   background:
-    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 10%, transparent) 34%, color-mix(in srgb, var(--color-footer-bg) 42%, transparent) 68%, color-mix(in srgb, var(--color-footer-bg) 82%, transparent) 100%),
-    radial-gradient(ellipse at 50% 108%, color-mix(in srgb, var(--color-accent-soft) 12%, transparent) 0%, color-mix(in srgb, var(--color-footer-bg) 60%, transparent) 54%, transparent 74%);
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--color-footer-bg) 6%, transparent) 40%, color-mix(in srgb, var(--color-footer-bg) 28%, transparent) 72%, color-mix(in srgb, var(--color-footer-bg) 78%, transparent) 100%),
+    radial-gradient(ellipse at 50% 108%, color-mix(in srgb, var(--color-accent-soft) 8%, transparent) 0%, color-mix(in srgb, var(--color-footer-bg) 50%, transparent) 50%, transparent 70%);
 }
 
 footer.model-picker-open {
   z-index: 11000;
+}
+
+main.empty-session-main {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+main.empty-session-main .transcript-shell,
+main.empty-session-main footer.empty-session-footer {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+main.empty-session-main footer.empty-session-footer {
+  box-sizing: border-box;
+  width: 100%;
+  align-self: center;
+  grid-template-columns: minmax(0, 860px);
+  padding-block: 18px;
+}
+
+main.empty-session-main footer.empty-session-footer::before {
+  display: none;
 }
 
