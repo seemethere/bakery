@@ -174,6 +174,7 @@ export const webSessionSchema = z.object({
   metadataGenerationCount: z.number().int().nonnegative(),
   metadataLastGeneratedAt: z.string().nullable(),
   autoGenerateMetadataOverride: autoGenerateMetadataOverrideSchema,
+  pinned: z.boolean(),
   createdAt: z.string(),
   lastOpenedAt: z.string(),
   lastActivityAt: z.string().optional(),
@@ -195,6 +196,7 @@ export const updateSessionRequestSchema = z.object({
   autoGenerateMetadataOverride: autoGenerateMetadataOverrideSchema.optional(),
   toolPermissionMode: toolPermissionModeSchema.optional(),
   uiStateJson: z.string().optional(),
+  pinned: z.boolean().optional(),
 });
 export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
 
@@ -445,6 +447,7 @@ export type ServerEnvelope = z.infer<typeof serverEnvelopeSchema>;
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hello_ack"), protocolVersion: z.literal(PROTOCOL_VERSION), clientId: z.string().optional() }),
   z.object({ type: z.literal("prompt"), text: z.string().min(1), images: z.array(z.string()).optional() }),
+  z.object({ type: z.literal("ask"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("command"), text: z.string().min(1) }),
   z.object({ type: z.literal("bash"), command: z.string().min(1), excludeFromContext: z.boolean().optional() }),
   z.object({ type: z.literal("steer"), text: z.string().min(1), images: z.array(z.string()).optional() }),

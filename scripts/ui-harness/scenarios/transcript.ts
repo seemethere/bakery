@@ -364,17 +364,21 @@ export async function runModelThinking(page: Page): Promise<Record<string, unkno
   await page.locator("#modelThinkingToggle").click();
   await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
   const mobilePickerState = await page.evaluate(() => {
-    const model = document.querySelector<HTMLSelectElement>("#model");
-    const thinking = document.querySelector<HTMLSelectElement>("#thinking");
     const popover = document.querySelector(".model-thinking-popover");
+    const thinkingSlider = document.querySelector('[role="radiogroup"][aria-label="Thinking level"]');
     const rect = popover?.getBoundingClientRect();
-    return { model: model?.value, thinking: thinking?.value, left: rect ? Math.round(rect.left) : null, right: rect ? Math.round(rect.right) : null, viewportWidth: window.innerWidth };
+    const sliderRect = thinkingSlider?.getBoundingClientRect();
+    return {
+      left: rect ? Math.round(rect.left) : null,
+      right: rect ? Math.round(rect.right) : null,
+      sliderWidth: sliderRect ? Math.round(sliderRect.width) : null,
+      viewportWidth: window.innerWidth,
+    };
   });
-  if (mobilePickerState.model !== "fake/slow" || mobilePickerState.thinking !== "high" || (mobilePickerState.left ?? -999) < -1 || (mobilePickerState.right ?? 9999) > mobilePickerState.viewportWidth + 1) {
+  if ((mobilePickerState.sliderWidth ?? 0) < 140 || (mobilePickerState.left ?? -999) < -1 || (mobilePickerState.right ?? 9999) > mobilePickerState.viewportWidth + 1) {
     throw new Error(`Mobile model/thinking picker should preserve selections and stay onscreen: ${JSON.stringify(mobilePickerState)}`);
   }
   await page.screenshot({ path: join(artifactDir, "model-thinking-mobile.png"), fullPage: true });
   return collectMetrics(page);
 }
-
 

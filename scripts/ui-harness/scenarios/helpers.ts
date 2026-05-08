@@ -100,12 +100,16 @@ export async function prepareSession(page: Page): Promise<string> {
   await page.locator("#apiBase").fill(apiBase);
   await page.locator("#token").fill("");
   await page.locator("#saveSettings").click();
+  if (await page.locator(".settings-dialog").isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape");
+    await page.locator(".settings-dialog").waitFor({ state: "detached", timeout: 5_000 });
+  }
   if (await page.locator("#workspace").count() === 0) {
     const mobileMenu = page.locator("#toggleSessionSidebarMobile");
     if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
     else if (await page.locator("#toggleSessionSidebar").count() > 0) await page.locator("#toggleSessionSidebar").click();
   }
-  await page.waitForFunction(() => document.querySelectorAll("#workspace option").length > 0, undefined, { timeout: 5_000 });
+  await page.locator("#newSession").waitFor({ state: "visible", timeout: 5_000 });
   const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
   await page.locator("#newSession").click();
   const response = await created;
@@ -187,4 +191,3 @@ export async function waitForPromptDisabled(page: Page): Promise<void> {
     return Boolean(prompt?.disabled);
   }, undefined, { timeout: 5_000 });
 }
-

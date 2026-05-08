@@ -85,6 +85,8 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   }
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/settings"]').click();
   await page.locator(".settings-page #apiBase").waitFor({ timeout: 5_000 });
+  await page.keyboard.press("Escape");
+  await page.locator(".settings-dialog").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/sessions"]').click();
   await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
@@ -390,5 +392,4 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
     ...(await collectMetrics(page)),
   };
 }
-
 
