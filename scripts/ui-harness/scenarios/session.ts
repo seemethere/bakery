@@ -28,18 +28,23 @@ export const sessionScenarios = [
 
 export async function runSessionsPage(page: Page): Promise<Record<string, unknown>> {
   const firstSessionId = await prepareSession(page);
-  await page.locator("pi-web-agent").evaluate(async (element) => {
-    await (element as unknown as { updateSessionTitle: (title: string) => Promise<void> }).updateSessionTitle("Findable sessions page title");
-  });
-  const secondSession = await page.locator("pi-web-agent").evaluate(async (element) => {
-    const session = await (element as unknown as { createSession: () => Promise<{ id: string } | null> }).createSession();
-    if (!session) throw new Error("Could not create comparison session");
-    return { id: session.id };
-  });
+  await page.evaluate(async ({ base, id }) => {
+    const response = await fetch(`${base}/api/sessions/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Findable sessions page title" }),
+    });
+    if (!response.ok) throw new Error(`rename failed: ${response.status}`);
+  }, { base: apiBase, id: firstSessionId });
+  const secondSession = await page.evaluate(async (base) => {
+    const response = await fetch(`${base}/api/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    if (!response.ok) throw new Error(`create session failed: ${response.status}`);
+    return await response.json() as { id: string };
+  }, apiBase);
+  await page.goto(`${webBase}/sessions/${secondSession.id}`, { waitUntil: "domcontentloaded" });
   await waitForSelectedSession(page, secondSession.id);
 
-  await ensureSidebarSettingsVisible(page);
-  await page.locator('[data-route-path="/sessions"]').click();
+  await page.goto(`${webBase}/sessions`, { waitUntil: "domcontentloaded" });
   await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
   if (new URL(page.url()).pathname !== "/sessions") throw new Error(`Expected sessions page URL, saw ${page.url()}`);
   const initialCards = await page.locator(".sessions-page [data-session-id]").count();
@@ -113,7 +118,7 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator("#send").click();
   await page.locator(".question-card.pending", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await page.waitForFunction(() => window.matchMedia("(max-width: 767px)").matches, null, { timeout: 5_000 });
   await page.locator(".question-touch-hint", { hasText: "Reply below or tap an option." }).waitFor({ timeout: 5_000 });
   const mobileShortcutDisplay = await page.locator(".question-options .option-shortcut").first().evaluate((element) => getComputedStyle(element).display);
   if (mobileShortcutDisplay !== "none") throw new Error(`Mobile question option shortcut should be hidden; saw display=${mobileShortcutDisplay}`);

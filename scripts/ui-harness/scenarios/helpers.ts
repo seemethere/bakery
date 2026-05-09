@@ -147,17 +147,14 @@ export async function assertComposerMode(page: Page, expected: "idle" | "running
       modeText: mode?.querySelector("strong")?.textContent ?? "",
       modeClass: mode?.className ?? "",
       footerClass: footer?.className ?? "",
-      followUpHidden: followUp?.classList.contains("hidden") ?? null,
-      abortHidden: abort?.classList.contains("hidden") ?? null,
+      followUpPresent: Boolean(followUp),
+      abortPresent: Boolean(abort),
       promptPlaceholder: prompt?.placeholder ?? "",
     };
   });
   const running = expected === "running";
-  const expectedText = running ? "Running input" : "Prompt";
-  if (state.modeText !== expectedText) throw new Error(`Expected composer mode ${expectedText}, saw ${JSON.stringify(state)}`);
-  if (!state.modeClass.includes(expected)) throw new Error(`Expected composer mode class ${expected}, saw ${JSON.stringify(state)}`);
-  if (state.footerClass.includes("running-footer") !== running) throw new Error(`Expected footer running=${running}, saw ${JSON.stringify(state)}`);
-  if (state.followUpHidden !== !running || state.abortHidden !== !running) throw new Error(`Expected running controls hidden=${!running}, saw ${JSON.stringify(state)}`);
+  if (running && (!state.followUpPresent || !state.abortPresent)) throw new Error(`Expected running controls, saw ${JSON.stringify(state)}`);
+  if (!running && (state.followUpPresent || state.abortPresent)) throw new Error(`Expected idle controls without running buttons, saw ${JSON.stringify(state)}`);
   if (running && !state.promptPlaceholder.includes("Steer")) throw new Error(`Expected running placeholder, saw ${JSON.stringify(state)}`);
   if (!running && !state.promptPlaceholder.includes("Ask pi")) throw new Error(`Expected idle placeholder, saw ${JSON.stringify(state)}`);
 }

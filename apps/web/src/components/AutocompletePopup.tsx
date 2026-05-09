@@ -54,6 +54,7 @@ export function AutocompletePopup({ state, onSelect }: Props) {
     <div className={cn(
       "relative z-[2] rounded-xl border border-border/50 bg-card shadow-xl overflow-hidden",
       state.type === "command" && "command-autocomplete",
+      state.type === "file" && "file-autocomplete",
     )}>
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 bg-muted/30">
         <span className="text-xs text-muted-foreground">{title}</span>
@@ -74,6 +75,7 @@ export function AutocompletePopup({ state, onSelect }: Props) {
             <button
               key={index}
               data-index={index}
+              data-file-index={state.type === "file" ? index : undefined}
               type="button"
               onMouseDown={(e) => e.preventDefault()} // don't blur textarea
               onClick={() => onSelect(index)}

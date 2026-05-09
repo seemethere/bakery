@@ -610,12 +610,12 @@ function QuestionSummaryRow({ item }: { item: TranscriptItem }) {
 
   return (
     <div className={cn(
-      "group/row mx-4 my-1 rounded-lg border px-3 py-2.5 text-sm",
+      "question-card readonly group/row mx-4 my-1 rounded-lg border px-3 py-2.5 text-sm",
       cancelled
-        ? "border-border/30 bg-muted/20 opacity-60"
+        ? "cancelled border-border/30 bg-muted/20 opacity-60"
         : terminalCheckpoint
-          ? "border-yellow-500/25 bg-yellow-500/5"
-          : "border-yellow-500/20 bg-yellow-500/5",
+          ? "checkpoint border-yellow-500/25 bg-yellow-500/5"
+          : "answered border-yellow-500/20 bg-yellow-500/5",
     )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="mb-1.5 flex items-center gap-2">
         <span className={cn(

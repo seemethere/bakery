@@ -75,7 +75,7 @@ export function SessionsPage({ sessions, selectedSessionId, connectionStatus, on
   }
 
   return (
-    <section className="h-full overflow-y-auto p-5 grid content-start gap-4 max-w-5xl" aria-labelledby="sessionsPageTitle">
+    <section className="sessions-page h-full overflow-y-auto p-5 grid content-start gap-4 max-w-5xl" aria-labelledby="sessionsPageTitle">
       <div className="grid gap-2">
         <p className="text-xs font-extrabold uppercase tracking-widest text-muted-foreground">Sessions</p>
         <h1 id="sessionsPageTitle" className="text-3xl font-semibold tracking-tight text-foreground m-0">

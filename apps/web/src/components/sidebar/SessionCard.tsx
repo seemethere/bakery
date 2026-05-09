@@ -70,10 +70,10 @@ export function SessionCard({
     <div
       data-session-id={session.id}
       className={cn(
-        "group/session-card relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-md text-sm transition-colors",
+        "session-card group/session-card relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-md text-sm transition-colors",
         "text-sidebar-foreground/70",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+        isSelected && "active bg-sidebar-accent text-sidebar-accent-foreground font-medium",
       )}
     >
       <button
@@ -99,7 +99,7 @@ export function SessionCard({
             {status && <StatusBadge variant={status as StatusVariant}>{status}</StatusBadge>}
           </span>
         </span>
-        <small className="block text-[11px] text-sidebar-foreground/40 truncate">
+        <small className="session-snippet block text-[11px] text-sidebar-foreground/40 truncate">
           {relativeTime(activity)}
         </small>
       </button>

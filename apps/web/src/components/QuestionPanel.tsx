@@ -75,7 +75,7 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
       ref={panelRef}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
-      className="question-card relative z-[2] rounded-xl border border-yellow-500/30 bg-yellow-500/5 shadow-xl overflow-hidden focus:outline-none"
+      className="question-card pending relative z-[2] rounded-xl border border-yellow-500/30 bg-yellow-500/5 shadow-xl overflow-hidden focus:outline-none"
       aria-label="Answer needed"
     >
       {/* Header */}
@@ -105,6 +105,7 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
               <button
                 key={index}
                 data-option-index={index}
+                data-question-option-index={index}
                 type="button"
                 disabled={!canAnswer}
                 onClick={() => handleOptionClick(index)}
@@ -112,14 +113,14 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
                   "group w-full text-left rounded-lg px-3 py-2 text-sm border transition-colors",
                   "focus:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-primary",
                   isRec
-                    ? "border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
+                    ? "recommended-option border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/15"
                     : "border-border/40 bg-card/50 hover:bg-sidebar-accent",
                   !canAnswer && "opacity-50 cursor-not-allowed",
                 )}
               >
                 <span className="flex items-center gap-2">
                   <span className={cn(
-                    "shrink-0 w-5 h-5 rounded text-[10px] font-mono font-bold flex items-center justify-center border",
+                    "option-shortcut shrink-0 w-5 h-5 rounded text-[10px] font-mono font-bold hidden sm:flex items-center justify-center border",
                     isRec ? "border-yellow-500/50 text-yellow-400" : "border-border/50 text-muted-foreground",
                   )}>
                     {index + 1}
@@ -180,11 +181,14 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
         {!canAnswer ? (
           <p className="text-xs text-yellow-500/70">Reconnect to answer this question.</p>
         ) : (
-          <span className="text-[10px] text-muted-foreground/50 hidden sm:block">
-            <kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">1-9</kbd> answer &nbsp;
-            {question.allowCustomAnswer && <><kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">C</kbd> custom &nbsp;</>}
-            <kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">Esc</kbd> cancel
-          </span>
+          <>
+            <span className="question-key-hint text-[10px] text-muted-foreground/50 hidden sm:block">
+              <kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">1-9</kbd> answer &nbsp;
+              {question.allowCustomAnswer && <><kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">C</kbd> custom &nbsp;</>}
+              <kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">Esc</kbd> cancel; reply normally in the composer
+            </span>
+            <span className="question-touch-hint text-[10px] text-muted-foreground/50 sm:hidden">Reply below or tap an option.</span>
+          </>
         )}
         <button
           type="button"
