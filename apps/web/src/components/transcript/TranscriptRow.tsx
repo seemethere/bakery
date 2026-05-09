@@ -210,10 +210,11 @@ function copyableText(item: TranscriptItem): string {
   return segmentText || item.body || item.title;
 }
 
-function RowActions({ item, align = "end" }: { item: TranscriptItem; align?: "start" | "end" }) {
+function RowActions({ item, context, align = "end" }: { item: TranscriptItem; context?: TranscriptRenderContext; align?: "start" | "end" }) {
   const [copied, setCopied] = useState(false);
   const text = copyableText(item);
-  if (!text.trim()) return null;
+  const forkEntryId = context ? forkEntryIdForTranscriptItem(item, context.sessionTreeNodes) : null;
+  if (!text.trim() && !forkEntryId) return null;
 
   async function handleCopy() {
     await navigator.clipboard.writeText(text);
@@ -232,16 +233,25 @@ function RowActions({ item, align = "end" }: { item: TranscriptItem; align?: "st
             className="opacity-0 transition-opacity group-hover/row:opacity-100 focus:opacity-100 data-[popup-open]:opacity-100"
             aria-label="Message actions"
             title="Message actions"
+            data-row-action="menu"
           />
         }
       >
         {copied ? <CheckIcon /> : <MoreHorizontalIcon />}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-36">
-        <DropdownMenuItem data-row-action="copy" onClick={() => void handleCopy()}>
-          <CopyIcon />
-          Copy
-        </DropdownMenuItem>
+      <DropdownMenuContent align={align} className="w-44">
+        {text.trim() && (
+          <DropdownMenuItem data-row-action="copy" onClick={() => void handleCopy()}>
+            <CopyIcon />
+            Copy
+          </DropdownMenuItem>
+        )}
+        {forkEntryId && context && (
+          <DropdownMenuItem data-row-action="fork" onClick={() => void context.onFork(forkEntryId)}>
+            <GitForkIcon />
+            Fork from here
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -499,7 +509,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
       data-collapsed={expanded ? "false" : "true"}
     >
       <div className="absolute right-1 top-1 z-[1]">
-        <RowActions item={item} />
+        <RowActions item={item} context={context} />
       </div>
       <button
         type="button"
@@ -632,7 +642,7 @@ function QuestionSummaryRow({ item }: { item: TranscriptItem }) {
 
 // ---- System / question / error rows ----------------------------------------
 
-function SystemRow({ item }: { item: TranscriptItem }) {
+function SystemRow({ item, context }: { item: TranscriptItem; context: TranscriptRenderContext }) {
   return (
     <div className={cn(
       "group/row mx-4 my-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
@@ -644,7 +654,7 @@ function SystemRow({ item }: { item: TranscriptItem }) {
           <pre className="mt-1 whitespace-pre-wrap break-words opacity-80">{item.body}</pre>
         )}
       </div>
-      <RowActions item={item} />
+      <RowActions item={item} context={context} />
     </div>
   );
 }
@@ -669,8 +679,17 @@ export function TranscriptRow({
   const context = { sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan };
   if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} />;
-  if (item.kind === "tool" && hasSubagentCard(item)) return <SubagentCard item={item} />;
+  if (item.kind === "tool" && hasSubagentCard(item)) {
+    return (
+      <div className="group/row relative" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-subagent-card="true">
+        <div className="absolute right-5 top-2 z-[1]">
+          <RowActions item={item} context={context} />
+        </div>
+        <SubagentCard item={item} />
+      </div>
+    );
+  }
   if (item.kind === "tool") return <ToolRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "question") return <QuestionSummaryRow item={item} />;
-  return <SystemRow item={item} />;
+  return <SystemRow item={item} context={context} />;
 }

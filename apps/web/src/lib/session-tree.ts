@@ -28,16 +28,37 @@ export function currentSessionTreePath(sessionTree: SessionTreeResponse | null):
   return path.reverse();
 }
 
-export function forkEntryIdForTranscriptItem(item: TranscriptItem, nodes: SessionTreeNode[]): string | null {
-  if (item.kind !== "user") return null;
+function transcriptItemTimestamp(item: TranscriptItem): string {
   const rawTimestamp = isRecord(item.raw) ? String(item.raw.timestamp ?? "") : "";
-  const idTimestamp = item.id.startsWith("user:") ? item.id.slice("user:".length) : "";
-  const timestamp = rawTimestamp || idTimestamp;
+  if (rawTimestamp) return rawTimestamp;
+  const separator = item.id.indexOf(":");
+  return separator >= 0 ? item.id.slice(separator + 1) : "";
+}
+
+function treeNodeMatchesTranscriptKind(node: SessionTreeNode, item: TranscriptItem): boolean {
+  if (item.kind === "tool") return node.role === "toolResult" || node.role === "bashExecution" || node.type.includes("tool") || node.title.startsWith("Tool result") || node.title.startsWith("$ ");
+  if (item.kind === "assistant" || item.kind === "user") return node.type === "message" && node.role === item.kind;
+  return node.type === item.kind || node.role === item.kind;
+}
+
+function normalizedTreeTitle(node: SessionTreeNode): string {
+  return node.title.replace(/^\w+:\s*/, "").replace(/\s+/g, " ").trim();
+}
+
+export function forkEntryIdForTranscriptItem(item: TranscriptItem, nodes: SessionTreeNode[]): string | null {
+  const timestamp = transcriptItemTimestamp(item);
   const text = item.body.replace(/\s+/g, " ").trim();
+  const title = item.title?.replace(/\s+/g, " ").trim() ?? "";
   const node = nodes.find((candidate) => {
-    if (candidate.type !== "message" || candidate.role !== "user") return false;
+    if (!treeNodeMatchesTranscriptKind(candidate, item)) return false;
     if (timestamp && candidate.timestamp === timestamp) return true;
-    return Boolean(text && candidate.title.replace(/^user:\s*/, "").startsWith(text.slice(0, 80)));
+    const candidateTitle = normalizedTreeTitle(candidate);
+    if ((item.kind === "user" || item.kind === "assistant") && text && candidateTitle) {
+      const textPrefix = text.slice(0, 80).trim();
+      return candidateTitle.startsWith(textPrefix) || text.startsWith(candidateTitle);
+    }
+    if (item.kind === "tool" && title) return candidate.title.includes(title) || title.includes(candidateTitle);
+    return false;
   });
   return node?.id ?? null;
 }

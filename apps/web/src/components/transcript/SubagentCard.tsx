@@ -305,13 +305,17 @@ export function SubagentCard({ item }: { item: TranscriptItem }) {
   const fallbackText = firstUsefulLine(item.body || textFromContent(result?.content), item.status === "running" ? "Subagent is running…" : "Subagent completed.");
 
   return (
-    <div className={cn(
-      "mx-4 my-1 rounded-lg border text-sm overflow-hidden",
-      status === "running" && "border-blue-500/25 bg-blue-500/5",
-      status === "completed" && "border-emerald-500/20 bg-emerald-500/5",
-      status === "failed" && "border-red-500/25 bg-red-500/5",
-      (status === "paused" || status === "detached") && "border-yellow-500/25 bg-yellow-500/5",
-    )}>
+    <div
+      className={cn(
+        "mx-4 my-1 rounded-lg border text-sm overflow-hidden",
+        status === "running" && "border-blue-500/25 bg-blue-500/5",
+        status === "completed" && "border-emerald-500/20 bg-emerald-500/5",
+        status === "failed" && "border-red-500/25 bg-red-500/5",
+        (status === "paused" || status === "detached") && "border-yellow-500/25 bg-yellow-500/5",
+      )}
+      data-testid="subagent-card"
+      data-subagent-status={status}
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/20">
         <div className="flex items-center gap-2">
