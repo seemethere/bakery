@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon } from "lucide-react";
 import type { ExtensionCatalog, SessionTreeNode } from "@pi-web-agent/protocol";
 import type { TranscriptItem } from "@/lib/transcript";
@@ -6,6 +6,24 @@ import { isAskQuestionToolItem } from "@/lib/transcript";
 import { isNonInformativeSubagentManagementReceipt } from "./SubagentCard";
 import { TranscriptRow } from "./TranscriptRow";
 import { Button } from "@/components/ui/button";
+
+const AUTO_SCROLL_STORAGE_KEY = "piWebAutoScroll";
+
+function loadAutoScrollPreference(): boolean {
+  try {
+    return localStorage.getItem(AUTO_SCROLL_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function saveAutoScrollPreference(value: boolean): void {
+  try {
+    localStorage.setItem(AUTO_SCROLL_STORAGE_KEY, value ? "true" : "false");
+  } catch {
+    // Ignore storage failures in private/locked-down browser contexts.
+  }
+}
 
 type Props = {
   items: TranscriptItem[];
@@ -25,19 +43,26 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   const contentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
-  const lastSignatureRef = useRef("");
+  const autoScrollRef = useRef(loadAutoScrollPreference());
+  const unreadIdsRef = useRef(new Set<string>());
+  const previousVisibleSignaturesRef = useRef(new Map<string, string>());
   const smoothJumpRef = useRef(false);
   const smoothJumpFrameRef = useRef<number | null>(null);
-  const [isFollowingLatest, setIsFollowingLatest] = useState(true);
+  const [isFollowingLatest, setIsFollowingLatest] = useState(autoScrollRef.current);
   const [unreadCount, setUnreadCount] = useState(0);
+  const visibleItems = useMemo(
+    () => items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)),
+    [items],
+  );
 
   function markBottomState(atBottom: boolean) {
     if (smoothJumpRef.current && !atBottom) return;
     autoScrollRef.current = atBottom;
+    saveAutoScrollPreference(atBottom);
     setIsFollowingLatest(atBottom);
     if (atBottom) {
       smoothJumpRef.current = false;
+      unreadIdsRef.current.clear();
       setUnreadCount(0);
     }
   }
@@ -121,24 +146,38 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     return () => observer.disconnect();
   }, [items.length]);
 
+  useLayoutEffect(() => {
+    unreadIdsRef.current.clear();
+    previousVisibleSignaturesRef.current = new Map(visibleItems.map((item) => [item.id, `${item.status ?? ""}:${item.body.length}:${item.segments?.length ?? 0}`]));
+    setUnreadCount(0);
+    setIsFollowingLatest(autoScrollRef.current);
+  }, [sessionId]);
+
   // Follow streaming updates while the reader is already at the latest item.
   useLayoutEffect(() => {
-    const last = items.at(-1);
-    const signature = last ? `${last.id}:${last.status ?? ""}:${last.body.length}:${items.length}` : `empty:${items.length}`;
-    const changed = signature !== lastSignatureRef.current;
-    lastSignatureRef.current = signature;
+    const nextSignatures = new Map(visibleItems.map((item) => [item.id, `${item.status ?? ""}:${item.body.length}:${item.segments?.length ?? 0}`]));
     if (!autoScrollRef.current) {
-      if (changed && items.length > 0) setUnreadCount((count) => count + 1);
+      if (previousVisibleSignaturesRef.current.size === 0 && unreadIdsRef.current.size === 0) {
+        previousVisibleSignaturesRef.current = nextSignatures;
+        return;
+      }
+      for (const item of visibleItems) {
+        if (previousVisibleSignaturesRef.current.get(item.id) !== nextSignatures.get(item.id)) unreadIdsRef.current.add(item.id);
+      }
+      previousVisibleSignaturesRef.current = nextSignatures;
+      setUnreadCount(unreadIdsRef.current.size);
       return;
     }
+    previousVisibleSignaturesRef.current = nextSignatures;
     setIsFollowingLatest(true);
+    unreadIdsRef.current.clear();
     setUnreadCount(0);
     followLatest();
     const frame = requestAnimationFrame(() => {
       followLatest();
     });
     return () => cancelAnimationFrame(frame);
-  }, [items]);
+  }, [visibleItems]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -150,18 +189,22 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     return () => observer.disconnect();
   }, []);
 
-  // Always scroll to bottom when a new session is opened (items goes from >0 to 0)
+  // Empty transcripts have no unread rows; keep the persisted follow preference intact.
   useEffect(() => {
     if (items.length === 0) {
-      autoScrollRef.current = true;
-      setIsFollowingLatest(true);
+      unreadIdsRef.current.clear();
+      previousVisibleSignaturesRef.current.clear();
+      setIsFollowingLatest(autoScrollRef.current);
       setUnreadCount(0);
     }
   }, [items.length]);
 
   function jumpToLatest() {
     autoScrollRef.current = true;
+    saveAutoScrollPreference(true);
     smoothJumpRef.current = true;
+    unreadIdsRef.current.clear();
+    previousVisibleSignaturesRef.current.clear();
     setIsFollowingLatest(true);
     setUnreadCount(0);
     smoothFollowLatest();
@@ -205,7 +248,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     <div className="relative min-h-0 flex-1">
       <div ref={containerRef} data-testid="transcript" className="h-full overflow-y-auto py-4">
         <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
-          {items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)).map((item) => (
+          {visibleItems.map((item) => (
             <TranscriptRow
               key={item.id}
               item={item}
