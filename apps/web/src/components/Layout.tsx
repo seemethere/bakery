@@ -27,6 +27,7 @@ type Props = {
   onRenameSession: (id: string, title: string) => void;
   onTogglePinSession: (id: string, pinned: boolean) => void;
   onUpdateSessionMetadata: (id: string, input: { title?: string | null; summary?: string | null }) => Promise<WebSession | null>;
+  onAttachWorkspace: (sessionId: string, cwd: string) => Promise<WebSession | null>;
   onWorkspaceChange: (path: string) => void;
   onOpenSettings: () => void;
 };
@@ -48,6 +49,7 @@ export function Layout({
   onRenameSession,
   onTogglePinSession,
   onUpdateSessionMetadata,
+  onAttachWorkspace,
   onWorkspaceChange,
   onOpenSettings,
 }: Props) {
@@ -91,10 +93,12 @@ export function Layout({
       <SidebarInset className="min-h-0 overflow-hidden">
         <Header
           session={selectedSession}
+          workspaces={workspaces}
           connectionStatus={connectionStatus}
           isBootstrapping={isBootstrapping}
           fetchJson={fetchJson}
           onUpdateSessionMetadata={onUpdateSessionMetadata}
+          onAttachWorkspace={onAttachWorkspace}
         />
 
         <main className="flex-1 min-h-0 overflow-hidden grid" style={{ gridTemplateRows: "1fr" }}>

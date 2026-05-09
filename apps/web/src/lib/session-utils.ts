@@ -101,7 +101,7 @@ export function sessionDisplayTitle(session: WebSession): string {
     (session.lastUserPrompt && isGenericSessionPrompt(session.lastUserPrompt)
       ? "New session"
       : session.lastUserPrompt?.trim().slice(0, 60)) ||
-    pathBasename(session.sourceCwd ?? session.cwd) ||
+    pathBasename(session.sourceCwd ?? session.cwd ?? "") ||
     "Untitled session"
   );
 }
@@ -117,18 +117,25 @@ export function sessionSnippet(session: WebSession): string {
 }
 
 export function sessionWorkspaceLabel(session: WebSession): string {
+  const workspacePath = sessionWorkspacePath(session);
+  if (!workspacePath && session.kind === "chat_only") return "Chat";
+  if (!workspacePath && session.kind === "draft") return "Draft";
   return session.isolationKind === "git_worktree"
-    ? pathBasename(session.sourceCwd ?? session.cwd)
-    : pathBasename(session.cwd);
+    ? pathBasename(workspacePath ?? "")
+    : pathBasename(session.cwd ?? workspacePath ?? "");
 }
 
 export function sessionMetadataLabel(session: WebSession): string {
+  const workspacePath = sessionWorkspacePath(session);
+  if (!workspacePath && session.kind === "chat_only") return "Chat-only";
+  if (!workspacePath && session.kind === "draft") return "Draft";
   if (session.isolationKind === "git_worktree") {
-    const repo = pathBasename(session.sourceCwd ?? session.cwd);
+    const repo = pathBasename(workspacePath ?? "");
     return `${repo}${session.worktreeBranch ? ` · ${session.worktreeBranch}` : ""}`;
   }
-  const repo = pathBasename(session.cwd);
-  const parent = pathParent(session.cwd);
+  const cwd = session.cwd ?? workspacePath ?? "";
+  const repo = pathBasename(cwd);
+  const parent = pathParent(cwd);
   return `${repo}${parent && parent !== repo ? ` · ${parent}` : ""}`;
 }
 
@@ -179,7 +186,7 @@ export function persistCollapsedWorkspaceGroups(groups: Set<string>): void {
   localStorage.setItem(collapsedWorkspaceGroupsStorageKey, JSON.stringify([...groups]));
 }
 
-function sessionWorkspacePath(session: WebSession): string {
+function sessionWorkspacePath(session: WebSession): string | null {
   return session.sourceCwd ?? session.cwd;
 }
 
@@ -197,6 +204,7 @@ export function groupedByWorkspace(sessions: WebSession[], workspaces: Workspace
   for (const session of [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a))) {
     if (session.pinned) continue;
     const path = sessionWorkspacePath(session);
+    if (path === null) continue;
     const existing = byPath.get(path);
     if (existing) {
       existing.sessions.push(session);

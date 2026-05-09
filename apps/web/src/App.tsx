@@ -55,7 +55,7 @@ function AppInner() {
     navigate(result.nextSession ? sessionRoutePath(result.nextSession.id) : sessionsRoutePath(), { replace: true });
   }
 
-  const selectedWorkspacePath = conn.selectedSession?.cwd ?? conn.workspaces[0]?.path ?? "";
+  const selectedWorkspacePath = conn.selectedSession?.cwd ?? "";
   const isSessionRouteBootstrapping = route.kind === "session" && conn.isBootstrapping;
   const sessionRouteMissing = route.kind === "session"
     && !conn.isBootstrapping
@@ -79,6 +79,7 @@ function AppInner() {
       onRenameSession={(id, title) => void conn.renameSession(id, title)}
       onTogglePinSession={(id, pinned) => void conn.togglePinSession(id, pinned)}
       onUpdateSessionMetadata={conn.updateSessionMetadata}
+      onAttachWorkspace={conn.attachWorkspace}
       onWorkspaceChange={() => {}}
       onOpenSettings={() => setSettingsOpen(true)}
     >

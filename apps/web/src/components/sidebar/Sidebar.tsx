@@ -135,6 +135,12 @@ export function Sidebar({
     () => groupedByWorkspace(sessions, workspaces),
     [sessions, workspaces],
   );
+  const chatSessions = useMemo(
+    () => sessions
+      .filter((s) => !s.pinned && !s.cwd && !s.sourceCwd && (s.kind === "chat_only" || s.kind === "draft"))
+      .sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime()),
+    [sessions],
+  );
 
   return (
     <SidebarPrimitive id="sessionSidebar" className="session-sidebar" collapsible="icon">
@@ -260,10 +266,46 @@ export function Sidebar({
                 onDeleteSession={onDeleteSession}
                 onRenameSession={onRenameSession}
                 onTogglePinSession={onTogglePinSession}
+                onNewSessionInWorkspace={(cwd) => onNewSession(cwd)}
               />
             ))
           )}
         </SidebarGroup>
+
+        {!isBootstrapping && chatSessions.length > 0 && (
+          <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
+            <div className="group/chatshead flex h-7 items-center px-2">
+              <span className="flex-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
+                Chats
+              </span>
+              <button
+                type="button"
+                aria-label="New chat"
+                title="New chat (no workspace)"
+                onClick={() => onNewSession()}
+                className="flex size-4 items-center justify-center rounded text-sidebar-foreground/40 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/chatshead:opacity-100 focus:opacity-100"
+              >
+                <PlusIcon className="size-3" />
+              </button>
+            </div>
+            <SidebarGroupContent>
+              <div className="grid gap-1">
+                {chatSessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    selectedSessionId={selectedSession?.id}
+                    connectionStatus={connectionStatus}
+                    onSelect={onSelectSession}
+                    onDelete={onDeleteSession}
+                    onRename={onRenameSession}
+                    onTogglePin={onTogglePinSession}
+                  />
+                ))}
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter>
@@ -379,6 +421,7 @@ function WorkspaceGroup({
   onDeleteSession,
   onRenameSession,
   onTogglePinSession,
+  onNewSessionInWorkspace,
 }: {
   group: SessionWorkspaceGroup;
   selectedSessionId: string | undefined;
@@ -390,6 +433,7 @@ function WorkspaceGroup({
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
   onTogglePinSession: (id: string, pinned: boolean) => void;
+  onNewSessionInWorkspace: (cwd: string) => void;
 }) {
   return (
     <Collapsible open={expanded} onOpenChange={onToggle}>
@@ -415,7 +459,27 @@ function WorkspaceGroup({
             {isActiveWorkspace && (
               <span className="size-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
             )}
-            <span className="text-[10px] text-sidebar-foreground/30">
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={`New session in ${group.label}`}
+              title={`New session in ${group.label}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewSessionInWorkspace(group.path);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNewSessionInWorkspace(group.path);
+                }
+              }}
+              className="hidden size-4 items-center justify-center rounded text-sidebar-foreground/40 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/wg:opacity-100 group-hover/wg:flex focus:opacity-100 focus:flex"
+            >
+              <PlusIcon className="size-3" />
+            </span>
+            <span className="text-[10px] text-sidebar-foreground/30 group-hover/wg:hidden">
               {group.sessions.length}
             </span>
           </button>

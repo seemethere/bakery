@@ -179,10 +179,22 @@ export class SessionHub {
   private pendingCommands: string[] = [];
   private flushingPendingCommands = false;
   private readonly broadcastMetrics = emptyBroadcastMetrics();
-  private readonly unsubscribe: () => void;
-  private readonly unsubscribeQuestion: () => void;
+  private readonly sessionId: string;
+  private handle: SessionHandle | null;
+  private unsubscribe: () => void = () => undefined;
+  private unsubscribeQuestion: () => void = () => undefined;
+  private promotePromise: Promise<SessionHandle> | null = null;
+  private pendingModel: string | null = null;
+  private pendingThinkingLevel: string | null = null;
 
-  constructor(private readonly handle: SessionHandle, private readonly deps: SessionHubDeps) {
+  constructor(sessionId: string, handle: SessionHandle | null, private readonly deps: SessionHubDeps) {
+    this.sessionId = sessionId;
+    this.handle = null;
+    if (handle) this.attachHandle(handle);
+  }
+
+  private attachHandle(handle: SessionHandle): void {
+    this.handle = handle;
     this.unsubscribe = handle.subscribe((event, raw) => {
       this.rememberActiveToolExecution(event);
       this.broadcast({ type: "agent_event", event, raw });
@@ -190,7 +202,7 @@ export class SessionHub {
         void this.broadcastSettingsUpdate();
         void this.flushPendingCommands();
       }
-      const webSession = deps.store.getSession(handle.id);
+      const webSession = this.deps.store.getSession(handle.id);
       if (this.clients.size === 0 && webSession) {
         void handle.snapshot(webSession).then((snapshot) => {
           if (snapshot.status === "idle") this.scheduleDispose();
@@ -202,16 +214,62 @@ export class SessionHub {
     });
   }
 
+  private async promote(webSession: WebSession): Promise<SessionHandle> {
+    if (this.handle) return this.handle;
+    if (this.promotePromise) return this.promotePromise;
+    const mode: "workspace" | "chat_only" = webSession.cwd ? "workspace" : "chat_only";
+    this.promotePromise = (async () => {
+      const handle = await this.deps.runner.createSession({
+        id: webSession.id,
+        cwd: webSession.cwd,
+        piSessionFile: webSession.piSessionFile,
+        mode,
+      });
+      if (this.pendingModel) await handle.setModel(this.pendingModel);
+      if (this.pendingThinkingLevel) await handle.setThinkingLevel(this.pendingThinkingLevel);
+      this.pendingModel = null;
+      this.pendingThinkingLevel = null;
+      if (webSession.kind === "draft") {
+        this.deps.store.setKind(webSession.id, mode);
+      }
+      this.attachHandle(handle);
+      void this.broadcastSettingsUpdate();
+      return handle;
+    })();
+    try {
+      return await this.promotePromise;
+    } finally {
+      this.promotePromise = null;
+    }
+  }
+
+  private requireHandle(): SessionHandle {
+    if (!this.handle) throw new Error("session has not been started yet");
+    return this.handle;
+  }
+
+  private async ensureHandle(): Promise<SessionHandle> {
+    if (this.handle) return this.handle;
+    const webSession = this.deps.store.getSession(this.sessionId);
+    if (!webSession) throw new Error("session not found");
+    return this.promote(webSession);
+  }
+
   add(socket: SocketClient["socket"], requestedClientId?: string): void {
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
     this.disposeTimer = undefined;
 
-    const clientId = requestedClientId && !this.clients.has(requestedClientId) ? requestedClientId : crypto.randomUUID();
+    const clientId = requestedClientId ?? crypto.randomUUID();
+    const previousClient = this.clients.get(clientId);
+    if (previousClient) {
+      previousClient.bufferedPayloads = [];
+      previousClient.socket.close(1000, "client reconnected");
+    }
     const client: SocketClient = { clientId, seq: 0, snapshotPending: true, bufferedPayloads: [], socket };
     this.clients.set(clientId, client);
     if (!this.controllerId) this.controllerId = clientId;
 
-    const webSession = this.deps.store.getSession(this.handle.id);
+    const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) {
       socket.close(1008, "session not found");
       return;
@@ -232,6 +290,7 @@ export class SessionHub {
     });
 
     socket.on("close", () => {
+      if (this.clients.get(clientId) !== client) return;
       this.clients.delete(clientId);
       client.bufferedPayloads = [];
       if (this.controllerId === clientId) {
@@ -258,7 +317,7 @@ export class SessionHub {
     this.unsubscribeQuestion();
     for (const client of this.clients.values()) client.socket.close(1001, "session disposed");
     this.clients.clear();
-    await this.deps.runner.disposeSession(this.handle.id);
+    await this.deps.runner.disposeSession(this.sessionId);
   }
 
   private controllerFor(currentClientId: string): ControllerInfo {
@@ -334,7 +393,7 @@ export class SessionHub {
     this.broadcastMetrics.slowestBroadcastMs = Math.max(this.broadcastMetrics.slowestBroadcastMs, Math.round(sample.elapsedMs));
     this.broadcastMetrics.lastPayloadType = payloadType;
     if (process.env.PI_WEB_BROADCAST_METRICS === "1" && (sample.bufferedMessages > 0 || sample.maxPayloadBytes > 64_000 || sample.elapsedMs > 25)) {
-      console.warn("[session-hub:broadcast]", JSON.stringify({ sessionId: this.handle.id, payloadType, ...sample, elapsedMs: Math.round(sample.elapsedMs) }));
+      console.warn("[session-hub:broadcast]", JSON.stringify({ sessionId: this.sessionId, payloadType, ...sample, elapsedMs: Math.round(sample.elapsedMs) }));
     }
   }
 
@@ -361,14 +420,16 @@ export class SessionHub {
   }
 
   private async broadcastSettingsUpdate(): Promise<void> {
+    if (!this.handle) return;
     const settings = await this.handle.getSettings();
     this.broadcast({ type: "settings_update", settings });
   }
 
   private async runBashCommand(command: string, excludeFromContext?: boolean): Promise<void> {
-    const webSession = this.deps.store.getSession(this.handle.id);
+    const handle = this.requireHandle();
+    const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) throw new Error("session not found");
-    const snapshot = await this.handle.snapshot(webSession);
+    const snapshot = await handle.snapshot(webSession);
     if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
 
     const id = `bash:${crypto.randomUUID()}`;
@@ -384,7 +445,7 @@ export class SessionHub {
       },
     });
     try {
-      const result = await this.handle.executeBash(command, (chunk) => {
+      const result = await handle.executeBash(command, (chunk) => {
         const outputOffsetBytes = outputBytes;
         chunkCount += 1;
         const chunkBytes = Buffer.byteLength(chunk, "utf8");
@@ -422,6 +483,15 @@ export class SessionHub {
   }
 
   private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
+    if (!this.handle) {
+      const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+      return {
+        session: webSession,
+        status: "idle",
+        messages: mergeSnapshotMessagesWithWebCommands([], commandRecords),
+        pendingQuestion: null,
+      };
+    }
     const snapshot = await this.handle.snapshot(webSession);
     const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
     const activeToolExecutions = [...this.activeToolExecutions.values()];
@@ -434,23 +504,23 @@ export class SessionHub {
 
   private commandServices() {
     return {
-      getSessionCwd: () => this.handle.cwd,
-      hasCommand: (name: string) => this.handle.getCommands().some((command) => command.name === name),
+      getSessionCwd: () => this.handle?.cwd ?? process.cwd(),
+      hasCommand: (name: string) => this.handle ? this.handle.getCommands().some((command) => command.name === name) : false,
       generateSessionDetails: async (options: Parameters<typeof generateAndApplySessionDetails>[2]) => {
-        const webSession = this.deps.store.getSession(this.handle.id);
+        const webSession = this.deps.store.getSession(this.sessionId);
         if (!webSession) throw new Error("session not found");
         return await generateAndApplySessionDetails(webSession, {
           config: this.deps.config,
           store: this.deps.store,
           runner: this.deps.runner,
-          getBroadcaster: (sessionId) => sessionId === this.handle.id ? this : undefined,
+          getBroadcaster: (sessionId) => sessionId === this.sessionId ? this : undefined,
         }, options);
       },
     };
   }
 
   private async emitCommandResult(title: string, body: string, isError = false, data?: unknown): Promise<void> {
-    const record = this.deps.store.addWebCommandResult(this.handle.id, { title, body, isError, ...(data !== undefined ? { data } : {}) });
+    const record = this.deps.store.addWebCommandResult(this.sessionId, { title, body, isError, ...(data !== undefined ? { data } : {}) });
     this.broadcast({
       type: "agent_event",
       event: {
@@ -468,12 +538,13 @@ export class SessionHub {
     const result = await runBundledExtensionCommand(parsed.name, parsed.args, this.commandServices());
     if (!result) return false;
     if (result.kind === "launchPrompt") {
-      const webSession = this.deps.store.getSession(this.handle.id);
+      const webSession = this.deps.store.getSession(this.sessionId);
       if (webSession && !webSession.title) {
         const updated = this.deps.store.updateSession(webSession.id, { title: result.title ?? "Workflow", titleSource: "first_prompt" });
         if (updated) this.broadcastMetadataUpdate(updated);
       }
-      await this.handle.prompt(result.prompt, images);
+      const handle = await this.ensureHandle();
+      await handle.prompt(result.prompt, images);
       await this.broadcastSettingsUpdate();
       return true;
     }
@@ -488,7 +559,8 @@ export class SessionHub {
 
   private async flushPendingCommands(): Promise<void> {
     if (this.flushingPendingCommands || this.pendingCommands.length === 0) return;
-    const webSession = this.deps.store.getSession(this.handle.id);
+    if (!this.handle) return;
+    const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) return;
     const snapshot = await this.handle.snapshot(webSession);
     if (snapshot.status !== "idle") return;
@@ -508,14 +580,14 @@ export class SessionHub {
     this.disposeTimer = setTimeout(() => {
       void (async () => {
         if (this.clients.size > 0) return;
-        const webSession = this.deps.store.getSession(this.handle.id);
-        const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
+        const webSession = this.deps.store.getSession(this.sessionId);
+        const status = webSession && this.handle ? (await this.handle.snapshot(webSession)).status : "idle";
         if (status === "running" && this.deps.config.sessionLifecycle.disconnectedRunningPolicy === "let-finish") {
           this.disposeTimer = undefined;
           return;
         }
-        if (status === "running") await this.handle.abort();
-        this.deps.removeHub(this.handle.id);
+        if (status === "running" && this.handle) await this.handle.abort();
+        this.deps.removeHub(this.sessionId);
         await this.dispose();
       })();
     }, this.deps.config.sessionLifecycle.disconnectedIdleTimeoutMs);
@@ -548,14 +620,17 @@ export class SessionHub {
 
     try {
       if (parsed.data.type === "bash") {
+        this.requireHandle();
         await this.runBashCommand(parsed.data.command, parsed.data.excludeFromContext);
       } else if (parsed.data.type === "command") {
-        const webSession = this.deps.store.getSession(this.handle.id);
-        const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
+        const handle = await this.ensureHandle();
+        const webSession = this.deps.store.getSession(this.sessionId);
+        const status = webSession ? (await handle.snapshot(webSession)).status : "idle";
         if (status === "idle") await this.runBundledCommandText(parsed.data.text);
         else await this.queueCommandUntilIdle(parsed.data.text);
       } else if (parsed.data.type === "ask") {
-        const webSession = this.deps.store.getSession(this.handle.id);
+        const handle = await this.ensureHandle();
+        const webSession = this.deps.store.getSession(this.sessionId);
         if (webSession && !webSession.title) {
           const title = firstPromptTitle(parsed.data.text);
           if (title) {
@@ -563,12 +638,12 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await this.handle.prompt(askPrompt(parsed.data.text), parsed.data.images?.map(dataUrlToImageContent));
+        await handle.prompt(askPrompt(parsed.data.text), parsed.data.images?.map(dataUrlToImageContent));
         await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
         if (nameCommand.matched) {
-          const webSession = this.deps.store.getSession(this.handle.id);
+          const webSession = this.deps.store.getSession(this.sessionId);
           if (!webSession) throw new Error("session not found");
           let body: string;
           if (nameCommand.clear) {
@@ -576,7 +651,7 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
             body = "Session title cleared. Click ✨ to generate a new title/summary suggestion when enough context is available.";
           } else if (nameCommand.title) {
-            this.handle.setSessionName(nameCommand.title);
+            this.handle?.setSessionName(nameCommand.title);
             const updated = this.deps.store.updateSession(webSession.id, { title: nameCommand.title, titleSource: "manual" });
             if (updated) this.broadcastMetadataUpdate(updated);
             body = `Session title set to: ${nameCommand.title}`;
@@ -586,23 +661,24 @@ export class SessionHub {
           await this.emitCommandResult("/name", body);
           return;
         }
+        const handle = await this.ensureHandle();
         if (await this.runBundledCommandText(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent))) return;
-        const builtinResult = await this.handle.runBuiltinCommand(parsed.data.text);
+        const builtinResult = await handle.runBuiltinCommand(parsed.data.text);
         if (builtinResult.handled) {
           if (builtinResult.launchPrompt) {
-            const webSession = this.deps.store.getSession(this.handle.id);
+            const webSession = this.deps.store.getSession(this.sessionId);
             if (webSession && !webSession.title) {
               const updated = this.deps.store.updateSession(webSession.id, { title: builtinResult.title ?? "Workflow", titleSource: "first_prompt" });
               if (updated) this.broadcastMetadataUpdate(updated);
             }
-            await this.handle.prompt(builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
+            await handle.prompt(builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
             await this.broadcastSettingsUpdate();
             return;
           }
           await this.emitCommandResult(builtinResult.title ?? "Slash command", builtinResult.body ?? "", builtinResult.isError ?? false, builtinResult.data);
           return;
         }
-        const webSession = this.deps.store.getSession(this.handle.id);
+        const webSession = this.deps.store.getSession(this.sessionId);
         if (webSession && !webSession.title) {
           const title = firstPromptTitle(parsed.data.text);
           if (title) {
@@ -610,12 +686,12 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await this.handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+        await handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
         await this.broadcastSettingsUpdate();
-      } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
-      else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+      } else if (parsed.data.type === "steer") await this.requireHandle().steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+      else if (parsed.data.type === "follow_up") await this.requireHandle().followUp(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
       else if (parsed.data.type === "cancel_queued_message") {
-        const queued = await this.handle.cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
+        const queued = await this.requireHandle().cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
         this.broadcast({
           type: "agent_event",
           event: {
@@ -624,14 +700,32 @@ export class SessionHub {
             data: { type: "queue_update", ...queued },
           },
         });
-      } else if (parsed.data.type === "answer_question") this.handle.answerQuestion(parsed.data.payload);
-      else if (parsed.data.type === "abort") await this.handle.abort();
+      } else if (parsed.data.type === "answer_question") {
+        const payload = parsed.data.payload;
+        const handle = this.requireHandle();
+        if (payload.answer && !payload.cancelled && handle.isCheckpointQuestion(payload.questionId)) {
+          await handle.prompt(payload.answer.trim(), []);
+        } else {
+          handle.answerQuestion(payload);
+        }
+      }
+      else if (parsed.data.type === "abort") await this.requireHandle().abort();
       else if (parsed.data.type === "set_model") {
-        await this.handle.setModel(parsed.data.model);
-        await this.broadcastSettingsUpdate();
+        if (!this.handle) {
+          if (this.deps.config.modelPolicy.allowedModels && !this.deps.config.modelPolicy.allowedModels.includes(parsed.data.model)) throw new Error(`Model not allowed: ${parsed.data.model}`);
+          this.pendingModel = parsed.data.model;
+        } else {
+          await this.handle.setModel(parsed.data.model);
+          await this.broadcastSettingsUpdate();
+        }
       } else if (parsed.data.type === "set_thinking") {
-        await this.handle.setThinkingLevel(parsed.data.level);
-        await this.broadcastSettingsUpdate();
+        if (!this.handle) {
+          if (!this.deps.config.modelPolicy.allowedThinkingLevels.includes(parsed.data.level)) throw new Error(`Thinking level not allowed: ${parsed.data.level}`);
+          this.pendingThinkingLevel = parsed.data.level;
+        } else {
+          await this.handle.setThinkingLevel(parsed.data.level);
+          await this.broadcastSettingsUpdate();
+        }
       }
     } catch (error) {
       this.send(client, { type: "error", code: "agent_error", message: error instanceof Error ? error.message : String(error) });
@@ -686,12 +780,18 @@ export function createSessionHubRegistry(deps: Omit<SessionHubDeps, "removeHub">
         let hub = sessionHubs.get(webSession.id);
         if (!hub) {
           try {
-            const handle = await deps.runner.createSession({
-              id: webSession.id,
-              cwd: webSession.cwd,
-              piSessionFile: webSession.piSessionFile,
-            });
-            hub = new SessionHub(handle, hubDeps);
+            // Drafts spawn lazily on first prompt. Existing workspace/chat-only sessions spawn eagerly on connect.
+            if (webSession.kind === "draft") {
+              hub = new SessionHub(webSession.id, null, hubDeps);
+            } else {
+              const handle = await deps.runner.createSession({
+                id: webSession.id,
+                cwd: webSession.cwd,
+                piSessionFile: webSession.piSessionFile,
+                mode: webSession.kind === "chat_only" ? "chat_only" : "workspace",
+              });
+              hub = new SessionHub(webSession.id, handle, hubDeps);
+            }
             sessionHubs.set(webSession.id, hub);
           } catch (error) {
             socket.close(1011, error instanceof Error ? error.message : String(error));

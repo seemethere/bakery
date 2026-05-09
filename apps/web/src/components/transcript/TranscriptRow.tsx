@@ -20,7 +20,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan } from "@/lib/transcript";
+import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan, isRecord } from "@/lib/transcript";
+import { hasSubagentCard, SubagentCard } from "./SubagentCard";
 import { extensionCardPayload } from "@/lib/extension-cards";
 import { forkEntryIdForTranscriptItem } from "@/lib/session-tree";
 
@@ -486,6 +487,70 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
   );
 }
 
+// ---- Question summary rows --------------------------------------------------
+
+function QuestionSummaryRow({ item }: { item: TranscriptItem }) {
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const details = isRecord(raw.details) ? raw.details : null;
+  const cancelled = item.status === "error" || details?.cancelled === true;
+  const terminalCheckpoint = details?.terminalCheckpoint === true;
+
+  const question = typeof details?.question === "string"
+    ? details.question
+    : item.body.replace(/^Q:\s*/m, "").split("\n")[0] ?? item.body;
+
+  const answer = cancelled
+    ? "Cancelled"
+    : terminalCheckpoint
+      ? "Reply below or choose an option."
+      : String(details?.answer ?? details?.optionLabel ?? "").trim() || "—";
+
+  const kicker = cancelled ? "Question cancelled" : terminalCheckpoint ? "Question asked" : "Question answered";
+
+  const selected = terminalCheckpoint
+    ? "Chat checkpoint"
+    : typeof details?.selectedIndex === "number"
+      ? `Option ${details.selectedIndex + 1}`
+      : details?.wasCustom === true
+        ? "Custom answer"
+        : "Answer";
+
+  return (
+    <div className={cn(
+      "group/row mx-4 my-1 rounded-lg border px-3 py-2.5 text-sm",
+      cancelled
+        ? "border-border/30 bg-muted/20 opacity-60"
+        : terminalCheckpoint
+          ? "border-yellow-500/25 bg-yellow-500/5"
+          : "border-yellow-500/20 bg-yellow-500/5",
+    )}>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className={cn(
+          "text-[10px] font-semibold uppercase tracking-wide",
+          cancelled ? "text-muted-foreground" : "text-yellow-500/80",
+        )}>
+          {kicker}
+        </span>
+        <span className="text-[10px] text-muted-foreground/60">{selected}</span>
+      </div>
+      <p className="text-xs text-foreground/80 leading-snug">{question}</p>
+      {!terminalCheckpoint && (
+        <div className="mt-1.5 flex items-baseline gap-1.5">
+          <span className="text-[10px] font-medium text-muted-foreground">
+            {cancelled ? "Result" : "Answer"}
+          </span>
+          <span className={cn(
+            "text-xs font-medium",
+            cancelled ? "text-muted-foreground" : "text-foreground",
+          )}>
+            {answer}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- System / question / error rows ----------------------------------------
 
 function SystemRow({ item }: { item: TranscriptItem }) {
@@ -524,6 +589,8 @@ export function TranscriptRow({
   const context = { sessionId, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan };
   if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} />;
+  if (item.kind === "tool" && hasSubagentCard(item)) return <SubagentCard item={item} />;
   if (item.kind === "tool") return <ToolRow item={item} showThinking={showThinking} context={context} />;
+  if (item.kind === "question") return <QuestionSummaryRow item={item} />;
   return <SystemRow item={item} />;
 }

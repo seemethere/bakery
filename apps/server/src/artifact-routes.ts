@@ -67,6 +67,7 @@ export function registerArtifactRoutes(app: FastifyInstance, deps: ArtifactRoute
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const mime = imageMimeTypes.get(extensionOf(parsed.data.path));
     if (!mime) return reply.code(415).send({ error: "only image previews are supported" });
+    if (session.cwd === null) return reply.code(404).send({ error: "session has no workspace" });
     try {
       const file = await resolveSessionFile(session.cwd, parsed.data.path);
       const info = await stat(file);

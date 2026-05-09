@@ -5,6 +5,7 @@ import { applySessionMetadataSuggestion } from "./metadata-routes.js";
 function session(overrides: Partial<WebSession> = {}): WebSession {
   return {
     id: "s1",
+    kind: "workspace",
     cwd: "/tmp/project",
     piSessionFile: "/tmp/session.jsonl",
     isolationKind: "none",

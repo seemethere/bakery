@@ -155,7 +155,7 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
           <section className="grid gap-3">
             <SectionTitle title="Workspace" />
             <div className="grid gap-2">
-              <DetailRow label="Path" value={session.cwd} important onCopy={() => void handleCopy("Workspace copied", session.cwd)} />
+              <DetailRow label="Path" value={session.cwd ?? "—"} important onCopy={() => void handleCopy("Workspace copied", session.cwd ?? "")} />
               {session.worktreePath && <DetailRow label="Worktree" value={session.worktreePath} important onCopy={() => void handleCopy("Worktree copied", session.worktreePath)} />}
               {session.sourceCwd && <DetailRow label="Source" value={session.sourceCwd} onCopy={() => void handleCopy("Source copied", session.sourceCwd)} />}
             </div>

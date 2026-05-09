@@ -282,6 +282,10 @@ class FakeSessionHandle implements SessionHandle {
     return this.pendingQuestion;
   }
 
+  isCheckpointQuestion(questionId: string): boolean {
+    return Boolean(this.pendingQuestion && this.pendingQuestion.id === questionId && !this.questionResolver);
+  }
+
   answerQuestion(payload: AnswerQuestionPayload): void {
     if (!this.pendingQuestion || payload.questionId !== this.pendingQuestion.id || !this.questionResolver) return;
     const resolver = this.questionResolver;
@@ -663,7 +667,7 @@ export class FakePiSessionRunner implements PiSessionRunner {
   async createSession(options: CreateSessionOptions): Promise<SessionHandle> {
     const existing = this.handles.get(options.id);
     if (existing) return existing;
-    const handle = new FakeSessionHandle(options.id, options.cwd, options.piSessionFile, this.modelPolicy);
+    const handle = new FakeSessionHandle(options.id, options.cwd ?? process.cwd(), options.piSessionFile, this.modelPolicy);
     this.handles.set(options.id, handle);
     return handle;
   }

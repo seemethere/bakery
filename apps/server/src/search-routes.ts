@@ -21,6 +21,7 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     if (!session) return reply.code(404).send({ error: "session not found" });
     const parsed = commandQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (session.cwd === null) return { query: parsed.data.q, commands: [] };
 
     try {
       const handle = await runner.createSession({
@@ -48,6 +49,7 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     if (!session) return reply.code(404).send({ error: "session not found" });
     const parsed = fileSearchQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (session.cwd === null) return { query: parsed.data.q, files: [] };
     const files = await searchFiles(session.cwd, parsed.data.q, parsed.data.limit);
     return { query: parsed.data.q, files };
   });
@@ -57,6 +59,7 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     if (!session) return reply.code(404).send({ error: "session not found" });
     const parsed = fileCompleteQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    if (session.cwd === null) return { prefix: parsed.data.prefix, files: [] };
     const files = await completeFiles(session.cwd, parsed.data.prefix, parsed.data.limit);
     return { prefix: parsed.data.prefix, files };
   });

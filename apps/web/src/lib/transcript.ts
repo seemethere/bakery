@@ -34,7 +34,7 @@ export type PlanCardData = {
 
 // ---- Helpers ----------------------------------------------------------------
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -281,6 +281,16 @@ export function formatToolTitle(name: unknown, args: unknown): string {
   if (toolName === "grep" && toolArgs.pattern) return `grep ${String(toolArgs.pattern)}`;
   if (toolName === "find" && toolArgs.pattern) return `find ${String(toolArgs.pattern)}`;
   return toolName;
+}
+
+export function isAskQuestionToolItem(item: TranscriptItem): boolean {
+  if (item.kind !== "tool") return false;
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const toolName = String(raw.toolName ?? raw.name ?? "");
+  if (toolName === "ask_question") return true;
+  const result = isRecord(raw.result) ? raw.result : raw;
+  const details = isRecord(result.details) ? result.details : isRecord(raw.details) ? raw.details : null;
+  return Boolean(details?.questionId || details?.question || /^question$/i.test(item.title.trim()));
 }
 
 function questionSummaryFromTool(item: TranscriptItem): TranscriptItem | null {

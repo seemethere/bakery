@@ -7,6 +7,7 @@ import type {
   PendingQuestion,
   ServerEnvelope,
   HelloMessage,
+  ModelInfo,
   SessionIsolationKind,
   SessionRuntimeSettings,
   SessionSnapshot,
@@ -59,6 +60,26 @@ function replaceSession(sessions: WebSession[], session: WebSession): WebSession
     : [session, ...sessions];
 }
 
+type ModelCatalog = {
+  defaultModel: string | null;
+  models: ModelInfo[];
+  thinking: { default: string; levels: string[] };
+};
+
+function fallbackRuntimeSettings(config: AppConfig | null, catalog: ModelCatalog | null): SessionRuntimeSettings | null {
+  if (!config) return null;
+  const availableModels = catalog?.models ?? [];
+  const defaultModel = catalog?.defaultModel ?? config.modelPolicy.defaultModel ?? null;
+  const model = availableModels.find((item) => item.id === defaultModel) ?? availableModels[0] ?? null;
+  return {
+    model,
+    availableModels,
+    thinkingLevel: catalog?.thinking.default ?? config.modelPolicy.defaultThinkingLevel,
+    availableThinkingLevels: catalog?.thinking.levels ?? config.modelPolicy.allowedThinkingLevels,
+    contextUsage: { tokens: null, contextWindow: 1, percent: null },
+  };
+}
+
 export type ServerConnectionHandle = {
   sessions: WebSession[];
   workspaces: Workspace[];
@@ -79,6 +100,7 @@ export type ServerConnectionHandle = {
   selectSession: (id: string) => void;
   newSession: (cwd?: string) => Promise<WebSession | null>;
   newIsolatedSession: (cwd?: string) => Promise<WebSession | null>;
+  attachWorkspace: (sessionId: string, cwd: string) => Promise<WebSession | null>;
   deleteSession: (id: string) => Promise<{ deleted: boolean; nextSession: WebSession | null; error?: string }>;
   renameSession: (id: string, title: string) => Promise<{ renamed: boolean; error?: string }>;
   togglePinSession: (id: string, pinned: boolean) => Promise<WebSession | null>;
@@ -103,6 +125,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
   const [sessions, setSessions] = useState<WebSession[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [runtimeSettings, setRuntimeSettings] = useState<SessionRuntimeSettings | null>(null);
   const [selectedSession, setSelectedSession] = useState<WebSession | null>(null);
@@ -119,6 +142,8 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
   // Refs so callbacks always see latest values without re-creating
   const apiBaseRef = useRef(apiBase);
   const tokenRef = useRef(token);
+  const configRef = useRef<AppConfig | null>(null);
+  const modelCatalogRef = useRef<ModelCatalog | null>(null);
   const preferredSessionIdRef = useRef(preferredSessionId);
   const selectedSessionRef = useRef<WebSession | null>(null);
   const sessionsRef = useRef<WebSession[]>([]);
@@ -132,6 +157,8 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
 
   useEffect(() => { apiBaseRef.current = apiBase; }, [apiBase]);
   useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { configRef.current = config; }, [config]);
+  useEffect(() => { modelCatalogRef.current = modelCatalog; }, [modelCatalog]);
   useEffect(() => { preferredSessionIdRef.current = preferredSessionId; }, [preferredSessionId]);
   useEffect(() => { connectionStatusRef.current = connectionStatus; }, [connectionStatus]);
 
@@ -160,6 +187,9 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
       selectedSessionRef.current = merged;
       setSelectedSession(merged);
     }
+    setSnapshot((currentSnapshot) => currentSnapshot?.session.id === merged.id
+      ? { ...currentSnapshot, session: { ...currentSnapshot.session, ...merged } }
+      : currentSnapshot);
     return merged;
   }, []);
 
@@ -173,7 +203,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
 
     setConnectionStatus("connecting");
     setSnapshot(null);
-    setRuntimeSettings(null);
+    setRuntimeSettings(fallbackRuntimeSettings(configRef.current, modelCatalogRef.current));
     setPendingQuestion(null);
     setController(null);
     setRunningQueue(emptyRunningQueue());
@@ -206,7 +236,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
           setBootstrapError(null);
           const snap = payload.snapshot;
           setSnapshot(snap);
-          setRuntimeSettings(snap.settings ?? null);
+          setRuntimeSettings(snap.settings ?? fallbackRuntimeSettings(configRef.current, modelCatalogRef.current));
           setConnectionStatus(snap.status);
           setPendingQuestion(snap.pendingQuestion ?? null);
           setController(snap.controller ?? null);
@@ -276,15 +306,20 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     setIsBootstrapping(true);
     setBootstrapError(null);
     try {
-      const [fetchedConfig, fetchedWorkspaces, fetchedSessions, fetchedSettings] = await Promise.all([
+      const [fetchedConfig, fetchedModelCatalog, fetchedWorkspaces, fetchedSessions, fetchedSettings] = await Promise.all([
         api<AppConfig>("/api/config"),
+        api<ModelCatalog>("/api/models"),
         api<Workspace[]>("/api/workspaces"),
         api<WebSession[]>("/api/sessions"),
         api<AppSettings>("/api/settings"),
       ]);
       setConfig(fetchedConfig);
+      configRef.current = fetchedConfig;
+      setModelCatalog(fetchedModelCatalog);
+      modelCatalogRef.current = fetchedModelCatalog;
       setWorkspaces(fetchedWorkspaces);
       setAppSettings(fetchedSettings);
+      setRuntimeSettings((current) => current ?? fallbackRuntimeSettings(fetchedConfig, fetchedModelCatalog));
       void loadExtensionCatalog({ apiBase: apiBaseRef.current, token: tokenRef.current, api }).then(setExtensionCatalog).catch(() => setExtensionCatalog(null));
       setSessions(fetchedSessions);
       sessionsRef.current = fetchedSessions;
@@ -332,12 +367,13 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
   }, [connectWebSocket]);
 
   const newSession = useCallback(async (cwdOverride?: string) => {
-    const cwd = cwdOverride ?? workspaces[0]?.path;
-    if (!cwd) return null;
     try {
+      const body = cwdOverride
+        ? { cwd: cwdOverride, isolation: "none" as SessionIsolationKind }
+        : {};
       const session = await api<WebSession>("/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ cwd, isolation: "none" as SessionIsolationKind }),
+        body: JSON.stringify(body),
       });
       setSessions((prev) => {
         const next = [session, ...prev];
@@ -353,7 +389,29 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
       // TODO: surface error
       return null;
     }
-  }, [api, connectWebSocket, workspaces]);
+  }, [api, connectWebSocket]);
+
+  const attachWorkspace = useCallback(async (sessionId: string, cwd: string) => {
+    try {
+      const updated = await api<WebSession>(`/api/sessions/${encodeURIComponent(sessionId)}/workspace`, {
+        method: "PATCH",
+        body: JSON.stringify({ cwd }),
+      });
+      setSessions((prev) => {
+        const next = prev.map((s) => (s.id === sessionId ? updated : s));
+        sessionsRef.current = next;
+        return next;
+      });
+      if (selectedSessionRef.current?.id === sessionId) {
+        setSelectedSession(updated);
+        selectedSessionRef.current = updated;
+        connectWebSocket(updated);
+      }
+      return updated;
+    } catch {
+      return null;
+    }
+  }, [api, connectWebSocket]);
 
   const newIsolatedSession = useCallback(async (cwdOverride?: string) => {
     const cwd = cwdOverride ?? workspaces[0]?.path;
@@ -590,12 +648,18 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
   const setModel = useCallback((_: string, model: string) => {
     const ws = wsRef.current;
     if (!model || !ws || ws.readyState !== WebSocket.OPEN) return;
+    setRuntimeSettings((current) => {
+      if (!current) return current;
+      const selected = current.availableModels.find((item) => item.id === model);
+      return selected ? { ...current, model: selected } : current;
+    });
     ws.send(JSON.stringify({ type: "set_model", model }));
   }, []);
 
   const setThinking = useCallback((_: string, level: string) => {
     const ws = wsRef.current;
     if (!level || !ws || ws.readyState !== WebSocket.OPEN) return;
+    setRuntimeSettings((current) => current ? { ...current, thinkingLevel: level } : current);
     ws.send(JSON.stringify({ type: "set_thinking", level }));
   }, []);
 
@@ -642,6 +706,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     selectSession,
     newSession,
     newIsolatedSession,
+    attachWorkspace,
     deleteSession,
     renameSession,
     togglePinSession,

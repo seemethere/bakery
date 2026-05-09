@@ -52,6 +52,7 @@ export function contextUsagePercentLabel(usage: ContextUsage): string {
 }
 
 export function contextUsageLabel(usage: ContextUsage): string {
+  if (usage.tokens === null && usage.percent === null && usage.contextWindow === 1) return "unknown";
   const tokens = usage.tokens === null ? "unknown" : formatTokenCount(usage.tokens);
   return `${tokens} / ${formatTokenCount(usage.contextWindow)} (${contextUsagePercentLabel(usage)})`;
 }

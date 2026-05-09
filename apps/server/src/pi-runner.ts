@@ -18,8 +18,9 @@ export type BashResult = { output: string; exitCode: number | undefined; cancell
 
 export type CreateSessionOptions = {
   id: string;
-  cwd: string;
+  cwd: string | null;
   piSessionFile: string;
+  mode?: "workspace" | "chat_only";
 };
 
 export type BuiltinCommandResult = {
@@ -47,6 +48,7 @@ export type SessionHandle = {
   setSessionName(name: string): void;
   getPendingQuestion(): PendingQuestion | null;
   answerQuestion(payload: AnswerQuestionPayload): void;
+  isCheckpointQuestion(questionId: string): boolean;
   subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void;
   getSettings(): Promise<SessionRuntimeSettings>;
   getCommands(): CommandInfo[];
@@ -154,8 +156,16 @@ class QuestionBroker {
     return () => this.listeners.delete(listener);
   }
 
+  isCheckpoint(questionId: string): boolean {
+    return Boolean(this.pending && this.pending.id === questionId && !this.resolver);
+  }
+
   answer(payload: AnswerQuestionPayload): void {
-    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) return;
+    if (!this.pending || payload.questionId !== this.pending.id) return;
+    if (!this.resolver) {
+      if (payload.cancelled) { this.pending = null; this.notify(); }
+      return;
+    }
     const resolver = this.resolver;
     this.pending = null;
     this.resolver = null;
@@ -354,6 +364,10 @@ class InProcessSessionHandle implements SessionHandle {
     this.questionBroker.answer(payload);
   }
 
+  isCheckpointQuestion(questionId: string): boolean {
+    return this.questionBroker.isCheckpoint(questionId);
+  }
+
   subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void {
     return this.questionBroker.subscribe(listener);
   }
@@ -481,10 +495,20 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
     const existing = this.handles.get(options.id);
     if (existing) return existing;
 
-    const sessionManager = SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), options.cwd);
+    const mode: "workspace" | "chat_only" = options.mode ?? (options.cwd ? "workspace" : "chat_only");
+    const effectiveCwd = options.cwd ?? process.cwd();
+    const sessionManager = mode === "chat_only"
+      ? SessionManager.inMemory(effectiveCwd)
+      : SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), effectiveCwd);
     const questionBroker = new QuestionBroker();
-    const { session } = await createAgentSession({ cwd: options.cwd, sessionManager, thinkingLevel: this.modelPolicy.defaultThinkingLevel as never, customTools: [createAskQuestionTool(questionBroker)] });
-    const handle = new InProcessSessionHandle(options.id, options.cwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
+    const { session } = await createAgentSession({
+      cwd: effectiveCwd,
+      sessionManager,
+      thinkingLevel: this.modelPolicy.defaultThinkingLevel as never,
+      customTools: [createAskQuestionTool(questionBroker)],
+      ...(mode === "chat_only" ? { noTools: "all" as const } : {}),
+    });
+    const handle = new InProcessSessionHandle(options.id, effectiveCwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);
     return handle;
   }

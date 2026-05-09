@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
+import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SessionKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
 
 export type SessionPreferences = {
   webSessionId: string;
@@ -36,7 +36,8 @@ type WorkspaceRow = {
 
 type SessionRow = {
   id: string;
-  cwd: string;
+  kind: SessionKind;
+  cwd: string | null;
   pi_session_file: string;
   isolation_kind: SessionIsolationKind;
   source_cwd: string | null;
@@ -60,6 +61,7 @@ type SessionRow = {
 function mapSession(row: SessionRow): WebSession {
   return {
     id: row.id,
+    kind: row.kind,
     cwd: row.cwd,
     piSessionFile: row.pi_session_file,
     isolationKind: row.isolation_kind,
@@ -179,7 +181,50 @@ export class MetadataStore {
     this.addColumn("web_sessions", "metadata_last_generated_at TEXT", "metadata_last_generated_at");
     this.addColumn("web_sessions", "auto_generate_metadata_override TEXT NOT NULL DEFAULT 'default'", "auto_generate_metadata_override");
     this.addColumn("web_sessions", "pinned INTEGER NOT NULL DEFAULT 0", "pinned");
+    this.addColumn("web_sessions", "kind TEXT NOT NULL DEFAULT 'workspace'", "kind");
+    this.relaxCwdNotNull();
     this.inferExistingTitleSources();
+  }
+
+  private relaxCwdNotNull(): void {
+    const cwdInfo = this.db.query<{ name: string; notnull: number }, []>("PRAGMA table_info(web_sessions)").all().find((row) => row.name === "cwd");
+    if (!cwdInfo || cwdInfo.notnull === 0) return;
+    this.db.exec("PRAGMA foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE web_sessions_new (
+            id TEXT PRIMARY KEY,
+            cwd TEXT,
+            pi_session_file TEXT NOT NULL,
+            title TEXT,
+            created_at TEXT NOT NULL,
+            last_opened_at TEXT NOT NULL,
+            isolation_kind TEXT NOT NULL DEFAULT 'none',
+            source_cwd TEXT,
+            worktree_path TEXT,
+            worktree_branch TEXT,
+            worktree_base_commit TEXT,
+            worktree_source_dirty INTEGER NOT NULL DEFAULT 0,
+            title_source TEXT NOT NULL DEFAULT 'unset',
+            summary TEXT,
+            summary_source TEXT NOT NULL DEFAULT 'unset',
+            summary_updated_at TEXT,
+            metadata_generation_count INTEGER NOT NULL DEFAULT 0,
+            metadata_last_generated_at TEXT,
+            auto_generate_metadata_override TEXT NOT NULL DEFAULT 'default',
+            pinned INTEGER NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL DEFAULT 'workspace'
+          );
+          INSERT INTO web_sessions_new (id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind)
+            SELECT id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind FROM web_sessions;
+          DROP TABLE web_sessions;
+          ALTER TABLE web_sessions_new RENAME TO web_sessions;
+        `);
+      })();
+    } finally {
+      this.db.exec("PRAGMA foreign_keys = ON");
+    }
   }
 
   private inferExistingTitleSources(): void {
@@ -218,11 +263,11 @@ export class MetadataStore {
     return row ? mapSession(row) : undefined;
   }
 
-  createSession(input: { id: string; cwd: string; piSessionFile: string; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean }): WebSession {
+  createSession(input: { id: string; cwd: string | null; piSessionFile: string; kind?: SessionKind; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean }): WebSession {
     const now = new Date().toISOString();
     this.db
-      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(input.id, input.cwd, input.piSessionFile, input.isolationKind ?? "none", input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
+      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, kind, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(input.id, input.cwd, input.piSessionFile, input.kind ?? "workspace", input.isolationKind ?? "none", input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
     this.db.query("INSERT INTO session_preferences (web_session_id) VALUES (?)").run(input.id);
     const session = this.getSession(input.id);
     if (!session) throw new Error("Failed to create session");
@@ -250,6 +295,16 @@ export class MetadataStore {
     if (input.incrementGenerationCount) {
       this.db.query("UPDATE web_sessions SET metadata_generation_count = metadata_generation_count + 1, metadata_last_generated_at = ? WHERE id = ?").run(now, id);
     }
+    return this.getSession(id);
+  }
+
+  attachWorkspace(id: string, cwd: string): WebSession | undefined {
+    this.db.query("UPDATE web_sessions SET cwd = ?, kind = 'workspace' WHERE id = ?").run(cwd, id);
+    return this.getSession(id);
+  }
+
+  setKind(id: string, kind: SessionKind): WebSession | undefined {
+    this.db.query("UPDATE web_sessions SET kind = ? WHERE id = ?").run(kind, id);
     return this.getSession(id);
   }
 

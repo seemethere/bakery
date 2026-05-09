@@ -37,6 +37,7 @@ describe("dataUrlToImageContent", () => {
 function webSession(overrides: Partial<WebSession> = {}): WebSession {
   return {
     id: "s1",
+    kind: "workspace",
     cwd: "/repo",
     piSessionFile: "/repo/.pi/sessions/s1.jsonl",
     isolationKind: "none",
@@ -53,6 +54,7 @@ function webSession(overrides: Partial<WebSession> = {}): WebSession {
     metadataGenerationCount: 0,
     metadataLastGeneratedAt: null,
     autoGenerateMetadataOverride: "default",
+    pinned: false,
     createdAt: "2026-05-05T00:00:00.000Z",
     lastOpenedAt: "2026-05-05T00:00:00.000Z",
     ...overrides,
@@ -150,6 +152,63 @@ describe("active tool execution snapshots", () => {
     expect(activeToolSnapshotFromEvent({ type: "tool_execution_start", time: "now", data: { toolName: "subagent" } })).toBeNull();
   });
 
+  test("replaces duplicate browser client ids without counting them as another tab", async () => {
+    const session = webSession();
+    const handle = {
+      id: session.id,
+      cwd: session.cwd,
+      subscribe: () => () => undefined,
+      subscribeQuestion: () => () => undefined,
+      snapshot: async () => ({ session, status: "idle", messages: [] }),
+      getSettings: async () => ({ model: null, availableModels: [], thinkingLevel: "low", availableThinkingLevels: ["low"], contextUsage: { tokens: null, contextWindow: null, percent: null } }),
+      getCommands: () => [],
+    };
+    const store = {
+      getSession: () => session,
+      listWebCommandResults: () => [],
+    };
+    const hub = new SessionHub(session.id, handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+
+    const createSocket = () => {
+      const sent: unknown[] = [];
+      let onClose: (() => void) | null = null;
+      return {
+        sent,
+        socket: {
+          send: (data: string) => sent.push(JSON.parse(data)),
+          close: () => undefined,
+          on: (event: string, callback: () => void) => {
+            if (event === "close") onClose = callback;
+          },
+        },
+        emitClose: () => onClose?.(),
+      };
+    };
+
+    const first = createSocket();
+    hub.add(first.socket, "client-1");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const replacement = createSocket();
+    hub.add(replacement.socket, "client-1");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    first.emitClose();
+
+    const secondTab = createSocket();
+    hub.add(secondTab.socket, "client-2");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const snapshot = secondTab.sent.find((entry): entry is ServerEnvelope => (entry as ServerEnvelope).payload?.type === "session_snapshot");
+    expect(snapshot?.payload.type).toBe("session_snapshot");
+    if (snapshot?.payload.type === "session_snapshot") {
+      expect(snapshot.payload.snapshot.controller?.connectedClients).toBe(2);
+    }
+  });
+
   test("buffers broadcasts until snapshot is sent, then drains in order", async () => {
     let listener: (event: NormalizedAgentEvent, raw: unknown) => void = () => undefined;
     const snapshot = deferred<{ session: WebSession; status: "idle" | "running"; messages: unknown[] }>();
@@ -169,7 +228,7 @@ describe("active tool execution snapshots", () => {
     };
     const sent: unknown[] = [];
     const socket = { send: (data: string) => sent.push(JSON.parse(data)), close: () => undefined, on: () => undefined };
-    const hub = new SessionHub(handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+    const hub = new SessionHub(session.id, handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
 
     hub.add(socket, "client-1");
     listener?.({ type: "tool_execution_update", time: "2026-05-05T00:00:01.000Z", data: { type: "tool_execution_update", toolCallId: "sub-1", toolName: "subagent", partialResult: { content: "running" } } }, {});

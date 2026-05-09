@@ -99,6 +99,7 @@ export function SessionPage({
 
   const isController = controller?.isController ?? true;
   const canAnswer = isController && status !== "disconnected" && status !== "connecting" && status !== "error";
+  const otherConnectedTabs = Math.max(0, (controller?.connectedClients ?? 1) - 1);
 
   return (
     <>
@@ -130,7 +131,7 @@ export function SessionPage({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-yellow-500/25 bg-yellow-500/8 px-3 py-2 text-sm text-yellow-600 dark:text-yellow-300">
             <span>
               Viewer mode. Another tab controls this session.
-              {controller?.connectedClients ? ` ${controller.connectedClients} tabs are connected.` : ""}
+              {otherConnectedTabs > 0 ? ` ${otherConnectedTabs} other ${otherConnectedTabs === 1 ? "tab is" : "tabs are"} connected.` : ""}
             </span>
             <button
               type="button"

@@ -22,6 +22,25 @@ describe("MetadataStore workspaces", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  test("attaching a workspace promotes draft sessions to workspace sessions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      const session = store.createSession({
+        id: "draft-1",
+        cwd: null,
+        piSessionFile: join(dir, "session.jsonl"),
+        kind: "draft",
+      });
+
+      const updated = store.attachWorkspace(session.id, dir);
+
+      expect(updated).toMatchObject({ id: session.id, kind: "workspace", cwd: dir });
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("MetadataStore web command results", () => {

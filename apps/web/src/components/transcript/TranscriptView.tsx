@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownIcon } from "lucide-react";
 import type { ExtensionCatalog, SessionTreeNode } from "@pi-web-agent/protocol";
 import type { TranscriptItem } from "@/lib/transcript";
+import { isAskQuestionToolItem } from "@/lib/transcript";
+import { isNonInformativeSubagentManagementReceipt } from "./SubagentCard";
 import { TranscriptRow } from "./TranscriptRow";
 import { Button } from "@/components/ui/button";
 
@@ -202,7 +204,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     <div className="relative min-h-0 flex-1">
       <div ref={containerRef} className="h-full overflow-y-auto py-4">
         <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
-          {items.map((item) => (
+          {items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)).map((item) => (
             <TranscriptRow
               key={item.id}
               item={item}
