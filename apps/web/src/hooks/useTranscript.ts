@@ -7,18 +7,22 @@ export function useTranscript(
   subscribeAgentEvents: (cb: (event: unknown) => void) => () => void,
 ): TranscriptItem[] {
   const [items, setItems] = useState<TranscriptItem[]>([]);
+  const snapshotSessionId = snapshot?.session.id ?? null;
+  const snapshotMessages = snapshot?.messages ?? null;
 
-  // Reset and load items when snapshot changes
+  // Reset and load items when the backing transcript snapshot changes. Session
+  // metadata updates can replace the snapshot wrapper while reusing the same
+  // message array; those should not wipe live WebSocket transcript rows.
   useEffect(() => {
-    if (!snapshot) {
+    if (!snapshotSessionId || !snapshotMessages) {
       setItems([]);
       return;
     }
     const loaded = compactSnapshotTranscript(
-      snapshot.messages.map((msg, idx) => messageToTranscriptItem(msg, `snapshot:${idx}`)),
+      snapshotMessages.map((msg, idx) => messageToTranscriptItem(msg, `snapshot:${idx}`)),
     );
     setItems(loaded);
-  }, [snapshot]);
+  }, [snapshotSessionId, snapshotMessages]);
 
   // Subscribe to streaming agent events
   useEffect(() => {
