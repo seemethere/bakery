@@ -21,13 +21,13 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     if (!session) return reply.code(404).send({ error: "session not found" });
     const parsed = commandQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
-    if (session.cwd === null) return { query: parsed.data.q, commands: [] };
 
     try {
       const handle = await runner.createSession({
         id: session.id,
         cwd: session.cwd,
         piSessionFile: session.piSessionFile,
+        mode: session.cwd === null ? "chat_only" : "workspace",
       });
       const query = parsed.data.q.toLowerCase();
       const commands = handle.getCommands()

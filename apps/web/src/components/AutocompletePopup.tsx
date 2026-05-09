@@ -51,7 +51,10 @@ export function AutocompletePopup({ state, onSelect }: Props) {
       : state.type === "file" ? "Files" : "Slash commands";
 
   return (
-    <div className="relative z-[2] rounded-xl border border-border/50 bg-card shadow-xl overflow-hidden">
+    <div className={cn(
+      "relative z-[2] rounded-xl border border-border/50 bg-card shadow-xl overflow-hidden",
+      state.type === "command" && "command-autocomplete",
+    )}>
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 bg-muted/30">
         <span className="text-xs text-muted-foreground">{title}</span>
         <span className="text-[10px] text-muted-foreground/50">

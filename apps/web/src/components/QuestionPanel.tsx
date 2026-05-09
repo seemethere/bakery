@@ -75,7 +75,7 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
       ref={panelRef}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
-      className="relative z-[2] rounded-xl border border-yellow-500/30 bg-yellow-500/5 shadow-xl overflow-hidden focus:outline-none"
+      className="question-card relative z-[2] rounded-xl border border-yellow-500/30 bg-yellow-500/5 shadow-xl overflow-hidden focus:outline-none"
       aria-label="Answer needed"
     >
       {/* Header */}
@@ -98,7 +98,7 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
 
       {/* Options */}
       {question.options.length > 0 && (
-        <div className="px-3 pb-2 flex flex-col gap-1" role="listbox" aria-label="Answer options">
+        <div className="question-options px-3 pb-2 flex flex-col gap-1" role="listbox" aria-label="Answer options">
           {question.options.map((option, index) => {
             const isRec = index === recIndex;
             return (

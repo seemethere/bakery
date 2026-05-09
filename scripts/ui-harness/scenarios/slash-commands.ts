@@ -19,6 +19,7 @@ import { ensureSidebarSettingsVisible } from "./visual";
 
 export const slashCommandScenarios = [
   "slash-commands",
+  "new-session-command",
   "configured-extension-smoke",
   "bash-commands",
   "file-autocomplete",
@@ -88,6 +89,29 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await waitForAgentIdle(page, 5_000);
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
+  return collectMetrics(page);
+}
+
+export async function runNewSessionCommand(page: Page): Promise<Record<string, unknown>> {
+  const firstSessionId = await prepareSession(page);
+  await page.locator("#prompt").fill("/new with args");
+  await page.locator("#send").click();
+  await page.waitForFunction(() => document.querySelector(".notice")?.textContent?.includes("Usage: /new"), null, { timeout: 5_000 });
+  await page.waitForFunction((id) => document.querySelector(".pi-web-agent")?.getAttribute("data-selected-session-id") === id, firstSessionId, { timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "/new with args", null, { timeout: 5_000 });
+
+  await page.locator("#prompt").fill("/new");
+  await page.locator("#send").click();
+  await page.waitForFunction((id) => {
+    const selected = document.querySelector(".pi-web-agent")?.getAttribute("data-selected-session-id");
+    return Boolean(selected && selected !== id);
+  }, firstSessionId, { timeout: 5_000 });
+  await page.waitForURL(/\/sessions\/[0-9a-f-]+$/, { timeout: 5_000 });
+  await page.locator("#prompt").waitFor({ state: "visible", timeout: 5_000 });
+  await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "", null, { timeout: 5_000 });
+  const nextSessionId = await selectedSessionId(page);
+  if (!nextSessionId || nextSessionId === firstSessionId) throw new Error("Expected /new to select a different session");
   return collectMetrics(page);
 }
 

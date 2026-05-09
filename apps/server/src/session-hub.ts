@@ -636,6 +636,28 @@ export class SessionHub {
     return true;
   }
 
+  private async runWebCommandText(text: string, images?: ImageContent[]): Promise<boolean> {
+    const parsed = parseSlashCommand(text);
+    if (!parsed) return false;
+    if (await this.runBundledCommandText(text, images)) return true;
+
+    const handle = await this.ensureHandle();
+    const result = await handle.runBuiltinCommand(text);
+    if (!result.handled) return false;
+    if (result.launchPrompt) {
+      const webSession = this.deps.store.getSession(this.sessionId);
+      if (webSession && !webSession.title) {
+        const updated = this.deps.store.updateSession(webSession.id, { title: result.title ?? "Workflow", titleSource: "first_prompt" });
+        if (updated) this.broadcastMetadataUpdate(updated);
+      }
+      await this.promptWithReceipt(handle, "prompt", result.launchPrompt, result.launchPrompt, images);
+      await this.broadcastSettingsUpdate();
+      return true;
+    }
+    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false, result.data);
+    return true;
+  }
+
   private async queueCommandUntilIdle(text: string): Promise<void> {
     this.pendingCommands.push(text);
     await this.emitCommandResult("Queued command", `${text.trim()} will run after the active turn finishes.`);
@@ -652,7 +674,7 @@ export class SessionHub {
     try {
       while (this.pendingCommands.length > 0) {
         const command = this.pendingCommands.shift();
-        if (command) await this.runBundledCommandText(command);
+        if (command) await this.runWebCommandText(command);
       }
     } finally {
       this.flushingPendingCommands = false;
@@ -710,7 +732,7 @@ export class SessionHub {
         const handle = await this.ensureHandle();
         const webSession = this.deps.store.getSession(this.sessionId);
         const status = webSession ? (await handle.snapshot(webSession)).status : "idle";
-        if (status === "idle") await this.runBundledCommandText(parsed.data.text);
+        if (status === "idle") await this.runWebCommandText(parsed.data.text);
         else await this.queueCommandUntilIdle(parsed.data.text);
       } else if (parsed.data.type === "ask") {
         const handle = await this.ensureHandle();

@@ -10,6 +10,7 @@ export const scenarioDefinitions = [
   { name: "session-metadata", family: "session" },
   { name: "inspector-preview", family: "transcript" },
   { name: "slash-commands", family: "slash-command" },
+  { name: "new-session-command", family: "slash-command" },
   { name: "configured-extension-smoke", family: "slash-command" },
   { name: "bash-commands", family: "slash-command" },
   { name: "question-answer", family: "session" },

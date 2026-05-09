@@ -5,7 +5,7 @@ import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments,
 import { runBackendRestart, runConnectionDisconnected, runControllerHandoffEdges, runReconnectController, runReconnectDraft } from "./lifecycle";
 import { runMobileImageStreamStability, runMobileLayout, runMobileLongTranscriptControls } from "./mobile";
 import { runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runSubagentCard, runSubagentCardReconnect, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
-import { runBashCommands, runConfiguredExtensionSmoke, runFileAutocomplete, runSlashCommands } from "./slash-commands";
+import { runBashCommands, runConfiguredExtensionSmoke, runFileAutocomplete, runNewSessionCommand, runSlashCommands } from "./slash-commands";
 import { runContextUsage, runEmptySessionLayout, runQuestionAnswer, runSessionMetadata, runSessionRouting, runSessionsPage, runTreeForkNavigation } from "./session";
 import { runThemeGallery, runThemes } from "./visual";
 
@@ -23,6 +23,7 @@ export const scenarioRunners = {
   "session-metadata": (page) => runSessionMetadata(page),
   "inspector-preview": (page) => runInspectorPreview(page),
   "slash-commands": (page) => runSlashCommands(page),
+  "new-session-command": (page) => runNewSessionCommand(page),
   "configured-extension-smoke": (page) => runConfiguredExtensionSmoke(page),
   "bash-commands": (page) => runBashCommands(page),
   "question-answer": (page) => runQuestionAnswer(page),

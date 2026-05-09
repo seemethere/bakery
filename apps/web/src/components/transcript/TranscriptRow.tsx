@@ -650,7 +650,7 @@ function SystemRow({ item, context }: { item: TranscriptItem; context: Transcrip
   return (
     <div className={cn(
       "message group/row mx-4 my-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
-      item.kind === "error" ? "border-red-500/30 bg-red-500/5 text-red-400" : "border-border/30 bg-muted/30 text-muted-foreground",
+      item.kind === "error" ? "error border-red-500/30 bg-red-500/5 text-red-400" : "system border-border/30 bg-muted/30 text-muted-foreground",
     )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="min-w-0">
         <span className="font-semibold">{item.title}</span>

@@ -28,6 +28,7 @@ type Props = {
   runningQueue: RunningQueueState;
   status: "idle" | "running" | "aborting" | "connecting" | "disconnected" | "error";
   onForkSession: (sourceSessionId: string, entryId: string) => Promise<WebSession | null>;
+  onNewSessionCommand: (cwd?: string | null) => Promise<boolean>;
   onCancelQueuedMessage: (queue: RunningQueueName, index: number, text?: string) => void;
   onSend: (sessionId: string, text: string, images: PromptImage[], followUp: boolean, mode?: SendMode) => void;
   onAbort: (sessionId: string) => void;
@@ -36,6 +37,7 @@ type Props = {
   onShowThinkingChange: (show: boolean) => void;
   onAnswerQuestion: (payload: AnswerQuestionPayload) => void;
   onTakeControl: () => void;
+  promptFocusNonce?: number;
   isBootstrapping?: boolean;
   sessionNotFound?: boolean;
 };
@@ -55,6 +57,7 @@ export function SessionPage({
   runningQueue,
   status,
   onForkSession,
+  onNewSessionCommand,
   onCancelQueuedMessage,
   onSend,
   onAbort,
@@ -63,6 +66,7 @@ export function SessionPage({
   onShowThinkingChange,
   onAnswerQuestion,
   onTakeControl,
+  promptFocusNonce,
   isBootstrapping = false,
   sessionNotFound = false,
 }: Props) {
@@ -161,6 +165,7 @@ export function SessionPage({
         defaultThinkingLevel={defaultThinkingLevel}
         showThinking={showThinking}
         onSend={(text, images, followUp, mode) => onSend(sessionId, text, images, followUp, mode)}
+        onNewSessionCommand={() => onNewSessionCommand(snapshot?.session.cwd ?? undefined)}
         onAbort={() => onAbort(sessionId)}
         onSetModel={(model) => onSetModel(sessionId, model)}
         onSetThinking={(level) => onSetThinking(sessionId, level)}
@@ -168,6 +173,7 @@ export function SessionPage({
         onTakeControl={onTakeControl}
         draftKey={`piWebPromptDraft:${sessionId}`}
         draftPrefill={draftPrefill}
+        focusNonce={promptFocusNonce}
         sessionId={sessionId}
         fetchJson={fetchJson}
       />

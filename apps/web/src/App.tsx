@@ -16,6 +16,7 @@ function AppInner() {
   const conn = useServerConnection(routeSessionId);
   const [showThinking, setShowThinkingState] = useState(() => localStorage.getItem("piWebShowThinking") === "true");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [promptFocusNonce, setPromptFocusNonce] = useState(0);
 
   function setShowThinking(value: boolean) {
     setShowThinkingState(value);
@@ -42,6 +43,14 @@ function AppInner() {
   async function handleNewIsolatedSession(cwd?: string) {
     const session = await conn.newIsolatedSession(cwd);
     if (session) navigate(sessionRoutePath(session.id));
+  }
+
+  async function handleNewSessionCommand(cwd?: string | null) {
+    const session = await conn.newSession(cwd ?? undefined);
+    if (!session) return false;
+    navigate(sessionRoutePath(session.id));
+    setPromptFocusNonce((value) => value + 1);
+    return true;
   }
 
   async function handleDeleteSession(id: string) {
@@ -117,6 +126,7 @@ function AppInner() {
               ? conn.connectionStatus
               : (conn.connectionStatus as "idle" | "running" | "aborting" | "error")}
             onForkSession={conn.forkSession}
+            onNewSessionCommand={handleNewSessionCommand}
             onCancelQueuedMessage={conn.cancelQueuedMessage}
             onSend={conn.send}
             onAbort={conn.abort}
@@ -125,6 +135,7 @@ function AppInner() {
             onShowThinkingChange={setShowThinking}
             onAnswerQuestion={conn.answerQuestion}
             onTakeControl={conn.takeControl}
+            promptFocusNonce={promptFocusNonce}
             isBootstrapping={isSessionRouteBootstrapping}
             sessionNotFound={sessionRouteMissing}
           />

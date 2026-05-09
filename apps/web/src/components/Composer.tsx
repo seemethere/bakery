@@ -24,6 +24,7 @@ type Props = {
   defaultThinkingLevel?: string | undefined;
   showThinking: boolean;
   onSend: (text: string, images: PromptImage[], followUp: boolean, mode: SendMode) => void;
+  onNewSessionCommand?: () => Promise<boolean>;
   onAbort: () => void;
   onSetModel: (model: string) => void;
   onSetThinking: (level: string) => void;
@@ -31,6 +32,7 @@ type Props = {
   onTakeControl: () => void;
   draftKey?: string;
   draftPrefill?: { text: string; nonce: number } | null;
+  focusNonce?: number;
   sessionId?: string | null;
   fetchJson?: <T>(path: string, init?: RequestInit) => Promise<T>;
 };
@@ -120,6 +122,7 @@ export function Composer({
   defaultThinkingLevel,
   showThinking,
   onSend,
+  onNewSessionCommand,
   onAbort,
   onSetModel,
   onSetThinking,
@@ -127,6 +130,7 @@ export function Composer({
   onTakeControl,
   draftKey,
   draftPrefill,
+  focusNonce,
   sessionId,
   fetchJson,
 }: Props) {
@@ -168,6 +172,11 @@ export function Composer({
   }, [draftKey, draftPrefill]);
 
   useEffect(() => {
+    if (focusNonce === undefined) return;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [focusNonce]);
+
+  useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
@@ -192,9 +201,28 @@ export function Composer({
     return () => document.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
-  function handleSend(followUp = false) {
+  async function handleSend(followUp = false) {
     if (!canSend) return;
-    onSend(sendTextForMode(draft, images.length, composerMode), images, followUp, sendModeForComposerMode(composerMode));
+    const text = sendTextForMode(draft, images.length, composerMode);
+    const trimmed = text.trim();
+    if (/^\/new(?:\s|$)/i.test(trimmed)) {
+      if (images.length > 0) {
+        setNotice("Remove image attachments before using /new.");
+        return;
+      }
+      if (trimmed !== "/new") {
+        setNotice("Usage: /new");
+        return;
+      }
+      const created = await onNewSessionCommand?.();
+      if (!created) {
+        setNotice("Could not create a new session.");
+        return;
+      }
+    } else {
+      onSend(text, images, followUp, sendModeForComposerMode(composerMode));
+    }
+    setNotice("");
     setDraft("");
     setImages([]);
     if (draftKey) localStorage.removeItem(draftKey);
@@ -254,7 +282,7 @@ export function Composer({
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handleSend(event.altKey);
+      void handleSend(event.altKey);
     }
   }
 
@@ -429,8 +457,8 @@ export function Composer({
           onShowThinkingChange={onShowThinkingChange}
           onAttach={openImagePicker}
           onAbort={onAbort}
-          onFollowUp={() => handleSend(true)}
-          onSend={() => handleSend(false)}
+          onFollowUp={() => void handleSend(true)}
+          onSend={() => void handleSend(false)}
           onTakeControl={onTakeControl}
         />
       </div>
@@ -448,7 +476,7 @@ function ComposerNotice({ disconnected, notice }: { disconnected: boolean; notic
         </p>
       )}
       {notice && (
-        <p className="m-0 rounded-lg border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-400">
+        <p className="notice m-0 rounded-lg border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-400">
           {notice}
         </p>
       )}
