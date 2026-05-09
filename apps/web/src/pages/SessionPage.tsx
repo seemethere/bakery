@@ -108,6 +108,7 @@ export function SessionPage({
         connectionStatus={status}
         showThinking={showThinking}
         sessionId={sessionId}
+        sessionCwd={snapshot?.session.cwd ?? null}
         apiBase={apiBase}
         token={token}
         extensionCatalog={extensionCatalog}

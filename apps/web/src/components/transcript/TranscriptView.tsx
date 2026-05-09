@@ -12,6 +12,7 @@ type Props = {
   connectionStatus: string;
   showThinking: boolean;
   sessionId: string;
+  sessionCwd: string | null;
   apiBase: string;
   token: string;
   extensionCatalog: ExtensionCatalog | null;
@@ -20,7 +21,7 @@ type Props = {
   onAcceptPlan?: () => void;
 };
 
-export function TranscriptView({ items, connectionStatus, showThinking, sessionId, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan }: Props) {
+export function TranscriptView({ items, connectionStatus, showThinking, sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -202,7 +203,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={containerRef} className="h-full overflow-y-auto py-4">
+      <div ref={containerRef} data-testid="transcript" className="h-full overflow-y-auto py-4">
         <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
           {items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)).map((item) => (
             <TranscriptRow
@@ -210,6 +211,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
               item={item}
               showThinking={showThinking}
               sessionId={sessionId}
+              sessionCwd={sessionCwd}
               apiBase={apiBase}
               token={token}
               extensionCatalog={extensionCatalog}
@@ -232,6 +234,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
             onClick={jumpToLatest}
             aria-label={`Jump to latest${unreadCount > 0 ? `, ${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : ""}`}
             title={`Jump to latest${unreadCount > 0 ? ` · ${unreadCount} update${unreadCount === 1 ? "" : "s"}` : ""}`}
+            data-testid="jump-to-latest"
             className="pointer-events-auto rounded-full bg-background/85 shadow-lg backdrop-blur"
           >
             <ArrowDownIcon />

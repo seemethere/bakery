@@ -27,6 +27,7 @@ import { forkEntryIdForTranscriptItem } from "@/lib/session-tree";
 
 type TranscriptRenderContext = {
   sessionId: string;
+  sessionCwd: string | null;
   apiBase: string;
   token: string;
   extensionCatalog: ExtensionCatalog | null;
@@ -43,31 +44,82 @@ function isLocalImagePath(value: string): boolean {
   return /(?:^file:\/\/|^\/|^\.{0,2}\/|^[\w@.+-]+\/).+\.(?:png|jpe?g|gif|webp|svg)$/i.test(value);
 }
 
-function localImageUrl(path: string, context: Pick<TranscriptRenderContext, "apiBase" | "sessionId" | "token">): string | null {
-  const normalized = path.replace(/^file:\/\//, "");
-  const imagePath = normalized.startsWith(".bakery/artifacts/") ? "artifacts" : "files";
-  if (!isLocalImagePath(normalized)) return null;
-  const url = new URL(`${context.apiBase}/api/sessions/${encodeURIComponent(context.sessionId)}/${imagePath}/raw`);
-  url.searchParams.set("path", normalized);
+function normalizeImageArtifactPath(path: string, sessionCwd: string | null): { originalPath: string; workspacePath?: string } | null {
+  const raw = path.trim();
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^file:\/\//i.test(raw)) return null;
+  let decoded: string;
+  try {
+    decoded = /^file:\/\//i.test(raw) ? decodeURIComponent(raw.replace(/^file:\/\/+/i, "/")) : raw;
+  } catch {
+    return null;
+  }
+  const normalizedCwd = sessionCwd?.replace(/\\/g, "/").replace(/\/+$/, "");
+  let normalized = decoded.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!/\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized) || normalized.includes("\0")) return null;
+  if (normalized.startsWith(".bakery/artifacts/")) return { originalPath: normalized };
+  if (normalized.startsWith("/") && normalizedCwd) {
+    if (normalized === normalizedCwd) return null;
+    if (!normalized.startsWith(`${normalizedCwd}/`)) return { originalPath: normalized };
+    normalized = normalized.slice(normalizedCwd.length + 1);
+  }
+  normalized = normalized.replace(/^\.\//, "");
+  if (normalized.startsWith(".bakery/artifacts/")) return { originalPath: normalized };
+  if (!normalized.startsWith("/") && /^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return { originalPath: decoded, workspacePath: normalized };
+  return { originalPath: normalized };
+}
+
+function localImageUrl(path: string, context: Pick<TranscriptRenderContext, "apiBase" | "sessionId" | "sessionCwd" | "token">): string | null {
+  const imagePath = normalizeImageArtifactPath(path, context.sessionCwd);
+  if (!imagePath) return null;
+  const url = new URL(`${context.apiBase}/api/sessions/${encodeURIComponent(context.sessionId)}/${imagePath.workspacePath ? "files" : "artifacts"}/raw`);
+  url.searchParams.set("path", imagePath.workspacePath ?? imagePath.originalPath);
   if (context.token) url.searchParams.set("token", context.token);
   return url.toString();
 }
 
 const localImagePathPattern = /(?:^|[\s([{"'`])((?:(?:file:\/\/)?\/|\.{1,2}\/)?(?:[\w@.+-]+\/)+[\w@.+-]+\.(?:png|jpe?g|gif|webp|svg))(?![\w.-])/gi;
 
-function localImageArtifacts(text: string, context: TranscriptRenderContext): Array<{ path: string; url: string }> {
+function localImageArtifacts(text: string, context: TranscriptRenderContext, suppressedPaths = new Set<string>()): Array<{ path: string; url: string }> {
   const seen = new Set<string>();
   const artifacts: Array<{ path: string; url: string }> = [];
   for (const match of text.matchAll(localImagePathPattern)) {
-    const path = match[1];
-    if (!path || seen.has(path)) continue;
+    const path = match[1]?.replace(/^\.\//, "");
+    if (!path || path.includes("...") || path.includes("…") || seen.has(path) || suppressedPaths.has(path)) continue;
     const url = localImageUrl(path, context);
     if (!url) continue;
     seen.add(path);
     artifacts.push({ path, url });
-    if (artifacts.length >= 8) break;
+    if (artifacts.length >= 12) break;
   }
   return artifacts;
+}
+
+const markdownImageHrefPattern = /!\[[^\]]*\]\(\s*<?([^\s>)]+)>?(?:\s+["'][^"']*["'])?\s*\)/gi;
+
+function markdownLocalImagePaths(text: string, context: TranscriptRenderContext): Set<string> {
+  const paths = new Set<string>();
+  for (const match of text.matchAll(markdownImageHrefPattern)) {
+    const href = match[1]?.replace(/^\.\//, "");
+    if (!href || !isLocalImagePath(href) || !localImageUrl(href, context)) continue;
+    paths.add(href);
+  }
+  return paths;
+}
+
+function promptAttachmentArtifactPaths(text: string, context: TranscriptRenderContext): Set<string> {
+  const paths = new Set<string>();
+  for (const match of text.matchAll(/^\s*Screenshot artifact:\s*(\S+\.(?:png|jpe?g|gif|webp|svg))\s*$/gim)) {
+    const path = match[1]?.replace(/^\.\//, "");
+    if (!path || !localImageUrl(path, context)) continue;
+    paths.add(path);
+  }
+  return paths;
+}
+
+function mergeSuppressedPaths(...sets: Array<Set<string> | undefined>): Set<string> {
+  const merged = new Set<string>();
+  for (const set of sets) for (const value of set ?? []) merged.add(value);
+  return merged;
 }
 
 function MarkdownContent({ text, context, className }: { text: string; context: TranscriptRenderContext; className?: string }) {
@@ -84,7 +136,7 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
       >
         {text}
       </ReactMarkdown>
-      <LocalImageGrid artifacts={localImageArtifacts(text, context)} />
+      <LocalImageGrid artifacts={localImageArtifacts(text, context, mergeSuppressedPaths(markdownLocalImagePaths(text, context), promptAttachmentArtifactPaths(text, context)))} />
     </div>
   );
 }
@@ -138,7 +190,7 @@ function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: s
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
       {artifacts.map((artifact) => (
-        <figure key={artifact.path} className="m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
+        <figure key={artifact.path} data-testid="artifact-image" className="m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
           <img src={artifact.url} alt={artifact.path} loading="lazy" className="max-h-56 w-full object-contain" />
           <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path.split("/").pop()}</figcaption>
         </figure>
@@ -603,6 +655,7 @@ export function TranscriptRow({
   item,
   showThinking,
   sessionId,
+  sessionCwd,
   apiBase,
   token,
   extensionCatalog,
@@ -613,7 +666,7 @@ export function TranscriptRow({
   item: TranscriptItem;
   showThinking: boolean;
 } & TranscriptRenderContext) {
-  const context = { sessionId, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan };
+  const context = { sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan };
   if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "tool" && hasSubagentCard(item)) return <SubagentCard item={item} />;
