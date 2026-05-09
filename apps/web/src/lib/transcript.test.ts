@@ -3,6 +3,7 @@ import {
   activeToolExecutionSnapshotToTranscriptItem,
   applyAgentEvent,
   compactSnapshotTranscript,
+  detectPlanCard,
   messageToTranscriptItem,
 } from "./transcript";
 
@@ -67,6 +68,16 @@ describe("React transcript parity", () => {
       body: "running",
       status: "running",
     });
+  });
+
+  test("detects legacy plan card key-file headings", () => {
+    const item = messageToTranscriptItem({
+      role: "assistant",
+      content: `## Plan summary\nDo the thing.\n\n## Smallest next slice\nOne slice.\n\n## Key files likely to change\n- apps/web/src/lib/transcript.ts\n\n## Validation plan\nRun checks.\n\nPlan actions: Accept plan`,
+    }, "plan");
+
+    expect(item.kind).toBe("assistant");
+    expect(detectPlanCard(item)?.keyFiles).toEqual(["apps/web/src/lib/transcript.ts"]);
   });
 
   test("keeps compact duplicate generic tool results quiet", () => {

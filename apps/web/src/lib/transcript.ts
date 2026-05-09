@@ -159,7 +159,7 @@ function stripPlanMarkers(text: string): string {
 }
 
 function sectionText(markdown: string, heading: string): string {
-  const pattern = new RegExp(`^#{1,3}\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$([\\s\\S]*?)(?=\\n#{1,3}\\s+|\\s*$)`, "im");
+  const pattern = new RegExp(`^#{1,3}\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n([\\s\\S]*?)(?=\\n#{1,3}\\s+|\\s*$)`, "im");
   const match = pattern.exec(markdown);
   return match?.[1]?.trim() ?? "";
 }
@@ -189,7 +189,7 @@ export function detectPlanCard(item: TranscriptItem): PlanCardData | null {
   const markdown = stripPlanMarkers(item.body);
   const summaryText = sectionText(markdown, "Plan summary");
   const nextSliceText = sectionText(markdown, "Smallest next slice");
-  const filesText = sectionText(markdown, "Key files");
+  const filesText = sectionText(markdown, "Key files") || sectionText(markdown, "Key files likely to change");
   const validationText = sectionText(markdown, "Validation plan");
   return {
     markdown,

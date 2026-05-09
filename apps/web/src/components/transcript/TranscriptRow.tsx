@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ComponentProps } from "react";
@@ -20,7 +20,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan, isRecord } from "@/lib/transcript";
+import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan, isRecord, isDeveloperBashItem } from "@/lib/transcript";
 import { hasSubagentCard, SubagentCard } from "./SubagentCard";
 import { extensionCardPayload } from "@/lib/extension-cards";
 import { forkEntryIdForTranscriptItem } from "@/lib/session-tree";
@@ -186,7 +186,7 @@ function RowActions({ item, align = "end" }: { item: TranscriptItem; align?: "st
         {copied ? <CheckIcon /> : <MoreHorizontalIcon />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-36">
-        <DropdownMenuItem onClick={() => void handleCopy()}>
+        <DropdownMenuItem data-row-action="copy" onClick={() => void handleCopy()}>
           <CopyIcon />
           Copy
         </DropdownMenuItem>
@@ -214,6 +214,7 @@ function CopyMessageButton({ item }: { item: TranscriptItem }) {
       onClick={() => void handleCopy()}
       aria-label={copied ? "Copied message" : "Copy message"}
       title={copied ? "Copied" : "Copy message"}
+      data-row-action="copy"
       className="size-6 rounded-md p-0 text-muted-foreground hover:text-foreground"
     >
       {copied ? <CheckIcon /> : <CopyIcon />}
@@ -227,7 +228,7 @@ function ForkButton({ item, context }: { item: TranscriptItem; context: Transcri
   const entryId = forkEntryIdForTranscriptItem(item, context.sessionTreeNodes);
   if (!entryId) return null;
   return (
-    <Button type="button" variant="ghost" size="icon-xs" onClick={() => void context.onFork(entryId)} aria-label="Fork from here" title="Fork from here" className="size-6 rounded-md p-0 text-muted-foreground hover:text-foreground">
+    <Button type="button" variant="ghost" size="icon-xs" onClick={() => void context.onFork(entryId)} aria-label="Fork from here" title="Fork from here" data-row-action="fork" className="size-6 rounded-md p-0 text-muted-foreground hover:text-foreground">
       <GitForkIcon />
     </Button>
   );
@@ -245,7 +246,7 @@ function MessageActions({ item, context, align = "start" }: { item: TranscriptIt
 function UserRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
   const segments = item.segments?.filter((s) => s.kind !== "toolCall" && s.kind !== "thinking");
   return (
-    <div className="flex justify-end px-4 py-2">
+    <div className="flex justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid max-w-[80%] justify-items-end gap-1">
         <div className="rounded-2xl rounded-br-sm bg-sidebar-primary/15 border border-sidebar-primary/20 px-4 py-2.5 text-sm">
           {segments && segments.length > 0
@@ -268,23 +269,25 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
   const plan = detectPlanCard(item);
   const extensionCard = extensionCardPayload(item);
 
-  if (!hasContent && !item.body.trim()) return null;
+  if (!hasContent && !item.body.trim() && !isStreaming) return null;
   if (extensionCard) return <ExtensionCardRow item={item} payload={extensionCard} context={context} />;
   if (plan) return <PlanCardRow item={item} plan={plan} context={context} />;
   if (isGeneratingPlan(item)) return <PlanGeneratingRow item={item} context={context} />;
 
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full">
+    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid justify-items-start gap-1">
         <div className="min-w-0 w-full">
           <div className="min-w-0">
-            {hasContent
+            {isStreaming ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite" aria-label="Assistant response generating">
+                <LoaderCircleIcon className="size-4 animate-spin" />
+                <span>Pi is responding…</span>
+              </div>
+            ) : hasContent
               ? <Segments segments={segments} showThinking={showThinking} context={context} />
               : <MarkdownContent text={item.body} context={context} />
             }
-            {isStreaming && (
-              <span className="inline-block w-1.5 h-3.5 bg-foreground/60 animate-pulse rounded-sm ml-0.5 align-middle" aria-hidden="true" />
-            )}
           </div>
         </div>
         <MessageActions item={item} context={context} />
@@ -295,7 +298,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
 
 function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: TranscriptRenderContext }) {
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full">
+    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-generating="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 px-4 py-3 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <LoaderCircleIcon className="size-4 animate-spin text-yellow-600 dark:text-yellow-300" />
@@ -310,8 +313,9 @@ function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: T
 }
 
 function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: PlanCardData; context: TranscriptRenderContext }) {
+  const [decision, setDecision] = useState<"accepted" | "rejected" | null>(null);
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full">
+    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-card="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 p-4 text-sm">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -340,9 +344,17 @@ function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: Plan
               <MarkdownContent text={plan.markdown} context={context} />
             </DialogContent>
           </Dialog>
-          <Button type="button" size="sm" onClick={context.onAcceptPlan} disabled={!context.onAcceptPlan}>
+          <Button type="button" size="sm" onClick={() => { setDecision("accepted"); context.onAcceptPlan?.(); }} disabled={!context.onAcceptPlan} data-row-action="accept-plan">
             Accept plan
           </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setDecision("rejected")} data-row-action="reject-plan">
+            Reject / dismiss
+          </Button>
+          {decision && (
+            <span className="self-center text-xs text-muted-foreground" role="status">
+              {decision === "accepted" ? "Plan accepted." : "Plan dismissed."}
+            </span>
+          )}
         </div>
       </div>
       <div className="mt-1">
@@ -358,7 +370,7 @@ function ExtensionCardRow({ item, payload, context }: { item: TranscriptItem; pa
   const validTag = tag && /^[-a-z0-9]+$/.test(tag) && tag.includes("-");
   const props = JSON.stringify(payload.props ?? {});
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full">
+    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-extension-card="true">
       <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-sm">
         {validTag
           ? React.createElement(tag, {
@@ -402,9 +414,10 @@ const toolActionColors: Record<string, string> = {
 };
 
 function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
-  const [expanded, setExpanded] = useState(false);
   const isRunning = item.status === "running";
   const isError = item.status === "error";
+  const shouldDefaultOpen = isRunning || isError || isDeveloperBashItem(item);
+  const [expanded, setExpanded] = useState(shouldDefaultOpen);
   const { action, target } = toolHeaderDisplay(item);
   const duration = formatToolDuration(item.durationMs);
   const summary = !isRunning ? compactToolSummary(item) : "";
@@ -415,11 +428,24 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
 
   const actionColor = toolActionColors[action] ?? "text-muted-foreground";
 
+  useEffect(() => {
+    if (isRunning || isError || isDeveloperBashItem(item)) setExpanded(true);
+    else setExpanded(false);
+  }, [isRunning, isError, item.id, item.status]);
+
   return (
-    <div className={cn(
-      "group/row relative mx-4 my-1 rounded-lg border text-sm",
-      isError ? "border-red-500/30 bg-red-500/5" : "border-border/40 bg-card/50",
-    )}>
+    <div
+      className={cn(
+        "group/row relative mx-4 my-1 rounded-lg border text-sm",
+        isError ? "border-red-500/30 bg-red-500/5" : "border-border/40 bg-card/50",
+      )}
+      data-testid="tool-row"
+      data-transcript-id={item.id}
+      data-transcript-kind={item.kind}
+      data-transcript-status={item.status ?? "done"}
+      data-tool-state={item.status ?? "done"}
+      data-collapsed={expanded ? "false" : "true"}
+    >
       <div className="absolute right-1 top-1 z-[1]">
         <RowActions item={item} />
       </div>
@@ -427,6 +453,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
         type="button"
         onClick={() => hasBody && setExpanded((v) => !v)}
         disabled={!hasBody}
+        data-row-action="toggle-output"
         className={cn(
           "w-full flex items-center gap-2 px-3 py-2 pr-9 text-left rounded-lg",
           hasBody && "cursor-pointer hover:bg-muted/40",
@@ -462,7 +489,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
         )}
 
         {/* Expand indicator */}
-        {hasBody && !isRunning && (
+        {hasBody && (
           <span className={cn("shrink-0 text-muted-foreground/40 text-xs ml-1 transition-transform", expanded && "rotate-180")}>
             ▾
           </span>
@@ -523,7 +550,7 @@ function QuestionSummaryRow({ item }: { item: TranscriptItem }) {
         : terminalCheckpoint
           ? "border-yellow-500/25 bg-yellow-500/5"
           : "border-yellow-500/20 bg-yellow-500/5",
-    )}>
+    )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="mb-1.5 flex items-center gap-2">
         <span className={cn(
           "text-[10px] font-semibold uppercase tracking-wide",
@@ -558,7 +585,7 @@ function SystemRow({ item }: { item: TranscriptItem }) {
     <div className={cn(
       "group/row mx-4 my-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
       item.kind === "error" ? "border-red-500/30 bg-red-500/5 text-red-400" : "border-border/30 bg-muted/30 text-muted-foreground",
-    )}>
+    )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="min-w-0">
         <span className="font-semibold">{item.title}</span>
         {item.body && item.body !== item.title && (
