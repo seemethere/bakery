@@ -358,6 +358,16 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
   }, [fetchInitialData]);
 
   const selectSession = useCallback((id: string) => {
+    const existingSocket = wsRef.current;
+    if (
+      selectedSessionRef.current?.id === id
+      && existingSocket
+      && (existingSocket.readyState === WebSocket.CONNECTING || existingSocket.readyState === WebSocket.OPEN)
+    ) {
+      localStorage.setItem("piWebLastSessionId", id);
+      return;
+    }
+
     const session = sessionsRef.current.find((s) => s.id === id);
     if (!session) return;
     localStorage.setItem("piWebLastSessionId", id);
