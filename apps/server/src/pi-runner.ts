@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -79,6 +80,28 @@ function getStatus(session: AgentSession): SessionSnapshot["status"] {
 function flushSessionFile(sessionManager: SessionManager): void {
   const maybeFlushable = sessionManager as unknown as { _rewriteFile?: unknown };
   if (typeof maybeFlushable._rewriteFile === "function") maybeFlushable._rewriteFile();
+}
+
+function modelId(model: { provider: string; id: string } | undefined): string | null {
+  return model ? `${model.provider}/${model.id}` : null;
+}
+
+export async function applyConfiguredDefaultModel(session: AgentSession, modelPolicy: ModelPolicy): Promise<void> {
+  const defaultModel = modelPolicy.defaultModel;
+  if (!defaultModel) return;
+  if ((session.state.messages?.length ?? 0) > 0) return;
+  if (modelPolicy.allowedModels && !modelPolicy.allowedModels.includes(defaultModel)) {
+    console.warn(`Configured default model is not allowed by policy: ${defaultModel}`);
+    return;
+  }
+  if (modelId(session.model) === defaultModel) return;
+
+  const model = (await session.modelRegistry.getAvailable()).find((candidate) => modelId(candidate) === defaultModel);
+  if (!model) {
+    console.warn(`Configured default model is not available: ${defaultModel}`);
+    return;
+  }
+  await session.setModel(model);
 }
 
 const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
@@ -505,6 +528,7 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
 
     const mode: "workspace" | "chat_only" = options.mode ?? (options.cwd ? "workspace" : "chat_only");
     const effectiveCwd = options.cwd ?? process.cwd();
+    const hadSessionFile = existsSync(options.piSessionFile);
     const sessionManager = SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), effectiveCwd);
     const questionBroker = new QuestionBroker();
     const { session } = await createAgentSession({
@@ -514,6 +538,7 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
       customTools: [createAskQuestionTool(questionBroker)],
       ...(mode === "chat_only" ? { noTools: "all" as const } : {}),
     });
+    if (!hadSessionFile) await applyConfiguredDefaultModel(session, this.modelPolicy);
     flushSessionFile(sessionManager);
     const handle = new InProcessSessionHandle(options.id, effectiveCwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);
