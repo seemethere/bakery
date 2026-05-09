@@ -76,6 +76,11 @@ function getStatus(session: AgentSession): SessionSnapshot["status"] {
   return session.isStreaming || session.isBashRunning ? "running" : "idle";
 }
 
+function flushSessionFile(sessionManager: SessionManager): void {
+  const maybeFlushable = sessionManager as unknown as { _rewriteFile?: unknown };
+  if (typeof maybeFlushable._rewriteFile === "function") maybeFlushable._rewriteFile();
+}
+
 const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
 const piChangelogPath = resolve(dirname(piPackageEntry), "../CHANGELOG.md");
 
@@ -467,7 +472,10 @@ class InProcessSessionHandle implements SessionHandle {
   }
 
   subscribe(listener: (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void): () => void {
-    return this.session.subscribe((event) => listener(normalizeEvent(event), event));
+    return this.session.subscribe((event) => {
+      listener(normalizeEvent(event), event);
+      if (event.type === "message_end") queueMicrotask(() => flushSessionFile(this.session.sessionManager));
+    });
   }
 
   async snapshot(webSession: WebSession): Promise<SessionSnapshot> {
@@ -497,9 +505,7 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
 
     const mode: "workspace" | "chat_only" = options.mode ?? (options.cwd ? "workspace" : "chat_only");
     const effectiveCwd = options.cwd ?? process.cwd();
-    const sessionManager = mode === "chat_only"
-      ? SessionManager.inMemory(effectiveCwd)
-      : SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), effectiveCwd);
+    const sessionManager = SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), effectiveCwd);
     const questionBroker = new QuestionBroker();
     const { session } = await createAgentSession({
       cwd: effectiveCwd,
@@ -508,6 +514,7 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
       customTools: [createAskQuestionTool(questionBroker)],
       ...(mode === "chat_only" ? { noTools: "all" as const } : {}),
     });
+    flushSessionFile(sessionManager);
     const handle = new InProcessSessionHandle(options.id, effectiveCwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);
     return handle;

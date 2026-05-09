@@ -14,7 +14,7 @@ import {
 import type { ServerConfig } from "./config.js";
 import { parseSlashCommand, runBundledExtensionCommand } from "./extensions.js";
 import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } from "./metadata-routes.js";
-import type { MetadataStore, WebCommandResultRecord } from "./metadata-store.js";
+import type { MetadataStore, SubmittedPromptRecord, WebCommandResultRecord } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 import { isBrowserOriginAllowed } from "./security-origin.js";
 
@@ -56,6 +56,15 @@ type WebCommandResultSnapshotMessage = {
   data?: unknown;
 };
 
+type SubmittedPromptSnapshotMessage = {
+  role: "user";
+  id: string;
+  content: Array<{ type: "text"; text: string }>;
+  timestamp: string;
+  webSubmittedPrompt: true;
+  error?: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -85,19 +94,55 @@ function webCommandResultSnapshotMessage(record: WebCommandResultRecord): WebCom
   };
 }
 
-export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], records: WebCommandResultRecord[]): unknown[] {
+function submittedPromptSnapshotMessage(record: SubmittedPromptRecord): SubmittedPromptSnapshotMessage {
+  return {
+    role: "user",
+    id: record.id,
+    content: [{ type: "text", text: record.text }],
+    timestamp: record.timestamp,
+    webSubmittedPrompt: true,
+    ...(record.error ? { error: record.error } : {}),
+  };
+}
+
+function messageText(message: unknown): string | null {
+  if (!isRecord(message)) return null;
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  const text = content
+    .map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "")
+    .filter(Boolean)
+    .join("\n");
+  return text || null;
+}
+
+function userMessageText(message: unknown): string | null {
+  return isRecord(message) && message.role === "user" ? messageText(message) : null;
+}
+
+function submittedPromptMatchesMessage(record: SubmittedPromptRecord, text: string): boolean {
+  return record.text === text || (record.kind === "ask" && askPrompt(record.text) === text);
+}
+
+export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], records: WebCommandResultRecord[], submittedPrompts: SubmittedPromptRecord[] = []): unknown[] {
+  const userTexts = messages.map(userMessageText).filter((value): value is string => Boolean(value));
+  const promptMessages = submittedPrompts
+    .filter((record) => !userTexts.some((text) => submittedPromptMatchesMessage(record, text)))
+    .map(submittedPromptSnapshotMessage);
   const commandMessages = records.map(webCommandResultSnapshotMessage);
-  if (messages.length === 0) return commandMessages;
-  if (commandMessages.length === 0) return messages;
+  const webMessages = [...promptMessages, ...commandMessages];
+  if (messages.length === 0) return webMessages;
+  if (webMessages.length === 0) return messages;
 
   const messageEntries = messages.map((message, index) => ({ kind: "message" as const, value: message, time: messageTimestampMs(message), index }));
-  const commandEntries = commandMessages.map((message, index) => ({ kind: "command" as const, value: message, time: timestampMs(message.timestamp), index }));
+  const webEntries = webMessages.map((message, index) => ({ kind: "web" as const, value: message, time: timestampMs(message.timestamp), index }));
 
   // If the runner snapshot lacks reliable timestamps, fall back to the previous
   // append behavior rather than guessing where persisted web-only cards belong.
-  if (messageEntries.some((entry) => entry.time === null) || commandEntries.some((entry) => entry.time === null)) return [...messages, ...commandMessages];
+  if (messageEntries.some((entry) => entry.time === null) || webEntries.some((entry) => entry.time === null)) return [...messages, ...webMessages];
 
-  return [...messageEntries, ...commandEntries]
+  return [...messageEntries, ...webEntries]
     .sort((left, right) => {
       const byTime = left.time! - right.time!;
       if (byTime !== 0) return byTime;
@@ -196,6 +241,7 @@ export class SessionHub {
   private attachHandle(handle: SessionHandle): void {
     this.handle = handle;
     this.unsubscribe = handle.subscribe((event, raw) => {
+      this.reconcileSubmittedPrompt(raw);
       this.rememberActiveToolExecution(event);
       this.broadcast({ type: "agent_event", event, raw });
       if (event.type === "agent_end" || event.type === "turn_end") {
@@ -212,6 +258,23 @@ export class SessionHub {
     this.unsubscribeQuestion = handle.subscribeQuestion((question) => {
       this.broadcast({ type: "question_update", question });
     });
+  }
+
+  private reconcileSubmittedPrompt(raw: unknown): void {
+    if (!isRecord(raw) || raw.type !== "message_end") return;
+    this.reconcileSubmittedPromptText(userMessageText(raw.message));
+  }
+
+  private reconcileSubmittedPromptText(text: string | null): void {
+    if (!text) return;
+    const match = this.deps.store
+      .listUnreconciledSubmittedPrompts(this.sessionId)
+      .find((record) => submittedPromptMatchesMessage(record, text));
+    if (match) this.deps.store.markSubmittedPromptReconciled(this.sessionId, match.id);
+  }
+
+  private reconcileSubmittedPromptsFromMessages(messages: unknown[]): void {
+    for (const message of messages) this.reconcileSubmittedPromptText(userMessageText(message));
   }
 
   private async promote(webSession: WebSession): Promise<SessionHandle> {
@@ -485,21 +548,42 @@ export class SessionHub {
   private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
     if (!this.handle) {
       const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+      const submittedPrompts = this.deps.store.listUnreconciledSubmittedPrompts(webSession.id);
       return {
         session: webSession,
         status: "idle",
-        messages: mergeSnapshotMessagesWithWebCommands([], commandRecords),
+        messages: mergeSnapshotMessagesWithWebCommands([], commandRecords, submittedPrompts),
         pendingQuestion: null,
       };
     }
     const snapshot = await this.handle.snapshot(webSession);
+    this.reconcileSubmittedPromptsFromMessages(snapshot.messages);
     const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+    const submittedPrompts = this.deps.store.listUnreconciledSubmittedPrompts(webSession.id);
     const activeToolExecutions = [...this.activeToolExecutions.values()];
     return {
       ...snapshot,
-      messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords),
+      messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords, submittedPrompts),
       ...(activeToolExecutions.length > 0 ? { activeToolExecutions } : {}),
     };
+  }
+
+  private submitPromptReceipt(kind: "prompt" | "ask", text: string): SubmittedPromptRecord {
+    return this.deps.store.addSubmittedPrompt(this.sessionId, { kind, text });
+  }
+
+  private markPromptReceiptError(record: SubmittedPromptRecord, error: unknown): void {
+    this.deps.store.markSubmittedPromptError(this.sessionId, record.id, error instanceof Error ? error.message : String(error));
+  }
+
+  private async promptWithReceipt(handle: SessionHandle, kind: "prompt" | "ask", receiptText: string, promptText: string, images?: ImageContent[]): Promise<void> {
+    const receipt = this.submitPromptReceipt(kind, receiptText);
+    try {
+      await handle.prompt(promptText, images);
+    } catch (error) {
+      this.markPromptReceiptError(receipt, error);
+      throw error;
+    }
   }
 
   private commandServices() {
@@ -544,7 +628,7 @@ export class SessionHub {
         if (updated) this.broadcastMetadataUpdate(updated);
       }
       const handle = await this.ensureHandle();
-      await handle.prompt(result.prompt, images);
+      await this.promptWithReceipt(handle, "prompt", result.prompt, result.prompt, images);
       await this.broadcastSettingsUpdate();
       return true;
     }
@@ -638,7 +722,7 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await handle.prompt(askPrompt(parsed.data.text), parsed.data.images?.map(dataUrlToImageContent));
+        await this.promptWithReceipt(handle, "ask", parsed.data.text, askPrompt(parsed.data.text), parsed.data.images?.map(dataUrlToImageContent));
         await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
@@ -671,7 +755,7 @@ export class SessionHub {
               const updated = this.deps.store.updateSession(webSession.id, { title: builtinResult.title ?? "Workflow", titleSource: "first_prompt" });
               if (updated) this.broadcastMetadataUpdate(updated);
             }
-            await handle.prompt(builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
+            await this.promptWithReceipt(handle, "prompt", builtinResult.launchPrompt, builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
             await this.broadcastSettingsUpdate();
             return;
           }
@@ -686,7 +770,7 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+        await this.promptWithReceipt(handle, "prompt", parsed.data.text, parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
         await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "steer") await this.requireHandle().steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
       else if (parsed.data.type === "follow_up") await this.requireHandle().followUp(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
@@ -704,7 +788,7 @@ export class SessionHub {
         const payload = parsed.data.payload;
         const handle = this.requireHandle();
         if (payload.answer && !payload.cancelled && handle.isCheckpointQuestion(payload.questionId)) {
-          await handle.prompt(payload.answer.trim(), []);
+          await this.promptWithReceipt(handle, "prompt", payload.answer.trim(), payload.answer.trim(), []);
         } else {
           handle.answerQuestion(payload);
         }

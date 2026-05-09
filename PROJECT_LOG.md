@@ -8,6 +8,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 
 - Bun workspaces monorepo with `apps/server`, `apps/web`, and `packages/protocol`.
 - React web theme preference now applies at app startup through a shared theme helper instead of depending on the Settings route, so `piWebThemePreference` persists across reloads for the whole site and follows OS changes when set to System.
+- Real chat-only sessions now use the same file-backed pi session manager as workspace sessions while keeping tools disabled; Bakery also keeps a tiny durable submitted-prompt receipt in SQLite until pi emits the official user message, then reconciles it, so reloads/backend restarts can show submitted prompts instead of title-only empty transcript ghosts.
 - React web now restores the old composer model/thinking surface: session runtime settings flow from snapshots and `settings_update` messages, the composer shows a model/thinking popover plus context usage, and the Show thinking toggle persists locally.
 - React composer was reshaped toward an AI chat input pattern using smaller local pieces for notices, attachment tray, textarea, toolbar, mode badge, model/thinking menu, and context usage while preserving slash/file autocomplete, image attachments, bash modes, follow-up, abort, and runtime settings behavior.
 - React composer mode is now selectable from a popout menu with Prompt/Steer, Bash, and Bash without context options; typed `!`/`!!` still override for compatibility, but users no longer need to remember the shorthand to choose a mode.

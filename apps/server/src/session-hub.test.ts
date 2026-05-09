@@ -68,6 +68,28 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe("mergeSnapshotMessagesWithWebCommands", () => {
+  test("adds unreconciled submitted prompts without duplicating official user messages", () => {
+    const merged = mergeSnapshotMessagesWithWebCommands([
+      { role: "user", id: "official", content: [{ type: "text", text: "already official" }], timestamp: "2026-05-03T00:00:01.000Z" },
+    ], [], [
+      { id: "prompt:1", kind: "prompt", text: "pending prompt", timestamp: "2026-05-03T00:00:00.000Z", reconciledAt: null, error: null },
+      { id: "prompt:2", kind: "prompt", text: "already official", timestamp: "2026-05-03T00:00:02.000Z", reconciledAt: null, error: null },
+    ]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["prompt:1", "official"]);
+    expect(merged[0]).toMatchObject({ role: "user", webSubmittedPrompt: true, content: [{ type: "text", text: "pending prompt" }] });
+  });
+
+  test("deduplicates submitted ask prompts against the expanded pi prompt", () => {
+    const merged = mergeSnapshotMessagesWithWebCommands([
+      { role: "user", id: "official", content: [{ type: "text", text: "Answer the following operator question directly.\nTreat this as an ask/explain turn: do not edit files, run shell commands, or call tools unless the operator explicitly asks you to.\n\nwhat is this?" }], timestamp: "2026-05-03T00:00:01.000Z" },
+    ], [], [
+      { id: "prompt:ask", kind: "ask", text: "what is this?", timestamp: "2026-05-03T00:00:00.000Z", reconciledAt: null, error: null },
+    ]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["official"]);
+  });
+
   test("interleaves persisted web command results between timestamped snapshot messages", () => {
     const messages = [
       { role: "user", id: "user-1", timestamp: "2026-05-03T00:00:00.000Z" },
@@ -166,6 +188,7 @@ describe("active tool execution snapshots", () => {
     const store = {
       getSession: () => session,
       listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
     };
     const hub = new SessionHub(session.id, handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
 
@@ -225,6 +248,7 @@ describe("active tool execution snapshots", () => {
     const store = {
       getSession: () => session,
       listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
     };
     const sent: unknown[] = [];
     const socket = { send: (data: string) => sent.push(JSON.parse(data)), close: () => undefined, on: () => undefined };

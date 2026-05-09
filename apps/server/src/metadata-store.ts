@@ -18,6 +18,25 @@ export type WebCommandResultRecord = {
   timestamp: string;
 };
 
+export type SubmittedPromptRecord = {
+  id: string;
+  text: string;
+  kind: "prompt" | "ask";
+  timestamp: string;
+  reconciledAt: string | null;
+  error: string | null;
+};
+
+type SubmittedPromptRow = {
+  id: string;
+  web_session_id: string;
+  text: string;
+  kind: "prompt" | "ask";
+  timestamp: string;
+  reconciled_at: string | null;
+  error: string | null;
+};
+
 type WebCommandResultRow = {
   id: string;
   web_session_id: string;
@@ -161,6 +180,17 @@ export class MetadataStore {
         FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS web_submitted_prompts (
+        id TEXT PRIMARY KEY,
+        web_session_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        reconciled_at TEXT,
+        error TEXT,
+        FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS workspaces (
         path TEXT PRIMARY KEY,
         label TEXT NOT NULL,
@@ -182,6 +212,7 @@ export class MetadataStore {
     this.addColumn("web_sessions", "auto_generate_metadata_override TEXT NOT NULL DEFAULT 'default'", "auto_generate_metadata_override");
     this.addColumn("web_sessions", "pinned INTEGER NOT NULL DEFAULT 0", "pinned");
     this.addColumn("web_sessions", "kind TEXT NOT NULL DEFAULT 'workspace'", "kind");
+    this.addColumn("web_submitted_prompts", "error TEXT", "error");
     this.relaxCwdNotNull();
     this.inferExistingTitleSources();
   }
@@ -347,6 +378,53 @@ export class MetadataStore {
         ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
         timestamp: row.timestamp,
       }));
+  }
+
+  addSubmittedPrompt(sessionId: string, input: { id?: string; text: string; kind: "prompt" | "ask"; timestamp?: string }): SubmittedPromptRecord {
+    const record: SubmittedPromptRecord = {
+      id: input.id ?? `prompt:${crypto.randomUUID()}`,
+      text: input.text,
+      kind: input.kind,
+      timestamp: input.timestamp ?? new Date().toISOString(),
+      reconciledAt: null,
+      error: null,
+    };
+    this.db
+      .query("INSERT OR REPLACE INTO web_submitted_prompts (id, web_session_id, text, kind, timestamp, reconciled_at, error) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(record.id, sessionId, record.text, record.kind, record.timestamp, record.reconciledAt, record.error);
+    return record;
+  }
+
+  markSubmittedPromptReconciled(sessionId: string, id: string, timestamp = new Date().toISOString()): SubmittedPromptRecord | undefined {
+    const row = this.db.query<SubmittedPromptRow, [string, string]>("SELECT * FROM web_submitted_prompts WHERE web_session_id = ? AND id = ? AND reconciled_at IS NULL").get(sessionId, id);
+    if (!row) return undefined;
+    this.db.query("UPDATE web_submitted_prompts SET reconciled_at = ?, error = NULL WHERE id = ?").run(timestamp, row.id);
+    return this.mapSubmittedPrompt(row, timestamp, null);
+  }
+
+  markSubmittedPromptError(sessionId: string, id: string, error: string): SubmittedPromptRecord | undefined {
+    const timestamp = new Date().toISOString();
+    this.db.query("UPDATE web_submitted_prompts SET error = ? WHERE web_session_id = ? AND id = ? AND reconciled_at IS NULL").run(error, sessionId, id);
+    const row = this.db.query<SubmittedPromptRow, [string, string]>("SELECT * FROM web_submitted_prompts WHERE web_session_id = ? AND id = ?").get(sessionId, id);
+    return row ? this.mapSubmittedPrompt(row, row.reconciled_at, error) : undefined;
+  }
+
+  listUnreconciledSubmittedPrompts(sessionId: string): SubmittedPromptRecord[] {
+    return this.db
+      .query<SubmittedPromptRow, [string]>("SELECT * FROM web_submitted_prompts WHERE web_session_id = ? AND reconciled_at IS NULL ORDER BY timestamp ASC, id ASC")
+      .all(sessionId)
+      .map((row) => this.mapSubmittedPrompt(row));
+  }
+
+  private mapSubmittedPrompt(row: SubmittedPromptRow, reconciledAt = row.reconciled_at, error = row.error): SubmittedPromptRecord {
+    return {
+      id: row.id,
+      text: row.text,
+      kind: row.kind,
+      timestamp: row.timestamp,
+      reconciledAt,
+      error,
+    };
   }
 
   getSettings(): AppSettings {
