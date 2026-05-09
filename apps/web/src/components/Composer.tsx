@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
 import { contextUsageLabel, modelOptionLabel, modelThinkingLabel } from "@/lib/model-settings";
-import { isSupportedImageFile, loadImageFile, maxPromptImages, type PromptImage } from "@/lib/prompt-images";
+import { imageFilesFromDataTransfer, isSupportedImageFile, loadImageFile, maxPromptImages, type PromptImage } from "@/lib/prompt-images";
 import { cn } from "@/lib/utils";
 
 export type ComposerStatus = "idle" | "running" | "aborting" | "connecting" | "disconnected" | "error";
@@ -67,6 +67,11 @@ function payloadForMode(draft: string, mode: ComposerMode): string {
   if (mode === "plan") return command ? `/plan ${command}` : "/plan";
   if (!command || mode === "prompt" || mode === "ask") return draft;
   return mode === "bash-no-context" ? `!! ${command}` : `! ${command}`;
+}
+
+function sendTextForMode(draft: string, imageCount: number, mode: ComposerMode): string {
+  if (draft.trim().length === 0 && imageCount > 0) return "Please inspect the attached image.";
+  return payloadForMode(draft, mode);
 }
 
 function sendModeForComposerMode(mode: ComposerMode): SendMode {
@@ -189,7 +194,7 @@ export function Composer({
 
   function handleSend(followUp = false) {
     if (!canSend) return;
-    onSend(payloadForMode(draft, composerMode), images, followUp, sendModeForComposerMode(composerMode));
+    onSend(sendTextForMode(draft, images.length, composerMode), images, followUp, sendModeForComposerMode(composerMode));
     setDraft("");
     setImages([]);
     if (draftKey) localStorage.removeItem(draftKey);
@@ -293,12 +298,34 @@ export function Composer({
   }
 
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = event.clipboardData?.files;
-    if (files && Array.from(files).some(isSupportedImageFile)) {
+    const files = imageFilesFromDataTransfer(event.clipboardData);
+    if (files.length > 0) {
       event.preventDefault();
       void handleImageFiles(files);
     }
   }, [images]);
+
+  useEffect(() => {
+    if (!isController) return;
+
+    function handleDocumentPaste(event: globalThis.ClipboardEvent) {
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      const element = target instanceof Element ? target : null;
+      const isPrompt = element?.id === "prompt";
+      const isOtherEditable = Boolean(element?.closest('textarea,input,[contenteditable="true"]')) && !isPrompt;
+      if (isOtherEditable) return;
+
+      const files = imageFilesFromDataTransfer(event.clipboardData);
+      if (files.length === 0) return;
+      event.preventDefault();
+      void handleImageFiles(files);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+
+    document.addEventListener("paste", handleDocumentPaste);
+    return () => document.removeEventListener("paste", handleDocumentPaste);
+  }, [images, isController]);
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
@@ -434,7 +461,7 @@ function AttachmentTray({ images, onRemove }: { images: PromptImage[]; onRemove:
   return (
     <div className="flex flex-wrap gap-2" aria-label="Attached images">
       {images.map((image) => (
-        <figure key={image.id} className="relative m-0 grid w-[88px] overflow-hidden rounded-xl border border-border/50 bg-muted" style={{ gridTemplateRows: "58px auto" }}>
+        <figure key={image.id} className="prompt-image relative m-0 grid w-[88px] overflow-hidden rounded-xl border border-border/50 bg-muted" style={{ gridTemplateRows: "58px auto" }}>
           <img src={image.dataUrl} alt={image.name} className="h-[58px] w-full object-cover" />
           <figcaption className="truncate px-1.5 py-1 text-[11px] text-muted-foreground" title={image.name}>
             {image.name}
@@ -597,7 +624,7 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <Button type="button" variant="outline" size="icon" onClick={onAttach} title="Attach images" aria-label="Attach images" disabled={!isController}>
+      <Button id="attachImages" type="button" variant="outline" size="icon" onClick={onAttach} title="Attach images" aria-label="Attach images" disabled={!isController}>
         <Paperclip />
       </Button>
 

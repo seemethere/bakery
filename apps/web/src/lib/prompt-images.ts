@@ -14,6 +14,16 @@ export function isSupportedImageFile(file: Pick<File, "type" | "name">): boolean
   return file.type.startsWith("image/") || /\.(?:png|jpe?g|gif|webp)$/i.test(file.name);
 }
 
+export function imageFilesFromDataTransfer(dataTransfer: DataTransfer | null | undefined): File[] {
+  const files = Array.from(dataTransfer?.files ?? []).filter(isSupportedImageFile);
+  if (files.length > 0) return files;
+
+  return Array.from(dataTransfer?.items ?? [])
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file && isSupportedImageFile(file)));
+}
+
 export function imageMimeType(file: Pick<File, "type" | "name">): string {
   if (file.type === "image/jpg") return "image/jpeg";
   if (file.type.startsWith("image/")) return file.type;

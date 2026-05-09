@@ -19,6 +19,7 @@ import {
 
 export const artifactScenarios = [
   "image-attachments",
+  "image-paste-attachments",
   "image-artifact-drop-upload",
   "image-artifact-paths",
   "repeated-image-artifact-paths",
@@ -42,6 +43,19 @@ async function chooseImageWithPaperclip(page: Page, imagePath: string, options: 
   await fileChooser.setFiles(imagePath);
 }
 
+async function pasteImage(page: Page, imageName = "pasted.png", target: "prompt" | "body" = "prompt"): Promise<void> {
+  const locator = target === "prompt" ? page.locator("#prompt") : page.locator("body");
+  await locator.evaluate(async (element, name) => {
+    const response = await fetch("/bakery-logo-96.png");
+    const blob = await response.blob();
+    const file = new File([blob], name, { type: blob.type || "image/png" });
+    const data = new DataTransfer();
+    data.items.add(file);
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }, imageName);
+}
+
 export async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
@@ -57,6 +71,25 @@ export async function runImageAttachments(page: Page): Promise<Record<string, un
   await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
   await page.locator(".message.assistant img").first().waitFor({ timeout: 5_000 });
   return collectMetrics(page);
+}
+
+export async function runImagePasteAttachments(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await pasteImage(page, "body-pasted.png", "body");
+  await page.locator(".prompt-image", { hasText: "body-pasted.png" }).waitFor({ timeout: 5_000 });
+  await page.locator(".prompt-image button").click();
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+
+  await pasteImage(page, "pasted.png", "prompt");
+  await page.locator(".prompt-image", { hasText: "pasted.png" }).waitFor({ timeout: 5_000 });
+  await page.locator("#send").click();
+  await waitForAgentRunning(page, 5_000);
+  await waitForAgentIdle(page, 10_000);
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
+  const bodyText = await page.locator("body").textContent();
+  if (bodyText?.includes("bad_message")) throw new Error("Image-only pasted prompt was rejected as bad_message");
+  return { userImages: await page.locator(".message.user img").count(), ...(await collectMetrics(page)) };
 }
 
 export async function runImageArtifactDropUpload(page: Page): Promise<Record<string, unknown>> {

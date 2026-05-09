@@ -1,7 +1,7 @@
 import type { Browser, Page } from "playwright";
 import type { HarnessRuntime } from "../types";
 import type { RegisteredHarnessScenarioName } from "./metadata";
-import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments, runArtifactPathFormats, runMissingRemoteImageArtifact, runRemoteImageArtifactPaths, runRemoteImageArtifactUpload, runRepeatedImageArtifactPaths } from "./artifacts";
+import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments, runImagePasteAttachments, runArtifactPathFormats, runMissingRemoteImageArtifact, runRemoteImageArtifactPaths, runRemoteImageArtifactUpload, runRepeatedImageArtifactPaths } from "./artifacts";
 import { runBackendRestart, runConnectionDisconnected, runControllerHandoffEdges, runReconnectController, runReconnectDraft } from "./lifecycle";
 import { runMobileImageStreamStability, runMobileLayout, runMobileLongTranscriptControls } from "./mobile";
 import { runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runSubagentCard, runSubagentCardReconnect, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
@@ -41,6 +41,7 @@ export const scenarioRunners = {
   "mobile-image-stream-stability": (page) => runMobileImageStreamStability(page),
   "file-autocomplete": (page) => runFileAutocomplete(page),
   "image-attachments": (page) => runImageAttachments(page),
+  "image-paste-attachments": (page) => runImagePasteAttachments(page),
   "image-artifact-drop-upload": (page) => runImageArtifactDropUpload(page),
   "image-artifact-paths": (page) => runImageArtifactPaths(page),
   "repeated-image-artifact-paths": (page) => runRepeatedImageArtifactPaths(page),

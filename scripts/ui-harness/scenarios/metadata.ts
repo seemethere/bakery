@@ -28,6 +28,7 @@ export const scenarioDefinitions = [
   { name: "mobile-image-stream-stability", family: "mobile" },
   { name: "file-autocomplete", family: "slash-command" },
   { name: "image-attachments", family: "artifact" },
+  { name: "image-paste-attachments", family: "artifact" },
   { name: "image-artifact-drop-upload", family: "artifact" },
   { name: "image-artifact-paths", family: "artifact" },
   { name: "repeated-image-artifact-paths", family: "artifact" },
