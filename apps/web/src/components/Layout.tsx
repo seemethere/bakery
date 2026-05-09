@@ -70,6 +70,8 @@ export function Layout({
         "pi-web-agent h-screen overflow-hidden",
         collapsed && "session-sidebar-collapsed",
       )}
+      data-selected-session-id={selectedSession?.id ?? ""}
+      data-agent-status={connectionStatus}
     >
       <Sidebar
         selectedSession={selectedSession}

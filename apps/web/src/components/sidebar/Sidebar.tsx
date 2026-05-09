@@ -152,6 +152,7 @@ export function Sidebar({
             <TooltipTrigger
               render={
                 <Button
+                  id="newSession"
                   onClick={() => onNewSession()}
                   className="group/new-session h-8 flex-1 justify-start gap-1.5 rounded-r-none group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:rounded-md group-data-[collapsible=icon]:px-0"
                 >

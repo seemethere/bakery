@@ -602,19 +602,20 @@ function ComposerToolbar({
       </Button>
 
       {isRunning && (
-        <Button type="button" variant="destructive" size="icon" onClick={onAbort} title="Abort" aria-label="Abort">
+        <Button id="abort" type="button" variant="destructive" size="icon" onClick={onAbort} title="Abort" aria-label="Abort">
           <Square />
         </Button>
       )}
 
       {isRunning && (
-        <Button type="button" variant="outline" size="sm" onClick={onFollowUp} disabled={!canSend} title="Follow-up" aria-label="Follow-up">
+        <Button id="followUp" type="button" variant="outline" size="sm" onClick={onFollowUp} disabled={!canSend} title="Follow-up" aria-label="Follow-up">
           <Plus />
           <span className="hidden sm:inline">Follow-up</span>
         </Button>
       )}
 
       <Button
+        id="send"
         type="button"
         size="icon"
         onClick={onSend}

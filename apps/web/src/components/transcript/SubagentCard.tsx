@@ -233,7 +233,7 @@ function ProgressRow({ entry, index }: { entry: Record<string, unknown>; index: 
   ].filter(Boolean);
 
   return (
-    <div className="flex items-start gap-2 py-1.5 px-2">
+    <div className="subagent-activity flex items-start gap-2 py-1.5 px-2">
       <StatusGlyph status={status} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
@@ -272,7 +272,7 @@ function ResultRow({ result, index }: { result: Record<string, unknown>; index: 
       <StatusGlyph status={status} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
-          <strong className="font-medium text-foreground/90">{agent}</strong>
+          <strong className="subagent-result-title font-medium text-foreground/90">{agent}</strong>
           <span className="text-muted-foreground/60">{status.replaceAll("_", " ")}</span>
           {statParts.length > 0 && <em className="not-italic text-muted-foreground/50">{statParts.join(" · ")}</em>}
         </div>
@@ -307,11 +307,11 @@ export function SubagentCard({ item }: { item: TranscriptItem }) {
   return (
     <div
       className={cn(
-        "mx-4 my-1 rounded-lg border text-sm overflow-hidden",
-        status === "running" && "border-blue-500/25 bg-blue-500/5",
-        status === "completed" && "border-emerald-500/20 bg-emerald-500/5",
-        status === "failed" && "border-red-500/25 bg-red-500/5",
-        (status === "paused" || status === "detached") && "border-yellow-500/25 bg-yellow-500/5",
+        "subagent-card mx-4 my-1 rounded-lg border text-sm overflow-hidden",
+        status === "running" && "running border-blue-500/25 bg-blue-500/5",
+        status === "completed" && "completed border-emerald-500/20 bg-emerald-500/5",
+        status === "failed" && "failed border-red-500/25 bg-red-500/5",
+        (status === "paused" || status === "detached") && `${status} border-yellow-500/25 bg-yellow-500/5`,
       )}
       data-testid="subagent-card"
       data-subagent-status={status}

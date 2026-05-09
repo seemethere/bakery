@@ -124,7 +124,7 @@ function mergeSuppressedPaths(...sets: Array<Set<string> | undefined>): Set<stri
 
 function MarkdownContent({ text, context, className }: { text: string; context: TranscriptRenderContext; className?: string }) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
+    <div className={cn("markdown-body prose prose-sm dark:prose-invert max-w-none", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -239,7 +239,7 @@ function RowActions({ item, context, align = "end" }: { item: TranscriptItem; co
       >
         {copied ? <CheckIcon /> : <MoreHorizontalIcon />}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-44">
+      <DropdownMenuContent align={align} className="message-action-menu w-44">
         {text.trim() && (
           <DropdownMenuItem data-row-action="copy" onClick={() => void handleCopy()}>
             <CopyIcon />
@@ -308,7 +308,7 @@ function MessageActions({ item, context, align = "start" }: { item: TranscriptIt
 function UserRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
   const segments = item.segments?.filter((s) => s.kind !== "toolCall" && s.kind !== "thinking");
   return (
-    <div className="flex justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message user flex justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid max-w-[80%] justify-items-end gap-1">
         <div className="rounded-2xl rounded-br-sm bg-sidebar-primary/15 border border-sidebar-primary/20 px-4 py-2.5 text-sm">
           {segments && segments.length > 0
@@ -337,7 +337,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
   if (isGeneratingPlan(item)) return <PlanGeneratingRow item={item} context={context} />;
 
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message assistant px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid justify-items-start gap-1">
         <div className="min-w-0 w-full">
           <div className="min-w-0">
@@ -498,7 +498,11 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
   return (
     <div
       className={cn(
-        "group/row relative mx-4 my-1 rounded-lg border text-sm",
+        "message tool group/row relative mx-4 my-1 rounded-lg border text-sm",
+        item.status === "running" && "running",
+        item.status === "done" && "done",
+        item.status === "error" && "error",
+        !expanded && "collapsed",
         isError ? "border-red-500/30 bg-red-500/5" : "border-border/40 bg-card/50",
       )}
       data-testid="tool-row"
@@ -517,7 +521,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
         disabled={!hasBody}
         data-row-action="toggle-output"
         className={cn(
-          "w-full flex items-center gap-2 px-3 py-2 pr-9 text-left rounded-lg",
+          "message-header w-full flex items-center gap-2 px-3 py-2 pr-9 text-left rounded-lg",
           hasBody && "cursor-pointer hover:bg-muted/40",
           !hasBody && "cursor-default",
         )}
@@ -529,14 +533,14 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
         )} />
 
         {/* Action label */}
-        <span className={cn("shrink-0 font-mono text-xs font-semibold", actionColor)}>
+        <strong className={cn("shrink-0 font-mono text-xs font-semibold", actionColor)}>
           {action}
-        </span>
+        </strong>
 
         {/* Target path/command */}
         {target && (
           <span className="font-mono text-xs text-muted-foreground truncate min-w-0 flex-1">
-            {target}
+            {` ${target}`}
           </span>
         )}
 
@@ -552,7 +556,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
 
         {/* Expand indicator */}
         {hasBody && (
-          <span className={cn("shrink-0 text-muted-foreground/40 text-xs ml-1 transition-transform", expanded && "rotate-180")}>
+          <span className={cn("message-expand-toggle shrink-0 text-muted-foreground/40 text-xs ml-1 transition-transform", expanded && "rotate-180")}>
             ▾
           </span>
         )}
@@ -645,7 +649,7 @@ function QuestionSummaryRow({ item }: { item: TranscriptItem }) {
 function SystemRow({ item, context }: { item: TranscriptItem; context: TranscriptRenderContext }) {
   return (
     <div className={cn(
-      "group/row mx-4 my-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
+      "message group/row mx-4 my-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
       item.kind === "error" ? "border-red-500/30 bg-red-500/5 text-red-400" : "border-border/30 bg-muted/30 text-muted-foreground",
     )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="min-w-0">
@@ -681,11 +685,13 @@ export function TranscriptRow({
   if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "tool" && hasSubagentCard(item)) {
     return (
-      <div className="group/row relative" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-subagent-card="true">
-        <div className="absolute right-5 top-2 z-[1]">
+      <div className="message subagent-card-result group/row relative max-w-[640px]" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-subagent-card="true">
+        <div className="standalone-card-action-area message-action-area absolute right-5 top-2 z-[1]">
           <RowActions item={item} context={context} />
         </div>
-        <SubagentCard item={item} />
+        <div className="message-body">
+          <SubagentCard item={item} />
+        </div>
       </div>
     );
   }

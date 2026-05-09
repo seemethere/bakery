@@ -25,10 +25,11 @@ export const lifecycleScenarios = [
 ] as const;
 
 export async function runReconnectController(page: Page): Promise<Record<string, unknown>> {
-  await prepareSession(page);
+  const sessionId = await prepareSession(page);
   const context = page.context();
   const viewer = await context.newPage();
-  await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
+  await viewer.addInitScript((id) => localStorage.removeItem(`piWebClientId:${id}`), sessionId);
+  await viewer.goto(`${webBase}/sessions/${sessionId}`, { waitUntil: "domcontentloaded" });
   await viewer.locator("#prompt").waitFor({ state: "visible" });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await viewer.locator("#takeControl").click();
@@ -47,10 +48,11 @@ export async function runReconnectController(page: Page): Promise<Record<string,
 }
 
 export async function runControllerHandoffEdges(page: Page, browser: Browser): Promise<Record<string, unknown>> {
-  await prepareSession(page);
+  const sessionId = await prepareSession(page);
   const context = page.context();
   const viewer = await context.newPage();
-  await viewer.goto(webBase, { waitUntil: "domcontentloaded" });
+  await viewer.addInitScript((id) => localStorage.removeItem(`piWebClientId:${id}`), sessionId);
+  await viewer.goto(`${webBase}/sessions/${sessionId}`, { waitUntil: "domcontentloaded" });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
 
   await page.locator("#prompt").fill("Please produce a long streaming takeover response.");

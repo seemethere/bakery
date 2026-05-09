@@ -135,6 +135,7 @@ export function SessionPage({
               {otherConnectedTabs > 0 ? ` ${otherConnectedTabs} other ${otherConnectedTabs === 1 ? "tab is" : "tabs are"} connected.` : ""}
             </span>
             <button
+              id="takeControl"
               type="button"
               onClick={onTakeControl}
               className="rounded-lg border border-yellow-500/30 bg-yellow-500/15 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-yellow-500/25"

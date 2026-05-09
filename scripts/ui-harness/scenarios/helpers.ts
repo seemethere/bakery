@@ -40,7 +40,7 @@ export async function collectMetrics(page: Page): Promise<Record<string, unknown
   return await page.evaluate(() => {
     const nav = performance.getEntriesByType("navigation")[0]?.toJSON?.() ?? null;
     const resources = performance.getEntriesByType("resource").length;
-    const transcript = document.querySelector(".transcript");
+    const transcript = document.querySelector('[data-testid="transcript"], .transcript');
     const perf = window.__piWebPerf ?? null;
     const longTasks = window.__piWebLongTasks ?? [];
     const summarize = (samples: number[]) => {
@@ -61,7 +61,7 @@ export async function collectMetrics(page: Page): Promise<Record<string, unknown
       status: document.querySelector(".status")?.textContent ?? null,
       connectionBanner: document.querySelector(".connection-banner")?.textContent?.replace(/\s+/g, " ").trim() ?? null,
       promptValue: (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value ?? null,
-      renderedImages: document.querySelectorAll(".message img").length,
+      renderedImages: document.querySelectorAll('[data-transcript-kind] img, .message img').length,
       inspectorPanels: document.querySelectorAll(".right-panel, .tree-drawer").length,
       treeRows: document.querySelectorAll(".tree-line").length,
       sessionButtons: document.querySelectorAll("[data-session-id]").length,
@@ -87,28 +87,19 @@ export async function prepareSession(page: Page): Promise<string> {
   await page.addInitScript(({ apiBase }) => {
     localStorage.setItem("piWebApiBase", apiBase);
     localStorage.setItem("piWebAuthToken", "");
+    localStorage.setItem("piWebSidebarCollapsed", "true");
   }, { apiBase });
-  await page.goto(`${webBase}/settings`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${webBase}/sessions`, { waitUntil: "domcontentloaded" });
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) {
-    await page.locator("pi-web-agent").evaluate((element) => {
+    await page.locator(".pi-web-agent").evaluate((element) => {
       element.classList.add("session-sidebar-collapsed");
       element.classList.remove("session-sidebar-overlay-open");
       element.querySelector(".session-sidebar")?.classList.add("collapsed");
       element.querySelector("#sessionSidebarBackdrop")?.remove();
     });
   }
-  await page.locator("#apiBase").fill(apiBase);
-  await page.locator("#token").fill("");
-  await page.locator("#saveSettings").click();
-  if (await page.locator(".settings-dialog").isVisible().catch(() => false)) {
-    await page.keyboard.press("Escape");
-    await page.locator(".settings-dialog").waitFor({ state: "detached", timeout: 5_000 });
-  }
-  if (await page.locator("#workspace").count() === 0) {
-    const mobileMenu = page.locator("#toggleSessionSidebarMobile");
-    if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
-    else if (await page.locator("#toggleSessionSidebar").count() > 0) await page.locator("#toggleSessionSidebar").click();
-  }
+  const mobileMenu = page.locator("#toggleSessionSidebarMobile");
+  if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
   await page.locator("#newSession").waitFor({ state: "visible", timeout: 5_000 });
   const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
   await page.locator("#newSession").click();
@@ -117,31 +108,31 @@ export async function prepareSession(page: Page): Promise<string> {
   await page.locator("#prompt").waitFor({ state: "visible" });
   await waitForAgentIdle(page, 5_000);
   if (await page.locator("#toggleSessionSidebarMobile").isVisible().catch(() => false)) {
-    const sidebarOpen = await page.locator("pi-web-agent").evaluate((element) => !element.classList.contains("session-sidebar-collapsed"));
+    const sidebarOpen = await page.locator(".pi-web-agent").evaluate((element) => !element.classList.contains("session-sidebar-collapsed"));
     if (sidebarOpen) await page.locator("#toggleSessionSidebar").click();
   }
   return session.id;
 }
 
 export async function selectedSessionId(page: Page): Promise<string | null> {
-  return await page.locator("pi-web-agent").evaluate((element) => ((element as unknown as { selectedSession?: { id?: string } | null }).selectedSession?.id ?? null));
+  return await page.locator(".pi-web-agent").evaluate((element) => element.getAttribute("data-selected-session-id") || null);
 }
 
 export async function waitForSelectedSession(page: Page, sessionId: string): Promise<void> {
-  await page.waitForFunction((id) => ((document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null } | null)?.selectedSession?.id ?? null) === id, sessionId, { timeout: 5_000 });
+  await page.waitForFunction((id) => document.querySelector(".pi-web-agent")?.getAttribute("data-selected-session-id") === id, sessionId, { timeout: 5_000 });
 }
 
 export async function waitForAgentIdle(page: Page, timeout = 30_000): Promise<void> {
   await page.waitForFunction(() => {
-    const app = document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null; status?: string } | null;
-    return Boolean(app?.selectedSession?.id) && app?.status === "idle";
+    const app = document.querySelector(".pi-web-agent");
+    return Boolean(app?.getAttribute("data-selected-session-id")) && app?.getAttribute("data-agent-status") === "idle";
   }, undefined, { timeout });
 }
 
 export async function waitForAgentRunning(page: Page, timeout = 5_000): Promise<void> {
   await page.waitForFunction(() => {
-    const app = document.querySelector("pi-web-agent") as unknown as { status?: string } | null;
-    return app?.status === "running";
+    const app = document.querySelector(".pi-web-agent");
+    return app?.getAttribute("data-agent-status") === "running";
   }, undefined, { timeout });
 }
 

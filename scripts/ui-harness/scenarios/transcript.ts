@@ -52,7 +52,7 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     const subagentDom = await page.evaluate(() => Array.from(document.querySelectorAll(".message, .subagent-card"), (node) => ({ className: (node as HTMLElement).className, text: ((node as HTMLElement).textContent ?? "").slice(0, 300) })));
     throw new Error(`Expected completed Subagent Card, saw ${JSON.stringify(subagentDom)}`);
   }
-  await finalCard.locator(".subagent-result-title", { hasText: "fake/subagent-reviewer" }).waitFor({ timeout: 5_000 });
+  await finalCard.locator(".subagent-result-title", { hasText: "reviewer" }).waitFor({ timeout: 5_000 });
   const cardRow = page.locator(".message.subagent-card-result").last();
   await cardRow.waitFor({ timeout: 5_000 });
   const desktopLayout = await cardRow.evaluate((row) => {
@@ -89,8 +89,8 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     throw new Error(`Expected desktop Subagent Card width cap near 640px, saw ${JSON.stringify(desktopLayout)}`);
   }
   await cardRow.locator('[data-row-action="menu"]').click();
-  await cardRow.locator('.message-action-menu [data-row-action="copy"]').waitFor({ timeout: 5_000 });
-  await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
+  await page.locator('.message-action-menu [data-row-action="copy"]').waitFor({ timeout: 5_000 });
+  await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0, null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "subagent-card.png"), fullPage: true });
 
@@ -102,7 +102,7 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     const rect = element.getBoundingClientRect();
     const transcriptRect = transcript?.getBoundingClientRect();
     return {
-      mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
+      mobile: window.matchMedia("(max-width: 767px)").matches || document.querySelector(".pi-web-agent, pi-web-agent")?.classList.contains("mobile-layout") || false,
       width: Math.round(rect.width),
       transcriptWidth: transcriptRect ? Math.round(transcriptRect.width) : null,
       hasCard: Boolean(element.querySelector(".subagent-card")),
@@ -430,7 +430,7 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
   const overflowButtons = page.locator('.message.tool [data-row-action="menu"]');
   await overflowButtons.nth(0).click();
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1);
-  await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0);
   const alignment = await page.evaluate(() => {
     const rectOf = (selector: string) => {

@@ -246,7 +246,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={containerRef} data-testid="transcript" className="h-full overflow-y-auto py-4">
+      <div ref={containerRef} data-testid="transcript" className="transcript h-full overflow-y-auto py-4">
         <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
           {visibleItems.map((item) => (
             <TranscriptRow
@@ -270,6 +270,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
       {!isFollowingLatest && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
           <Button
+            id="jumpToLatest"
             type="button"
             size="icon-sm"
             variant="outline"
