@@ -1,6 +1,6 @@
 // Core data types and transformation logic for transcript items.
 // Ported from apps/web-old/src/transcript.ts and session-events.ts.
-import { LEGACY_FULL_PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER } from "@pi-web-agent/protocol";
+import { LEGACY_FULL_PLAN_ACTIONS_MARKER, LEGACY_PLAN_ACTIONS_MARKER, PLAN_ACTIONS_MARKER, type ActiveToolExecutionSnapshot } from "@pi-web-agent/protocol";
 
 export type TranscriptKind = "user" | "assistant" | "tool" | "question" | "system" | "error";
 
@@ -65,6 +65,20 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
   const role = String(message.role ?? "message");
   const timestamp = message.timestamp ?? message.id;
   return timestamp ? `${role}:${String(timestamp)}` : fallback;
+}
+
+function toolResultMessageKey(message: Record<string, unknown>, fallback: string): string {
+  return typeof message.toolCallId === "string" && message.toolCallId.trim() ? `tool:${message.toolCallId}` : messageKey(message, fallback);
+}
+
+function webCommandResultToTranscriptItem(event: Record<string, unknown>, fallbackId: string): TranscriptItem {
+  return {
+    id: String(event.id ?? fallbackId),
+    kind: event.isError ? "error" : "system",
+    title: String(event.title ?? "Slash command"),
+    body: String(event.body ?? ""),
+    raw: event,
+  };
 }
 
 function imagePartToSegment(part: Record<string, unknown>): TranscriptSegment {
@@ -203,6 +217,17 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
   if (role === "assistant") {
     return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, raw: message };
   }
+  if (role === "webCommandResult") {
+    return webCommandResultToTranscriptItem({
+      type: "web_command_result",
+      id: message.id,
+      title: message.title,
+      body: message.body,
+      isError: message.isError,
+      data: message.data,
+      time: message.timestamp,
+    }, fallbackId);
+  }
   if (role === "bashExecution") {
     const command = String(message.command ?? "bash");
     const output = String(message.output ?? "");
@@ -221,7 +246,7 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
   if (role === "toolResult") {
     const details = isRecord(message.details) && message.details.diff ? `\n\n${String(message.details.diff)}` : "";
     return {
-      id: messageKey(message, fallbackId),
+      id: toolResultMessageKey(message, fallbackId),
       kind: "tool",
       title: `Tool result${message.toolName ? `: ${String(message.toolName)}` : ""}`,
       body: `${body}${details}`,
@@ -337,11 +362,57 @@ function shouldPreferPendingToolTitle(item: TranscriptItem): boolean {
   return item.kind === "tool" && /^(?:tool result(?::|$)|tool$)/i.test(item.title.trim());
 }
 
+export function isDeveloperBashItem(item: TranscriptItem): boolean {
+  if (item.kind !== "tool") return false;
+  if (item.id.startsWith("bash:")) return true;
+  if (!isRecord(item.raw)) return false;
+  return item.raw.role === "bashExecution" || String(item.raw.type ?? "").startsWith("bash_execution_");
+}
+
+function itemHasRenderedImage(item: TranscriptItem): boolean {
+  return Boolean(item.segments?.some((segment) => segment.kind === "image" && segment.src));
+}
+
+function normalizeToolTextForDedupe(value: string): string {
+  return value
+    .replace(/^exit code:\s*0\s*$/gim, "")
+    .replace(/^(?:stdout|stderr):\s*/gim, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function mergeDuplicateDeveloperBash(previous: TranscriptItem, current: TranscriptItem): boolean {
+  if (!isDeveloperBashItem(previous) || !isDeveloperBashItem(current)) return false;
+  if (previous.title !== current.title) return false;
+  if (previous.status !== "running") return false;
+
+  previous.body = current.body || previous.body;
+  if (current.segments) previous.segments = current.segments;
+  if (current.status) previous.status = current.status;
+  if (current.startedAt) previous.startedAt = current.startedAt;
+  if (current.endedAt) previous.endedAt = current.endedAt;
+  if (current.durationMs !== undefined) previous.durationMs = current.durationMs;
+  previous.raw = { previous: previous.raw, duplicateBashExecution: current.raw };
+  return true;
+}
+
 function mergeDuplicateToolResult(previous: TranscriptItem, current: TranscriptItem): boolean {
-  if (previous.kind !== "tool" || current.kind !== "tool") return false;
-  if (previous.id !== current.id) return false;
-  // They're the same item — caller should upsert, not merge
-  return false;
+  if (previous.kind !== "tool" || current.kind !== "tool" || previous.status !== "done" || current.status !== "done") return false;
+  if (!/^(?:tool result(?::|$)|result(?::|$))/i.test(current.title.trim())) return false;
+  if (itemHasRenderedImage(previous) || itemHasRenderedImage(current)) return false;
+
+  const previousText = normalizeToolTextForDedupe(`${previous.body}\n${compactToolSummary(previous)}`);
+  const currentText = normalizeToolTextForDedupe(`${current.body}\n${compactToolSummary(current)}`);
+  if (!currentText) return false;
+  if (!previousText || !previousText.includes(currentText.slice(0, Math.min(80, currentText.length)))) {
+    if (previousText && currentText && previousText !== currentText && !currentText.includes(previousText.slice(0, Math.min(80, previousText.length)))) return false;
+  }
+
+  previous.body = previous.body || current.body;
+  if (!previous.segments?.length && current.segments) previous.segments = current.segments;
+  previous.raw = { previous: previous.raw, duplicateResult: current.raw };
+  return true;
 }
 
 export function compactSnapshotTranscript(items: TranscriptItem[]): TranscriptItem[] {
@@ -370,18 +441,126 @@ export function compactSnapshotTranscript(items: TranscriptItem[]): TranscriptIt
 
 // ---- Event handlers (streaming) --------------------------------------------
 
+function isGenericToolResultTitle(title: string): boolean {
+  return /^(?:tool result(?::|$)|result(?::|$))/i.test(title.trim());
+}
+
+function hasToolOutput(item: TranscriptItem): boolean {
+  return Boolean(item.body.trim() || item.segments?.length);
+}
+
+function shouldPreserveExistingToolTitle(existing: TranscriptItem, nextItem: TranscriptItem): boolean {
+  if (existing.kind !== "tool" || nextItem.kind !== "tool") return false;
+  if (isGenericToolResultTitle(nextItem.title)) return true;
+  const existingDisplay = toolHeaderDisplay(existing);
+  const nextDisplay = toolHeaderDisplay(nextItem);
+  return Boolean(existingDisplay.target && !nextDisplay.target && existingDisplay.action === nextDisplay.action);
+}
+
+function mergeSameIdToolResult(existing: TranscriptItem, nextItem: TranscriptItem): TranscriptItem {
+  if (existing.kind !== "tool" || nextItem.kind !== "tool") return nextItem;
+  const existingHasOutput = hasToolOutput(existing);
+  const nextHasOutput = hasToolOutput(nextItem);
+  const nextBody = nextHasOutput || !existingHasOutput ? nextItem.body : existing.body;
+  const nextSegments = nextItem.segments?.length ? nextItem.segments : nextItem.body.trim() ? undefined : existing.segments;
+  const title = isGenericToolResultTitle(existing.title)
+    ? nextItem.title
+    : shouldPreserveExistingToolTitle(existing, nextItem)
+      ? existing.title
+      : nextItem.title;
+  const merged: TranscriptItem = {
+    ...existing,
+    ...nextItem,
+    title,
+    body: nextBody,
+    raw: { previous: existing.raw, toolResult: nextItem.raw },
+  };
+  if (nextSegments) merged.segments = nextSegments;
+  else delete merged.segments;
+  return merged;
+}
+
 function upsertItem(items: TranscriptItem[], item: TranscriptItem): TranscriptItem[] {
   const idx = items.findIndex((i) => i.id === item.id);
   if (idx >= 0) {
     const next = [...items];
-    next[idx] = item;
+    next[idx] = mergeSameIdToolResult(next[idx]!, item);
     return next;
+  }
+  for (let runningBashIndex = items.length - 1; runningBashIndex >= 0; runningBashIndex -= 1) {
+    const candidate = items[runningBashIndex];
+    if (!candidate) continue;
+    const candidateCopy = { ...candidate, segments: candidate.segments ? [...candidate.segments] : undefined };
+    if (mergeDuplicateDeveloperBash(candidateCopy, item)) {
+      const next = [...items];
+      next[runningBashIndex] = candidateCopy;
+      return next;
+    }
+  }
+  const previous = items.at(-1);
+  if (previous) {
+    const previousCopy = { ...previous, segments: previous.segments ? [...previous.segments] : undefined };
+    if (mergeDuplicateToolResult(previousCopy, item)) {
+      const next = [...items];
+      next[next.length - 1] = previousCopy;
+      return next;
+    }
   }
   return [...items, item];
 }
 
 function removeItemsByIdPrefix(items: TranscriptItem[], prefix: string): TranscriptItem[] {
   return items.filter((i) => !i.id.startsWith(prefix));
+}
+
+export function activeToolExecutionSnapshotToTranscriptItem(event: ActiveToolExecutionSnapshot, existing?: TranscriptItem): TranscriptItem | null {
+  if (typeof event.toolCallId !== "string" || !event.toolCallId.trim()) return null;
+  if (event.type !== "tool_execution_start" && event.type !== "tool_execution_update") return null;
+  return toolExecutionToTranscriptItem(event.type, event, existing);
+}
+
+function toolExecutionToTranscriptItem(type: string, event: Record<string, unknown>, existing?: TranscriptItem): TranscriptItem | null {
+  const id = `tool:${String(event.toolCallId ?? Date.now())}`;
+  if (type === "tool_execution_start") {
+    return {
+      id, kind: "tool",
+      title: formatToolTitle(event.toolName, event.args),
+      body: toolArgsToText(event.args ?? {}),
+      status: "running",
+      startedAt: eventStartTimestamp(event),
+      raw: event,
+    };
+  }
+  if (type === "tool_execution_update") {
+    const partialResult = event.partialResult ?? {};
+    const partialText = toolResultToText(partialResult);
+    return {
+      id, kind: "tool",
+      title: formatToolTitle(event.toolName, event.args),
+      body: partialText || toolArgsToText(event.args ?? {}),
+      segments: toolResultToSegments(partialResult),
+      status: "running",
+      startedAt: eventStartTimestamp(event, existing),
+      raw: event,
+    };
+  }
+  if (type === "tool_execution_end") {
+    const result = event.result ?? {};
+    const startedAt = eventStartTimestamp(event, existing);
+    const endedAt = eventTimestamp(event);
+    const elapsedMs = typeof event.durationMs === "number" ? Math.max(0, event.durationMs) : calcDurationMs(startedAt, endedAt);
+    return {
+      id, kind: "tool",
+      title: existing?.title ?? formatToolTitle(event.toolName, {}),
+      body: toolResultToText(result),
+      segments: toolResultToSegments(result),
+      status: event.isError ? "error" : "done",
+      startedAt, endedAt,
+      ...(elapsedMs === undefined ? {} : { durationMs: elapsedMs }),
+      raw: event,
+    };
+  }
+  return null;
 }
 
 export function applyAgentEvent(items: TranscriptItem[], event: unknown): TranscriptItem[] {
@@ -409,7 +588,15 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
       return upsertItem(cleaned, { id, kind: "tool", title, body: "Starting…", status: "running", raw: event });
     }
     if (type === "bash_execution_update") {
-      const output = String(event.output ?? "");
+      const existing = items.find((item) => item.id === id);
+      const existingIsStartPlaceholder = isRecord(existing?.raw) && existing.raw.type === "bash_execution_start";
+      const existingOutput = existing && !existingIsStartPlaceholder ? existing.body : "";
+      const missingPrefix = !existingOutput && typeof event.outputOffsetBytes === "number" && event.outputOffsetBytes > 0 ? "[Earlier output will appear when the command completes.]\n" : "";
+      const output = typeof event.output === "string"
+        ? event.output
+        : typeof event.outputDelta === "string"
+          ? `${existingOutput || missingPrefix}${event.outputDelta}`
+          : "";
       return upsertItem(items, { id, kind: "tool", title, body: output, segments: [{ kind: "pre", text: output }], status: "running", raw: event });
     }
     // bash_execution_end
@@ -435,44 +622,8 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
   if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
     const id = `tool:${String(event.toolCallId ?? Date.now())}`;
     const existing = items.find((i) => i.id === id);
-    if (type === "tool_execution_start") {
-      return upsertItem(items, {
-        id, kind: "tool",
-        title: formatToolTitle(event.toolName, event.args),
-        body: toolArgsToText(event.args ?? {}),
-        status: "running",
-        startedAt: eventStartTimestamp(event),
-        raw: event,
-      });
-    }
-    if (type === "tool_execution_update") {
-      const partialResult = event.partialResult ?? {};
-      const partialText = toolResultToText(partialResult);
-      return upsertItem(items, {
-        id, kind: "tool",
-        title: formatToolTitle(event.toolName, event.args),
-        body: partialText || toolArgsToText(event.args ?? {}),
-        segments: toolResultToSegments(partialResult),
-        status: "running",
-        startedAt: eventStartTimestamp(event, existing),
-        raw: event,
-      });
-    }
-    // tool_execution_end
-    const result = event.result ?? {};
-    const startedAt = eventStartTimestamp(event, existing);
-    const endedAt = eventTimestamp(event);
-    const elapsedMs = typeof event.durationMs === "number" ? Math.max(0, event.durationMs) : calcDurationMs(startedAt, endedAt);
-    const toolItem: TranscriptItem = {
-      id, kind: "tool",
-      title: existing?.title ?? formatToolTitle(event.toolName, {}),
-      body: toolResultToText(result),
-      segments: toolResultToSegments(result),
-      status: event.isError ? "error" : "done",
-      startedAt, endedAt,
-      ...(elapsedMs === undefined ? {} : { durationMs: elapsedMs }),
-      raw: event,
-    };
+    const toolItem = toolExecutionToTranscriptItem(type, event, existing);
+    if (!toolItem) return items;
     let next = upsertItem(items, toolItem);
     const questionSummary = questionSummaryFromTool(toolItem);
     if (questionSummary) next = upsertItem(next, questionSummary);
