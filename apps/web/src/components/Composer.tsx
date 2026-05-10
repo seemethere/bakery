@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, ClipboardEvent, DragEvent, FormEvent, KeyboardEvent } from "react";
 import type { ArtifactUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import { ChevronDown, CircleHelp, ClipboardList, Command, MessageSquareText, Paperclip, Plus, SendHorizontal, Settings2, ShieldOff, Square, Terminal, X } from "lucide-react";
 import { AutocompletePopup } from "@/components/AutocompletePopup";
@@ -753,6 +753,20 @@ function ComposerToolbar({
   onSend: () => void;
   onTakeControl: () => void;
 }) {
+  const nativeFileEventHandledRef = useRef(false);
+
+  function handleNativeFileInput(event: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>) {
+    onAttachResolved();
+    if (nativeFileEventHandledRef.current) return;
+    nativeFileEventHandledRef.current = true;
+    window.setTimeout(() => { nativeFileEventHandledRef.current = false; }, 0);
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (files.length === 0) return;
+    onImageFilesSelected(files);
+  }
+
   return (
     <div className="flex min-h-8 flex-wrap items-center gap-2 px-1">
       <ModeMenu
@@ -792,7 +806,8 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <label className="relative inline-flex" title="Attach images">
+      <div className={cn("flex min-w-0 items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-xs", !isController && "opacity-50")}>
+        <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         <input
           id="attachImages"
           type="file"
@@ -800,34 +815,18 @@ function ComposerToolbar({
           multiple
           disabled={!isController}
           aria-label="Attach images"
-          className="absolute inset-0 z-10 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+          title="Attach images"
+          className="max-w-[150px] cursor-pointer text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-medium file:text-foreground disabled:cursor-not-allowed"
+          onPointerDown={() => {
+            if (isController) onAttachActivate();
+          }}
           onClick={() => {
             if (isController) onAttachActivate();
           }}
-          onChange={(event) => {
-            onAttachResolved();
-            const input = event.currentTarget;
-            const files = Array.from(input.files ?? []);
-            input.value = "";
-            if (files.length === 0) {
-              // Some browsers do not fire change when the picker is cancelled; keep
-              // this for browsers that do fire an empty change event.
-              return;
-            }
-            onImageFilesSelected(files);
-          }}
+          onInput={handleNativeFileInput}
+          onChange={handleNativeFileInput}
         />
-        <span
-          aria-hidden="true"
-          className={cn(
-            "inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-sm font-medium transition-all",
-            "hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-            !isController && "cursor-not-allowed opacity-50",
-          )}
-        >
-          <Paperclip />
-        </span>
-      </label>
+      </div>
 
       {isRunning && (
         <Button id="abort" type="button" variant="destructive" size="icon" onClick={onAbort} title="Abort" aria-label="Abort">
