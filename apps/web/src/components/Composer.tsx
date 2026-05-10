@@ -1,9 +1,9 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from "react";
 import type { ArtifactUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import { ChevronDown, CircleHelp, ClipboardList, Command, MessageSquareText, Paperclip, Plus, SendHorizontal, Settings2, ShieldOff, Square, Terminal, X } from "lucide-react";
 import { AutocompletePopup } from "@/components/AutocompletePopup";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StepSlider } from "@/components/ui/step-slider";
 import { Switch } from "@/components/ui/switch";
@@ -137,7 +137,9 @@ export function Composer({
   fetchJson,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputId = useId();
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const imagesRef = useRef<PromptImage[]>([]);
   const imagePickerPendingRef = useRef(false);
   const imagePickerReturnTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [draft, setDraft] = useState(() => (draftKey ? (localStorage.getItem(draftKey) ?? "") : ""));
@@ -163,6 +165,10 @@ export function Composer({
   const modeLabel = composerModeLabel(composerMode, status);
   const showEmptyLanding = isEmptySession && draft.trim().length === 0 && images.length === 0;
   const emptyComposerGrown = isEmptySession && draft.includes("\n");
+
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
 
   useEffect(() => {
     if (draftKey) localStorage.setItem(draftKey, draft);
@@ -254,6 +260,7 @@ export function Composer({
     }
     setNotice("");
     setDraft("");
+    imagesRef.current = [];
     setImages([]);
     if (draftKey) localStorage.removeItem(draftKey);
   }
@@ -381,47 +388,50 @@ export function Composer({
     if (remaining <= 0) notices.push(`Maximum ${maxPromptImages} images allowed.`);
     else if (fileArray.length > remaining) notices.push(`Attached the first ${remaining} image${remaining === 1 ? "" : "s"}; maximum ${maxPromptImages} images allowed.`);
 
-    if (loaded.length > 0) setImages((prev) => [...prev, ...loaded]);
+    if (loaded.length > 0) {
+      setImages((prev) => {
+        const next = [...prev, ...loaded];
+        imagesRef.current = next;
+        return next;
+      });
+    }
 
-    const uploadResult = await uploadImageArtifacts(fileArray);
-    appendArtifactPaths(uploadResult.paths);
-    notices.push(...uploadResult.notices);
-
-    if (loaded.length > 0 && uploadResult.paths.length > 0) notices.unshift(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"} and uploaded ${uploadResult.paths.length} artifact${uploadResult.paths.length === 1 ? "" : "s"}.`);
-    else if (loaded.length > 0) notices.unshift(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"}.`);
-    else if (uploadResult.paths.length > 0) notices.unshift(`Uploaded ${uploadResult.paths.length} image artifact${uploadResult.paths.length === 1 ? "" : "s"}.`);
-
+    if (loaded.length > 0) notices.unshift(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"}.`);
     if (notices.length > 0) setNotice(notices[0] ?? "");
+
+    const loadedIds = new Set(loaded.map((image) => image.id));
+    void uploadImageArtifacts(fileArray).then((uploadResult) => {
+      const currentIds = new Set(imagesRef.current.map((image) => image.id));
+      const wholeBatchStillAttached = loadedIds.size > 0 && Array.from(loadedIds).every((id) => currentIds.has(id));
+      if (wholeBatchStillAttached) appendArtifactPaths(uploadResult.paths);
+      if (wholeBatchStillAttached && uploadResult.notices.length > 0) setNotice(uploadResult.notices[0] ?? "");
+    });
   }
 
-  function openImagePicker() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/png,image/jpeg,image/gif,image/webp";
-    input.multiple = true;
-    input.style.position = "fixed";
-    input.style.left = "-10000px";
-    input.style.top = "0";
-    input.addEventListener("change", () => {
-      imagePickerPendingRef.current = false;
-      clearTimeout(imagePickerReturnTimerRef.current);
-      const files = Array.from(input.files ?? []);
-      input.remove();
-      if (files.length === 0) {
-        setNotice("No image was selected.");
-        return;
-      }
-      void handleImageFiles(files);
-    }, { once: true });
-    document.body.append(input);
+  function markImagePickerOpening() {
     imagePickerPendingRef.current = true;
     clearTimeout(imagePickerReturnTimerRef.current);
-    input.click();
   }
 
   function handleImageInputChange(event: ChangeEvent<HTMLInputElement>) {
+    imagePickerPendingRef.current = false;
+    clearTimeout(imagePickerReturnTimerRef.current);
     const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
     input.value = "";
+    if (files.length === 0) {
+      setNotice("No image was selected.");
+      return;
+    }
+    void handleImageFiles(files);
+  }
+
+  function removePromptImage(id: string) {
+    setImages((prev) => {
+      const next = prev.filter((image) => image.id !== id);
+      imagesRef.current = next;
+      return next;
+    });
   }
 
   function handleImagePaste(dataTransfer: DataTransfer | null | undefined): boolean {
@@ -534,18 +544,20 @@ export function Composer({
           dragging && "border-blue-400/60 bg-blue-400/5",
         )}
       >
-        <AttachmentTray images={images} onRemove={(id) => setImages((prev) => prev.filter((image) => image.id !== id))} />
+        <AttachmentTray images={images} onRemove={removePromptImage} />
 
         <input
           ref={imageInputRef}
+          id={imageInputId}
           data-testid="image-file-input"
           type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
+          accept="image/*"
           multiple
+          disabled={!isController}
           tabIndex={-1}
           aria-hidden="true"
           onChange={handleImageInputChange}
-          className="pointer-events-none absolute size-px opacity-0"
+          className="sr-only"
         />
 
         <ComposerTextarea
@@ -586,7 +598,8 @@ export function Composer({
           onSetModel={onSetModel}
           onSetThinking={onSetThinking}
           onShowThinkingChange={onShowThinkingChange}
-          onAttach={openImagePicker}
+          attachInputId={imageInputId}
+          onAttachActivate={markImagePickerOpening}
           onAbort={onAbort}
           onFollowUp={() => void handleSend(true)}
           onSend={() => void handleSend(false)}
@@ -721,7 +734,8 @@ function ComposerToolbar({
   onSetModel,
   onSetThinking,
   onShowThinkingChange,
-  onAttach,
+  attachInputId,
+  onAttachActivate,
   onAbort,
   onFollowUp,
   onSend,
@@ -746,7 +760,8 @@ function ComposerToolbar({
   onSetModel: (model: string) => void;
   onSetThinking: (level: string) => void;
   onShowThinkingChange: (show: boolean) => void;
-  onAttach: () => void;
+  attachInputId: string;
+  onAttachActivate: () => void;
   onAbort: () => void;
   onFollowUp: () => void;
   onSend: () => void;
@@ -791,9 +806,32 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <Button id="attachImages" type="button" variant="outline" size="icon" onClick={onAttach} title="Attach images" aria-label="Attach images" disabled={!isController}>
+      <label
+        id="attachImages"
+        htmlFor={isController ? attachInputId : undefined}
+        role="button"
+        tabIndex={isController ? 0 : -1}
+        title="Attach images"
+        aria-label="Attach images"
+        aria-disabled={!isController}
+        onKeyDown={(event) => {
+          if (!isController) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onAttachActivate();
+          document.getElementById(attachInputId)?.click();
+        }}
+        onClick={(event) => {
+          if (!isController) {
+            event.preventDefault();
+            return;
+          }
+          onAttachActivate();
+        }}
+        className={cn(buttonVariants({ variant: "outline", size: "icon" }), !isController && "pointer-events-none cursor-not-allowed opacity-50")}
+      >
         <Paperclip />
-      </Button>
+      </label>
 
       {isRunning && (
         <Button id="abort" type="button" variant="destructive" size="icon" onClick={onAbort} title="Abort" aria-label="Abort">
