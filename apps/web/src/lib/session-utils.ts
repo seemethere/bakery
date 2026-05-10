@@ -80,8 +80,8 @@ function formatRelativeTime(value: string | undefined, compact: boolean): string
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return compact ? `${minutes}m` : `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return compact ? `${hours}h` : `${hours}h ago`;
-  const days = Math.round(hours / 24);
+  if (hours < 24) return compact ? `${hours}h` : `${hours}h ago`;
+  const days = Math.max(1, Math.round(hours / 24));
   if (days < 14) return compact ? `${days}d` : `${days}d ago`;
   return new Date(value).toLocaleDateString();
 }

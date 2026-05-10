@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { WebSession } from "@pi-web-agent/protocol";
-import { MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from "lucide-react";
+import { CircleAlertIcon, LoaderCircleIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -9,11 +9,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   compactRelativeTime,
   relativeTime,
   sessionActivityValue,
   sessionConnectionStatus,
   sessionDisplayTitle,
+  sessionMetadataLabel,
   sessionWorkspaceLabel,
   type ConnectionStatus,
 } from "@/lib/session-utils";
@@ -33,7 +39,6 @@ export function SessionCard({
   session,
   selectedSessionId,
   connectionStatus,
-  showWorkspaceBadge = false,
   onSelect,
   onDelete,
   onRename,
@@ -73,39 +78,56 @@ export function SessionCard({
       data-session-id={session.id}
       className={cn(
         "session-card group/session-card relative rounded-md text-sm transition-colors",
-        "text-sidebar-foreground/70",
-        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        isSelected && "active bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+        "text-sidebar-foreground/55",
+        "hover:bg-sidebar-accent/55 hover:text-sidebar-foreground/80",
+        isSelected && "active bg-sidebar-accent/70 text-sidebar-foreground/85 font-medium",
       )}
     >
-      <button
-        type="button"
-        onClick={() => !renaming && onSelect(session.id)}
-        title={showWorkspaceBadge ? `${title} — ${workspaceLabel}` : title}
-        className="grid w-full min-w-0 rounded-md px-2 py-1.5 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      >
-        <span className="flex h-5 items-center justify-between gap-2 min-w-0">
-          {renaming ? (
-            <input
-              ref={renameInputRef}
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={handleRenameKeyDown}
-              onClick={(e) => e.stopPropagation()}
-              className="min-w-0 flex-1 rounded bg-background px-1 py-0 text-sm font-medium text-foreground outline-none ring-1 ring-ring/50"
-            />
-          ) : (
-            <strong className="font-medium text-sidebar-foreground truncate min-w-0">{title}</strong>
-          )}
-          <span className="flex items-center gap-1 flex-shrink-0">
-            {status && <StatusBadge variant={status as StatusVariant}>{status}</StatusBadge>}
-          </span>
-        </span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => !renaming && onSelect(session.id)}
+              className="grid w-full min-w-0 rounded-md px-2 py-1.5 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <span className="flex h-5 items-center justify-between gap-2 min-w-0">
+                {renaming ? (
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={handleRenameKeyDown}
+                    onClick={(e) => e.stopPropagation()}
+                    className="min-w-0 flex-1 rounded bg-background px-1 py-0 text-sm font-medium text-foreground outline-none ring-1 ring-ring/50"
+                  />
+                ) : (
+                  <strong
+                    className={cn(
+                      "truncate min-w-0 transition-colors",
+                      isSelected
+                        ? "font-medium text-sidebar-foreground/85"
+                        : "font-medium text-sidebar-foreground/55 group-hover/session-card:text-sidebar-foreground/80",
+                    )}
+                  >
+                    {title}
+                  </strong>
+                )}
+                <span className="flex items-center gap-1 flex-shrink-0">
+                  {status && <StatusIndicator variant={status as StatusVariant} />}
+                </span>
+              </span>
+            </button>
+          }
+        />
+        <TooltipContent side="right" align="start" className="w-64 p-2.5">
+          <SessionMetadataTooltip session={session} activity={activity} workspaceLabel={workspaceLabel} />
+        </TooltipContent>
+      </Tooltip>
       <span
         className={cn(
-          "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-normal tabular-nums text-sidebar-foreground/40 transition-opacity",
+          "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-normal tabular-nums text-sidebar-foreground/35 transition-opacity",
           "group-hover/session-card:opacity-0 group-focus-within/session-card:opacity-0",
           menuOpen && "opacity-0",
         )}
@@ -119,7 +141,7 @@ export function SessionCard({
         <DropdownMenuTrigger
           className={cn(
             "absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors",
-            "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            "text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground/75",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             "opacity-0 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100 data-open:opacity-100",
             menuOpen && "opacity-100",
@@ -156,20 +178,72 @@ export function SessionCard({
   );
 }
 
+function SessionMetadataTooltip({
+  session,
+  activity,
+  workspaceLabel,
+}: {
+  session: WebSession;
+  activity: string | undefined;
+  workspaceLabel: string;
+}) {
+  const fullActivity = activity ? new Date(activity) : null;
+  const activityLabel = fullActivity && Number.isFinite(fullActivity.getTime())
+    ? fullActivity.toLocaleString()
+    : activity ?? "Never";
+  const isolationLabel = session.isolationKind === "git_worktree" ? "Worktree" : "Standard";
+
+  return (
+    <div className="grid gap-2 text-xs leading-relaxed">
+      <div className="min-w-0">
+        <div className="truncate font-medium text-popover-foreground">{sessionDisplayTitle(session)}</div>
+        <div className="truncate text-popover-foreground/55">{sessionMetadataLabel(session)}</div>
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-popover-foreground/65">
+        <dt className="text-popover-foreground/40">Workspace</dt>
+        <dd className="truncate">{workspaceLabel}</dd>
+        <dt className="text-popover-foreground/40">Activity</dt>
+        <dd className="truncate">{relativeTime(activity)} · {activityLabel}</dd>
+        <dt className="text-popover-foreground/40">Mode</dt>
+        <dd className="truncate">{session.kind === "chat_only" ? "Chat" : isolationLabel}</dd>
+        {session.pinned && (
+          <>
+            <dt className="text-popover-foreground/40">Pinned</dt>
+            <dd>Yes</dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 type StatusVariant = "running" | "error" | "aborting" | string;
 
-function StatusBadge({ variant, children }: { variant: StatusVariant; children: React.ReactNode }) {
+function StatusIndicator({ variant }: { variant: StatusVariant }) {
+  if (variant === "running") {
+    return (
+      <span title="Running" aria-label="Running" className="inline-grid size-4 place-items-center text-blue-400/80">
+        <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" />
+      </span>
+    );
+  }
+  if (variant === "aborting") {
+    return (
+      <span title="Stopping" aria-label="Stopping" className="inline-grid size-4 place-items-center text-red-400/75">
+        <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" />
+      </span>
+    );
+  }
+  if (variant === "error") {
+    return (
+      <span title="Error" aria-label="Error" className="inline-grid size-4 place-items-center text-red-400/80">
+        <CircleAlertIcon className="size-3.5" aria-hidden="true" />
+      </span>
+    );
+  }
   return (
-    <em
-      className={cn(
-        "not-italic text-[10px] uppercase px-1.5 py-px rounded-full border font-medium",
-        variant === "running" && "border-blue-400/40 bg-blue-400/10 text-blue-400",
-        (variant === "error" || variant === "aborting") && "border-red-400/40 bg-red-400/10 text-red-400",
-        variant !== "running" && variant !== "error" && variant !== "aborting" &&
-          "border-border/60 bg-muted/50 text-muted-foreground",
-      )}
-    >
-      {children}
+    <em className="not-italic text-[10px] uppercase px-1.5 py-px rounded-full border border-border/60 bg-muted/50 font-medium text-muted-foreground">
+      {variant}
     </em>
   );
 }
