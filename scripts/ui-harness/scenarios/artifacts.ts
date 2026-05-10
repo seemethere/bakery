@@ -78,9 +78,11 @@ export async function runImageAttachments(page: Page): Promise<Record<string, un
   await chooseImageWithPaperclip(page, imagePath);
   await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "image-attachments-before-send.png"), fullPage: true });
-  await sendPromptAndWaitIdle(page, "Please inspect this attached image and include an image preview in the reply.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page, 5_000);
+  await waitForAgentIdle(page, 30_000);
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: ".bakery/attachments/" }).first().waitFor({ timeout: 5_000 });
   await page.locator(".message.assistant").first().waitFor({ timeout: 5_000 });
   return collectMetrics(page);
 }
@@ -115,17 +117,14 @@ export async function runImageArtifactDropUpload(page: Page): Promise<Record<str
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
   await chooseImageWithPaperclip(page, imagePath);
-  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/artifacts/"), null, { timeout: 5_000 });
-  const artifactPrompt = "Please echo this uploaded screenshot artifact path exactly: " + await page.locator("#prompt").inputValue();
-  await sendPromptAndWaitIdle(page, artifactPrompt);
-  await page.waitForFunction(() => {
-    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
-    return images.length >= 1 && images.every((img) => img.complete && img.naturalWidth > 0);
-  }, null, { timeout: 5_000 });
-  const sources = await page.locator(".artifact-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
-  if (!sources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected dropped artifact screenshots to use artifact raw endpoint, saw ${sources.join(", ")}`);
-  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
-  return { artifactImages: await page.locator(".artifact-image img").count(), userImages: await page.locator(".message.user img").count(), sources, ...(await collectMetrics(page)) };
+  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/attachments/"), null, { timeout: 5_000 });
+  const uploadSources = await page.locator(".prompt-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
+  if (!uploadSources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected uploaded attachment thumbnails to use artifact raw endpoint, saw ${uploadSources.join(", ")}`);
+  await page.locator("#send").click();
+  await waitForAgentRunning(page, 5_000);
+  await waitForAgentIdle(page, 30_000);
+  await page.locator(".message.user", { hasText: ".bakery/attachments/" }).first().waitFor({ timeout: 5_000 });
+  return { uploadedAttachmentImages: uploadSources.length, uploadSources, ...(await collectMetrics(page)) };
 }
 
 export async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {

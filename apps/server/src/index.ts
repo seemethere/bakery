@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
+import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, type ModelInfo, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
 import { AuthStorage, getAgentDir, ModelRegistry } from "@mariozechner/pi-coding-agent";
@@ -34,6 +35,7 @@ const previewStacks = new PreviewStackManager({ config });
 await loadConfiguredBakeryExtensions(config);
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 await app.register(websocket);
+await app.register(multipart);
 
 function isLocalhost(ip: string): boolean {
   return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";

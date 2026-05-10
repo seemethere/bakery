@@ -164,7 +164,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
 
   const api = useCallback(async <T>(path: string, init?: RequestInit): Promise<T> => {
     const headers: HeadersInit = {};
-    if (init?.body !== undefined) headers["Content-Type"] = "application/json";
+    if (init?.body !== undefined && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
     if (tokenRef.current) headers["Authorization"] = `Bearer ${tokenRef.current}`;
     const res = await fetch(`${apiBaseRef.current}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);

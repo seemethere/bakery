@@ -310,6 +310,26 @@ export const artifactUploadResponseSchema = z.object({
 });
 export type ArtifactUploadResponse = z.infer<typeof artifactUploadResponseSchema>;
 
+export const sessionAttachmentKindSchema = z.enum(["image", "file"]);
+export type SessionAttachmentKind = z.infer<typeof sessionAttachmentKindSchema>;
+
+export const sessionAttachmentSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  name: z.string(),
+  mimeType: z.string(),
+  size: z.number().int().nonnegative(),
+  kind: sessionAttachmentKindSchema,
+  url: z.string(),
+  createdAt: z.string(),
+});
+export type SessionAttachment = z.infer<typeof sessionAttachmentSchema>;
+
+export const sessionAttachmentUploadResponseSchema = z.object({
+  attachments: z.array(sessionAttachmentSchema),
+});
+export type SessionAttachmentUploadResponse = z.infer<typeof sessionAttachmentUploadResponseSchema>;
+
 export const commandSourceSchema = z.enum(["builtin", "extension", "prompt", "skill"]);
 export type CommandSource = z.infer<typeof commandSourceSchema>;
 

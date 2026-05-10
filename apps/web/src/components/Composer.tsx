@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, FormEvent, KeyboardEvent } from "react";
-import type { ArtifactUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
+import type { ArtifactUploadResponse, SessionAttachment, SessionAttachmentUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import { ChevronDown, CircleHelp, ClipboardList, Command, MessageSquareText, Paperclip, Plus, SendHorizontal, Settings2, ShieldOff, Square, Terminal, X } from "lucide-react";
 import { AutocompletePopup } from "@/components/AutocompletePopup";
 import { Button } from "@/components/ui/button";
@@ -142,6 +142,7 @@ export function Composer({
   const imagePickerReturnTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [draft, setDraft] = useState(() => (draftKey ? (localStorage.getItem(draftKey) ?? "") : ""));
   const [images, setImages] = useState<PromptImage[]>([]);
+  const [uploadedAttachments, setUploadedAttachments] = useState<SessionAttachment[]>([]);
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -161,7 +162,7 @@ export function Composer({
   const canSend = isController && (draft.trim().length > 0 || images.length > 0) && status !== "aborting" && status !== "connecting";
   const isDisconnected = status === "disconnected" || status === "error";
   const modeLabel = composerModeLabel(composerMode, status);
-  const showEmptyLanding = isEmptySession && draft.trim().length === 0 && images.length === 0;
+  const showEmptyLanding = isEmptySession && draft.trim().length === 0 && images.length === 0 && uploadedAttachments.length === 0;
   const emptyComposerGrown = isEmptySession && draft.includes("\n");
 
   useEffect(() => {
@@ -264,6 +265,7 @@ export function Composer({
     setDraft("");
     imagesRef.current = [];
     setImages([]);
+    setUploadedAttachments([]);
     if (draftKey) localStorage.removeItem(draftKey);
   }
 
@@ -367,6 +369,36 @@ export function Composer({
     }
 
     return { paths, notices };
+  }
+
+  async function uploadSessionAttachments(files: FileList | File[]) {
+    const stableFiles = Array.from(files);
+    if (stableFiles.length === 0) {
+      setNotice("No files were selected.");
+      return;
+    }
+    if (!sessionId || !fetchJson) {
+      setNotice("Open a session before uploading attachments.");
+      return;
+    }
+    const form = new FormData();
+    for (const file of stableFiles) form.append("files", file, file.name || "attachment");
+    setNotice(`Uploading ${stableFiles.length} attachment${stableFiles.length === 1 ? "" : "s"}…`);
+    try {
+      const response = await fetchJson<SessionAttachmentUploadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/attachments`, {
+        method: "POST",
+        body: form,
+      });
+      if (response.attachments.length === 0) {
+        setNotice("No attachments were uploaded.");
+        return;
+      }
+      setUploadedAttachments((prev) => [...prev, ...response.attachments]);
+      appendArtifactPaths(response.attachments.map((attachment) => attachment.path));
+      setNotice(`Uploaded ${response.attachments.length} attachment${response.attachments.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setNotice(`Attachment upload failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function handleImageFiles(files: FileList | File[]) {
@@ -539,6 +571,7 @@ export function Composer({
         )}
       >
         <AttachmentTray images={images} onRemove={removePromptImage} />
+        <UploadedAttachmentTray attachments={uploadedAttachments} onRemove={(id) => setUploadedAttachments((prev) => prev.filter((attachment) => attachment.id !== id))} />
 
         <ComposerTextarea
           ref={textareaRef}
@@ -583,7 +616,7 @@ export function Composer({
             imagePickerPendingRef.current = false;
             clearTimeout(imagePickerReturnTimerRef.current);
           }}
-          onImageFilesSelected={(files) => void handleImageFiles(files)}
+          onImageFilesSelected={(files) => void uploadSessionAttachments(files)}
           onAbort={onAbort}
           onFollowUp={() => void handleSend(true)}
           onSend={() => void handleSend(false)}
@@ -636,6 +669,32 @@ function AttachmentTray({ images, onRemove }: { images: PromptImage[]; onRemove:
             size="icon-xs"
             onClick={() => onRemove(image.id)}
             aria-label={`Remove ${image.name}`}
+            className="absolute right-1 top-1 bg-black/80 text-white hover:bg-black"
+          >
+            <X />
+          </Button>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+function UploadedAttachmentTray({ attachments, onRemove }: { attachments: SessionAttachment[]; onRemove: (id: string) => void }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2" aria-label="Uploaded attachments">
+      {attachments.map((attachment) => (
+        <figure key={attachment.id} className="prompt-image relative m-0 grid w-[88px] overflow-hidden rounded-xl border border-border/50 bg-muted" style={{ gridTemplateRows: "58px auto" }}>
+          {attachment.kind === "image" ? <img src={attachment.url} alt={attachment.name} className="h-[58px] w-full object-cover" /> : <div className="grid h-[58px] place-items-center px-2 text-center text-[11px] text-muted-foreground">{attachment.mimeType}</div>}
+          <figcaption className="truncate px-1.5 py-1 text-[11px] text-muted-foreground" title={attachment.name}>
+            {attachment.name}
+          </figcaption>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onRemove(attachment.id)}
+            aria-label={`Remove ${attachment.name}`}
             className="absolute right-1 top-1 bg-black/80 text-white hover:bg-black"
           >
             <X />
@@ -753,18 +812,23 @@ function ComposerToolbar({
   onSend: () => void;
   onTakeControl: () => void;
 }) {
+  const nativeFileInputRef = useRef<HTMLInputElement>(null);
   const nativeFileEventHandledRef = useRef(false);
 
-  function handleNativeFileInput(event: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>) {
+  function submitNativeFileInput(input = nativeFileInputRef.current) {
     onAttachResolved();
-    if (nativeFileEventHandledRef.current) return;
-    nativeFileEventHandledRef.current = true;
-    window.setTimeout(() => { nativeFileEventHandledRef.current = false; }, 0);
-    const input = event.currentTarget;
+    if (!input) return;
     const files = Array.from(input.files ?? []);
     input.value = "";
     if (files.length === 0) return;
     onImageFilesSelected(files);
+  }
+
+  function handleNativeFileInput(event: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>) {
+    if (nativeFileEventHandledRef.current) return;
+    nativeFileEventHandledRef.current = true;
+    window.setTimeout(() => { nativeFileEventHandledRef.current = false; }, 0);
+    submitNativeFileInput(event.currentTarget);
   }
 
   return (
@@ -809,13 +873,14 @@ function ComposerToolbar({
       <div className={cn("flex min-w-0 items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-xs", !isController && "opacity-50")}>
         <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         <input
+          ref={nativeFileInputRef}
           id="attachImages"
           type="file"
           accept="image/*"
           multiple
           disabled={!isController}
-          aria-label="Attach images"
-          title="Attach images"
+          aria-label="Choose attachment files"
+          title="Choose attachment files"
           className="max-w-[150px] cursor-pointer text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-medium file:text-foreground disabled:cursor-not-allowed"
           onPointerDown={() => {
             if (isController) onAttachActivate();
@@ -826,6 +891,9 @@ function ComposerToolbar({
           onInput={handleNativeFileInput}
           onChange={handleNativeFileInput}
         />
+        <Button type="button" variant="outline" size="xs" disabled={!isController} onClick={() => submitNativeFileInput()}>
+          Upload
+        </Button>
       </div>
 
       {isRunning && (
