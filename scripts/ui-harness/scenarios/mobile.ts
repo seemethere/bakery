@@ -141,6 +141,8 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     const drawerElements = Array.from(document.querySelectorAll(".session-sidebar:not(.collapsed) *"));
     return {
       chatButtonCount: document.querySelectorAll('.session-sidebar:not(.collapsed) [data-route-path^="/sessions/"], .session-sidebar:not(.collapsed) [data-route-path="/"]').length,
+      brandIndex: drawerElements.findIndex((element) => element.textContent?.trim().toLowerCase() === "bakery"),
+      searchIndex: drawerElements.findIndex((element) => element.textContent?.includes("Search sessions")),
       sessionsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/sessions"]')),
       newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
       settingsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/settings"]')),
@@ -154,6 +156,8 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   if (drawerOrder.pinButtonCount !== 0) throw new Error("Mobile drawer should not show the desktop Pin affordance.");
   if (drawerOrder.sessionCardCount < 1) throw new Error("Mobile navigation drawer should show the session list.");
   if (drawerOrder.chatButtonCount !== 0) throw new Error("Mobile navigation drawer should not show a redundant chat route button.");
+  if (drawerOrder.brandIndex !== -1) throw new Error(`Mobile drawer should skip static Bakery branding and start with actions/sessions: ${JSON.stringify(drawerOrder)}`);
+  if (drawerOrder.searchIndex !== -1) throw new Error(`Mobile drawer should keep command search out of the primary session switcher: ${JSON.stringify(drawerOrder)}`);
   if (drawerOrder.apiBaseIndex !== -1) throw new Error(`Mobile drawer should move API settings to /settings: ${JSON.stringify(drawerOrder)}`);
   if (!(drawerOrder.newSessionIndex >= 0 && drawerOrder.settingsIndex > drawerOrder.newSessionIndex)) {
     throw new Error(`Mobile drawer navigation/settings order is wrong: ${JSON.stringify(drawerOrder)}`);

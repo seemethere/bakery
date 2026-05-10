@@ -62,6 +62,7 @@ import {
 } from "@/lib/session-utils";
 import { type AppRoute } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { SessionCard } from "./SessionCard";
 
 type Props = {
@@ -102,6 +103,7 @@ export function Sidebar({
     () => storedCollapsedWorkspaceGroups(),
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     persistCollapsedWorkspaceGroups(collapsedGroups);
@@ -145,7 +147,7 @@ export function Sidebar({
   return (
     <SidebarPrimitive id="sessionSidebar" className="session-sidebar" collapsible="icon">
       <SidebarHeader className="gap-1.5 pb-2">
-        <SidebarBrand />
+        {!isMobile && <SidebarBrand />}
 
         <div className="flex w-full gap-0 group-data-[collapsible=icon]:block">
           <Tooltip>
@@ -187,25 +189,27 @@ export function Sidebar({
           </DropdownMenu>
         </div>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                onClick={() => setSearchOpen(true)}
-                className="group/search flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-sidebar-accent group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
-              >
-                <SearchIcon className="size-3.5 text-sidebar-foreground/40" />
-                <span className="flex-1 truncate text-xs text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
-                  Search sessions…
-                </span>
-                <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/30 opacity-0 transition-opacity group-hover/search:opacity-100 group-data-[collapsible=icon]:hidden">
-                  ⌘K
-                </kbd>
-              </button>
-            }
-          />
-          <TooltipContent side="right">Search sessions ⌘K</TooltipContent>
-        </Tooltip>
+        {!isMobile && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  className="group/search flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-sidebar-accent group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
+                >
+                  <SearchIcon className="size-3.5 text-sidebar-foreground/40" />
+                  <span className="flex-1 truncate text-xs text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
+                    Search sessions…
+                  </span>
+                  <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/30 opacity-0 transition-opacity group-hover/search:opacity-100 group-data-[collapsible=icon]:hidden">
+                    ⌘K
+                  </kbd>
+                </button>
+              }
+            />
+            <TooltipContent side="right">Search sessions ⌘K</TooltipContent>
+          </Tooltip>
+        )}
       </SidebarHeader>
 
       <SidebarContent>
