@@ -551,7 +551,7 @@ function ComposerNotice({ disconnected, notice }: { disconnected: boolean; notic
   return (
     <div className="relative mb-2 grid gap-2">
       {disconnected && (
-        <p className="m-0 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-500/80">
+        <p className="connection-banner disconnected m-0 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-500/80">
           Not connected. Your draft is saved locally; sending will be available after reconnect.
         </p>
       )}
