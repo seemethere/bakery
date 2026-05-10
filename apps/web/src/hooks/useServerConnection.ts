@@ -154,6 +154,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
   const agentEventListenersRef = useRef<Set<(event: unknown) => void>>(new Set());
   const runningQueueRef = useRef<RunningQueueState>(emptyRunningQueue());
   const pendingPinUpdatesRef = useRef<Map<string, boolean>>(new Map());
+  const clientIdsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => { apiBaseRef.current = apiBase; }, [apiBase]);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -209,7 +210,10 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     setRunningQueue(emptyRunningQueue());
     runningQueueRef.current = emptyRunningQueue();
 
-    const clientId = localStorage.getItem(`piWebClientId:${session.id}`);
+    // Keep WebSocket identities tab-scoped. Persisting these ids in localStorage makes
+    // multiple tabs for the same session evict each other forever because the server
+    // treats a repeated clientId as a reconnect of the same client.
+    const clientId = clientIdsRef.current.get(session.id) ?? null;
     const ws = new WebSocket(wsUrl(apiBaseRef.current, session.id, tokenRef.current, clientId));
     wsRef.current = ws;
 
@@ -225,7 +229,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
         if (!("payload" in data)) {
           // HelloMessage
           if (data.type === "hello") {
-            localStorage.setItem(`piWebClientId:${data.sessionId}`, data.clientId);
+            clientIdsRef.current.set(data.sessionId, data.clientId);
           }
           return;
         }
@@ -457,7 +461,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
       const nextSessions = sessionsRef.current.filter((session) => session.id !== id);
       sessionsRef.current = nextSessions;
       setSessions(nextSessions);
-      localStorage.removeItem(`piWebClientId:${id}`);
+      clientIdsRef.current.delete(id);
 
       if (selectedSessionRef.current?.id !== id) {
         return { deleted: true, nextSession: selectedSessionRef.current };

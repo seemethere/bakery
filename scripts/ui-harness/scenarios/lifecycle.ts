@@ -28,7 +28,6 @@ export async function runReconnectController(page: Page): Promise<Record<string,
   const sessionId = await prepareSession(page);
   const context = page.context();
   const viewer = await context.newPage();
-  await viewer.addInitScript((id) => localStorage.removeItem(`piWebClientId:${id}`), sessionId);
   await viewer.goto(`${webBase}/sessions/${sessionId}`, { waitUntil: "domcontentloaded" });
   await viewer.locator("#prompt").waitFor({ state: "visible" });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
@@ -51,7 +50,6 @@ export async function runControllerHandoffEdges(page: Page, browser: Browser): P
   const sessionId = await prepareSession(page);
   const context = page.context();
   const viewer = await context.newPage();
-  await viewer.addInitScript((id) => localStorage.removeItem(`piWebClientId:${id}`), sessionId);
   await viewer.goto(`${webBase}/sessions/${sessionId}`, { waitUntil: "domcontentloaded" });
   await viewer.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
 
@@ -75,7 +73,6 @@ export async function runControllerHandoffEdges(page: Page, browser: Browser): P
   const owner = await isolated.newPage();
   const isolatedSessionId = await prepareSession(owner);
   const requester = await isolated.newPage();
-  await requester.addInitScript((id) => localStorage.removeItem(`piWebClientId:${id}`), isolatedSessionId);
   await requester.goto(`${webBase}/sessions/${isolatedSessionId}`, { waitUntil: "domcontentloaded" });
   await requester.locator("#takeControl", { hasText: "Take control" }).waitFor({ timeout: 5_000 });
   await requester.locator("#takeControl").click();
