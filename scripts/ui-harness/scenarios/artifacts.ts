@@ -71,11 +71,13 @@ export async function runImageAttachments(page: Page): Promise<Record<string, un
   await page.locator('[data-testid="image-file-input"]').waitFor({ timeout: 5_000 });
   await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-attachments-thumbnail.png"), fullPage: true });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
 
   await chooseImageWithPaperclip(page, imagePath);
   await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-attachments-before-send.png"), fullPage: true });
   await sendPromptAndWaitIdle(page, "Please inspect this attached image and include an image preview in the reply.");
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
@@ -92,11 +94,13 @@ export async function runImagePasteAttachments(page: Page): Promise<Record<strin
 
   await pasteImage(page, "body-pasted.png", "body");
   await page.locator(".prompt-image", { hasText: "body-pasted.png" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-paste-body-thumbnail.png"), fullPage: true });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
 
   await pasteImage(page, "pasted.png", "prompt");
   await page.locator(".prompt-image", { hasText: "pasted.png" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-paste-before-send.png"), fullPage: true });
   await page.locator("#send").click();
   await waitForAgentRunning(page, 5_000);
   await waitForAgentIdle(page, 10_000);
