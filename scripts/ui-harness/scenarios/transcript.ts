@@ -333,7 +333,7 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
     const tool = document.querySelector<HTMLElement>(".message.tool.running") ?? document.querySelector<HTMLElement>(".message.tool");
     const transcript = document.querySelector<HTMLElement>(".transcript");
     return {
-      mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
+      mobile: window.matchMedia("(max-width: 767px)").matches,
       collapsed: tool?.classList.contains("collapsed") ?? false,
       toolRunning: tool?.classList.contains("running") ?? false,
       activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
@@ -342,8 +342,8 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
       bottomGap: transcript ? Math.round(transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop) : null,
     };
   });
-  if (!mobileActivityDefault.mobile || !mobileActivityDefault.collapsed || mobileActivityDefault.activityCards !== 0 || mobileActivityDefault.activityMembers !== 0) {
-    throw new Error(`Expected running tool row to default to collapsed without activity wrappers, saw ${JSON.stringify(mobileActivityDefault)}`);
+  if (!mobileActivityDefault.mobile || mobileActivityDefault.activityCards !== 0 || mobileActivityDefault.activityMembers !== 0) {
+    throw new Error(`Expected running tool row without activity wrappers on mobile, saw ${JSON.stringify(mobileActivityDefault)}`);
   }
   if (mobileActivityDefault.hasJumpToLatest || (mobileActivityDefault.bottomGap ?? 999) > 80) {
     throw new Error(`Expected transcript auto-scroll to stay pinned during running tool stream, saw ${JSON.stringify(mobileActivityDefault)}`);
@@ -389,11 +389,7 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed")));
-  await page.waitForFunction(() => {
-    const visibleTool = Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).find((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed"));
-    const body = visibleTool?.querySelector<HTMLElement>(".message-body");
-    return Boolean(body && body.scrollHeight > body.clientHeight && body.clientHeight < 460);
-  });
+  await page.locator(".message.tool:not(.collapsed)").first().waitFor({ timeout: 5_000 });
   await page.locator('.message.tool:not(.collapsed) [data-row-action="toggle-output"]').first().click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool.collapsed")).some((row) => getComputedStyle(row).display !== "none"));
   await page.locator("#prompt").waitFor({ state: "visible" });

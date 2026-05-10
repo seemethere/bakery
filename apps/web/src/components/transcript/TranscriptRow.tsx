@@ -576,7 +576,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
 
       {/* Expanded body */}
       {expanded && hasBody && (
-        <div className="px-3 pb-3 border-t border-border/30 pt-2">
+        <div className="message-body px-3 pb-3 border-t border-border/30 pt-2">
           {item.segments && item.segments.length > 0
             ? <Segments segments={item.segments} showThinking={showThinking} context={context} />
             : <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{item.body}</pre>

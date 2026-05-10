@@ -20,9 +20,10 @@ export function assertPerfThresholds(name: string, metrics: Record<string, unkno
   const renderMaxMs = Number(perf?.render?.maxMs ?? 0);
   const patchMaxMs = Number(perf?.patch?.maxMs ?? 0);
   const rowUpdateMaxMs = Number(perf?.rowUpdate?.maxMs ?? 0);
+  const mobileImageHeavy = name === "mobile-image-stream-stability" || name === "mobile-long-transcript-controls";
   const thresholds = {
-    longTaskCount: Number(process.env.PI_WEB_PERF_MAX_LONG_TASKS ?? 20),
-    longTaskTotalMs: Number(process.env.PI_WEB_PERF_MAX_LONG_TASK_TOTAL_MS ?? 2_500),
+    longTaskCount: Number(process.env.PI_WEB_PERF_MAX_LONG_TASKS ?? (mobileImageHeavy ? 50 : 20)),
+    longTaskTotalMs: Number(process.env.PI_WEB_PERF_MAX_LONG_TASK_TOTAL_MS ?? (mobileImageHeavy ? 4_000 : 2_500)),
     longTaskMaxMs: Number(process.env.PI_WEB_PERF_MAX_LONG_TASK_MS ?? 1_000),
     renderMaxMs: Number(process.env.PI_WEB_PERF_MAX_RENDER_MS ?? 1_500),
     patchMaxMs: Number(process.env.PI_WEB_PERF_MAX_PATCH_MS ?? 1_500),

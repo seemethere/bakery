@@ -132,6 +132,18 @@
     top: auto;
     transform: none;
   }
+
+  @media (max-width: 767px) {
+    .model-thinking-popover {
+      position: fixed !important;
+      left: 1rem !important;
+      right: 1rem !important;
+      bottom: 8.5rem !important;
+      width: auto !important;
+      transform: none !important;
+      translate: none !important;
+    }
+  }
 }
 
 @layer base {
