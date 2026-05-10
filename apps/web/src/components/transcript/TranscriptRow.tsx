@@ -140,7 +140,7 @@ function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentRe
 
 function MarkdownContent({ text, context, className }: { text: string; context: TranscriptRenderContext; className?: string }) {
   return (
-    <div className={cn("markdown-body prose prose-sm dark:prose-invert max-w-none", className)}>
+    <div className={cn("markdown-body prose prose-sm min-w-0 max-w-none break-words dark:prose-invert [&_code]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -197,7 +197,7 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
 
 function Segments({ segments, showThinking, context }: { segments: TranscriptSegment[]; showThinking: boolean; context: TranscriptRenderContext }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       {segments.map((seg, i) => <Segment key={i} segment={seg} showThinking={showThinking} context={context} />)}
     </div>
   );
@@ -346,9 +346,9 @@ function UserRow({ item, showThinking, context }: { item: TranscriptItem; showTh
   const attachmentText = segments?.map((segment) => "text" in segment ? segment.text : "").join("\n") || item.body;
   const attachmentReferences = attachmentReferencesFromText(attachmentText, context);
   return (
-    <div className="message user flex justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
-      <div className="grid max-w-[80%] justify-items-end gap-1">
-        <div className="rounded-2xl rounded-br-sm bg-sidebar-primary/15 border border-sidebar-primary/20 px-4 py-2.5 text-sm">
+    <div className="message user flex min-w-0 justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+      <div className="grid min-w-0 max-w-[85%] justify-items-end gap-1 sm:max-w-[80%]">
+        <div className="min-w-0 max-w-full rounded-2xl rounded-br-sm border border-sidebar-primary/20 bg-sidebar-primary/15 px-4 py-2.5 text-sm break-words">
           {segments && segments.length > 0
             ? <Segments segments={segments} showThinking={showThinking} context={context} />
             : <p className="text-sm">{stripAttachmentContext(item.body)}</p>
@@ -376,8 +376,8 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
   if (isGeneratingPlan(item)) return <PlanGeneratingRow item={item} context={context} />;
 
   return (
-    <div className="message assistant px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
-      <div className="grid justify-items-start gap-1">
+    <div className="message assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+      <div className="grid min-w-0 justify-items-start gap-1">
         <div className="min-w-0 w-full">
           <div className="min-w-0">
             {isStreaming ? (
@@ -537,7 +537,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
   return (
     <div
       className={cn(
-        "message tool group/row relative mx-4 my-1 rounded-lg border text-sm",
+        "message tool group/row relative mx-4 my-1 min-w-0 rounded-lg border text-sm",
         isDeveloperBashItem(item) && "developer-bash",
         item.status === "running" && "running",
         item.status === "done" && "done",
@@ -610,7 +610,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
 
       {/* Expanded body */}
       {expanded && hasBody && (
-        <div className="message-body px-3 pb-3 border-t border-border/30 pt-2">
+        <div className="message-body min-w-0 overflow-hidden border-t border-border/30 px-3 pb-3 pt-2">
           {item.segments && item.segments.length > 0
             ? <Segments segments={item.segments} showThinking={showThinking} context={context} />
             : <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{item.body}</pre>
@@ -690,7 +690,7 @@ function QuestionSummaryRow({ item }: { item: TranscriptItem }) {
 function SystemRow({ item, context }: { item: TranscriptItem; context: TranscriptRenderContext }) {
   return (
     <div className={cn(
-      "message group/row mx-4 my-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
+      "message group/row mx-4 my-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
       item.kind === "error" ? "error border-red-500/30 bg-red-500/5 text-red-400" : "system border-border/30 bg-muted/30 text-muted-foreground",
     )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="min-w-0">
@@ -730,7 +730,7 @@ export function TranscriptRow({
         <div className="standalone-card-action-area message-action-area absolute right-5 top-2 z-[1]">
           <RowActions item={item} context={context} />
         </div>
-        <div className="message-body">
+        <div className="message-body min-w-0">
           <SubagentCard item={item} />
         </div>
       </div>

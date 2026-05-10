@@ -368,8 +368,10 @@ export async function runMobileImageStreamStability(page: Page): Promise<Record<
   });
   if (!during.stillConnected || !during.stillComplete || !during.sameFirstImage) throw new Error(`Transcript image was replaced or unloaded during streaming: ${JSON.stringify(during)}`);
   await waitForAgentIdle(page, 30_000);
+  const imageOverflow = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
+  if (imageOverflow.documentWidth > imageOverflow.viewportWidth + 2) throw new Error(`Mobile image transcript created horizontal overflow: ${JSON.stringify(imageOverflow)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-image-stream-stability.png"), fullPage: true });
-  return { before, during, ...(await collectMetrics(page)) };
+  return { before, during, imageOverflow, ...(await collectMetrics(page)) };
 }
 
 export async function runMobileLongTranscriptControls(page: Page): Promise<Record<string, unknown>> {
@@ -382,6 +384,9 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
     return images.some((image) => image.complete && image.naturalWidth > 0);
   }, null, { timeout: 15_000 });
+  await sendPromptAndWaitIdle(page, `${"mobile-user-overflow-token-".repeat(14)}\n\nPlease produce a mobile overflow transcript with long unbroken markdown and code tokens.`);
+  await page.locator(".message.assistant", { hasText: "Mobile overflow probe" }).waitFor({ timeout: 5_000 });
+  await page.locator(".message.assistant", { hasText: "fenced-code-token" }).waitFor({ timeout: 5_000 });
   await page.evaluate(() => {
     if (window.__piWebPerf) {
       window.__piWebPerf.renderCount = 0;
@@ -455,9 +460,21 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
   }));
 
   const maxLatencyMs = Math.max(...responsiveness.map((sample) => sample.ms));
+  const transcriptOverflow = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    const overflowing = Array.from(document.querySelectorAll<HTMLElement>(".message, .markdown-body, pre, code, .artifact-image, .message-action-menu"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { className: element.className, tagName: element.tagName, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), text: element.textContent?.slice(0, 80) ?? "" };
+      })
+      .filter((rect) => rect.left < -2 || rect.right > viewportWidth + 2);
+    return { documentWidth: document.documentElement.scrollWidth, viewportWidth, overflowing };
+  });
+  if (transcriptOverflow.documentWidth > transcriptOverflow.viewportWidth + 2 || transcriptOverflow.overflowing.length > 0) throw new Error(`Mobile transcript content overflowed viewport: ${JSON.stringify(transcriptOverflow)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-long-transcript-controls.png"), fullPage: true });
   return {
     responsiveness,
+    transcriptOverflow,
     maxLatencyMs,
     hamburgerPerf,
     toolRows: await page.locator(".message.tool").count(),
