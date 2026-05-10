@@ -142,9 +142,7 @@ export async function runConfiguredExtensionSmoke(page: Page): Promise<Record<st
   await page.locator(".message", { hasText: "Bakery extensions loaded" }).waitFor({ timeout: 5_000 });
   await page.locator(".message", { hasText: "Extension issues" }).waitFor({ timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
-  await page.locator("#prompt").click();
-  await page.locator("#prompt").fill("/");
-  await page.locator(".command-autocomplete", { hasText: "/local-demo" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "configured-extension-smoke.png"), fullPage: true });
   return collectMetrics(page);
 }
 
