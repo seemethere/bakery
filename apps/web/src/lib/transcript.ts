@@ -115,7 +115,7 @@ function contentToSegments(content: unknown): TranscriptSegment[] {
 
 function contentToText(content: unknown): string {
   return contentToSegments(content)
-    .map((segment) => "text" in segment ? segment.text : segment.label)
+    .map((segment) => segment.kind === "toolCall" ? "" : "text" in segment ? segment.text : segment.label)
     .filter(Boolean)
     .join("\n\n");
 }
@@ -616,6 +616,7 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
     const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
     const item = messageToTranscriptItem(event.message, fallback);
     item.status = type === "message_update" ? "running" : "done";
+    if (isToolCallOnlyAssistant(item)) return items.filter((existing) => existing.id !== item.id);
     return upsertItem(items, item);
   }
 

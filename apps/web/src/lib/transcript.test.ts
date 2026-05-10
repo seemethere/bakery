@@ -96,4 +96,29 @@ describe("React transcript parity", () => {
     expect(compacted).toHaveLength(1);
     expect(compacted[0]?.raw).toMatchObject({ duplicateResult: duplicate.raw });
   });
+
+  test("does not render live assistant rows that only announce tool calls", () => {
+    const items = applyAgentEvent([], {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "read", arguments: { path: "DESIGN.md" } }],
+      },
+    });
+
+    expect(items).toHaveLength(0);
+  });
+
+  test("keeps tool call labels out of mixed assistant message body text", () => {
+    const item = messageToTranscriptItem({
+      role: "assistant",
+      content: [
+        { type: "text", text: "I will inspect the design." },
+        { type: "toolCall", name: "read", arguments: { path: "DESIGN.md" } },
+      ],
+    }, "assistant-1");
+
+    expect(item.body).toBe("I will inspect the design.");
+    expect(item.segments).toContainEqual({ kind: "toolCall", label: "↳ read DESIGN.md" });
+  });
 });
