@@ -118,6 +118,22 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+@layer components {
+  footer.empty-session-composer {
+    position: absolute !important;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  footer.empty-session-composer.empty-session-composer-grown {
+    position: relative !important;
+    top: auto;
+    transform: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

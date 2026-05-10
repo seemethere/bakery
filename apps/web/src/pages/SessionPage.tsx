@@ -102,6 +102,7 @@ export function SessionPage({
   }
 
   const isController = controller?.isController ?? true;
+  const isEmptySession = items.length === 0 && !pendingQuestion && status !== "running";
   const canAnswer = isController && status !== "disconnected" && status !== "connecting" && status !== "error";
   const otherConnectedTabs = Math.max(0, (controller?.connectedClients ?? 1) - 1);
 
@@ -171,6 +172,7 @@ export function SessionPage({
         onSetThinking={(level) => onSetThinking(sessionId, level)}
         onShowThinkingChange={onShowThinkingChange}
         onTakeControl={onTakeControl}
+        isEmptySession={isEmptySession}
         draftKey={`piWebPromptDraft:${sessionId}`}
         draftPrefill={draftPrefill}
         focusNonce={promptFocusNonce}

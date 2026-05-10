@@ -30,6 +30,7 @@ type Props = {
   onSetThinking: (level: string) => void;
   onShowThinkingChange: (show: boolean) => void;
   onTakeControl: () => void;
+  isEmptySession?: boolean;
   draftKey?: string;
   draftPrefill?: { text: string; nonce: number } | null;
   focusNonce?: number;
@@ -128,6 +129,7 @@ export function Composer({
   onSetThinking,
   onShowThinkingChange,
   onTakeControl,
+  isEmptySession = false,
   draftKey,
   draftPrefill,
   focusNonce,
@@ -156,6 +158,8 @@ export function Composer({
   const canSend = isController && (draft.trim().length > 0 || images.length > 0) && status !== "aborting" && status !== "connecting";
   const isDisconnected = status === "disconnected" || status === "error";
   const modeLabel = composerModeLabel(composerMode, status);
+  const showEmptyLanding = isEmptySession && draft.trim().length === 0 && images.length === 0;
+  const emptyComposerGrown = isEmptySession && draft.includes("\n");
 
   useEffect(() => {
     if (draftKey) localStorage.setItem(draftKey, draft);
@@ -422,7 +426,20 @@ export function Composer({
   }
 
   return (
-    <footer className="relative z-[3] grid justify-center px-4 pb-3 pt-2" style={{ gridTemplateColumns: "minmax(0, 900px)" }}>
+    <footer
+      className={cn(
+        "relative z-[3] grid justify-center px-4 pb-3 pt-2",
+        isEmptySession && "empty-session-composer",
+        emptyComposerGrown && "empty-session-composer-grown",
+      )}
+      style={{ gridTemplateColumns: "minmax(0, 900px)" }}
+    >
+      {showEmptyLanding && !emptyComposerGrown && (
+        <div className="empty-session-greeting mb-3 grid justify-items-center gap-1 text-center">
+          <p className="m-0 text-base font-semibold text-foreground">New Bakery session</p>
+          <p className="m-0 max-w-md text-xs text-muted-foreground">Start with a plan, attach context, or run a quick command.</p>
+        </div>
+      )}
       <ComposerNotice disconnected={isDisconnected} notice={notice} />
 
       <AutocompletePopup
@@ -513,6 +530,14 @@ export function Composer({
           onTakeControl={onTakeControl}
         />
       </div>
+
+      {showEmptyLanding && !emptyComposerGrown && (
+        <div className="empty-quick-start-chips mt-3 flex flex-wrap justify-center gap-2">
+          <button type="button" data-empty-quick-start="plan" onClick={() => setDraft("/plan ")} className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">/plan</button>
+          <button type="button" data-empty-quick-start="file" onClick={() => setDraft("@")} className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">@file</button>
+          <button type="button" data-empty-quick-start="bash" onClick={() => setDraft("!")} className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">!bash</button>
+        </div>
+      )}
     </footer>
   );
 }

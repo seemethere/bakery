@@ -238,9 +238,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
 
   if (items.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        No messages yet. Send a prompt to start.
-      </div>
+      <div data-testid="transcript" className="transcript min-h-0 flex-1" aria-label="Empty transcript" />
     );
   }
 
