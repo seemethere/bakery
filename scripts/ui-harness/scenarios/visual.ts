@@ -47,7 +47,7 @@ export async function runThemeGallery(page: Page): Promise<Record<string, unknow
 
 export async function ensureSidebarSettingsVisible(page: Page): Promise<void> {
   if (await page.locator('[data-route-path="/settings"]').isVisible().catch(() => false)) return;
-  const app = page.locator("pi-web-agent");
+  const app = page.locator(".pi-web-agent");
   const collapsed = await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"));
   if (collapsed) {
     const mobileMenu = page.locator("#toggleSessionSidebarMobile");
@@ -55,23 +55,18 @@ export async function ensureSidebarSettingsVisible(page: Page): Promise<void> {
     else await page.locator("#toggleSessionSidebar").click();
   }
   if (!await page.locator('[data-route-path="/settings"]').isVisible().catch(() => false)) {
-    await app.evaluate((element) => {
-      const appElement = element as HTMLElement & { sessionSidebarCollapsed?: boolean; render?: () => void };
-      appElement.sessionSidebarCollapsed = false;
-      appElement.render?.();
-    });
+    throw new Error("Settings route control did not become visible after opening the sidebar");
   }
   await page.locator('[data-route-path="/settings"]').waitFor({ state: "visible", timeout: 5_000 });
 }
 
 export async function setWorkbenchTheme(page: Page, theme: "workbench-dark" | "workbench-light"): Promise<void> {
-  await page.locator("pi-web-agent").evaluate((element, nextTheme) => {
+  await page.locator(".pi-web-agent").waitFor({ timeout: 5_000 });
+  await page.evaluate((nextTheme) => {
     localStorage.setItem("piWebThemePreference", nextTheme);
     document.documentElement.dataset.theme = nextTheme;
     document.documentElement.style.colorScheme = nextTheme === "workbench-light" ? "light" : "dark";
-    const appElement = element as HTMLElement & { themePreference?: string; render?: () => void };
-    appElement.themePreference = nextTheme;
-    appElement.render?.();
+    document.documentElement.classList.toggle("dark", nextTheme === "workbench-dark");
   }, theme);
   await page.waitForFunction((expected) => document.documentElement.dataset.theme === expected, theme);
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();

@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
   PROTOCOL_VERSION,
@@ -14,7 +17,7 @@ import {
 import type { ServerConfig } from "./config.js";
 import { parseSlashCommand, runBundledExtensionCommand } from "./extensions.js";
 import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } from "./metadata-routes.js";
-import type { MetadataStore, WebCommandResultRecord } from "./metadata-store.js";
+import type { MetadataStore, SubmittedPromptRecord, WebCommandResultRecord } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 import { isBrowserOriginAllowed } from "./security-origin.js";
 
@@ -26,6 +29,48 @@ export function dataUrlToImageContent(value: string): ImageContent {
   const match = /^data:(image\/(?:png|jpe?g|gif|webp));base64,([a-z0-9+/=\s]+)$/i.exec(value);
   if (!match) throw new Error("Images must be png, jpeg, gif, or webp data URLs");
   return { type: "image", mimeType: match[1]!.toLowerCase(), data: match[2]!.replace(/\s/g, "") };
+}
+
+const attachmentImageMimeTypes = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+const attachmentImageExtensionsByMime = new Map(Array.from(attachmentImageMimeTypes, ([extension, mime]) => [mime, extension === ".jpg" ? ".jpeg" : extension]));
+
+function artifactIdFor(sessionId: string, path: string): string {
+  return createHash("sha256").update(sessionId).update("\0").update(path).digest("hex").slice(0, 32);
+}
+
+function extensionOf(path: string): string {
+  const match = /\.([a-z0-9]+)$/i.exec(path);
+  return match ? `.${match[1]!.toLowerCase()}` : "";
+}
+
+export function attachmentPathsFromText(text: string): string[] {
+  const paths = new Set<string>();
+  for (const match of text.matchAll(/\.bakery\/attachments\/[^\s`'"\])]+\.(?:png|jpe?g|gif|webp)/gi)) paths.add(match[0]!);
+  return [...paths];
+}
+
+async function imageContentForStoredAttachment(artifactDir: string, sessionId: string, path: string): Promise<ImageContent | null> {
+  const mimeType = attachmentImageMimeTypes.get(extensionOf(path));
+  const extension = mimeType ? attachmentImageExtensionsByMime.get(mimeType) : undefined;
+  if (!mimeType || !extension) return null;
+  const artifactId = artifactIdFor(sessionId, path);
+  const data = await readFile(join(artifactDir, sessionId, `${artifactId}${extension}`));
+  return { type: "image", mimeType, data: data.toString("base64") };
+}
+
+function askPrompt(text: string): string {
+  return [
+    "Answer the following operator question directly.",
+    "Treat this as an ask/explain turn: do not edit files, run shell commands, or call tools unless the operator explicitly asks you to.",
+    "",
+    text,
+  ].join("\n");
 }
 
 export function parseNameCommand(text: string): { matched: boolean; clear?: boolean; title?: string } {
@@ -45,6 +90,15 @@ type WebCommandResultSnapshotMessage = {
   isError: boolean;
   timestamp: string;
   data?: unknown;
+};
+
+type SubmittedPromptSnapshotMessage = {
+  role: "user";
+  id: string;
+  content: Array<{ type: "text"; text: string }>;
+  timestamp: string;
+  webSubmittedPrompt: true;
+  error?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,19 +130,55 @@ function webCommandResultSnapshotMessage(record: WebCommandResultRecord): WebCom
   };
 }
 
-export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], records: WebCommandResultRecord[]): unknown[] {
+function submittedPromptSnapshotMessage(record: SubmittedPromptRecord): SubmittedPromptSnapshotMessage {
+  return {
+    role: "user",
+    id: record.id,
+    content: [{ type: "text", text: record.text }],
+    timestamp: record.timestamp,
+    webSubmittedPrompt: true,
+    ...(record.error ? { error: record.error } : {}),
+  };
+}
+
+function messageText(message: unknown): string | null {
+  if (!isRecord(message)) return null;
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  const text = content
+    .map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "")
+    .filter(Boolean)
+    .join("\n");
+  return text || null;
+}
+
+function userMessageText(message: unknown): string | null {
+  return isRecord(message) && message.role === "user" ? messageText(message) : null;
+}
+
+function submittedPromptMatchesMessage(record: SubmittedPromptRecord, text: string): boolean {
+  return record.text === text || (record.kind === "ask" && askPrompt(record.text) === text);
+}
+
+export function mergeSnapshotMessagesWithWebCommands(messages: unknown[], records: WebCommandResultRecord[], submittedPrompts: SubmittedPromptRecord[] = []): unknown[] {
+  const userTexts = messages.map(userMessageText).filter((value): value is string => Boolean(value));
+  const promptMessages = submittedPrompts
+    .filter((record) => !userTexts.some((text) => submittedPromptMatchesMessage(record, text)))
+    .map(submittedPromptSnapshotMessage);
   const commandMessages = records.map(webCommandResultSnapshotMessage);
-  if (messages.length === 0) return commandMessages;
-  if (commandMessages.length === 0) return messages;
+  const webMessages = [...promptMessages, ...commandMessages];
+  if (messages.length === 0) return webMessages;
+  if (webMessages.length === 0) return messages;
 
   const messageEntries = messages.map((message, index) => ({ kind: "message" as const, value: message, time: messageTimestampMs(message), index }));
-  const commandEntries = commandMessages.map((message, index) => ({ kind: "command" as const, value: message, time: timestampMs(message.timestamp), index }));
+  const webEntries = webMessages.map((message, index) => ({ kind: "web" as const, value: message, time: timestampMs(message.timestamp), index }));
 
   // If the runner snapshot lacks reliable timestamps, fall back to the previous
   // append behavior rather than guessing where persisted web-only cards belong.
-  if (messageEntries.some((entry) => entry.time === null) || commandEntries.some((entry) => entry.time === null)) return [...messages, ...commandMessages];
+  if (messageEntries.some((entry) => entry.time === null) || webEntries.some((entry) => entry.time === null)) return [...messages, ...webMessages];
 
-  return [...messageEntries, ...commandEntries]
+  return [...messageEntries, ...webEntries]
     .sort((left, right) => {
       const byTime = left.time! - right.time!;
       if (byTime !== 0) return byTime;
@@ -170,18 +260,31 @@ export class SessionHub {
   private pendingCommands: string[] = [];
   private flushingPendingCommands = false;
   private readonly broadcastMetrics = emptyBroadcastMetrics();
-  private readonly unsubscribe: () => void;
-  private readonly unsubscribeQuestion: () => void;
+  private readonly sessionId: string;
+  private handle: SessionHandle | null;
+  private unsubscribe: () => void = () => undefined;
+  private unsubscribeQuestion: () => void = () => undefined;
+  private promotePromise: Promise<SessionHandle> | null = null;
+  private pendingModel: string | null = null;
+  private pendingThinkingLevel: string | null = null;
 
-  constructor(private readonly handle: SessionHandle, private readonly deps: SessionHubDeps) {
+  constructor(sessionId: string, handle: SessionHandle | null, private readonly deps: SessionHubDeps) {
+    this.sessionId = sessionId;
+    this.handle = null;
+    if (handle) this.attachHandle(handle);
+  }
+
+  private attachHandle(handle: SessionHandle): void {
+    this.handle = handle;
     this.unsubscribe = handle.subscribe((event, raw) => {
+      this.reconcileSubmittedPrompt(raw);
       this.rememberActiveToolExecution(event);
       this.broadcast({ type: "agent_event", event, raw });
       if (event.type === "agent_end" || event.type === "turn_end") {
         void this.broadcastSettingsUpdate();
         void this.flushPendingCommands();
       }
-      const webSession = deps.store.getSession(handle.id);
+      const webSession = this.deps.store.getSession(handle.id);
       if (this.clients.size === 0 && webSession) {
         void handle.snapshot(webSession).then((snapshot) => {
           if (snapshot.status === "idle") this.scheduleDispose();
@@ -193,16 +296,79 @@ export class SessionHub {
     });
   }
 
+  private reconcileSubmittedPrompt(raw: unknown): void {
+    if (!isRecord(raw) || raw.type !== "message_end") return;
+    this.reconcileSubmittedPromptText(userMessageText(raw.message));
+  }
+
+  private reconcileSubmittedPromptText(text: string | null): void {
+    if (!text) return;
+    const match = this.deps.store
+      .listUnreconciledSubmittedPrompts(this.sessionId)
+      .find((record) => submittedPromptMatchesMessage(record, text));
+    if (match) this.deps.store.markSubmittedPromptReconciled(this.sessionId, match.id);
+  }
+
+  private reconcileSubmittedPromptsFromMessages(messages: unknown[]): void {
+    for (const message of messages) this.reconcileSubmittedPromptText(userMessageText(message));
+  }
+
+  private async promote(webSession: WebSession): Promise<SessionHandle> {
+    if (this.handle) return this.handle;
+    if (this.promotePromise) return this.promotePromise;
+    const mode: "workspace" | "chat_only" = webSession.cwd ? "workspace" : "chat_only";
+    this.promotePromise = (async () => {
+      const handle = await this.deps.runner.createSession({
+        id: webSession.id,
+        cwd: webSession.cwd,
+        piSessionFile: webSession.piSessionFile,
+        mode,
+      });
+      if (this.pendingModel) await handle.setModel(this.pendingModel);
+      if (this.pendingThinkingLevel) await handle.setThinkingLevel(this.pendingThinkingLevel);
+      this.pendingModel = null;
+      this.pendingThinkingLevel = null;
+      if (webSession.kind === "draft") {
+        this.deps.store.setKind(webSession.id, mode);
+      }
+      this.attachHandle(handle);
+      void this.broadcastSettingsUpdate();
+      return handle;
+    })();
+    try {
+      return await this.promotePromise;
+    } finally {
+      this.promotePromise = null;
+    }
+  }
+
+  private requireHandle(): SessionHandle {
+    if (!this.handle) throw new Error("session has not been started yet");
+    return this.handle;
+  }
+
+  private async ensureHandle(): Promise<SessionHandle> {
+    if (this.handle) return this.handle;
+    const webSession = this.deps.store.getSession(this.sessionId);
+    if (!webSession) throw new Error("session not found");
+    return this.promote(webSession);
+  }
+
   add(socket: SocketClient["socket"], requestedClientId?: string): void {
     if (this.disposeTimer) clearTimeout(this.disposeTimer);
     this.disposeTimer = undefined;
 
-    const clientId = requestedClientId && !this.clients.has(requestedClientId) ? requestedClientId : crypto.randomUUID();
+    const clientId = requestedClientId ?? crypto.randomUUID();
+    const previousClient = this.clients.get(clientId);
+    if (previousClient) {
+      previousClient.bufferedPayloads = [];
+      previousClient.socket.close(1000, "client reconnected");
+    }
     const client: SocketClient = { clientId, seq: 0, snapshotPending: true, bufferedPayloads: [], socket };
     this.clients.set(clientId, client);
     if (!this.controllerId) this.controllerId = clientId;
 
-    const webSession = this.deps.store.getSession(this.handle.id);
+    const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) {
       socket.close(1008, "session not found");
       return;
@@ -223,6 +389,7 @@ export class SessionHub {
     });
 
     socket.on("close", () => {
+      if (this.clients.get(clientId) !== client) return;
       this.clients.delete(clientId);
       client.bufferedPayloads = [];
       if (this.controllerId === clientId) {
@@ -249,7 +416,7 @@ export class SessionHub {
     this.unsubscribeQuestion();
     for (const client of this.clients.values()) client.socket.close(1001, "session disposed");
     this.clients.clear();
-    await this.deps.runner.disposeSession(this.handle.id);
+    await this.deps.runner.disposeSession(this.sessionId);
   }
 
   private controllerFor(currentClientId: string): ControllerInfo {
@@ -325,7 +492,7 @@ export class SessionHub {
     this.broadcastMetrics.slowestBroadcastMs = Math.max(this.broadcastMetrics.slowestBroadcastMs, Math.round(sample.elapsedMs));
     this.broadcastMetrics.lastPayloadType = payloadType;
     if (process.env.PI_WEB_BROADCAST_METRICS === "1" && (sample.bufferedMessages > 0 || sample.maxPayloadBytes > 64_000 || sample.elapsedMs > 25)) {
-      console.warn("[session-hub:broadcast]", JSON.stringify({ sessionId: this.handle.id, payloadType, ...sample, elapsedMs: Math.round(sample.elapsedMs) }));
+      console.warn("[session-hub:broadcast]", JSON.stringify({ sessionId: this.sessionId, payloadType, ...sample, elapsedMs: Math.round(sample.elapsedMs) }));
     }
   }
 
@@ -352,14 +519,16 @@ export class SessionHub {
   }
 
   private async broadcastSettingsUpdate(): Promise<void> {
+    if (!this.handle) return;
     const settings = await this.handle.getSettings();
     this.broadcast({ type: "settings_update", settings });
   }
 
   private async runBashCommand(command: string, excludeFromContext?: boolean): Promise<void> {
-    const webSession = this.deps.store.getSession(this.handle.id);
+    const handle = await this.ensureHandle();
+    const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) throw new Error("session not found");
-    const snapshot = await this.handle.snapshot(webSession);
+    const snapshot = await handle.snapshot(webSession);
     if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
 
     const id = `bash:${crypto.randomUUID()}`;
@@ -375,7 +544,7 @@ export class SessionHub {
       },
     });
     try {
-      const result = await this.handle.executeBash(command, (chunk) => {
+      const result = await handle.executeBash(command, (chunk) => {
         const outputOffsetBytes = outputBytes;
         chunkCount += 1;
         const chunkBytes = Buffer.byteLength(chunk, "utf8");
@@ -413,35 +582,83 @@ export class SessionHub {
   }
 
   private async snapshotWithWebCommands(webSession: WebSession): Promise<SessionSnapshot> {
+    if (!this.handle) {
+      const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+      const submittedPrompts = this.deps.store.listUnreconciledSubmittedPrompts(webSession.id);
+      return {
+        session: webSession,
+        status: "idle",
+        messages: mergeSnapshotMessagesWithWebCommands([], commandRecords, submittedPrompts),
+        pendingQuestion: null,
+      };
+    }
     const snapshot = await this.handle.snapshot(webSession);
+    this.reconcileSubmittedPromptsFromMessages(snapshot.messages);
     const commandRecords = this.deps.store.listWebCommandResults(webSession.id);
+    const submittedPrompts = this.deps.store.listUnreconciledSubmittedPrompts(webSession.id);
     const activeToolExecutions = [...this.activeToolExecutions.values()];
     return {
       ...snapshot,
-      messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords),
+      messages: mergeSnapshotMessagesWithWebCommands(snapshot.messages, commandRecords, submittedPrompts),
       ...(activeToolExecutions.length > 0 ? { activeToolExecutions } : {}),
     };
   }
 
+  private submitPromptReceipt(kind: "prompt" | "ask", text: string): SubmittedPromptRecord {
+    return this.deps.store.addSubmittedPrompt(this.sessionId, { kind, text });
+  }
+
+  private markPromptReceiptError(record: SubmittedPromptRecord, error: unknown): void {
+    this.deps.store.markSubmittedPromptError(this.sessionId, record.id, error instanceof Error ? error.message : String(error));
+  }
+
+  private async promptWithReceipt(handle: SessionHandle, kind: "prompt" | "ask", receiptText: string, promptText: string, images?: ImageContent[]): Promise<void> {
+    const receipt = this.submitPromptReceipt(kind, receiptText);
+    try {
+      await handle.prompt(promptText, images);
+    } catch (error) {
+      this.markPromptReceiptError(receipt, error);
+      throw error;
+    }
+  }
+
+  private async imagesForPromptText(text: string, dataUrls?: string[]): Promise<ImageContent[] | undefined> {
+    const images = dataUrls?.map(dataUrlToImageContent) ?? [];
+    const paths = attachmentPathsFromText(text);
+    if (paths.length > 0) {
+      const artifactDir = this.deps.config.artifactDir;
+      if (!artifactDir) throw new Error("Attachment storage is not configured.");
+      for (const path of paths) {
+        try {
+          const image = await imageContentForStoredAttachment(artifactDir, this.sessionId, path);
+          if (image) images.push(image);
+        } catch (error) {
+          throw new Error(`Attached image is not available to the agent: ${path} (${error instanceof Error ? error.message : String(error)})`);
+        }
+      }
+    }
+    return images.length > 0 ? images : undefined;
+  }
+
   private commandServices() {
     return {
-      getSessionCwd: () => this.handle.cwd,
-      hasCommand: (name: string) => this.handle.getCommands().some((command) => command.name === name),
+      getSessionCwd: () => this.handle?.cwd ?? process.cwd(),
+      hasCommand: (name: string) => this.handle ? this.handle.getCommands().some((command) => command.name === name) : false,
       generateSessionDetails: async (options: Parameters<typeof generateAndApplySessionDetails>[2]) => {
-        const webSession = this.deps.store.getSession(this.handle.id);
+        const webSession = this.deps.store.getSession(this.sessionId);
         if (!webSession) throw new Error("session not found");
         return await generateAndApplySessionDetails(webSession, {
           config: this.deps.config,
           store: this.deps.store,
           runner: this.deps.runner,
-          getBroadcaster: (sessionId) => sessionId === this.handle.id ? this : undefined,
+          getBroadcaster: (sessionId) => sessionId === this.sessionId ? this : undefined,
         }, options);
       },
     };
   }
 
   private async emitCommandResult(title: string, body: string, isError = false, data?: unknown): Promise<void> {
-    const record = this.deps.store.addWebCommandResult(this.handle.id, { title, body, isError, ...(data !== undefined ? { data } : {}) });
+    const record = this.deps.store.addWebCommandResult(this.sessionId, { title, body, isError, ...(data !== undefined ? { data } : {}) });
     this.broadcast({
       type: "agent_event",
       event: {
@@ -459,16 +676,39 @@ export class SessionHub {
     const result = await runBundledExtensionCommand(parsed.name, parsed.args, this.commandServices());
     if (!result) return false;
     if (result.kind === "launchPrompt") {
-      const webSession = this.deps.store.getSession(this.handle.id);
+      const webSession = this.deps.store.getSession(this.sessionId);
       if (webSession && !webSession.title) {
         const updated = this.deps.store.updateSession(webSession.id, { title: result.title ?? "Workflow", titleSource: "first_prompt" });
         if (updated) this.broadcastMetadataUpdate(updated);
       }
-      await this.handle.prompt(result.prompt, images);
+      const handle = await this.ensureHandle();
+      await this.promptWithReceipt(handle, "prompt", result.prompt, result.prompt, images);
       await this.broadcastSettingsUpdate();
       return true;
     }
     await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false, result.card ? { kind: "extension_card", card: result.card } : result.data);
+    return true;
+  }
+
+  private async runWebCommandText(text: string, images?: ImageContent[]): Promise<boolean> {
+    const parsed = parseSlashCommand(text);
+    if (!parsed) return false;
+    if (await this.runBundledCommandText(text, images)) return true;
+
+    const handle = await this.ensureHandle();
+    const result = await handle.runBuiltinCommand(text);
+    if (!result.handled) return false;
+    if (result.launchPrompt) {
+      const webSession = this.deps.store.getSession(this.sessionId);
+      if (webSession && !webSession.title) {
+        const updated = this.deps.store.updateSession(webSession.id, { title: result.title ?? "Workflow", titleSource: "first_prompt" });
+        if (updated) this.broadcastMetadataUpdate(updated);
+      }
+      await this.promptWithReceipt(handle, "prompt", result.launchPrompt, result.launchPrompt, images);
+      await this.broadcastSettingsUpdate();
+      return true;
+    }
+    await this.emitCommandResult(result.title ?? `/${parsed.name}`, result.body ?? "", result.isError ?? false, result.data);
     return true;
   }
 
@@ -479,7 +719,8 @@ export class SessionHub {
 
   private async flushPendingCommands(): Promise<void> {
     if (this.flushingPendingCommands || this.pendingCommands.length === 0) return;
-    const webSession = this.deps.store.getSession(this.handle.id);
+    if (!this.handle) return;
+    const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) return;
     const snapshot = await this.handle.snapshot(webSession);
     if (snapshot.status !== "idle") return;
@@ -487,7 +728,7 @@ export class SessionHub {
     try {
       while (this.pendingCommands.length > 0) {
         const command = this.pendingCommands.shift();
-        if (command) await this.runBundledCommandText(command);
+        if (command) await this.runWebCommandText(command);
       }
     } finally {
       this.flushingPendingCommands = false;
@@ -499,14 +740,14 @@ export class SessionHub {
     this.disposeTimer = setTimeout(() => {
       void (async () => {
         if (this.clients.size > 0) return;
-        const webSession = this.deps.store.getSession(this.handle.id);
-        const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
+        const webSession = this.deps.store.getSession(this.sessionId);
+        const status = webSession && this.handle ? (await this.handle.snapshot(webSession)).status : "idle";
         if (status === "running" && this.deps.config.sessionLifecycle.disconnectedRunningPolicy === "let-finish") {
           this.disposeTimer = undefined;
           return;
         }
-        if (status === "running") await this.handle.abort();
-        this.deps.removeHub(this.handle.id);
+        if (status === "running" && this.handle) await this.handle.abort();
+        this.deps.removeHub(this.sessionId);
         await this.dispose();
       })();
     }, this.deps.config.sessionLifecycle.disconnectedIdleTimeoutMs);
@@ -541,14 +782,27 @@ export class SessionHub {
       if (parsed.data.type === "bash") {
         await this.runBashCommand(parsed.data.command, parsed.data.excludeFromContext);
       } else if (parsed.data.type === "command") {
-        const webSession = this.deps.store.getSession(this.handle.id);
-        const status = webSession ? (await this.handle.snapshot(webSession)).status : "idle";
-        if (status === "idle") await this.runBundledCommandText(parsed.data.text);
+        const handle = await this.ensureHandle();
+        const webSession = this.deps.store.getSession(this.sessionId);
+        const status = webSession ? (await handle.snapshot(webSession)).status : "idle";
+        if (status === "idle") await this.runWebCommandText(parsed.data.text);
         else await this.queueCommandUntilIdle(parsed.data.text);
+      } else if (parsed.data.type === "ask") {
+        const handle = await this.ensureHandle();
+        const webSession = this.deps.store.getSession(this.sessionId);
+        if (webSession && !webSession.title) {
+          const title = firstPromptTitle(parsed.data.text);
+          if (title) {
+            const updated = this.deps.store.updateSession(webSession.id, { title, titleSource: "first_prompt" });
+            if (updated) this.broadcastMetadataUpdate(updated);
+          }
+        }
+        await this.promptWithReceipt(handle, "ask", parsed.data.text, askPrompt(parsed.data.text), await this.imagesForPromptText(parsed.data.text, parsed.data.images));
+        await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
         if (nameCommand.matched) {
-          const webSession = this.deps.store.getSession(this.handle.id);
+          const webSession = this.deps.store.getSession(this.sessionId);
           if (!webSession) throw new Error("session not found");
           let body: string;
           if (nameCommand.clear) {
@@ -556,7 +810,7 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
             body = "Session title cleared. Click ✨ to generate a new title/summary suggestion when enough context is available.";
           } else if (nameCommand.title) {
-            this.handle.setSessionName(nameCommand.title);
+            this.handle?.setSessionName(nameCommand.title);
             const updated = this.deps.store.updateSession(webSession.id, { title: nameCommand.title, titleSource: "manual" });
             if (updated) this.broadcastMetadataUpdate(updated);
             body = `Session title set to: ${nameCommand.title}`;
@@ -566,23 +820,25 @@ export class SessionHub {
           await this.emitCommandResult("/name", body);
           return;
         }
-        if (await this.runBundledCommandText(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent))) return;
-        const builtinResult = await this.handle.runBuiltinCommand(parsed.data.text);
+        const handle = await this.ensureHandle();
+        const images = await this.imagesForPromptText(parsed.data.text, parsed.data.images);
+        if (await this.runBundledCommandText(parsed.data.text, images)) return;
+        const builtinResult = await handle.runBuiltinCommand(parsed.data.text);
         if (builtinResult.handled) {
           if (builtinResult.launchPrompt) {
-            const webSession = this.deps.store.getSession(this.handle.id);
+            const webSession = this.deps.store.getSession(this.sessionId);
             if (webSession && !webSession.title) {
               const updated = this.deps.store.updateSession(webSession.id, { title: builtinResult.title ?? "Workflow", titleSource: "first_prompt" });
               if (updated) this.broadcastMetadataUpdate(updated);
             }
-            await this.handle.prompt(builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
+            await this.promptWithReceipt(handle, "prompt", builtinResult.launchPrompt, builtinResult.launchPrompt, images);
             await this.broadcastSettingsUpdate();
             return;
           }
           await this.emitCommandResult(builtinResult.title ?? "Slash command", builtinResult.body ?? "", builtinResult.isError ?? false, builtinResult.data);
           return;
         }
-        const webSession = this.deps.store.getSession(this.handle.id);
+        const webSession = this.deps.store.getSession(this.sessionId);
         if (webSession && !webSession.title) {
           const title = firstPromptTitle(parsed.data.text);
           if (title) {
@@ -590,12 +846,12 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await this.handle.prompt(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+        await this.promptWithReceipt(handle, "prompt", parsed.data.text, parsed.data.text, images);
         await this.broadcastSettingsUpdate();
-      } else if (parsed.data.type === "steer") await this.handle.steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
-      else if (parsed.data.type === "follow_up") await this.handle.followUp(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+      } else if (parsed.data.type === "steer") await this.requireHandle().steer(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
+      else if (parsed.data.type === "follow_up") await this.requireHandle().followUp(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
       else if (parsed.data.type === "cancel_queued_message") {
-        const queued = await this.handle.cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
+        const queued = await this.requireHandle().cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
         this.broadcast({
           type: "agent_event",
           event: {
@@ -604,14 +860,32 @@ export class SessionHub {
             data: { type: "queue_update", ...queued },
           },
         });
-      } else if (parsed.data.type === "answer_question") this.handle.answerQuestion(parsed.data.payload);
-      else if (parsed.data.type === "abort") await this.handle.abort();
+      } else if (parsed.data.type === "answer_question") {
+        const payload = parsed.data.payload;
+        const handle = this.requireHandle();
+        if (payload.answer && !payload.cancelled && handle.isCheckpointQuestion(payload.questionId)) {
+          await this.promptWithReceipt(handle, "prompt", payload.answer.trim(), payload.answer.trim(), []);
+        } else {
+          handle.answerQuestion(payload);
+        }
+      }
+      else if (parsed.data.type === "abort") await this.requireHandle().abort();
       else if (parsed.data.type === "set_model") {
-        await this.handle.setModel(parsed.data.model);
-        await this.broadcastSettingsUpdate();
+        if (!this.handle) {
+          if (this.deps.config.modelPolicy.allowedModels && !this.deps.config.modelPolicy.allowedModels.includes(parsed.data.model)) throw new Error(`Model not allowed: ${parsed.data.model}`);
+          this.pendingModel = parsed.data.model;
+        } else {
+          await this.handle.setModel(parsed.data.model);
+          await this.broadcastSettingsUpdate();
+        }
       } else if (parsed.data.type === "set_thinking") {
-        await this.handle.setThinkingLevel(parsed.data.level);
-        await this.broadcastSettingsUpdate();
+        if (!this.handle) {
+          if (!this.deps.config.modelPolicy.allowedThinkingLevels.includes(parsed.data.level)) throw new Error(`Thinking level not allowed: ${parsed.data.level}`);
+          this.pendingThinkingLevel = parsed.data.level;
+        } else {
+          await this.handle.setThinkingLevel(parsed.data.level);
+          await this.broadcastSettingsUpdate();
+        }
       }
     } catch (error) {
       this.send(client, { type: "error", code: "agent_error", message: error instanceof Error ? error.message : String(error) });
@@ -666,12 +940,18 @@ export function createSessionHubRegistry(deps: Omit<SessionHubDeps, "removeHub">
         let hub = sessionHubs.get(webSession.id);
         if (!hub) {
           try {
-            const handle = await deps.runner.createSession({
-              id: webSession.id,
-              cwd: webSession.cwd,
-              piSessionFile: webSession.piSessionFile,
-            });
-            hub = new SessionHub(handle, hubDeps);
+            // Drafts spawn lazily on first prompt. Existing workspace/chat-only sessions spawn eagerly on connect.
+            if (webSession.kind === "draft") {
+              hub = new SessionHub(webSession.id, null, hubDeps);
+            } else {
+              const handle = await deps.runner.createSession({
+                id: webSession.id,
+                cwd: webSession.cwd,
+                piSessionFile: webSession.piSessionFile,
+                mode: webSession.kind === "chat_only" ? "chat_only" : "workspace",
+              });
+              hub = new SessionHub(webSession.id, handle, hubDeps);
+            }
             sessionHubs.set(webSession.id, hub);
           } catch (error) {
             socket.close(1011, error instanceof Error ? error.message : String(error));

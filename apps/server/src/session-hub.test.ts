@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { NormalizedAgentEvent, ServerEnvelope, WebSession } from "@pi-web-agent/protocol";
-import { activeToolCallId, activeToolSnapshotFromEvent, dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand, SessionHub } from "./session-hub.js";
+import { activeToolCallId, activeToolSnapshotFromEvent, attachmentPathsFromText, dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand, SessionHub } from "./session-hub.js";
 
 describe("parseNameCommand", () => {
   test("ignores non-name commands", () => {
@@ -34,9 +38,17 @@ describe("dataUrlToImageContent", () => {
   });
 });
 
+describe("attachmentPathsFromText", () => {
+  test("finds unique Bakery attachment references in prompt context", () => {
+    const path = ".bakery/attachments/2026-05-10T00-00-00-000Z-shot.png";
+    expect(attachmentPathsFromText(`Please inspect this.\n\nAttached files:\n- shot.png: ${path}\n- duplicate: ${path}`)).toEqual([path]);
+  });
+});
+
 function webSession(overrides: Partial<WebSession> = {}): WebSession {
   return {
     id: "s1",
+    kind: "workspace",
     cwd: "/repo",
     piSessionFile: "/repo/.pi/sessions/s1.jsonl",
     isolationKind: "none",
@@ -53,6 +65,7 @@ function webSession(overrides: Partial<WebSession> = {}): WebSession {
     metadataGenerationCount: 0,
     metadataLastGeneratedAt: null,
     autoGenerateMetadataOverride: "default",
+    pinned: false,
     createdAt: "2026-05-05T00:00:00.000Z",
     lastOpenedAt: "2026-05-05T00:00:00.000Z",
     ...overrides,
@@ -66,6 +79,28 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe("mergeSnapshotMessagesWithWebCommands", () => {
+  test("adds unreconciled submitted prompts without duplicating official user messages", () => {
+    const merged = mergeSnapshotMessagesWithWebCommands([
+      { role: "user", id: "official", content: [{ type: "text", text: "already official" }], timestamp: "2026-05-03T00:00:01.000Z" },
+    ], [], [
+      { id: "prompt:1", kind: "prompt", text: "pending prompt", timestamp: "2026-05-03T00:00:00.000Z", reconciledAt: null, error: null },
+      { id: "prompt:2", kind: "prompt", text: "already official", timestamp: "2026-05-03T00:00:02.000Z", reconciledAt: null, error: null },
+    ]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["prompt:1", "official"]);
+    expect(merged[0]).toMatchObject({ role: "user", webSubmittedPrompt: true, content: [{ type: "text", text: "pending prompt" }] });
+  });
+
+  test("deduplicates submitted ask prompts against the expanded pi prompt", () => {
+    const merged = mergeSnapshotMessagesWithWebCommands([
+      { role: "user", id: "official", content: [{ type: "text", text: "Answer the following operator question directly.\nTreat this as an ask/explain turn: do not edit files, run shell commands, or call tools unless the operator explicitly asks you to.\n\nwhat is this?" }], timestamp: "2026-05-03T00:00:01.000Z" },
+    ], [], [
+      { id: "prompt:ask", kind: "ask", text: "what is this?", timestamp: "2026-05-03T00:00:00.000Z", reconciledAt: null, error: null },
+    ]);
+
+    expect(merged.map((message) => (message as { id: string }).id)).toEqual(["official"]);
+  });
+
   test("interleaves persisted web command results between timestamped snapshot messages", () => {
     const messages = [
       { role: "user", id: "user-1", timestamp: "2026-05-03T00:00:00.000Z" },
@@ -150,6 +185,64 @@ describe("active tool execution snapshots", () => {
     expect(activeToolSnapshotFromEvent({ type: "tool_execution_start", time: "now", data: { toolName: "subagent" } })).toBeNull();
   });
 
+  test("replaces duplicate browser client ids without counting them as another tab", async () => {
+    const session = webSession();
+    const handle = {
+      id: session.id,
+      cwd: session.cwd,
+      subscribe: () => () => undefined,
+      subscribeQuestion: () => () => undefined,
+      snapshot: async () => ({ session, status: "idle", messages: [] }),
+      getSettings: async () => ({ model: null, availableModels: [], thinkingLevel: "low", availableThinkingLevels: ["low"], contextUsage: { tokens: null, contextWindow: null, percent: null } }),
+      getCommands: () => [],
+    };
+    const store = {
+      getSession: () => session,
+      listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
+    };
+    const hub = new SessionHub(session.id, handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+
+    const createSocket = () => {
+      const sent: unknown[] = [];
+      let onClose: (() => void) | null = null;
+      return {
+        sent,
+        socket: {
+          send: (data: string) => sent.push(JSON.parse(data)),
+          close: () => undefined,
+          on: (event: string, callback: () => void) => {
+            if (event === "close") onClose = callback;
+          },
+        },
+        emitClose: () => onClose?.(),
+      };
+    };
+
+    const first = createSocket();
+    hub.add(first.socket, "client-1");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const replacement = createSocket();
+    hub.add(replacement.socket, "client-1");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    first.emitClose();
+
+    const secondTab = createSocket();
+    hub.add(secondTab.socket, "client-2");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const snapshot = secondTab.sent.find((entry): entry is ServerEnvelope => (entry as ServerEnvelope).payload?.type === "session_snapshot");
+    expect(snapshot?.payload.type).toBe("session_snapshot");
+    if (snapshot?.payload.type === "session_snapshot") {
+      expect(snapshot.payload.snapshot.controller?.connectedClients).toBe(2);
+    }
+  });
+
   test("buffers broadcasts until snapshot is sent, then drains in order", async () => {
     let listener: (event: NormalizedAgentEvent, raw: unknown) => void = () => undefined;
     const snapshot = deferred<{ session: WebSession; status: "idle" | "running"; messages: unknown[] }>();
@@ -166,10 +259,11 @@ describe("active tool execution snapshots", () => {
     const store = {
       getSession: () => session,
       listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
     };
     const sent: unknown[] = [];
     const socket = { send: (data: string) => sent.push(JSON.parse(data)), close: () => undefined, on: () => undefined };
-    const hub = new SessionHub(handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+    const hub = new SessionHub(session.id, handle as never, { store, config: { sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
 
     hub.add(socket, "client-1");
     listener?.({ type: "tool_execution_update", time: "2026-05-05T00:00:01.000Z", data: { type: "tool_execution_update", toolCallId: "sub-1", toolName: "subagent", partialResult: { content: "running" } } }, {});
@@ -199,5 +293,56 @@ describe("active tool execution snapshots", () => {
 
     expect(envelopes[0]?.payload.type).toBe("session_snapshot");
     if (envelopes[0]?.payload.type === "session_snapshot") expect(envelopes[0].payload.snapshot.activeToolExecutions).toBeUndefined();
+  });
+});
+
+describe("session attachment prompt images", () => {
+  test("loads uploaded attachment references as agent image content", async () => {
+    const session = webSession();
+    const artifactDir = await mkdtemp(join(tmpdir(), "bakery-attachments-"));
+    const attachmentPath = ".bakery/attachments/2026-05-10T00-00-00-000Z-shot.png";
+    const artifactId = createHash("sha256").update(session.id).update("\0").update(attachmentPath).digest("hex").slice(0, 32);
+    await mkdir(join(artifactDir, session.id), { recursive: true });
+    await writeFile(join(artifactDir, session.id, `${artifactId}.png`), Buffer.from("image-bytes"));
+
+    const prompts: Array<{ text: string; images: unknown[] | undefined }> = [];
+    const handle = {
+      id: session.id,
+      cwd: session.cwd,
+      subscribe: () => () => undefined,
+      subscribeQuestion: () => () => undefined,
+      snapshot: async () => ({ session, status: "idle", messages: [] }),
+      getSettings: async () => ({ model: null, availableModels: [], thinkingLevel: "low", availableThinkingLevels: ["low"], contextUsage: { tokens: null, contextWindow: null, percent: null } }),
+      getCommands: () => [],
+      runBuiltinCommand: async () => ({ handled: false }),
+      prompt: async (text: string, images: unknown[] | undefined) => { prompts.push({ text, images }); },
+    };
+    const store = {
+      getSession: () => session,
+      listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
+      addSubmittedPrompt: (_sessionId: string, input: { kind: "prompt"; text: string }) => ({ id: "prompt:1", kind: input.kind, text: input.text, timestamp: "2026-05-10T00:00:00.000Z", reconciledAt: null, error: null }),
+      markSubmittedPromptError: () => undefined,
+      updateSession: () => session,
+    };
+    let onMessage: ((data: string) => void) | undefined;
+    const sent: unknown[] = [];
+    const socket = {
+      send: (data: string) => { sent.push(JSON.parse(data)); },
+      close: () => undefined,
+      on: (event: string, callback: (...args: never[]) => void) => {
+        if (event === "message") onMessage = (data) => callback(data as never);
+      },
+    };
+    const hub = new SessionHub(session.id, handle as never, { store, config: { artifactDir, sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+
+    hub.add(socket, "client-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    onMessage?.(JSON.stringify({ type: "prompt", text: `Please inspect it.\n\nAttached files:\n- shot.png: ${attachmentPath}` }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.images).toEqual([{ type: "image", mimeType: "image/png", data: Buffer.from("image-bytes").toString("base64") }]);
   });
 });

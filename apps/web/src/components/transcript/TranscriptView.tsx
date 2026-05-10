@@ -1,0 +1,288 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownIcon } from "lucide-react";
+import type { ExtensionCatalog, SessionTreeNode } from "@pi-web-agent/protocol";
+import type { TranscriptItem } from "@/lib/transcript";
+import { isAskQuestionToolItem } from "@/lib/transcript";
+import { isNonInformativeSubagentManagementReceipt } from "./SubagentCard";
+import { TranscriptRow } from "./TranscriptRow";
+import { Button } from "@/components/ui/button";
+
+const AUTO_SCROLL_STORAGE_KEY = "piWebAutoScroll";
+
+function loadAutoScrollPreference(): boolean {
+  try {
+    return localStorage.getItem(AUTO_SCROLL_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function saveAutoScrollPreference(value: boolean): void {
+  try {
+    localStorage.setItem(AUTO_SCROLL_STORAGE_KEY, value ? "true" : "false");
+  } catch {
+    // Ignore storage failures in private/locked-down browser contexts.
+  }
+}
+
+type Props = {
+  items: TranscriptItem[];
+  connectionStatus: string;
+  showThinking: boolean;
+  sessionId: string;
+  sessionCwd: string | null;
+  apiBase: string;
+  token: string;
+  extensionCatalog: ExtensionCatalog | null;
+  sessionTreeNodes: SessionTreeNode[];
+  onFork: (entryId: string) => void | Promise<void>;
+  onAcceptPlan?: () => void;
+};
+
+export function TranscriptView({ items, connectionStatus, showThinking, sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan }: Props) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(loadAutoScrollPreference());
+  const unreadIdsRef = useRef(new Set<string>());
+  const previousVisibleSignaturesRef = useRef(new Map<string, string>());
+  const smoothJumpRef = useRef(false);
+  const smoothJumpFrameRef = useRef<number | null>(null);
+  const [isFollowingLatest, setIsFollowingLatest] = useState(autoScrollRef.current);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const visibleItems = useMemo(
+    () => items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)),
+    [items],
+  );
+
+  function markBottomState(atBottom: boolean) {
+    if (smoothJumpRef.current && !atBottom) return;
+    autoScrollRef.current = atBottom;
+    saveAutoScrollPreference(atBottom);
+    setIsFollowingLatest(atBottom);
+    if (atBottom) {
+      smoothJumpRef.current = false;
+      unreadIdsRef.current.clear();
+      setUnreadCount(0);
+    }
+  }
+
+  function cancelSmoothJump() {
+    if (smoothJumpFrameRef.current !== null) {
+      cancelAnimationFrame(smoothJumpFrameRef.current);
+      smoothJumpFrameRef.current = null;
+    }
+  }
+
+  function followLatest() {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function easeOutCubic(progress: number): number {
+    return 1 - (1 - progress) ** 3;
+  }
+
+  function smoothFollowLatest() {
+    const el = containerRef.current;
+    if (!el) return;
+    const scroller = el;
+    cancelSmoothJump();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      followLatest();
+      smoothJumpRef.current = false;
+      return;
+    }
+
+    const startTop = scroller.scrollTop;
+    const startTime = performance.now();
+    const duration = Math.min(1_180, Math.max(560, Math.abs(scroller.scrollHeight - scroller.clientHeight - startTop) * 0.38));
+
+    function tick(now: number) {
+      const targetTop = scroller.scrollHeight - scroller.clientHeight;
+      const progress = Math.min(1, (now - startTime) / duration);
+      scroller.scrollTop = startTop + (targetTop - startTop) * easeOutCubic(progress);
+      if (progress < 1 && Math.abs(targetTop - scroller.scrollTop) > 1) {
+        smoothJumpFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      scroller.scrollTop = targetTop;
+      smoothJumpFrameRef.current = null;
+      smoothJumpRef.current = false;
+      markBottomState(true);
+    }
+
+    smoothJumpFrameRef.current = requestAnimationFrame(tick);
+  }
+
+  // Detect manual scroll-up → disable auto-scroll
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onScroll() {
+      if (!el) return;
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      markBottomState(atBottom);
+    }
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [items.length]);
+
+  useEffect(() => {
+    const root = containerRef.current;
+    const bottom = bottomRef.current;
+    if (!root || !bottom) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const atBottom = entry?.isIntersecting ?? false;
+        markBottomState(atBottom);
+      },
+      { root, threshold: 1 },
+    );
+
+    observer.observe(bottom);
+    return () => observer.disconnect();
+  }, [items.length]);
+
+  useLayoutEffect(() => {
+    unreadIdsRef.current.clear();
+    previousVisibleSignaturesRef.current = new Map(visibleItems.map((item) => [item.id, `${item.status ?? ""}:${item.body.length}:${item.segments?.length ?? 0}`]));
+    setUnreadCount(0);
+    setIsFollowingLatest(autoScrollRef.current);
+  }, [sessionId]);
+
+  // Follow streaming updates while the reader is already at the latest item.
+  useLayoutEffect(() => {
+    const nextSignatures = new Map(visibleItems.map((item) => [item.id, `${item.status ?? ""}:${item.body.length}:${item.segments?.length ?? 0}`]));
+    if (!autoScrollRef.current) {
+      if (previousVisibleSignaturesRef.current.size === 0 && unreadIdsRef.current.size === 0) {
+        previousVisibleSignaturesRef.current = nextSignatures;
+        return;
+      }
+      for (const item of visibleItems) {
+        if (previousVisibleSignaturesRef.current.get(item.id) !== nextSignatures.get(item.id)) unreadIdsRef.current.add(item.id);
+      }
+      previousVisibleSignaturesRef.current = nextSignatures;
+      setUnreadCount(unreadIdsRef.current.size);
+      return;
+    }
+    previousVisibleSignaturesRef.current = nextSignatures;
+    setIsFollowingLatest(true);
+    unreadIdsRef.current.clear();
+    setUnreadCount(0);
+    followLatest();
+    const frame = requestAnimationFrame(() => {
+      followLatest();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [visibleItems]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(() => {
+      if (autoScrollRef.current) followLatest();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  // Empty transcripts have no unread rows; keep the persisted follow preference intact.
+  useEffect(() => {
+    if (items.length === 0) {
+      unreadIdsRef.current.clear();
+      previousVisibleSignaturesRef.current.clear();
+      setIsFollowingLatest(autoScrollRef.current);
+      setUnreadCount(0);
+    }
+  }, [items.length]);
+
+  function jumpToLatest() {
+    autoScrollRef.current = true;
+    saveAutoScrollPreference(true);
+    smoothJumpRef.current = true;
+    unreadIdsRef.current.clear();
+    previousVisibleSignaturesRef.current.clear();
+    setIsFollowingLatest(true);
+    setUnreadCount(0);
+    smoothFollowLatest();
+  }
+
+  useEffect(() => {
+    return () => {
+      cancelSmoothJump();
+    };
+  }, []);
+
+  function handleJumpPointerDown() {
+    smoothJumpRef.current = true;
+  }
+
+  if (connectionStatus === "connecting") {
+    return (
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+        Connecting…
+      </div>
+    );
+  }
+
+  if (connectionStatus === "disconnected" && items.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+        Not connected.
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div data-testid="transcript" className="transcript min-h-0 flex-1" aria-label="Empty transcript" />
+    );
+  }
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      <div ref={containerRef} data-testid="transcript" className="transcript h-full overflow-y-auto py-4">
+        <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
+          {visibleItems.map((item) => (
+            <TranscriptRow
+              key={item.id}
+              item={item}
+              showThinking={showThinking}
+              sessionId={sessionId}
+              sessionCwd={sessionCwd}
+              apiBase={apiBase}
+              token={token}
+              extensionCatalog={extensionCatalog}
+              sessionTreeNodes={sessionTreeNodes}
+              onFork={onFork}
+              onAcceptPlan={onAcceptPlan}
+            />
+          ))}
+          <div ref={bottomRef} className="h-px" aria-hidden="true" />
+        </div>
+        <div className="h-1" />
+      </div>
+      {!isFollowingLatest && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
+          <Button
+            id="jumpToLatest"
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            onPointerDown={handleJumpPointerDown}
+            onClick={jumpToLatest}
+            aria-label={`Jump to latest${unreadCount > 0 ? `, ${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : ""}`}
+            title={`Jump to latest${unreadCount > 0 ? ` · ${unreadCount} update${unreadCount === 1 ? "" : "s"}` : ""}`}
+            data-testid="jump-to-latest"
+            className="pointer-events-auto rounded-full bg-background/85 shadow-lg backdrop-blur"
+          >
+            <ArrowDownIcon />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

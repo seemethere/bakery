@@ -93,7 +93,8 @@ export function firstPromptTitle(text: string): string | null {
 
 function sessionEntries(session: WebSession, deps: MetadataRouteDeps): SessionEntry[] {
   const handle = deps.runner.getSession(session.id);
-  const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, deps.config.sessionDir, session.cwd);
+  if (!handle && session.cwd === null) return [];
+  const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, deps.config.sessionDir, session.cwd ?? undefined);
   return flattenTree(manager.getTree()).map((node) => node.entry).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
@@ -195,6 +196,7 @@ async function generateModelBackedMetadata(session: WebSession, deps: MetadataRo
   const messages = metadataPromptMessages(session, deps, guidance);
   const meaningfulUsers = messages.filter((message) => message.role === "user" && !isGenericPrompt(messageText(message.content))).length;
   if (messages.length < 2 || meaningfulUsers === 0) return heuristic.deferred ? heuristic : { ...heuristic, deferred: true, reason: "Not enough session context for a useful summary yet." };
+  if (session.cwd === null) return { ...heuristic, deferred: true, reason: "Session has no workspace; metadata generation requires one." };
 
   const handle = await deps.runner.createSession({ id: session.id, cwd: session.cwd, piSessionFile: session.piSessionFile });
   const { model, apiKey, headers } = await resolveMetadataModel(handle, deps);
@@ -283,6 +285,7 @@ export function registerMetadataRoutes(app: FastifyInstance, deps: MetadataRoute
     if (Object.hasOwn(parsed.data, "title")) store.updateSession(existing.id, { title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
     if (Object.hasOwn(parsed.data, "summary")) store.updateSession(existing.id, { summary: parsed.data.summary ?? null, summarySource: parsed.data.summary ? "manual" : "unset" });
     if (parsed.data.autoGenerateMetadataOverride) store.updateSession(existing.id, { autoGenerateMetadataOverride: parsed.data.autoGenerateMetadataOverride });
+    if (Object.hasOwn(parsed.data, "pinned") && parsed.data.pinned !== undefined) store.updateSession(existing.id, { pinned: parsed.data.pinned });
     const updatedAfterMetadata = store.getSession(existing.id);
     const handle = runner.getSession(existing.id);
     if (handle && Object.hasOwn(parsed.data, "title") && parsed.data.title) handle.setSessionName(parsed.data.title);

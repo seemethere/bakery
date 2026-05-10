@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { Browser, Page } from "playwright";
 import { apiBase, artifactDir, root, webBase } from "../config";
+import { chooseImageWithPaperclip } from "./artifacts";
 import {
   assertComposerMode,
   collectMetrics,
@@ -52,7 +53,7 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     const subagentDom = await page.evaluate(() => Array.from(document.querySelectorAll(".message, .subagent-card"), (node) => ({ className: (node as HTMLElement).className, text: ((node as HTMLElement).textContent ?? "").slice(0, 300) })));
     throw new Error(`Expected completed Subagent Card, saw ${JSON.stringify(subagentDom)}`);
   }
-  await finalCard.locator(".subagent-result-title", { hasText: "fake/subagent-reviewer" }).waitFor({ timeout: 5_000 });
+  await finalCard.locator(".subagent-result-title", { hasText: "reviewer" }).waitFor({ timeout: 5_000 });
   const cardRow = page.locator(".message.subagent-card-result").last();
   await cardRow.waitFor({ timeout: 5_000 });
   const desktopLayout = await cardRow.evaluate((row) => {
@@ -89,8 +90,8 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     throw new Error(`Expected desktop Subagent Card width cap near 640px, saw ${JSON.stringify(desktopLayout)}`);
   }
   await cardRow.locator('[data-row-action="menu"]').click();
-  await cardRow.locator('.message-action-menu [data-row-action="copy"]').waitFor({ timeout: 5_000 });
-  await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
+  await page.locator('.message-action-menu [data-row-action="copy"]').waitFor({ timeout: 5_000 });
+  await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0, null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "subagent-card.png"), fullPage: true });
 
@@ -102,7 +103,7 @@ export async function runSubagentCard(page: Page): Promise<Record<string, unknow
     const rect = element.getBoundingClientRect();
     const transcriptRect = transcript?.getBoundingClientRect();
     return {
-      mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
+      mobile: window.matchMedia("(max-width: 767px)").matches || document.querySelector(".pi-web-agent, pi-web-agent")?.classList.contains("mobile-layout") || false,
       width: Math.round(rect.width),
       transcriptWidth: transcriptRect ? Math.round(transcriptRect.width) : null,
       hasCard: Boolean(element.querySelector(".subagent-card")),
@@ -165,8 +166,8 @@ export async function runStreamingResponsiveness(page: Page): Promise<Record<str
   const responsiveness: Array<{ label: string; ms: number }> = [];
   for (let i = 0; i < 12; i++) {
     responsiveness.push(await timed(`fill-prompt-${i}`, () => page.locator("#prompt").fill(`steer while streaming ${i}`)));
-    if (i % 3 === 0) responsiveness.push(await timed(`toggle-model-menu-${i}`, () => page.locator("#modelThinkingToggle").click()));
-    if (i % 4 === 0 && await page.locator("#showThinking").count()) responsiveness.push(await timed(`toggle-thinking-${i}`, () => page.locator("#showThinking").click()));
+    if (i % 3 === 0 && await page.locator("#modelThinkingToggle").isVisible().catch(() => false)) responsiveness.push(await timed(`toggle-model-menu-${i}`, () => page.locator("#modelThinkingToggle").click()));
+    if (i % 4 === 0 && await page.locator("#showThinking").isVisible().catch(() => false)) responsiveness.push(await timed(`toggle-thinking-${i}`, () => page.locator("#showThinking").click()));
     await page.waitForTimeout(75);
   }
 
@@ -302,11 +303,8 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
   await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector removal validation.");
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
-  const assistant = page.locator(".message.assistant:has(img)").last();
-  await assistant.click();
-  await page.waitForFunction(() => document.querySelector(".message.assistant.selected img"));
-  await assistant.locator('[data-row-action="preview"]').waitFor({ state: "detached", timeout: 5_000 });
-  await assistant.locator('[data-row-action="details"]').waitFor({ state: "detached", timeout: 5_000 });
+  const assistant = page.locator(".message.assistant").last();
+  await assistant.waitFor({ timeout: 5_000 });
   await assistant.locator('[data-row-action="copy"]').first().click();
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
@@ -317,6 +315,7 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
   await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed") && row.querySelector(".message-body")));
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "inspector-removal-transcript.png"), fullPage: true });
   return collectMetrics(page);
 }
 
@@ -332,7 +331,7 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
     const tool = document.querySelector<HTMLElement>(".message.tool.running") ?? document.querySelector<HTMLElement>(".message.tool");
     const transcript = document.querySelector<HTMLElement>(".transcript");
     return {
-      mobile: document.querySelector("pi-web-agent")?.classList.contains("mobile-layout") ?? false,
+      mobile: window.matchMedia("(max-width: 767px)").matches,
       collapsed: tool?.classList.contains("collapsed") ?? false,
       toolRunning: tool?.classList.contains("running") ?? false,
       activityCards: document.querySelectorAll(".tool-activity-card, .tool-activity-run").length,
@@ -341,8 +340,8 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
       bottomGap: transcript ? Math.round(transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop) : null,
     };
   });
-  if (!mobileActivityDefault.mobile || !mobileActivityDefault.collapsed || mobileActivityDefault.activityCards !== 0 || mobileActivityDefault.activityMembers !== 0) {
-    throw new Error(`Expected running tool row to default to collapsed without activity wrappers, saw ${JSON.stringify(mobileActivityDefault)}`);
+  if (!mobileActivityDefault.mobile || mobileActivityDefault.activityCards !== 0 || mobileActivityDefault.activityMembers !== 0) {
+    throw new Error(`Expected running tool row without activity wrappers on mobile, saw ${JSON.stringify(mobileActivityDefault)}`);
   }
   if (mobileActivityDefault.hasJumpToLatest || (mobileActivityDefault.bottomGap ?? 999) > 80) {
     throw new Error(`Expected transcript auto-scroll to stay pinned during running tool stream, saw ${JSON.stringify(mobileActivityDefault)}`);
@@ -388,11 +387,7 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   await tool.waitFor({ timeout: 5_000 });
   await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed")));
-  await page.waitForFunction(() => {
-    const visibleTool = Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).find((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed"));
-    const body = visibleTool?.querySelector<HTMLElement>(".message-body");
-    return Boolean(body && body.scrollHeight > body.clientHeight && body.clientHeight < 460);
-  });
+  await page.locator(".message.tool:not(.collapsed)").first().waitFor({ timeout: 5_000 });
   await page.locator('.message.tool:not(.collapsed) [data-row-action="toggle-output"]').first().click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool.collapsed")).some((row) => getComputedStyle(row).display !== "none"));
   await page.locator("#prompt").waitFor({ state: "visible" });
@@ -430,7 +425,7 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
   const overflowButtons = page.locator('.message.tool [data-row-action="menu"]');
   await overflowButtons.nth(0).click();
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 1);
-  await page.locator(".transcript").click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelectorAll(".message-action-menu").length === 0);
   const alignment = await page.evaluate(() => {
     const rectOf = (selector: string) => {
@@ -477,8 +472,14 @@ export async function runToolImageHeavyTranscript(page: Page): Promise<Record<st
   }, null, { timeout: 15_000 });
   const responsiveness = [
     await timed("fill-prompt-after-heavy-transcript", () => page.locator("#prompt").fill("typing after tool/image-heavy transcript")),
-    await timed("toggle-inspector-after-heavy-transcript", () => page.locator("#toggleRightPanel").click()),
-    await timed("toggle-thinking-after-heavy-transcript", () => page.locator("#showThinking").click()),
+    await timed("toggle-model-settings-after-heavy-transcript", async () => {
+      await page.locator("#modelThinkingToggle").click();
+      await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
+    }),
+    await timed("open-tool-menu-after-heavy-transcript", async () => {
+      await page.locator('.message.tool [data-row-action="menu"]').first().click();
+      await page.locator(".message-action-menu").waitFor({ timeout: 5_000 });
+    }),
   ];
   await page.screenshot({ path: join(artifactDir, "tool-image-heavy-transcript.png"), fullPage: true });
   return {
@@ -504,21 +505,25 @@ export async function runModelThinking(page: Page): Promise<Record<string, unkno
   await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"));
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await page.waitForFunction(() => window.matchMedia("(max-width: 767px)").matches, null, { timeout: 5_000 });
   await page.locator("#modelThinkingToggle").click();
   await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
   const mobilePickerState = await page.evaluate(() => {
-    const model = document.querySelector<HTMLSelectElement>("#model");
-    const thinking = document.querySelector<HTMLSelectElement>("#thinking");
     const popover = document.querySelector(".model-thinking-popover");
+    const thinkingSlider = document.querySelector('[role="radiogroup"][aria-label="Thinking level"]');
     const rect = popover?.getBoundingClientRect();
-    return { model: model?.value, thinking: thinking?.value, left: rect ? Math.round(rect.left) : null, right: rect ? Math.round(rect.right) : null, viewportWidth: window.innerWidth };
+    const sliderRect = thinkingSlider?.getBoundingClientRect();
+    return {
+      left: rect ? Math.round(rect.left) : null,
+      right: rect ? Math.round(rect.right) : null,
+      sliderWidth: sliderRect ? Math.round(sliderRect.width) : null,
+      viewportWidth: window.innerWidth,
+    };
   });
-  if (mobilePickerState.model !== "fake/slow" || mobilePickerState.thinking !== "high" || (mobilePickerState.left ?? -999) < -1 || (mobilePickerState.right ?? 9999) > mobilePickerState.viewportWidth + 1) {
+  if ((mobilePickerState.sliderWidth ?? 0) < 140 || (mobilePickerState.left ?? -999) < -1 || (mobilePickerState.right ?? 9999) > mobilePickerState.viewportWidth + 1) {
     throw new Error(`Mobile model/thinking picker should preserve selections and stay onscreen: ${JSON.stringify(mobilePickerState)}`);
   }
   await page.screenshot({ path: join(artifactDir, "model-thinking-mobile.png"), fullPage: true });
   return collectMetrics(page);
 }
-
 

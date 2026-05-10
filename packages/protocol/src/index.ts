@@ -183,9 +183,13 @@ export type UpdateAppSettingsRequest = z.infer<typeof updateAppSettingsRequestSc
 export const sessionIsolationKindSchema = z.enum(["none", "git_worktree"]);
 export type SessionIsolationKind = z.infer<typeof sessionIsolationKindSchema>;
 
+export const sessionKindSchema = z.enum(["draft", "workspace", "chat_only"]);
+export type SessionKind = z.infer<typeof sessionKindSchema>;
+
 export const webSessionSchema = z.object({
   id: z.string(),
-  cwd: z.string(),
+  kind: sessionKindSchema,
+  cwd: z.string().nullable(),
   piSessionFile: z.string(),
   isolationKind: sessionIsolationKindSchema,
   sourceCwd: z.string().nullable(),
@@ -201,6 +205,7 @@ export const webSessionSchema = z.object({
   metadataGenerationCount: z.number().int().nonnegative(),
   metadataLastGeneratedAt: z.string().nullable(),
   autoGenerateMetadataOverride: autoGenerateMetadataOverrideSchema,
+  pinned: z.boolean(),
   createdAt: z.string(),
   lastOpenedAt: z.string(),
   lastActivityAt: z.string().optional(),
@@ -210,11 +215,17 @@ export const webSessionSchema = z.object({
 export type WebSession = z.infer<typeof webSessionSchema>;
 
 export const createSessionRequestSchema = z.object({
-  cwd: z.string().min(1),
+  cwd: z.string().min(1).optional(),
   title: z.string().min(1).max(120).optional(),
   isolation: sessionIsolationKindSchema.optional().default("none"),
+  kind: sessionKindSchema.optional(),
 });
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
+
+export const attachWorkspaceRequestSchema = z.object({
+  cwd: z.string().min(1),
+});
+export type AttachWorkspaceRequest = z.infer<typeof attachWorkspaceRequestSchema>;
 
 export const updateSessionRequestSchema = z.object({
   title: z.string().min(1).max(120).nullable().optional(),
@@ -222,6 +233,7 @@ export const updateSessionRequestSchema = z.object({
   autoGenerateMetadataOverride: autoGenerateMetadataOverrideSchema.optional(),
   toolPermissionMode: toolPermissionModeSchema.optional(),
   uiStateJson: z.string().optional(),
+  pinned: z.boolean().optional(),
 });
 export type UpdateSessionRequest = z.infer<typeof updateSessionRequestSchema>;
 
@@ -297,6 +309,26 @@ export const artifactUploadResponseSchema = z.object({
   url: z.string(),
 });
 export type ArtifactUploadResponse = z.infer<typeof artifactUploadResponseSchema>;
+
+export const sessionAttachmentKindSchema = z.enum(["image", "file"]);
+export type SessionAttachmentKind = z.infer<typeof sessionAttachmentKindSchema>;
+
+export const sessionAttachmentSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  name: z.string(),
+  mimeType: z.string(),
+  size: z.number().int().nonnegative(),
+  kind: sessionAttachmentKindSchema,
+  url: z.string(),
+  createdAt: z.string(),
+});
+export type SessionAttachment = z.infer<typeof sessionAttachmentSchema>;
+
+export const sessionAttachmentUploadResponseSchema = z.object({
+  attachments: z.array(sessionAttachmentSchema),
+});
+export type SessionAttachmentUploadResponse = z.infer<typeof sessionAttachmentUploadResponseSchema>;
 
 export const commandSourceSchema = z.enum(["builtin", "extension", "prompt", "skill"]);
 export type CommandSource = z.infer<typeof commandSourceSchema>;
@@ -494,6 +526,7 @@ export type ServerEnvelope = z.infer<typeof serverEnvelopeSchema>;
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hello_ack"), protocolVersion: z.literal(PROTOCOL_VERSION), clientId: z.string().optional() }),
   z.object({ type: z.literal("prompt"), text: z.string().min(1), images: z.array(z.string()).optional() }),
+  z.object({ type: z.literal("ask"), text: z.string().min(1), images: z.array(z.string()).optional() }),
   z.object({ type: z.literal("command"), text: z.string().min(1) }),
   z.object({ type: z.literal("bash"), command: z.string().min(1), excludeFromContext: z.boolean().optional() }),
   z.object({ type: z.literal("steer"), text: z.string().min(1), images: z.array(z.string()).optional() }),

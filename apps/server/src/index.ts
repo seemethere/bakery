@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
+import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
-import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
+import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, type ModelInfo, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
+import { AuthStorage, getAgentDir, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
 import { getBakeryExtensionCardContributions, getBakeryExtensionRegistry, getBakeryExtensionWebModules, loadConfiguredBakeryExtensions } from "./extensions.js";
@@ -33,6 +35,7 @@ const previewStacks = new PreviewStackManager({ config });
 await loadConfiguredBakeryExtensions(config);
 const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
 await app.register(websocket);
+await app.register(multipart);
 
 function isLocalhost(ip: string): boolean {
   return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
@@ -88,6 +91,41 @@ app.get("/api/config", async () => ({
 
 function listVisibleWorkspaces() {
   return mergeWorkspaces(configWorkspaceRoots, store.listWorkspaces());
+}
+
+function toModelInfo(model: { id: string; provider: string; name?: string; reasoning?: boolean } | undefined): ModelInfo | null {
+  if (!model) return null;
+  return {
+    id: `${model.provider}/${model.id}`,
+    provider: model.provider,
+    name: model.name ?? model.id,
+    reasoning: model.reasoning,
+  };
+}
+
+function configuredModelInfo(id: string): ModelInfo {
+  const slash = id.indexOf("/");
+  return {
+    id,
+    provider: slash >= 0 ? id.slice(0, slash) : "model",
+    name: slash >= 0 ? id.slice(slash + 1) : id,
+  };
+}
+
+async function listAvailableModels(): Promise<ModelInfo[]> {
+  if (config.fakeAgent) {
+    return [
+      { id: "fake/fast", provider: "fake", name: "Fake Fast" },
+      { id: "fake/slow", provider: "fake", name: "Fake Slow" },
+    ].filter((model) => !config.modelPolicy.allowedModels || config.modelPolicy.allowedModels.includes(model.id));
+  }
+  const agentDir = getAgentDir();
+  const registry = ModelRegistry.create(AuthStorage.create(join(agentDir, "auth.json")), join(agentDir, "models.json"));
+  return registry
+    .getAvailable()
+    .map((model) => toModelInfo(model))
+    .filter((model): model is ModelInfo => Boolean(model))
+    .filter((model) => !config.modelPolicy.allowedModels || config.modelPolicy.allowedModels.includes(model.id));
 }
 
 async function assertAllowedWorkspaceBase(path: string): Promise<void> {
@@ -166,14 +204,24 @@ app.get<{ Params: { extensionId: string; "*": string } }>("/api/extensions/:exte
   return reply.header("Content-Type", contentType).send(await readFile(filePath));
 });
 
-app.get("/api/models", async () => ({
-  defaultModel: config.modelPolicy.defaultModel ?? null,
-  models: config.modelPolicy.allowedModels ?? [],
-  thinking: {
-    default: config.modelPolicy.defaultThinkingLevel,
-    levels: config.modelPolicy.allowedThinkingLevels,
-  },
-}));
+app.get("/api/models", async () => {
+  const discoveredModels = await listAvailableModels();
+  const configuredDefault = config.modelPolicy.defaultModel ? configuredModelInfo(config.modelPolicy.defaultModel) : null;
+  const models = discoveredModels.length > 0
+    ? discoveredModels
+    : configuredDefault
+      ? [configuredDefault]
+      : [];
+  const defaultModel = config.modelPolicy.defaultModel ?? models[0]?.id ?? null;
+  return {
+    defaultModel,
+    models,
+    thinking: {
+      default: config.modelPolicy.defaultThinkingLevel,
+      levels: config.modelPolicy.allowedThinkingLevels,
+    },
+  };
+});
 
 app.get("/api/settings", async () => store.getSettings());
 

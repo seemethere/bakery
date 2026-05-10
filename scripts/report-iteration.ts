@@ -1763,6 +1763,55 @@ const validationRules: ValidationRule[] = [
     reason: "Fake-agent changes should validate the deterministic scenarios whose synthetic events may have changed.",
   },
   {
+    name: "web-react-composer",
+    matches: ["apps/web/src/components/Composer.tsx"],
+    scenarios: ["question-answer", "slash-commands"],
+    reason: "Composer changes should validate prompt send and slash entry behavior through focused UI scenarios.",
+  },
+  {
+    name: "web-react-image-intake",
+    matches: ["apps/web/src/components/Composer.tsx", "apps/web/src/lib/prompt-images.ts", "apps/server/src/artifact-routes.ts", "scripts/ui-harness/scenarios/artifacts.ts"],
+    scenarios: ["image-attachments", "image-paste-attachments", "image-artifact-drop-upload"],
+    reason: "Image/attachment intake and artifact route changes should validate paperclip upload, pasted attachments, and artifact upload rendering.",
+  },
+  {
+    name: "web-react-autocomplete",
+    matches: ["apps/web/src/components/AutocompletePopup.tsx"],
+    scenarios: ["slash-commands", "file-autocomplete"],
+    reason: "Autocomplete popup changes should validate slash-command and file-mention dropdown behavior.",
+  },
+  {
+    name: "web-react-question-panel",
+    matches: ["apps/web/src/components/QuestionPanel.tsx"],
+    scenarios: ["question-answer"],
+    reason: "Question panel changes should validate the operator question and answer checkpoint flow.",
+  },
+  {
+    name: "web-react-transcript",
+    matches: ["apps/web/src/components/transcript/", "apps/web/src/lib/transcript.ts"],
+    scenarios: ["streaming-responsiveness", "narrow-tool-stream", "transcript-scroll-stability", "transcript-text-selection"],
+    reason: "Transcript rendering changes should validate streaming rows, compact tool activity, scroll-follow behavior, and text selection.",
+  },
+  {
+    name: "web-react-session-shell",
+    matches: ["apps/web/src/pages/SessionPage.tsx", "apps/web/src/pages/SessionsPage.tsx", "apps/web/src/App.tsx"],
+    scenarios: ["sessions-page", "session-routing", "question-answer"],
+    reason: "Session shell changes should validate session navigation, routing, and the basic prompt/response path.",
+  },
+  {
+    name: "web-react-connection",
+    matches: ["apps/web/src/hooks/useServerConnection.ts"],
+    scenarios: ["reconnect-controller", "reconnect-draft"],
+    optionalCommands: ["bun run test:web-perf"],
+    reason: "Connection hook changes should validate reconnect/controller and draft preservation paths before escalating to the full fake-agent suite.",
+  },
+  {
+    name: "web-react-sidebar-layout",
+    matches: ["apps/web/src/components/ui/sidebar.tsx", "apps/web/src/components/sidebar/"],
+    scenarios: ["sessions-page", "mobile-layout"],
+    reason: "Sidebar and session-navigation layout changes should validate desktop session listing and mobile layout behavior.",
+  },
+  {
     name: "web-main-core",
     matches: ["apps/web/src/main.ts"],
     scenarios: ["subagent-card-reconnect", "streaming-responsiveness", "slash-commands", "question-answer", "inspector-preview", "transcript-scroll-stability"],
@@ -1781,6 +1830,31 @@ const validationRules: ValidationRule[] = [
     scenarios: ["subagent-card-reconnect", "mobile-layout", "slash-commands", "question-answer", "streaming-responsiveness"],
     optionalCommands: ["bun run test:web-perf"],
     reason: "Harness changes need at least one focused scenario to prove the runner still works; run the full suite when scenario orchestration changed broadly.",
+  },
+  {
+    name: "harness-session-scenarios",
+    matches: ["scripts/ui-harness/scenarios/session.ts"],
+    scenarios: ["sessions-page", "question-answer"],
+    reason: "Session-scenario harness edits should rerun the closest session page and question checkpoint scenarios.",
+  },
+  {
+    name: "harness-slash-command-scenarios",
+    matches: ["scripts/ui-harness/scenarios/slash-commands.ts"],
+    scenarios: ["slash-commands", "file-autocomplete"],
+    reason: "Slash-command scenario edits should rerun slash workflow and file autocomplete coverage.",
+  },
+  {
+    name: "harness-transcript-scenarios",
+    matches: ["scripts/ui-harness/scenarios/transcript.ts"],
+    scenarios: ["streaming-responsiveness", "subagent-card-reconnect"],
+    reason: "Transcript-scenario harness edits should rerun streaming responsiveness and a reconnecting transcript-card smoke.",
+  },
+  {
+    name: "harness-helpers",
+    matches: ["scripts/ui-harness/scenarios/helpers.ts"],
+    scenarios: ["question-answer", "streaming-responsiveness"],
+    optionalCommands: ["bun run test:web-perf"],
+    reason: "Shared harness helper edits should rerun representative session and transcript scenarios before broad escalation.",
   },
 ];
 
@@ -1831,6 +1905,7 @@ function buildValidationRecommendation(files: string[]): ValidationRecommendatio
   const commands: string[] = [];
   const optionalCommands: string[] = [];
   const scenarios: string[] = [];
+  const scenarioGroups: string[][] = [];
   const reasons: string[] = [];
   uniquePush(commands, "bun run check");
 
@@ -1843,8 +1918,16 @@ function buildValidationRecommendation(files: string[]): ValidationRecommendatio
     for (const rule of matchedRules) {
       uniquePush(reasons, `${file}: ${rule.reason}`);
       for (const command of rule.commands ?? []) uniquePush(commands, command);
-      for (const scenario of rule.scenarios ?? []) uniquePush(scenarios, scenario);
+      if (rule.scenarios?.length) scenarioGroups.push(rule.scenarios);
       for (const command of rule.optionalCommands ?? []) uniquePush(optionalCommands, command);
+    }
+  }
+
+  const maxScenarioGroupLength = Math.max(0, ...scenarioGroups.map((group) => group.length));
+  for (let scenarioIndex = 0; scenarioIndex < maxScenarioGroupLength; scenarioIndex += 1) {
+    for (const group of scenarioGroups) {
+      const scenario = group[scenarioIndex];
+      if (scenario) uniquePush(scenarios, scenario);
     }
   }
 

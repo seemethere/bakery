@@ -22,6 +22,25 @@ describe("MetadataStore workspaces", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  test("attaching a workspace promotes draft sessions to workspace sessions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      const session = store.createSession({
+        id: "draft-1",
+        cwd: null,
+        piSessionFile: join(dir, "session.jsonl"),
+        kind: "draft",
+      });
+
+      const updated = store.attachWorkspace(session.id, dir);
+
+      expect(updated).toMatchObject({ id: session.id, kind: "workspace", cwd: dir });
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("MetadataStore web command results", () => {
@@ -48,6 +67,26 @@ describe("MetadataStore web command results", () => {
           timestamp: "2026-05-03T00:00:00.000Z",
         },
       ]);
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("MetadataStore submitted prompt receipts", () => {
+  test("stores pending receipts and reconciles the oldest matching prompt by id", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      const session = store.createSession({ id: "session-1", cwd: null, kind: "chat_only", piSessionFile: join(dir, "session.jsonl") });
+      const first = store.addSubmittedPrompt(session.id, { id: "prompt:1", kind: "prompt", text: "hello", timestamp: "2026-05-03T00:00:00.000Z" });
+      store.addSubmittedPrompt(session.id, { id: "prompt:2", kind: "ask", text: "why?", timestamp: "2026-05-03T00:00:01.000Z" });
+
+      expect(store.listUnreconciledSubmittedPrompts(session.id).map((record) => record.id)).toEqual(["prompt:1", "prompt:2"]);
+      expect(store.markSubmittedPromptReconciled(session.id, first.id, "2026-05-03T00:00:02.000Z")).toMatchObject({ id: "prompt:1", reconciledAt: "2026-05-03T00:00:02.000Z" });
+      expect(store.listUnreconciledSubmittedPrompts(session.id).map((record) => record.id)).toEqual(["prompt:2"]);
+      expect(store.markSubmittedPromptError(session.id, "prompt:2", "model unavailable")).toMatchObject({ id: "prompt:2", error: "model unavailable" });
       store.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -19,6 +19,7 @@ import {
 
 export const artifactScenarios = [
   "image-attachments",
+  "image-paste-attachments",
   "image-artifact-drop-upload",
   "image-artifact-paths",
   "repeated-image-artifact-paths",
@@ -28,10 +29,10 @@ export const artifactScenarios = [
   "missing-remote-image-artifact",
 ] as const;
 
-async function chooseImageWithPaperclip(page: Page, imagePath: string, options: { forceRenderWhileOpen?: boolean } = {}): Promise<void> {
+export async function chooseImageWithPaperclip(page: Page, imagePath: string, options: { forceRenderWhileOpen?: boolean } = {}): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
   await page.locator("#prompt").focus();
-  await page.locator("#attachImages").click();
+  await page.locator('#attachImages[type="file"]').click();
   const fileChooser = await chooser;
   // Real native file pickers often stay open long enough for unrelated app renders
   // to happen. Force one here so the harness catches input replacement races.
@@ -42,38 +43,88 @@ async function chooseImageWithPaperclip(page: Page, imagePath: string, options: 
   await fileChooser.setFiles(imagePath);
 }
 
+async function pasteImage(page: Page, imageName = "pasted.png", target: "prompt" | "body" = "prompt"): Promise<void> {
+  const locator = target === "prompt" ? page.locator("#prompt") : page.locator("body");
+  await locator.evaluate(async (element, name) => {
+    const response = await fetch("/bakery-logo-96.png");
+    const blob = await response.blob();
+    const file = new File([blob], name, { type: blob.type || "image/png" });
+    const data = new DataTransfer();
+    data.items.add(file);
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }, imageName);
+}
+
+async function pasteUnsupportedImage(page: Page): Promise<void> {
+  await page.locator("#prompt").evaluate((element) => {
+    const file = new File(["<svg xmlns='http://www.w3.org/2000/svg' />"], "vector.svg", { type: "image/svg+xml" });
+    const data = new DataTransfer();
+    data.items.add(file);
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+  });
+}
+
 export async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
+  await page.locator('#attachImages[type="file"]').waitFor({ timeout: 5_000 });
   await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-attachments-thumbnail.png"), fullPage: true });
   await page.locator(".prompt-image button").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
 
   await chooseImageWithPaperclip(page, imagePath);
   await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
-  await sendPromptAndWaitIdle(page, "Please inspect this attached image and include an image preview in the reply.");
+  await page.screenshot({ path: join(artifactDir, "image-attachments-before-send.png"), fullPage: true });
+  await page.locator("#send").click();
+  await waitForAgentRunning(page, 5_000);
+  await waitForAgentIdle(page, 30_000);
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
-  await page.locator(".message.assistant img").first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "fixture.png" }).first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.assistant").first().waitFor({ timeout: 5_000 });
   return collectMetrics(page);
+}
+
+export async function runImagePasteAttachments(page: Page): Promise<Record<string, unknown>> {
+  await prepareSession(page);
+  await page.locator("#prompt").focus();
+  await pasteUnsupportedImage(page);
+  await page.locator(".notice", { hasText: "Clipboard image type is not supported" }).waitFor({ timeout: 5_000 });
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+
+  await pasteImage(page, "body-pasted.png", "body");
+  await page.locator(".prompt-image", { hasText: "body-pasted.png" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-paste-body-thumbnail.png"), fullPage: true });
+  await page.locator(".prompt-image button").click();
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+
+  await pasteImage(page, "pasted.png", "prompt");
+  await page.locator(".prompt-image", { hasText: "pasted.png" }).waitFor({ timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "image-paste-before-send.png"), fullPage: true });
+  await page.locator("#send").click();
+  await waitForAgentRunning(page, 5_000);
+  await waitForAgentIdle(page, 10_000);
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "pasted.png" }).first().waitFor({ timeout: 5_000 });
+  const bodyText = await page.locator("body").textContent();
+  if (bodyText?.includes("bad_message")) throw new Error("Image-only pasted prompt was rejected as bad_message");
+  return { uploadedAttachmentImages: await page.locator(".prompt-image img").count(), ...(await collectMetrics(page)) };
 }
 
 export async function runImageArtifactDropUpload(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
   await chooseImageWithPaperclip(page, imagePath);
-  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/artifacts/"), null, { timeout: 5_000 });
-  const artifactPrompt = "Please echo this uploaded screenshot artifact path exactly: " + await page.locator("#prompt").inputValue();
-  await sendPromptAndWaitIdle(page, artifactPrompt);
-  await page.waitForFunction(() => {
-    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
-    return images.length >= 1 && images.every((img) => img.complete && img.naturalWidth > 0);
-  }, null, { timeout: 5_000 });
-  const sources = await page.locator(".artifact-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
-  if (!sources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected dropped artifact screenshots to use artifact raw endpoint, saw ${sources.join(", ")}`);
-  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
-  return { artifactImages: await page.locator(".artifact-image img").count(), userImages: await page.locator(".message.user img").count(), sources, ...(await collectMetrics(page)) };
+  await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
+  const uploadSources = await page.locator(".prompt-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
+  if (!uploadSources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected uploaded attachment thumbnails to use artifact raw endpoint, saw ${uploadSources.join(", ")}`);
+  await page.locator("#send").click();
+  await waitForAgentRunning(page, 5_000);
+  await waitForAgentIdle(page, 30_000);
+  await page.locator(".message.user", { hasText: "fixture.png" }).first().waitFor({ timeout: 5_000 });
+  return { uploadedAttachmentImages: uploadSources.length, uploadSources, ...(await collectMetrics(page)) };
 }
 
 export async function runImageArtifactPaths(page: Page): Promise<Record<string, unknown>> {

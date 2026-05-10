@@ -5,6 +5,7 @@ import { applySessionMetadataSuggestion } from "./metadata-routes.js";
 function session(overrides: Partial<WebSession> = {}): WebSession {
   return {
     id: "s1",
+    kind: "workspace",
     cwd: "/tmp/project",
     piSessionFile: "/tmp/session.jsonl",
     isolationKind: "none",
@@ -21,6 +22,7 @@ function session(overrides: Partial<WebSession> = {}): WebSession {
     metadataGenerationCount: 0,
     metadataLastGeneratedAt: null,
     autoGenerateMetadataOverride: "default",
+    pinned: false,
     createdAt: "2026-05-01T00:00:00.000Z",
     lastOpenedAt: "2026-05-01T00:00:00.000Z",
     ...overrides,

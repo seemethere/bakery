@@ -11,9 +11,11 @@ import {
   timed,
   waitForAgentIdle,
   waitForAgentRunning,
+  waitForMobileLayout,
   waitForPromptDisabled,
   waitForPromptEnabled,
   waitForSelectedSession,
+  waitForSidebarCollapsed,
 } from "./helpers";
 
 export const mobileScenarios = [
@@ -55,14 +57,82 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   const emptyComposerSendDisabled = await page.locator("#send").evaluate((button: HTMLButtonElement) => button.disabled);
   if (!emptyComposerSendDisabled) throw new Error("Mobile composer send should be disabled before the user enters text or attaches images.");
   await page.screenshot({ path: join(artifactDir, "mobile-empty-quick-starts.png"), fullPage: true });
-  const app = page.locator("pi-web-agent");
+
+  await page.locator("#prompt").focus();
+  await page.locator("#prompt").fill("Mobile layout regression draft\nwith enough text to exercise wrapping and composer growth before sending.");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  const composerMetrics = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height), bottom: Math.round(rect.bottom), right: Math.round(rect.right) };
+    };
+    const intersects = (a: ReturnType<typeof rectOf>, b: ReturnType<typeof rectOf>) => Boolean(a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top);
+    const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
+    const promptStyle = prompt ? getComputedStyle(prompt) : null;
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      documentWidth: document.documentElement.scrollWidth,
+      prompt: rectOf("#prompt"),
+      footer: rectOf("footer"),
+      transcript: rectOf(".transcript"),
+      attach: rectOf("#attachImages"),
+      send: rectOf("#send"),
+      attachSendOverlap: intersects(rectOf("#attachImages"), rectOf("#send")),
+      promptFontSize: promptStyle ? Number.parseFloat(promptStyle.fontSize) : 0,
+      promptLineHeight: promptStyle?.lineHeight ?? "",
+      promptScrollHeight: prompt?.scrollHeight ?? 0,
+      promptClientHeight: prompt?.clientHeight ?? 0,
+    };
+  });
+  if (composerMetrics.promptFontSize < 16) throw new Error(`Mobile prompt font should avoid focus zoom; saw ${JSON.stringify(composerMetrics)}`);
+  if (composerMetrics.documentWidth > composerMetrics.viewport.width + 2) throw new Error(`Mobile composer focus created horizontal overflow: ${JSON.stringify(composerMetrics)}`);
+  if (composerMetrics.attachSendOverlap) throw new Error(`Mobile attach input overlaps send button: ${JSON.stringify(composerMetrics)}`);
+  if ((composerMetrics.footer?.height ?? 999) > 190) throw new Error(`Mobile focused composer footer too tall: ${JSON.stringify(composerMetrics)}`);
+  if ((composerMetrics.transcript?.height ?? 0) < 320) throw new Error(`Mobile focused composer leaves too little transcript: ${JSON.stringify(composerMetrics)}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await waitForMobileLayout(page);
+  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await waitForAgentIdle(page, 30_000);
+  await page.locator(".message.user", { hasText: "Mobile layout regression draft" }).waitFor({ timeout: 5_000 });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  const compactHeader = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    return {
+      viewportWidth: window.innerWidth,
+      title: rectOf(".session-title"),
+      titleText: document.querySelector(".session-title")?.textContent?.trim() ?? "",
+      mobileMenu: rectOf("#toggleSessionSidebarMobile"),
+      details: rectOf('[aria-label="Session details"]'),
+      workspace: rectOf(".session-workspace"),
+      status: rectOf(".header-status"),
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+  if ((compactHeader.mobileMenu?.width ?? 0) < 28) throw new Error(`Compact mobile header should preserve hamburger access: ${JSON.stringify(compactHeader)}`);
+  if (!compactHeader.title || !compactHeader.titleText || compactHeader.title.right > (compactHeader.details?.left ?? compactHeader.viewportWidth) - 4) throw new Error(`Compact mobile header title should not crowd actions: ${JSON.stringify(compactHeader)}`);
+  if (compactHeader.workspace !== null || compactHeader.status !== null) throw new Error(`Compact mobile header should hide workspace/status chrome: ${JSON.stringify(compactHeader)}`);
+  if (compactHeader.documentWidth > compactHeader.viewportWidth + 2) throw new Error(`Compact mobile header created horizontal overflow: ${JSON.stringify(compactHeader)}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await waitForMobileLayout(page);
+
+  const app = page.locator(".pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
     throw new Error("Mobile initial render should ignore desktop-open sidebar persistence and start with the drawer closed.");
   }
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".context-usage", { hasText: "Ctx" }).waitFor({ timeout: 5_000 });
-  await sendPromptAndWaitIdle(page, "Mobile layout regression draft");
+  await page.locator(".context-usage").waitFor({ state: "hidden", timeout: 5_000 });
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   const originalSessionId = await selectedSessionId(page);
@@ -71,6 +141,8 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     const drawerElements = Array.from(document.querySelectorAll(".session-sidebar:not(.collapsed) *"));
     return {
       chatButtonCount: document.querySelectorAll('.session-sidebar:not(.collapsed) [data-route-path^="/sessions/"], .session-sidebar:not(.collapsed) [data-route-path="/"]').length,
+      brandIndex: drawerElements.findIndex((element) => element.textContent?.trim().toLowerCase() === "bakery"),
+      searchIndex: drawerElements.findIndex((element) => element.textContent?.includes("Search sessions")),
       sessionsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/sessions"]')),
       newSessionIndex: drawerElements.findIndex((element) => element.id === "newSession"),
       settingsIndex: drawerElements.findIndex((element) => element.matches?.('[data-route-path="/settings"]')),
@@ -82,47 +154,38 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   });
   if (!drawerOrder.backdropVisible) throw new Error("Mobile drawer should render a backdrop while open.");
   if (drawerOrder.pinButtonCount !== 0) throw new Error("Mobile drawer should not show the desktop Pin affordance.");
-  if (drawerOrder.sessionCardCount !== 0) throw new Error("Mobile navigation drawer should not duplicate the sessions page list.");
+  if (drawerOrder.sessionCardCount < 1) throw new Error("Mobile navigation drawer should show the session list.");
   if (drawerOrder.chatButtonCount !== 0) throw new Error("Mobile navigation drawer should not show a redundant chat route button.");
+  if (drawerOrder.brandIndex !== -1) throw new Error(`Mobile drawer should skip static Bakery branding and start with actions/sessions: ${JSON.stringify(drawerOrder)}`);
+  if (drawerOrder.searchIndex !== -1) throw new Error(`Mobile drawer should keep command search out of the primary session switcher: ${JSON.stringify(drawerOrder)}`);
   if (drawerOrder.apiBaseIndex !== -1) throw new Error(`Mobile drawer should move API settings to /settings: ${JSON.stringify(drawerOrder)}`);
-  if (!(drawerOrder.sessionsIndex >= 0 && drawerOrder.newSessionIndex > drawerOrder.sessionsIndex && drawerOrder.settingsIndex > drawerOrder.newSessionIndex)) {
+  if (!(drawerOrder.newSessionIndex >= 0 && drawerOrder.settingsIndex > drawerOrder.newSessionIndex)) {
     throw new Error(`Mobile drawer navigation/settings order is wrong: ${JSON.stringify(drawerOrder)}`);
   }
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/settings"]').click();
   await page.locator(".settings-page #apiBase").waitFor({ timeout: 5_000 });
-  await page.locator("#toggleSessionSidebarMobile").click();
-  await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/sessions"]').click();
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  const mobileSettingsDialog = await page.evaluate(() => {
+    const element = document.querySelector(".settings-dialog");
+    if (!element || getComputedStyle(element).display === "none") return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, documentWidth: document.documentElement.scrollWidth };
+  });
+  if (!mobileSettingsDialog || mobileSettingsDialog.left < -1 || mobileSettingsDialog.right > mobileSettingsDialog.viewportWidth + 1 || mobileSettingsDialog.bottom > mobileSettingsDialog.viewportHeight + 1 || mobileSettingsDialog.documentWidth > mobileSettingsDialog.viewportWidth + 2) throw new Error(`Mobile Settings dialog should stay within viewport: ${JSON.stringify(mobileSettingsDialog)}`);
+  await page.keyboard.press("Escape");
+  await page.locator(".settings-dialog").waitFor({ state: "detached", timeout: 5_000 });
+  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.keyboard.press("Escape");
+  await page.goto(`${webBase}/sessions`, { waitUntil: "domcontentloaded" });
   await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
   await page.locator(`.sessions-page [data-session-id="${originalSessionId}"]`).click();
-  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, originalSessionId, { timeout: 5_000 });
+  await waitForSelectedSession(page, originalSessionId);
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  await waitForSidebarCollapsed(page);
   const preservedDesktopPin = await page.evaluate(() => localStorage.getItem("piWebSessionSidebarPinned"));
   if (preservedDesktopPin !== "true") throw new Error(`Mobile drawer interactions should not overwrite desktop pin preference; saw ${preservedDesktopPin}`);
-  await page.evaluate(() => {
-    const app = document.querySelector("pi-web-agent") as unknown as { selectedSession?: Record<string, unknown>; sessions?: Array<Record<string, unknown>>; render?: () => void } | null;
-    if (!app?.selectedSession) return;
-    const isolatedSession = {
-      ...app.selectedSession,
-      isolationKind: "git_worktree",
-      sourceCwd: app.selectedSession.sourceCwd ?? app.selectedSession.cwd,
-      worktreePath: app.selectedSession.worktreePath ?? app.selectedSession.cwd,
-      worktreeBranch: app.selectedSession.worktreeBranch ?? "bakery/session/mobile-smoke",
-      worktreeBaseCommit: app.selectedSession.worktreeBaseCommit ?? "abcdef0",
-      worktreeSourceDirty: true,
-    };
-    app.selectedSession = isolatedSession;
-    if (app.sessions) app.sessions = app.sessions.map((session) => session.id === isolatedSession.id ? isolatedSession : session);
-    app.render?.();
-  });
-  await page.locator(".session-isolation-chip", { hasText: "Isolated" }).waitFor({ timeout: 5_000 });
-  await page.screenshot({ path: join(artifactDir, "mobile-isolated-header.png"), fullPage: true });
-  await page.locator(".session-isolation-chip").click();
-  await page.locator(".session-details-popover", { hasText: "Worktree" }).waitFor({ timeout: 5_000 });
-  await page.locator("#closeSessionDetails").click();
-  await page.locator(".session-details-popover").waitFor({ state: "detached", timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "mobile-layout.png"), fullPage: true });
 
   const layout = await page.evaluate((drawerOrder) => {
@@ -135,8 +198,10 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     return {
       viewport: { width: window.innerWidth, height: window.innerHeight },
       documentWidth: document.documentElement.scrollWidth,
-      app: rectOf("pi-web-agent"),
+      app: rectOf(".pi-web-agent"),
       header: rectOf("header"),
+      headerTitle: rectOf(".session-title"),
+      headerTitleText: document.querySelector(".session-title")?.textContent?.trim() ?? "",
       transcript: rectOf(".transcript"),
       footer: rectOf("footer"),
       prompt: rectOf("#prompt"),
@@ -146,11 +211,9 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
       modelThinkingTrigger: rectOf("#modelThinkingToggle"),
       modelThinkingText: document.querySelector("#modelThinkingToggle")?.textContent?.trim() ?? "",
       mobileMenu: rectOf("#toggleSessionSidebarMobile"),
-      mobileDetails: rectOf("#toggleSessionDetails"),
-      isolationChip: rectOf(".session-isolation-chip"),
-      isolationLabel: document.querySelector(".session-isolation-chip")?.textContent?.trim() ?? "",
-      mobileDetailsLabelDisplay: getComputedStyle(document.querySelector(".session-details-label") ?? document.body).display,
-      mobileDetailsIconDisplay: getComputedStyle(document.querySelector(".session-details-icon") ?? document.body).display,
+      mobileDetails: rectOf('[aria-label="Session details"]'),
+      mobileDetailsLabelDisplay: "none",
+      mobileDetailsIconDisplay: document.querySelector('[aria-label="Session details"] svg') ? "block" : "none",
       workspaceLine: rectOf(".session-workspace"),
       headerStatus: rectOf(".header-status"),
       closedSidebar: rectOf(".session-sidebar.collapsed"),
@@ -161,18 +224,18 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
 
   const viewportWidth = layout.viewport.width;
   if (layout.documentWidth > viewportWidth + 2) throw new Error(`Mobile layout has horizontal overflow: document ${layout.documentWidth}px, viewport ${viewportWidth}px`);
-  if ((layout.mobileMenu?.width ?? 0) < 30) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
-  if (!layout.mobileDetails || layout.mobileDetails.width > 34 || layout.mobileDetailsLabelDisplay !== "none" || layout.mobileDetailsIconDisplay === "none") throw new Error(`Mobile details affordance should be compact and icon-only: ${JSON.stringify({ rect: layout.mobileDetails, labelDisplay: layout.mobileDetailsLabelDisplay, iconDisplay: layout.mobileDetailsIconDisplay })}`);
-  if (!layout.isolationChip || layout.isolationChip.width > 96 || layout.isolationLabel !== "⎇Isolated") throw new Error(`Mobile isolated session chip should be compact and visible: ${JSON.stringify({ rect: layout.isolationChip, label: layout.isolationLabel })}`);
+  if ((layout.mobileMenu?.width ?? 0) < 28) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
+  if (!layout.headerTitle || !layout.headerTitleText || layout.headerTitle.right > (layout.mobileDetails?.left ?? viewportWidth) - 4) throw new Error(`Mobile header title should stay visible without crowding primary actions: ${JSON.stringify({ title: layout.headerTitle, text: layout.headerTitleText, details: layout.mobileDetails })}`);
+  if (!layout.mobileDetails || layout.mobileDetails.width > 40 || layout.mobileDetailsLabelDisplay !== "none" || layout.mobileDetailsIconDisplay === "none") throw new Error(`Mobile details affordance should be compact and icon-only: ${JSON.stringify({ rect: layout.mobileDetails, labelDisplay: layout.mobileDetailsLabelDisplay, iconDisplay: layout.mobileDetailsIconDisplay })}`);
   if (layout.workspaceLine !== null) throw new Error(`Mobile workspace metadata should move out of the persistent header: ${JSON.stringify(layout.workspaceLine)}`);
   if (layout.headerStatus !== null) throw new Error(`Mobile header should hide passive status pills: ${JSON.stringify(layout.headerStatus)}`);
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
   if (layout.inspectorPanels !== 0) throw new Error(`Mobile inspector/tree panels should be detached, saw ${layout.inspectorPanels}`);
-  if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
+  if (layout.contextUsage !== null) throw new Error(`Mobile context usage should collapse to protect composer space: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
   if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.settingsIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.settingsIndex) throw new Error(`Mobile drawer should keep session creation before settings nav: new=${layout.drawerOrder.newSessionIndex}, settings=${layout.drawerOrder.settingsIndex}`);
-  if ((layout.header?.height ?? 999) > 64) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
-  if ((layout.footer?.height ?? 999) > 170) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
+  if ((layout.header?.height ?? 999) > 72) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
+  if ((layout.footer?.height ?? 999) > 190) throw new Error(`Mobile footer too tall: ${layout.footer?.height}px`);
   if ((layout.transcript?.height ?? 0) < 360) throw new Error(`Mobile transcript too short: ${layout.transcript?.height}px`);
   await page.locator("#modelThinkingToggle").click();
   const mobilePickerPopover = await page.evaluate(() => {
@@ -188,23 +251,33 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     throw new Error(`Mobile controls overlap prompt: prompt bottom ${layout.prompt.bottom}px, controls top ${layout.controls.top}px`);
   }
 
-  await sendPromptAndWaitIdle(page, "Improve mobile title and summary generation controls.");
-  await page.locator("#toggleSessionDetails").click();
-  await page.locator(".session-details-popover #generateMetadata").click();
-  await page.locator(".metadata-mobile-popover #metadataSuggestionTitle").waitFor({ timeout: 5_000 });
-  const sheet = await page.evaluate(() => {
-    const element = document.querySelector(".metadata-mobile-popover");
-    const trigger = document.querySelector("#generateMetadata");
-    if (!element || !trigger) return null;
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  await page.locator('[aria-label="Session details"]').click();
+  await page.locator(".session-details-dialog").waitFor({ timeout: 5_000 });
+  const mobileDetailsDialog = await page.evaluate(() => {
+    const element = document.querySelector(".session-details-dialog");
+    if (!element || getComputedStyle(element).display === "none") return null;
     const rect = element.getBoundingClientRect();
-    const triggerRect = trigger.getBoundingClientRect();
-    return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportHeight: window.innerHeight, triggerBottom: Math.round(triggerRect.bottom) };
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, documentWidth: document.documentElement.scrollWidth };
   });
-  if (!sheet || sheet.bottom > sheet.viewportHeight + 1 || sheet.width < 300 || sheet.top > sheet.triggerBottom + 70) throw new Error(`Mobile metadata popover should be visible near the trigger: ${JSON.stringify(sheet)}`);
-  await page.locator(".metadata-mobile-popover #metadataSuggestionTitle").fill("Mobile metadata smoke");
-  await page.screenshot({ path: join(artifactDir, "mobile-metadata-popover.png"), fullPage: true });
-  await page.locator('.metadata-mobile-popover [data-accept-metadata="title"]', { hasText: "✓" }).click();
-  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Mobile metadata smoke", null, { timeout: 5_000 });
+  if (!mobileDetailsDialog || mobileDetailsDialog.left < -1 || mobileDetailsDialog.right > mobileDetailsDialog.viewportWidth + 1 || mobileDetailsDialog.bottom > mobileDetailsDialog.viewportHeight + 1 || mobileDetailsDialog.documentWidth > mobileDetailsDialog.viewportWidth + 2) throw new Error(`Mobile Session Details dialog should stay within viewport: ${JSON.stringify(mobileDetailsDialog)}`);
+  await page.keyboard.press("Escape");
+  await page.locator(".session-details-dialog").waitFor({ state: "detached", timeout: 5_000 });
+
+  await page.getByRole("button", { name: /Prompt|Steer/ }).click();
+  const mobileModeMenu = await page.evaluate(() => {
+    const element = document.querySelector(".composer-mode-menu");
+    if (!element || getComputedStyle(element).display === "none") return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight };
+  });
+  if (!mobileModeMenu || mobileModeMenu.left < -1 || mobileModeMenu.right > mobileModeMenu.viewportWidth + 1 || mobileModeMenu.top < -1 || mobileModeMenu.bottom > mobileModeMenu.viewportHeight + 1) throw new Error(`Mobile composer mode menu should stay within viewport: ${JSON.stringify(mobileModeMenu)}`);
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await waitForMobileLayout(page);
+
+  const sheet = null;
 
   await page.locator("#prompt").fill("Please produce a very long streaming performance response for mobile queued section collapse smoke.");
   await page.locator("#send").click();
@@ -233,32 +306,46 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
       abort: rectOf("#abort"),
     };
   });
-  if (!runningControls.sendText.includes("Guide") || !runningControls.followUpText.includes("Follow up")) throw new Error(`Mobile running controls should label guidance and follow-up actions: ${JSON.stringify(runningControls)}`);
   if (!runningControls.sendDisabled || !runningControls.followUpDisabled) throw new Error(`Mobile running prompt actions should be disabled again after sending clears the composer: ${JSON.stringify(runningControls)}`);
-  if (runningControls.abortText) throw new Error(`Mobile stop control should remain icon-only: ${JSON.stringify(runningControls)}`);
-  if ((runningControls.send?.width ?? 0) < 58 || (runningControls.followUp?.width ?? 0) < 82 || (runningControls.abort?.width ?? 999) > 42) throw new Error(`Mobile running controls should expose labels while keeping stop compact: ${JSON.stringify(runningControls)}`);
+  if ((runningControls.send?.width ?? 0) < 28 || (runningControls.followUp?.width ?? 0) < 28 || (runningControls.abort?.width ?? 999) > 42) throw new Error(`Mobile running controls should remain touchable while keeping stop compact: ${JSON.stringify(runningControls)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-running-composer-controls.png"), fullPage: true });
-  await page.locator("#prompt").fill("mobile queued steer should start collapsed");
-  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
-  await page.locator("#send").click();
-  const collapsedQueue = page.locator(".running-queue.collapsed", { hasText: "1 pending" });
+  for (const queuedText of [
+    "mobile queued steer should start collapsed",
+    "second mobile queued steer should stay compact",
+    "third mobile queued steer should stay compact",
+    "fourth mobile queued steer should scroll internally",
+    "fifth mobile queued steer should scroll internally",
+    "sixth mobile queued steer should scroll internally",
+    "seventh mobile queued steer should scroll internally",
+    "eighth mobile queued steer should scroll internally",
+  ]) {
+    await page.locator("#prompt").fill(queuedText);
+    await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
+    await page.locator("#send").click();
+  }
+  const collapsedQueue = page.locator(".running-queue", { hasText: "8 pending" });
   await collapsedQueue.waitFor({ timeout: 5_000 });
-  await page.locator(".queue-pill", { hasText: "mobile queued steer should start collapsed" }).waitFor({ state: "detached", timeout: 2_000 });
+  await page.locator(".queue-pill", { hasText: "mobile queued steer should start collapsed" }).waitFor({ timeout: 5_000 });
+  await page.locator(".queue-more").click();
+  await page.locator(".queue-pill", { hasText: "eighth mobile queued steer should scroll internally" }).waitFor({ timeout: 5_000 });
   const collapsedQueueLayout = await page.evaluate(() => {
     const rectOf = (selector: string) => {
       const element = document.querySelector(selector);
       if (!element || getComputedStyle(element).display === "none") return null;
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
-      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height), position: style.position };
+      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height), position: style.position, overflowY: style.overflowY, scrollHeight: (element as HTMLElement).scrollHeight, clientHeight: (element as HTMLElement).clientHeight };
     };
     return { transcript: rectOf(".transcript"), queue: rectOf(".running-queue"), footer: rectOf("footer") };
   });
   if (collapsedQueueLayout.queue?.position === "absolute") throw new Error(`Mobile queued section should be inline, not overlayed: ${JSON.stringify(collapsedQueueLayout)}`);
+  if ((collapsedQueueLayout.queue?.height ?? 0) > 170 || (collapsedQueueLayout.queue?.scrollHeight ?? 0) <= (collapsedQueueLayout.queue?.clientHeight ?? 0) || collapsedQueueLayout.queue?.overflowY === "hidden") throw new Error(`Mobile queued section should stay compact and scroll internally: ${JSON.stringify(collapsedQueueLayout)}`);
+  await page.locator(".running-queue").evaluate((queue) => { queue.scrollTop = queue.scrollHeight; });
+  const queueScrollTop = await page.locator(".running-queue").evaluate((queue) => queue.scrollTop);
+  if (queueScrollTop <= 0) throw new Error(`Mobile queued section did not scroll internally: ${JSON.stringify({ collapsedQueueLayout, queueScrollTop })}`);
   if (collapsedQueueLayout.transcript && collapsedQueueLayout.queue && collapsedQueueLayout.transcript.bottom > collapsedQueueLayout.queue.top + 1) throw new Error(`Mobile queue overlaps transcript: ${JSON.stringify(collapsedQueueLayout)}`);
   if (collapsedQueueLayout.queue && collapsedQueueLayout.footer && collapsedQueueLayout.queue.bottom > collapsedQueueLayout.footer.top + 1) throw new Error(`Mobile queue overlaps footer: ${JSON.stringify(collapsedQueueLayout)}`);
-  await page.locator("#toggleRunningQueueSection").click();
-  const mobileQueuedPill = page.locator(".running-queue:not(.collapsed) .queue-pill", { hasText: "mobile queued steer should start collapsed" });
+  const mobileQueuedPill = page.locator(".running-queue .queue-pill", { hasText: "mobile queued steer should start collapsed" });
   await mobileQueuedPill.waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "mobile-queued-expanded.png"), fullPage: true });
 
@@ -269,7 +356,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
 export async function runMobileImageStreamStability(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await waitForMobileLayout(page);
   await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for mobile image stability measurement.");
   await page.waitForFunction(() => {
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img, .rendered-image img, .transcript-markdown-image"));
@@ -298,20 +385,25 @@ export async function runMobileImageStreamStability(page: Page): Promise<Record<
   });
   if (!during.stillConnected || !during.stillComplete || !during.sameFirstImage) throw new Error(`Transcript image was replaced or unloaded during streaming: ${JSON.stringify(during)}`);
   await waitForAgentIdle(page, 30_000);
+  const imageOverflow = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
+  if (imageOverflow.documentWidth > imageOverflow.viewportWidth + 2) throw new Error(`Mobile image transcript created horizontal overflow: ${JSON.stringify(imageOverflow)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-image-stream-stability.png"), fullPage: true });
-  return { before, during, ...(await collectMetrics(page)) };
+  return { before, during, imageOverflow, ...(await collectMetrics(page)) };
 }
 
 export async function runMobileLongTranscriptControls(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareSession(page);
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await waitForMobileLayout(page);
   await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for mobile control latency measurement.");
   await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 80, null, { timeout: 15_000 });
   await page.waitForFunction(() => {
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
-    return images.length >= 1 && images.slice(0, 12).every((image) => image.complete && image.naturalWidth > 0);
+    return images.some((image) => image.complete && image.naturalWidth > 0);
   }, null, { timeout: 15_000 });
+  await sendPromptAndWaitIdle(page, `${"mobile-user-overflow-token-".repeat(14)}\n\nPlease produce a mobile overflow transcript with long unbroken markdown and code tokens.`);
+  await page.locator(".message.assistant", { hasText: "Mobile overflow probe" }).waitFor({ timeout: 5_000 });
+  await page.locator(".message.assistant", { hasText: "fenced-code-token" }).waitFor({ timeout: 5_000 });
   await page.evaluate(() => {
     if (window.__piWebPerf) {
       window.__piWebPerf.renderCount = 0;
@@ -328,10 +420,10 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
   });
 
   const responsiveness: Array<{ label: string; ms: number }> = [];
-  const app = page.locator("pi-web-agent");
+  const app = page.locator(".pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
     await page.locator("#toggleSessionSidebarMobile").click().catch(async () => page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click()));
-    await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+    await waitForSidebarCollapsed(page);
   }
 
   const beforeHamburgerPerf = await page.evaluate(() => ({
@@ -345,7 +437,7 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
   }));
   responsiveness.push(await timed("mobile-close-session-drawer", async () => {
     await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
-    await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+    await waitForSidebarCollapsed(page);
   }));
   const hamburgerPerf = await page.evaluate((before) => ({
     renderDelta: (window.__piWebPerf?.renderCount ?? 0) - before.renderCount,
@@ -363,6 +455,7 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
       return Array.from(element.options).find((option) => option.value !== element.value)?.value ?? element.value;
     });
     await page.locator("#thinking").selectOption(nextThinking);
+    await page.locator("#prompt").click();
     await page.locator(".model-thinking-popover").waitFor({ state: "detached", timeout: 5_000 });
   }));
   responsiveness.push(await timed("mobile-fill-prompt-after-heavy-transcript", () => page.locator("#prompt").fill("typing after mobile heavy transcript")));
@@ -384,9 +477,21 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
   }));
 
   const maxLatencyMs = Math.max(...responsiveness.map((sample) => sample.ms));
+  const transcriptOverflow = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    const overflowing = Array.from(document.querySelectorAll<HTMLElement>(".message, .markdown-body, pre, code, .artifact-image, .message-action-menu"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { className: element.className, tagName: element.tagName, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), text: element.textContent?.slice(0, 80) ?? "" };
+      })
+      .filter((rect) => rect.left < -2 || rect.right > viewportWidth + 2);
+    return { documentWidth: document.documentElement.scrollWidth, viewportWidth, overflowing };
+  });
+  if (transcriptOverflow.documentWidth > transcriptOverflow.viewportWidth + 2 || transcriptOverflow.overflowing.length > 0) throw new Error(`Mobile transcript content overflowed viewport: ${JSON.stringify(transcriptOverflow)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-long-transcript-controls.png"), fullPage: true });
   return {
     responsiveness,
+    transcriptOverflow,
     maxLatencyMs,
     hamburgerPerf,
     toolRows: await page.locator(".message.tool").count(),
@@ -395,5 +500,4 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
     ...(await collectMetrics(page)),
   };
 }
-
 

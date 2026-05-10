@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
+import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SessionKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
 
 export type SessionPreferences = {
   webSessionId: string;
@@ -16,6 +16,25 @@ export type WebCommandResultRecord = {
   isError: boolean;
   data?: unknown;
   timestamp: string;
+};
+
+export type SubmittedPromptRecord = {
+  id: string;
+  text: string;
+  kind: "prompt" | "ask";
+  timestamp: string;
+  reconciledAt: string | null;
+  error: string | null;
+};
+
+type SubmittedPromptRow = {
+  id: string;
+  web_session_id: string;
+  text: string;
+  kind: "prompt" | "ask";
+  timestamp: string;
+  reconciled_at: string | null;
+  error: string | null;
 };
 
 type WebCommandResultRow = {
@@ -36,7 +55,8 @@ type WorkspaceRow = {
 
 type SessionRow = {
   id: string;
-  cwd: string;
+  kind: SessionKind;
+  cwd: string | null;
   pi_session_file: string;
   isolation_kind: SessionIsolationKind;
   source_cwd: string | null;
@@ -52,6 +72,7 @@ type SessionRow = {
   metadata_generation_count: number;
   metadata_last_generated_at: string | null;
   auto_generate_metadata_override: AutoGenerateMetadataOverride;
+  pinned: number;
   created_at: string;
   last_opened_at: string;
 };
@@ -59,6 +80,7 @@ type SessionRow = {
 function mapSession(row: SessionRow): WebSession {
   return {
     id: row.id,
+    kind: row.kind,
     cwd: row.cwd,
     piSessionFile: row.pi_session_file,
     isolationKind: row.isolation_kind,
@@ -75,6 +97,7 @@ function mapSession(row: SessionRow): WebSession {
     metadataGenerationCount: row.metadata_generation_count,
     metadataLastGeneratedAt: row.metadata_last_generated_at,
     autoGenerateMetadataOverride: row.auto_generate_metadata_override,
+    pinned: Boolean(row.pinned),
     createdAt: row.created_at,
     lastOpenedAt: row.last_opened_at,
   };
@@ -157,6 +180,17 @@ export class MetadataStore {
         FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS web_submitted_prompts (
+        id TEXT PRIMARY KEY,
+        web_session_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        reconciled_at TEXT,
+        error TEXT,
+        FOREIGN KEY(web_session_id) REFERENCES web_sessions(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS workspaces (
         path TEXT PRIMARY KEY,
         label TEXT NOT NULL,
@@ -176,7 +210,52 @@ export class MetadataStore {
     this.addColumn("web_sessions", "metadata_generation_count INTEGER NOT NULL DEFAULT 0", "metadata_generation_count");
     this.addColumn("web_sessions", "metadata_last_generated_at TEXT", "metadata_last_generated_at");
     this.addColumn("web_sessions", "auto_generate_metadata_override TEXT NOT NULL DEFAULT 'default'", "auto_generate_metadata_override");
+    this.addColumn("web_sessions", "pinned INTEGER NOT NULL DEFAULT 0", "pinned");
+    this.addColumn("web_sessions", "kind TEXT NOT NULL DEFAULT 'workspace'", "kind");
+    this.addColumn("web_submitted_prompts", "error TEXT", "error");
+    this.relaxCwdNotNull();
     this.inferExistingTitleSources();
+  }
+
+  private relaxCwdNotNull(): void {
+    const cwdInfo = this.db.query<{ name: string; notnull: number }, []>("PRAGMA table_info(web_sessions)").all().find((row) => row.name === "cwd");
+    if (!cwdInfo || cwdInfo.notnull === 0) return;
+    this.db.exec("PRAGMA foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE web_sessions_new (
+            id TEXT PRIMARY KEY,
+            cwd TEXT,
+            pi_session_file TEXT NOT NULL,
+            title TEXT,
+            created_at TEXT NOT NULL,
+            last_opened_at TEXT NOT NULL,
+            isolation_kind TEXT NOT NULL DEFAULT 'none',
+            source_cwd TEXT,
+            worktree_path TEXT,
+            worktree_branch TEXT,
+            worktree_base_commit TEXT,
+            worktree_source_dirty INTEGER NOT NULL DEFAULT 0,
+            title_source TEXT NOT NULL DEFAULT 'unset',
+            summary TEXT,
+            summary_source TEXT NOT NULL DEFAULT 'unset',
+            summary_updated_at TEXT,
+            metadata_generation_count INTEGER NOT NULL DEFAULT 0,
+            metadata_last_generated_at TEXT,
+            auto_generate_metadata_override TEXT NOT NULL DEFAULT 'default',
+            pinned INTEGER NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL DEFAULT 'workspace'
+          );
+          INSERT INTO web_sessions_new (id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind)
+            SELECT id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind FROM web_sessions;
+          DROP TABLE web_sessions;
+          ALTER TABLE web_sessions_new RENAME TO web_sessions;
+        `);
+      })();
+    } finally {
+      this.db.exec("PRAGMA foreign_keys = ON");
+    }
   }
 
   private inferExistingTitleSources(): void {
@@ -215,11 +294,11 @@ export class MetadataStore {
     return row ? mapSession(row) : undefined;
   }
 
-  createSession(input: { id: string; cwd: string; piSessionFile: string; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean }): WebSession {
+  createSession(input: { id: string; cwd: string | null; piSessionFile: string; kind?: SessionKind; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean }): WebSession {
     const now = new Date().toISOString();
     this.db
-      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(input.id, input.cwd, input.piSessionFile, input.isolationKind ?? "none", input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
+      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, kind, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(input.id, input.cwd, input.piSessionFile, input.kind ?? "workspace", input.isolationKind ?? "none", input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
     this.db.query("INSERT INTO session_preferences (web_session_id) VALUES (?)").run(input.id);
     const session = this.getSession(input.id);
     if (!session) throw new Error("Failed to create session");
@@ -230,7 +309,7 @@ export class MetadataStore {
     this.db.query("UPDATE web_sessions SET last_opened_at = ? WHERE id = ?").run(new Date().toISOString(), id);
   }
 
-  updateSession(id: string, input: { title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; autoGenerateMetadataOverride?: AutoGenerateMetadataOverride; incrementGenerationCount?: boolean }): WebSession | undefined {
+  updateSession(id: string, input: { title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; autoGenerateMetadataOverride?: AutoGenerateMetadataOverride; pinned?: boolean; incrementGenerationCount?: boolean }): WebSession | undefined {
     const now = new Date().toISOString();
     if (Object.hasOwn(input, "title")) {
       this.db.query("UPDATE web_sessions SET title = ?, title_source = ? WHERE id = ?").run(input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), id);
@@ -241,9 +320,22 @@ export class MetadataStore {
     if (input.autoGenerateMetadataOverride) {
       this.db.query("UPDATE web_sessions SET auto_generate_metadata_override = ? WHERE id = ?").run(input.autoGenerateMetadataOverride, id);
     }
+    if (Object.hasOwn(input, "pinned")) {
+      this.db.query("UPDATE web_sessions SET pinned = ? WHERE id = ?").run(input.pinned ? 1 : 0, id);
+    }
     if (input.incrementGenerationCount) {
       this.db.query("UPDATE web_sessions SET metadata_generation_count = metadata_generation_count + 1, metadata_last_generated_at = ? WHERE id = ?").run(now, id);
     }
+    return this.getSession(id);
+  }
+
+  attachWorkspace(id: string, cwd: string): WebSession | undefined {
+    this.db.query("UPDATE web_sessions SET cwd = ?, kind = 'workspace' WHERE id = ?").run(cwd, id);
+    return this.getSession(id);
+  }
+
+  setKind(id: string, kind: SessionKind): WebSession | undefined {
+    this.db.query("UPDATE web_sessions SET kind = ? WHERE id = ?").run(kind, id);
     return this.getSession(id);
   }
 
@@ -286,6 +378,53 @@ export class MetadataStore {
         ...(row.data_json ? { data: JSON.parse(row.data_json) as unknown } : {}),
         timestamp: row.timestamp,
       }));
+  }
+
+  addSubmittedPrompt(sessionId: string, input: { id?: string; text: string; kind: "prompt" | "ask"; timestamp?: string }): SubmittedPromptRecord {
+    const record: SubmittedPromptRecord = {
+      id: input.id ?? `prompt:${crypto.randomUUID()}`,
+      text: input.text,
+      kind: input.kind,
+      timestamp: input.timestamp ?? new Date().toISOString(),
+      reconciledAt: null,
+      error: null,
+    };
+    this.db
+      .query("INSERT OR REPLACE INTO web_submitted_prompts (id, web_session_id, text, kind, timestamp, reconciled_at, error) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(record.id, sessionId, record.text, record.kind, record.timestamp, record.reconciledAt, record.error);
+    return record;
+  }
+
+  markSubmittedPromptReconciled(sessionId: string, id: string, timestamp = new Date().toISOString()): SubmittedPromptRecord | undefined {
+    const row = this.db.query<SubmittedPromptRow, [string, string]>("SELECT * FROM web_submitted_prompts WHERE web_session_id = ? AND id = ? AND reconciled_at IS NULL").get(sessionId, id);
+    if (!row) return undefined;
+    this.db.query("UPDATE web_submitted_prompts SET reconciled_at = ?, error = NULL WHERE id = ?").run(timestamp, row.id);
+    return this.mapSubmittedPrompt(row, timestamp, null);
+  }
+
+  markSubmittedPromptError(sessionId: string, id: string, error: string): SubmittedPromptRecord | undefined {
+    const timestamp = new Date().toISOString();
+    this.db.query("UPDATE web_submitted_prompts SET error = ? WHERE web_session_id = ? AND id = ? AND reconciled_at IS NULL").run(error, sessionId, id);
+    const row = this.db.query<SubmittedPromptRow, [string, string]>("SELECT * FROM web_submitted_prompts WHERE web_session_id = ? AND id = ?").get(sessionId, id);
+    return row ? this.mapSubmittedPrompt(row, row.reconciled_at, error) : undefined;
+  }
+
+  listUnreconciledSubmittedPrompts(sessionId: string): SubmittedPromptRecord[] {
+    return this.db
+      .query<SubmittedPromptRow, [string]>("SELECT * FROM web_submitted_prompts WHERE web_session_id = ? AND reconciled_at IS NULL ORDER BY timestamp ASC, id ASC")
+      .all(sessionId)
+      .map((row) => this.mapSubmittedPrompt(row));
+  }
+
+  private mapSubmittedPrompt(row: SubmittedPromptRow, reconciledAt = row.reconciled_at, error = row.error): SubmittedPromptRecord {
+    return {
+      id: row.id,
+      text: row.text,
+      kind: row.kind,
+      timestamp: row.timestamp,
+      reconciledAt,
+      error,
+    };
   }
 
   getSettings(): AppSettings {

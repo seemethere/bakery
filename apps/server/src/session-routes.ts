@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  attachWorkspaceRequestSchema,
   createSessionRequestSchema,
   forkSessionRequestSchema,
   navigateTreeRequestSchema,
@@ -36,8 +37,11 @@ async function enrichSession(session: WebSession, deps: SessionRouteDeps): Promi
   let status: WebSession["status"] | undefined;
   if (handle) status = (await handle.snapshot(session)).status;
 
+  if (!handle && session.cwd === null) {
+    return { ...session, lastActivityAt: session.lastOpenedAt, status: status ?? "idle" };
+  }
   try {
-    const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, deps.config.sessionDir, session.cwd);
+    const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, deps.config.sessionDir, session.cwd ?? undefined);
     const entries = flattenTree(manager.getTree())
       .map((node) => node.entry)
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -132,15 +136,32 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
     try {
-      const sourceCwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
       const id = crypto.randomUUID();
       const piSessionFile = resolve(config.sessionDir, `${id}.jsonl`);
+
+      if (!parsed.data.cwd) {
+        if (parsed.data.isolation === "git_worktree") {
+          return reply.code(400).send({ error: "isolation=git_worktree requires cwd" });
+        }
+        const session = store.createSession({
+          id,
+          cwd: null,
+          piSessionFile,
+          kind: parsed.data.kind ?? "draft",
+          title: parsed.data.title ?? null,
+          titleSource: parsed.data.title ? "manual" : "unset",
+        });
+        return reply.code(201).send(session);
+      }
+
+      const sourceCwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
       if (parsed.data.isolation === "git_worktree") {
         const worktree = await createGitWorktreeSession({ sourceCwd, sessionId: id, worktreeDir: config.worktreeDir });
         const session = store.createSession({
           id,
           cwd: worktree.cwd,
           piSessionFile,
+          kind: "workspace",
           title: parsed.data.title ?? null,
           titleSource: parsed.data.title ? "manual" : "unset",
           isolationKind: "git_worktree",
@@ -152,8 +173,25 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
         });
         return reply.code(201).send(session);
       }
-      const session = store.createSession({ id, cwd: sourceCwd, piSessionFile, title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
+      const session = store.createSession({ id, cwd: sourceCwd, piSessionFile, kind: parsed.data.kind ?? "workspace", title: parsed.data.title ?? null, titleSource: parsed.data.title ? "manual" : "unset" });
       return reply.code(201).send(session);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/sessions/:id/workspace", async (request, reply) => {
+    const parsed = attachWorkspaceRequestSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const existing = store.getSession(request.params.id);
+    if (!existing) return reply.code(404).send({ error: "session not found" });
+    if (existing.kind !== "draft") return reply.code(409).send({ error: "workspace can only be attached to draft sessions" });
+    if (runner.getSession(existing.id)) return reply.code(409).send({ error: "session already started" });
+    try {
+      const cwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
+      const updated = store.attachWorkspace(existing.id, cwd);
+      if (!updated) return reply.code(404).send({ error: "session not found" });
+      return reply.code(200).send(updated);
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -178,7 +216,8 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!webSession) return reply.code(404).send({ error: "session not found" });
     try {
       const handle = runner.getSession(webSession.id);
-      const manager = handle?.session.sessionManager ?? SessionManager.open(webSession.piSessionFile, config.sessionDir, webSession.cwd);
+      if (!handle && webSession.cwd === null) return { sessionId: webSession.id, leafId: null, tree: [] };
+      const manager = handle?.session.sessionManager ?? SessionManager.open(webSession.piSessionFile, config.sessionDir, webSession.cwd ?? undefined);
       const leafId = manager.getLeafId();
       return { sessionId: webSession.id, leafId, tree: manager.getTree().map((node) => mapTreeNode(node, leafId)) };
     } catch (error) {
@@ -191,6 +230,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const webSession = store.getSession(request.params.id);
     if (!webSession) return reply.code(404).send({ error: "session not found" });
+    if (webSession.cwd === null) return reply.code(409).send({ error: "session has no workspace" });
     try {
       const handle = await runner.createSession({
         id: webSession.id,
@@ -212,6 +252,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     const source = store.getSession(request.params.id);
     if (!source) return reply.code(404).send({ error: "session not found" });
+    if (source.cwd === null) return reply.code(409).send({ error: "cannot fork a session without a workspace" });
     try {
       const id = crypto.randomUUID();
       const fork = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId, config.sessionDir, parsed.data.position);

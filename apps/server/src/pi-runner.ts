@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -18,8 +19,9 @@ export type BashResult = { output: string; exitCode: number | undefined; cancell
 
 export type CreateSessionOptions = {
   id: string;
-  cwd: string;
+  cwd: string | null;
   piSessionFile: string;
+  mode?: "workspace" | "chat_only";
 };
 
 export type BuiltinCommandResult = {
@@ -47,6 +49,7 @@ export type SessionHandle = {
   setSessionName(name: string): void;
   getPendingQuestion(): PendingQuestion | null;
   answerQuestion(payload: AnswerQuestionPayload): void;
+  isCheckpointQuestion(questionId: string): boolean;
   subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void;
   getSettings(): Promise<SessionRuntimeSettings>;
   getCommands(): CommandInfo[];
@@ -72,6 +75,33 @@ function normalizeEvent(event: AgentSessionEvent): NormalizedAgentEvent {
 
 function getStatus(session: AgentSession): SessionSnapshot["status"] {
   return session.isStreaming || session.isBashRunning ? "running" : "idle";
+}
+
+function flushSessionFile(sessionManager: SessionManager): void {
+  const maybeFlushable = sessionManager as unknown as { _rewriteFile?: unknown };
+  if (typeof maybeFlushable._rewriteFile === "function") maybeFlushable._rewriteFile();
+}
+
+function modelId(model: { provider: string; id: string } | undefined): string | null {
+  return model ? `${model.provider}/${model.id}` : null;
+}
+
+export async function applyConfiguredDefaultModel(session: AgentSession, modelPolicy: ModelPolicy): Promise<void> {
+  const defaultModel = modelPolicy.defaultModel;
+  if (!defaultModel) return;
+  if ((session.state.messages?.length ?? 0) > 0) return;
+  if (modelPolicy.allowedModels && !modelPolicy.allowedModels.includes(defaultModel)) {
+    console.warn(`Configured default model is not allowed by policy: ${defaultModel}`);
+    return;
+  }
+  if (modelId(session.model) === defaultModel) return;
+
+  const model = (await session.modelRegistry.getAvailable()).find((candidate) => modelId(candidate) === defaultModel);
+  if (!model) {
+    console.warn(`Configured default model is not available: ${defaultModel}`);
+    return;
+  }
+  await session.setModel(model);
 }
 
 const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
@@ -154,8 +184,16 @@ class QuestionBroker {
     return () => this.listeners.delete(listener);
   }
 
+  isCheckpoint(questionId: string): boolean {
+    return Boolean(this.pending && this.pending.id === questionId && !this.resolver);
+  }
+
   answer(payload: AnswerQuestionPayload): void {
-    if (!this.pending || payload.questionId !== this.pending.id || !this.resolver) return;
+    if (!this.pending || payload.questionId !== this.pending.id) return;
+    if (!this.resolver) {
+      if (payload.cancelled) { this.pending = null; this.notify(); }
+      return;
+    }
     const resolver = this.resolver;
     this.pending = null;
     this.resolver = null;
@@ -354,6 +392,10 @@ class InProcessSessionHandle implements SessionHandle {
     this.questionBroker.answer(payload);
   }
 
+  isCheckpointQuestion(questionId: string): boolean {
+    return this.questionBroker.isCheckpoint(questionId);
+  }
+
   subscribeQuestion(listener: (question: PendingQuestion | null) => void): () => void {
     return this.questionBroker.subscribe(listener);
   }
@@ -453,7 +495,10 @@ class InProcessSessionHandle implements SessionHandle {
   }
 
   subscribe(listener: (event: NormalizedAgentEvent, raw: AgentSessionEvent) => void): () => void {
-    return this.session.subscribe((event) => listener(normalizeEvent(event), event));
+    return this.session.subscribe((event) => {
+      listener(normalizeEvent(event), event);
+      if (event.type === "message_end") queueMicrotask(() => flushSessionFile(this.session.sessionManager));
+    });
   }
 
   async snapshot(webSession: WebSession): Promise<SessionSnapshot> {
@@ -481,10 +526,21 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
     const existing = this.handles.get(options.id);
     if (existing) return existing;
 
-    const sessionManager = SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), options.cwd);
+    const mode: "workspace" | "chat_only" = options.mode ?? (options.cwd ? "workspace" : "chat_only");
+    const effectiveCwd = options.cwd ?? process.cwd();
+    const hadSessionFile = existsSync(options.piSessionFile);
+    const sessionManager = SessionManager.open(options.piSessionFile, dirname(options.piSessionFile), effectiveCwd);
     const questionBroker = new QuestionBroker();
-    const { session } = await createAgentSession({ cwd: options.cwd, sessionManager, thinkingLevel: this.modelPolicy.defaultThinkingLevel as never, customTools: [createAskQuestionTool(questionBroker)] });
-    const handle = new InProcessSessionHandle(options.id, options.cwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
+    const { session } = await createAgentSession({
+      cwd: effectiveCwd,
+      sessionManager,
+      thinkingLevel: this.modelPolicy.defaultThinkingLevel as never,
+      customTools: [createAskQuestionTool(questionBroker)],
+      ...(mode === "chat_only" ? { noTools: "all" as const } : {}),
+    });
+    if (!hadSessionFile) await applyConfiguredDefaultModel(session, this.modelPolicy);
+    flushSessionFile(sessionManager);
+    const handle = new InProcessSessionHandle(options.id, effectiveCwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);
     return handle;
   }
