@@ -33,6 +33,7 @@ type Props = {
   isEmptySession?: boolean;
   draftKey?: string;
   draftPrefill?: { text: string; nonce: number } | null;
+  onDraftPrefillApplied?: () => void;
   focusNonce?: number;
   sessionId?: string | null;
   fetchJson?: <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -139,6 +140,7 @@ export function Composer({
   isEmptySession = false,
   draftKey,
   draftPrefill,
+  onDraftPrefillApplied,
   focusNonce,
   sessionId,
   fetchJson,
@@ -178,11 +180,12 @@ export function Composer({
     if (!draftPrefill) return;
     setDraft(draftPrefill.text);
     if (draftKey) localStorage.setItem(draftKey, draftPrefill.text);
+    onDraftPrefillApplied?.();
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(draftPrefill.text.length, draftPrefill.text.length);
     });
-  }, [draftKey, draftPrefill]);
+  }, [draftKey, draftPrefill, onDraftPrefillApplied]);
 
   useEffect(() => {
     if (focusNonce === undefined) return;

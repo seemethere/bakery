@@ -90,6 +90,7 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await page.waitForFunction(({ base, count }) => fetch(`${base}/api/sessions`).then((response) => response.json()).then((sessions) => Array.isArray(sessions) && sessions.length > count), { base: apiBase, count: beforeNewSessions }, { timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
   await page.waitForFunction(() => document.activeElement?.id === "prompt", null, { timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "", null, { timeout: 5_000 });
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   return collectMetrics(page);
 }

@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnswerQuestionPayload, ControllerInfo, ExtensionCatalog, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, SessionTreeResponse, WebSession } from "@pi-web-agent/protocol";
 import { Composer } from "@/components/Composer";
 import { QuestionPanel } from "@/components/QuestionPanel";
@@ -73,7 +73,10 @@ export function SessionPage({
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const items = useTranscript(snapshot, subscribeAgentEvents);
-  const [draftPrefill, setDraftPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  const [draftPrefill, setDraftPrefill] = useState<{ sessionId: string; text: string; nonce: number } | null>(null);
+  const handleDraftPrefillApplied = useCallback(() => {
+    setDraftPrefill((current) => current?.sessionId === sessionId ? null : current);
+  }, [sessionId]);
   const [sessionTree, setSessionTree] = useState<SessionTreeResponse | null>(null);
   const treeNodes = useMemo(() => flattenSessionTree(sessionTree?.tree ?? []), [sessionTree]);
 
@@ -123,14 +126,19 @@ export function SessionPage({
           if (session) navigate(sessionRoutePath(session.id));
         }}
         onAcceptPlan={() => setDraftPrefill((current) => ({
+          sessionId,
           text: "Proceed with the recommended plan.",
-          nonce: (current?.nonce ?? 0) + 1,
+          nonce: current?.sessionId === sessionId ? current.nonce + 1 : 1,
         }))}
       />
       <RunningQueueStrip
         queue={runningQueue}
         onCancel={onCancelQueuedMessage}
-        onEdit={(text) => setDraftPrefill((current) => ({ text, nonce: (current?.nonce ?? 0) + 1 }))}
+        onEdit={(text) => setDraftPrefill((current) => ({
+          sessionId,
+          text,
+          nonce: current?.sessionId === sessionId ? current.nonce + 1 : 1,
+        }))}
       />
       {!isController && (
         <div className="relative z-[3] grid justify-center px-4 pt-3" style={{ gridTemplateColumns: "minmax(0, 860px)" }}>
@@ -160,6 +168,7 @@ export function SessionPage({
         </div>
       )}
       <Composer
+        key={sessionId}
         status={status}
         isController={isController}
         runtimeSettings={runtimeSettings}
@@ -174,7 +183,8 @@ export function SessionPage({
         onTakeControl={onTakeControl}
         isEmptySession={isEmptySession}
         draftKey={`piWebPromptDraft:${sessionId}`}
-        draftPrefill={draftPrefill}
+        draftPrefill={draftPrefill?.sessionId === sessionId ? draftPrefill : null}
+        onDraftPrefillApplied={handleDraftPrefillApplied}
         focusNonce={promptFocusNonce}
         sessionId={sessionId}
         fetchJson={fetchJson}
