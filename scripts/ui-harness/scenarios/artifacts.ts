@@ -82,7 +82,7 @@ export async function runImageAttachments(page: Page): Promise<Record<string, un
   await waitForAgentRunning(page, 5_000);
   await waitForAgentIdle(page, 30_000);
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".message.user", { hasText: ".bakery/attachments/" }).first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "fixture.png" }).first().waitFor({ timeout: 5_000 });
   await page.locator(".message.assistant").first().waitFor({ timeout: 5_000 });
   return collectMetrics(page);
 }
@@ -107,7 +107,7 @@ export async function runImagePasteAttachments(page: Page): Promise<Record<strin
   await waitForAgentRunning(page, 5_000);
   await waitForAgentIdle(page, 10_000);
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".message.user", { hasText: ".bakery/attachments/" }).first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "pasted.png" }).first().waitFor({ timeout: 5_000 });
   const bodyText = await page.locator("body").textContent();
   if (bodyText?.includes("bad_message")) throw new Error("Image-only pasted prompt was rejected as bad_message");
   return { uploadedAttachmentImages: await page.locator(".prompt-image img").count(), ...(await collectMetrics(page)) };
@@ -123,7 +123,7 @@ export async function runImageArtifactDropUpload(page: Page): Promise<Record<str
   await page.locator("#send").click();
   await waitForAgentRunning(page, 5_000);
   await waitForAgentIdle(page, 30_000);
-  await page.locator(".message.user", { hasText: ".bakery/attachments/" }).first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "fixture.png" }).first().waitFor({ timeout: 5_000 });
   return { uploadedAttachmentImages: uploadSources.length, uploadSources, ...(await collectMetrics(page)) };
 }
 

@@ -52,7 +52,7 @@ function normalizeImageArtifactPath(path: string, sessionCwd: string | null): { 
   const normalizedCwd = sessionCwd?.replace(/\\/g, "/").replace(/\/+$/, "");
   let normalized = decoded.replace(/\\/g, "/").replace(/^\.\//, "");
   if (!/\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized) || normalized.includes("\0")) return null;
-  if (normalized.startsWith(".bakery/artifacts/")) return { originalPath: normalized };
+  if (normalized.startsWith(".bakery/artifacts/") || normalized.startsWith(".bakery/attachments/")) return { originalPath: normalized };
   if (normalized.startsWith("/") && normalizedCwd) {
     if (normalized === normalizedCwd) return null;
     if (!normalized.startsWith(`${normalizedCwd}/`)) return { originalPath: normalized };
@@ -60,7 +60,7 @@ function normalizeImageArtifactPath(path: string, sessionCwd: string | null): { 
     decoded = `/${normalized}`;
   }
   normalized = normalized.replace(/^\.\//, "");
-  if (normalized.startsWith(".bakery/artifacts/")) return { originalPath: normalized };
+  if (normalized.startsWith(".bakery/artifacts/") || normalized.startsWith(".bakery/attachments/")) return { originalPath: normalized };
   if (!normalized.startsWith("/") && /^(?:[^/]+\/)+[^/]+\.(?:png|jpe?g|gif|webp|svg)$/i.test(normalized)) return { originalPath: decoded, workspacePath: normalized };
   return { originalPath: normalized };
 }
@@ -99,12 +99,43 @@ function localImageArtifacts(text: string, context: TranscriptRenderContext, sup
 
 function promptAttachmentArtifactPaths(text: string, context: TranscriptRenderContext): Set<string> {
   const paths = new Set<string>();
-  for (const match of text.matchAll(/^\s*Screenshot artifact:\s*(\S+\.(?:png|jpe?g|gif|webp|svg))\s*$/gim)) {
+  for (const match of text.matchAll(/^\s*(?:Screenshot artifact|Attachment):\s*(\S+\.(?:png|jpe?g|gif|webp|svg))\s*$/gim)) {
     const path = match[1]?.replace(/^\.\//, "");
     if (!path || !localImageUrl(path, context)) continue;
     paths.add(path);
   }
   return paths;
+}
+
+type AttachmentReference = { name: string; path: string; url: string };
+
+function attachmentReferencesFromText(text: string, context: TranscriptRenderContext): AttachmentReference[] {
+  const attachments: AttachmentReference[] = [];
+  for (const match of text.matchAll(/^\s*-\s+(.+?):\s*(\.bakery\/attachments\/\S+\.(?:png|jpe?g|gif|webp|svg))\s*$/gim)) {
+    const name = match[1]?.trim() || "Attachment";
+    const path = match[2]?.trim();
+    const url = path ? localImageUrl(path, context) : null;
+    if (path && url) attachments.push({ name, path, url });
+  }
+  return attachments;
+}
+
+function stripAttachmentContext(text: string): string {
+  return text.replace(/(?:^|\n)Attached files:\s*\n(?:\s*-\s+.+?:\s*\.bakery\/attachments\/\S+\s*\n?)*/g, "\n").trim();
+}
+
+function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentReference[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="not-prose mt-1 flex flex-wrap gap-1.5">
+      {attachments.map((attachment) => (
+        <figure key={attachment.path} className="m-0 flex max-w-[180px] items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-background/60 py-1 pl-1 pr-2">
+          <img src={attachment.url} alt="" className="size-7 shrink-0 rounded object-cover" loading="lazy" />
+          <figcaption className="truncate text-[11px] text-muted-foreground" title={attachment.name}>{attachment.name}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
 }
 
 function MarkdownContent({ text, context, className }: { text: string; context: TranscriptRenderContext; className?: string }) {
@@ -132,7 +163,7 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
 
 function Segment({ segment, showThinking, context }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext }) {
   if (segment.kind === "markdown") {
-    return <MarkdownContent text={segment.text} context={context} />;
+    return <MarkdownContent text={stripAttachmentContext(segment.text)} context={context} />;
   }
   if (segment.kind === "thinking") {
     if (!showThinking) {
@@ -160,7 +191,7 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
   }
   // pre
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{segment.text}</pre>
+    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{stripAttachmentContext(segment.text)}</pre>
   );
 }
 
@@ -312,14 +343,17 @@ function MessageActions({ item, context, align = "start" }: { item: TranscriptIt
 
 function UserRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
   const segments = item.segments?.filter((s) => s.kind !== "toolCall" && s.kind !== "thinking");
+  const attachmentText = segments?.map((segment) => "text" in segment ? segment.text : "").join("\n") || item.body;
+  const attachmentReferences = attachmentReferencesFromText(attachmentText, context);
   return (
     <div className="message user flex justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid max-w-[80%] justify-items-end gap-1">
         <div className="rounded-2xl rounded-br-sm bg-sidebar-primary/15 border border-sidebar-primary/20 px-4 py-2.5 text-sm">
           {segments && segments.length > 0
             ? <Segments segments={segments} showThinking={showThinking} context={context} />
-            : <p className="text-sm">{item.body}</p>
+            : <p className="text-sm">{stripAttachmentContext(item.body)}</p>
           }
+          <AttachmentReferenceSummary attachments={attachmentReferences} />
         </div>
         <MessageActions item={item} context={context} align="end" />
       </div>
