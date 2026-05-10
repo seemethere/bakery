@@ -395,28 +395,33 @@ export function Composer({
   }
 
   function openImagePicker() {
-    const input = imageInputRef.current;
-    if (!input) {
-      setNotice("Image picker is not ready yet. Refresh the page and try again.");
-      return;
-    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/gif,image/webp";
+    input.multiple = true;
+    input.style.position = "fixed";
+    input.style.left = "-10000px";
+    input.style.top = "0";
+    input.addEventListener("change", () => {
+      imagePickerPendingRef.current = false;
+      clearTimeout(imagePickerReturnTimerRef.current);
+      const files = Array.from(input.files ?? []);
+      input.remove();
+      if (files.length === 0) {
+        setNotice("No image was selected.");
+        return;
+      }
+      void handleImageFiles(files);
+    }, { once: true });
+    document.body.append(input);
     imagePickerPendingRef.current = true;
     clearTimeout(imagePickerReturnTimerRef.current);
-    setNotice("Choose a PNG, JPEG, GIF, or WebP image to attach.");
     input.click();
   }
 
   function handleImageInputChange(event: ChangeEvent<HTMLInputElement>) {
-    imagePickerPendingRef.current = false;
-    clearTimeout(imagePickerReturnTimerRef.current);
     const input = event.currentTarget;
-    const files = Array.from(input.files ?? []);
     input.value = "";
-    if (files.length === 0) {
-      setNotice("No image was selected.");
-      return;
-    }
-    void handleImageFiles(files);
   }
 
   function handleImagePaste(dataTransfer: DataTransfer | null | undefined): boolean {
