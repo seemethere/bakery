@@ -37,6 +37,8 @@ export function imageDataTransferResult(dataTransfer: DataTransfer | null | unde
   const supportedFiles = transferFiles.filter(isSupportedImageFile);
   if (supportedFiles.length > 0) return { files: supportedFiles, imageLike: true };
 
+  const types = Array.from(dataTransfer?.types ?? []).map((type) => type.toLowerCase());
+  const imageLikeFromTypes = types.some((type) => type === "files" || type.includes("image"));
   const imageLikeFromFiles = transferFiles.some(isImageLikeFile);
   const itemFiles: File[] = [];
   let imageLikeFromItems = false;
@@ -49,7 +51,7 @@ export function imageDataTransferResult(dataTransfer: DataTransfer | null | unde
     if (isSupportedImageFile(file)) itemFiles.push(file);
   }
 
-  return { files: itemFiles, imageLike: imageLikeFromFiles || imageLikeFromItems || itemFiles.length > 0 };
+  return { files: itemFiles, imageLike: imageLikeFromTypes || imageLikeFromFiles || imageLikeFromItems || itemFiles.length > 0 };
 }
 
 export function imageFilesFromDataTransfer(dataTransfer: DataTransfer | null | undefined): File[] {

@@ -138,6 +138,8 @@ export function Composer({
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const imagePickerPendingRef = useRef(false);
+  const imagePickerReturnTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [draft, setDraft] = useState(() => (draftKey ? (localStorage.getItem(draftKey) ?? "") : ""));
   const [images, setImages] = useState<PromptImage[]>([]);
   const [notice, setNotice] = useState("");
@@ -187,6 +189,25 @@ export function Composer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
   }, [draft]);
+
+  useEffect(() => {
+    return () => clearTimeout(imagePickerReturnTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    function handleWindowFocus() {
+      if (!imagePickerPendingRef.current) return;
+      clearTimeout(imagePickerReturnTimerRef.current);
+      imagePickerReturnTimerRef.current = setTimeout(() => {
+        if (!imagePickerPendingRef.current) return;
+        imagePickerPendingRef.current = false;
+        setNotice("No image was attached. If you selected an image from a remote or mobile picker, try a PNG, JPEG, GIF, or WebP file.");
+      }, 800);
+    }
+
+    window.addEventListener("focus", handleWindowFocus);
+    return () => window.removeEventListener("focus", handleWindowFocus);
+  }, []);
 
   useEffect(() => {
     function handleGlobalKeyDown(event: globalThis.KeyboardEvent) {
@@ -340,9 +361,11 @@ export function Composer({
   }
 
   async function handleImageFiles(files: FileList | File[]) {
-    const fileArray = Array.from(files).filter(isSupportedImageFile);
+    const incomingFiles = Array.from(files);
+    const fileArray = incomingFiles.filter(isSupportedImageFile);
     if (fileArray.length === 0) {
-      setNotice("No supported image files found.");
+      const seen = incomingFiles.map((file) => file.type || file.name || "unknown file").slice(0, 3).join(", ");
+      setNotice(seen ? `No supported image files found. Supported: PNG, JPEG, GIF, WebP. Saw: ${seen}.` : "No supported image files found.");
       return;
     }
 
@@ -372,14 +395,28 @@ export function Composer({
   }
 
   function openImagePicker() {
-    imageInputRef.current?.click();
+    const input = imageInputRef.current;
+    if (!input) {
+      setNotice("Image picker is not ready yet. Refresh the page and try again.");
+      return;
+    }
+    imagePickerPendingRef.current = true;
+    clearTimeout(imagePickerReturnTimerRef.current);
+    setNotice("Choose a PNG, JPEG, GIF, or WebP image to attach.");
+    input.click();
   }
 
   function handleImageInputChange(event: ChangeEvent<HTMLInputElement>) {
+    imagePickerPendingRef.current = false;
+    clearTimeout(imagePickerReturnTimerRef.current);
     const input = event.currentTarget;
     const files = Array.from(input.files ?? []);
     input.value = "";
-    if (files.length > 0) void handleImageFiles(files);
+    if (files.length === 0) {
+      setNotice("No image was selected.");
+      return;
+    }
+    void handleImageFiles(files);
   }
 
   function handleImagePaste(dataTransfer: DataTransfer | null | undefined): boolean {
