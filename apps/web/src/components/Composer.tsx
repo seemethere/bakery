@@ -327,12 +327,27 @@ export function Composer({
     }
   }
 
-  function appendArtifactPaths(paths: string[]) {
+  function appendAttachmentReferences(paths: string[]) {
     if (paths.length === 0) return;
     setDraft((prev) => {
+      const existing = new Set(prev.match(/\.bakery\/attachments\/\S+/g) ?? []);
+      const nextPaths = paths.filter((path) => !existing.has(path));
+      if (nextPaths.length === 0) return prev;
       const prefix = prev.trim().length === 0 || prev.endsWith("\n") ? "" : "\n";
-      const suffix = paths.map((path) => `Screenshot artifact: ${path}`).join("\n");
+      const suffix = nextPaths.map((path) => `Attachment: ${path}`).join("\n");
       const next = `${prev}${prefix}${suffix}`;
+      if (draftKey) localStorage.setItem(draftKey, next);
+      return next;
+    });
+  }
+
+  function removeAttachmentReference(path: string) {
+    setDraft((prev) => {
+      const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const next = prev
+        .replace(new RegExp(`^Attachment:\\s*${escaped}\\s*$\\n?`, "gim"), "")
+        .replace(new RegExp(`^Screenshot artifact:\\s*${escaped}\\s*$\\n?`, "gim"), "")
+        .replace(/\n{3,}/g, "\n\n");
       if (draftKey) localStorage.setItem(draftKey, next);
       return next;
     });
@@ -394,8 +409,8 @@ export function Composer({
         return;
       }
       setUploadedAttachments((prev) => [...prev, ...response.attachments]);
-      appendArtifactPaths(response.attachments.map((attachment) => attachment.path));
-      setNotice(`Uploaded ${response.attachments.length} attachment${response.attachments.length === 1 ? "" : "s"}.`);
+      appendAttachmentReferences(response.attachments.map((attachment) => attachment.path));
+      setNotice("");
     } catch (error) {
       setNotice(`Attachment upload failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -437,7 +452,7 @@ export function Composer({
     void uploadImageArtifacts(fileArray).then((uploadResult) => {
       const currentIds = new Set(imagesRef.current.map((image) => image.id));
       const wholeBatchStillAttached = loadedIds.size > 0 && Array.from(loadedIds).every((id) => currentIds.has(id));
-      if (wholeBatchStillAttached) appendArtifactPaths(uploadResult.paths);
+      if (wholeBatchStillAttached) appendAttachmentReferences(uploadResult.paths);
       if (wholeBatchStillAttached && uploadResult.notices.length > 0) setNotice(uploadResult.notices[0] ?? "");
     });
   }
@@ -500,7 +515,7 @@ export function Composer({
   function handleDrop(event: DragEvent) {
     event.preventDefault();
     setDragging(false);
-    if (event.dataTransfer.files.length > 0) void handleImageFiles(event.dataTransfer.files);
+    if (event.dataTransfer.files.length > 0) void uploadSessionAttachments(event.dataTransfer.files);
   }
 
   function handleDragOver(event: DragEvent) {
@@ -571,7 +586,10 @@ export function Composer({
         )}
       >
         <AttachmentTray images={images} onRemove={removePromptImage} />
-        <UploadedAttachmentTray attachments={uploadedAttachments} onRemove={(id) => setUploadedAttachments((prev) => prev.filter((attachment) => attachment.id !== id))} />
+        <UploadedAttachmentTray attachments={uploadedAttachments} onRemove={(attachment) => {
+          setUploadedAttachments((prev) => prev.filter((item) => item.id !== attachment.id));
+          removeAttachmentReference(attachment.path);
+        }} />
 
         <ComposerTextarea
           ref={textareaRef}
@@ -679,7 +697,7 @@ function AttachmentTray({ images, onRemove }: { images: PromptImage[]; onRemove:
   );
 }
 
-function UploadedAttachmentTray({ attachments, onRemove }: { attachments: SessionAttachment[]; onRemove: (id: string) => void }) {
+function UploadedAttachmentTray({ attachments, onRemove }: { attachments: SessionAttachment[]; onRemove: (attachment: SessionAttachment) => void }) {
   if (attachments.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2" aria-label="Uploaded attachments">
@@ -693,7 +711,7 @@ function UploadedAttachmentTray({ attachments, onRemove }: { attachments: Sessio
             type="button"
             variant="ghost"
             size="icon-xs"
-            onClick={() => onRemove(attachment.id)}
+            onClick={() => onRemove(attachment)}
             aria-label={`Remove ${attachment.name}`}
             className="absolute right-1 top-1 bg-black/80 text-white hover:bg-black"
           >
