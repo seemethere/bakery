@@ -309,23 +309,40 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   if (!runningControls.sendDisabled || !runningControls.followUpDisabled) throw new Error(`Mobile running prompt actions should be disabled again after sending clears the composer: ${JSON.stringify(runningControls)}`);
   if ((runningControls.send?.width ?? 0) < 28 || (runningControls.followUp?.width ?? 0) < 28 || (runningControls.abort?.width ?? 999) > 42) throw new Error(`Mobile running controls should remain touchable while keeping stop compact: ${JSON.stringify(runningControls)}`);
   await page.screenshot({ path: join(artifactDir, "mobile-running-composer-controls.png"), fullPage: true });
-  await page.locator("#prompt").fill("mobile queued steer should start collapsed");
-  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
-  await page.locator("#send").click();
-  const collapsedQueue = page.locator(".running-queue", { hasText: "1 pending" });
+  for (const queuedText of [
+    "mobile queued steer should start collapsed",
+    "second mobile queued steer should stay compact",
+    "third mobile queued steer should stay compact",
+    "fourth mobile queued steer should scroll internally",
+    "fifth mobile queued steer should scroll internally",
+    "sixth mobile queued steer should scroll internally",
+    "seventh mobile queued steer should scroll internally",
+    "eighth mobile queued steer should scroll internally",
+  ]) {
+    await page.locator("#prompt").fill(queuedText);
+    await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
+    await page.locator("#send").click();
+  }
+  const collapsedQueue = page.locator(".running-queue", { hasText: "8 pending" });
   await collapsedQueue.waitFor({ timeout: 5_000 });
   await page.locator(".queue-pill", { hasText: "mobile queued steer should start collapsed" }).waitFor({ timeout: 5_000 });
+  await page.locator(".queue-more").click();
+  await page.locator(".queue-pill", { hasText: "eighth mobile queued steer should scroll internally" }).waitFor({ timeout: 5_000 });
   const collapsedQueueLayout = await page.evaluate(() => {
     const rectOf = (selector: string) => {
       const element = document.querySelector(selector);
       if (!element || getComputedStyle(element).display === "none") return null;
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
-      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height), position: style.position };
+      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height), position: style.position, overflowY: style.overflowY, scrollHeight: (element as HTMLElement).scrollHeight, clientHeight: (element as HTMLElement).clientHeight };
     };
     return { transcript: rectOf(".transcript"), queue: rectOf(".running-queue"), footer: rectOf("footer") };
   });
   if (collapsedQueueLayout.queue?.position === "absolute") throw new Error(`Mobile queued section should be inline, not overlayed: ${JSON.stringify(collapsedQueueLayout)}`);
+  if ((collapsedQueueLayout.queue?.height ?? 0) > 170 || (collapsedQueueLayout.queue?.scrollHeight ?? 0) <= (collapsedQueueLayout.queue?.clientHeight ?? 0) || collapsedQueueLayout.queue?.overflowY === "hidden") throw new Error(`Mobile queued section should stay compact and scroll internally: ${JSON.stringify(collapsedQueueLayout)}`);
+  await page.locator(".running-queue").evaluate((queue) => { queue.scrollTop = queue.scrollHeight; });
+  const queueScrollTop = await page.locator(".running-queue").evaluate((queue) => queue.scrollTop);
+  if (queueScrollTop <= 0) throw new Error(`Mobile queued section did not scroll internally: ${JSON.stringify({ collapsedQueueLayout, queueScrollTop })}`);
   if (collapsedQueueLayout.transcript && collapsedQueueLayout.queue && collapsedQueueLayout.transcript.bottom > collapsedQueueLayout.queue.top + 1) throw new Error(`Mobile queue overlaps transcript: ${JSON.stringify(collapsedQueueLayout)}`);
   if (collapsedQueueLayout.queue && collapsedQueueLayout.footer && collapsedQueueLayout.queue.bottom > collapsedQueueLayout.footer.top + 1) throw new Error(`Mobile queue overlaps footer: ${JSON.stringify(collapsedQueueLayout)}`);
   const mobileQueuedPill = page.locator(".running-queue .queue-pill", { hasText: "mobile queued steer should start collapsed" });

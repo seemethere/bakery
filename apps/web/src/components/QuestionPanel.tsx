@@ -75,7 +75,7 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
       ref={panelRef}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
-      className="question-card pending relative z-[2] rounded-xl border border-yellow-500/30 bg-yellow-500/5 shadow-xl overflow-hidden focus:outline-none"
+      className="question-card pending relative z-[2] overflow-x-hidden overflow-y-auto rounded-xl border border-yellow-500/30 bg-yellow-500/5 shadow-xl focus:outline-none"
       aria-label="Answer needed"
     >
       {/* Header */}

@@ -151,7 +151,7 @@ export function SessionPage({
         </div>
       )}
       {pendingQuestion && (
-        <div className="relative z-[3] grid justify-center px-4 pb-2" style={{ gridTemplateColumns: "minmax(0, 860px)" }}>
+        <div className="question-panel-strip relative z-[3] grid justify-center px-4 pb-2" style={{ gridTemplateColumns: "minmax(0, 860px)" }}>
           <QuestionPanel
             question={pendingQuestion}
             canAnswer={canAnswer}

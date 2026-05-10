@@ -180,7 +180,7 @@ class FakeSessionHandle implements SessionHandle {
 
     if (shouldAskQuestion) {
       const isPlanWorkflow = /^Run the bundled `plan` workflow skill for this coding session\./m.test(text);
-      await this.emitFakeQuestionRun(!isPlanWorkflow && /cancel/i.test(text), isPlanWorkflow);
+      await this.emitFakeQuestionRun(!isPlanWorkflow && /cancel/i.test(text), isPlanWorkflow, /(?:many mobile question options|many question options)/i.test(text));
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -469,17 +469,19 @@ class FakeSessionHandle implements SessionHandle {
     return editorText === undefined ? { cancelled: false } : { cancelled: false, editorText };
   }
 
-  private async emitFakeQuestionRun(expectCancel = false, isPlanWorkflow = false): Promise<void> {
+  private async emitFakeQuestionRun(expectCancel = false, isPlanWorkflow = false, manyOptions = false): Promise<void> {
     const toolCallId = crypto.randomUUID();
     const args = {
       title: expectCancel ? "Cancel path" : "Today's work",
       question: expectCancel ? "Should this question be cancelled?" : "What are you working on today?",
       recommendation: expectCancel ? "Cancel this prompt to verify the cancellation path." : "New feature — start with the smallest vertical slice that proves the UI lifecycle.",
-      options: [
-        { label: "New feature", description: "Adding new functionality to the project" },
-        { label: "Bug fix", description: "Tracking down and fixing an issue" },
-        { label: "Refactoring", description: "Improving existing code structure" },
-      ],
+      options: manyOptions
+        ? Array.from({ length: 9 }, (_, index) => ({ label: `Option ${index + 1}`, description: `Long mobile answer option ${index + 1} that should scroll inside the compact question card instead of pushing the composer away.` }))
+        : [
+          { label: "New feature", description: "Adding new functionality to the project" },
+          { label: "Bug fix", description: "Tracking down and fixing an issue" },
+          { label: "Refactoring", description: "Improving existing code structure" },
+        ],
       recommendedOptionIndex: expectCancel ? undefined : 0,
       allowCustomAnswer: true,
     };

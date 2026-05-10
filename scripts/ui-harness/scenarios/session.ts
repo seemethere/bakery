@@ -118,8 +118,47 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator(".question-touch-hint", { hasText: "Reply below or tap an option." }).waitFor({ timeout: 5_000 });
   const mobileShortcutDisplay = await page.locator(".question-options .option-shortcut").first().evaluate((element) => getComputedStyle(element).display);
   if (mobileShortcutDisplay !== "none") throw new Error(`Mobile question option shortcut should be hidden; saw display=${mobileShortcutDisplay}`);
+  const mobileQuestionLayout = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      documentWidth: document.documentElement.scrollWidth,
+      transcript: rectOf(".transcript"),
+      question: rectOf(".question-card.pending"),
+      footer: rectOf("footer"),
+    };
+  });
+  if (mobileQuestionLayout.documentWidth > mobileQuestionLayout.viewport.width + 2) throw new Error(`Mobile question layout overflowed horizontally: ${JSON.stringify(mobileQuestionLayout)}`);
+  if ((mobileQuestionLayout.question?.height ?? 999) > 290) throw new Error(`Mobile question card should stay compact and scroll internally: ${JSON.stringify(mobileQuestionLayout)}`);
+  if (mobileQuestionLayout.question && mobileQuestionLayout.footer && mobileQuestionLayout.question.bottom > mobileQuestionLayout.footer.top + 1) throw new Error(`Mobile question card overlaps composer: ${JSON.stringify(mobileQuestionLayout)}`);
+  if ((mobileQuestionLayout.transcript?.height ?? 0) < 300) throw new Error(`Mobile question state leaves too little transcript: ${JSON.stringify(mobileQuestionLayout)}`);
   await page.screenshot({ path: join(artifactDir, "question-answer-mobile.png"), fullPage: true });
-  await page.locator("[data-question-option-index='0']").click();
+  await page.locator(".question-card.pending [data-question-option-index='0']").click();
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
+
+  await page.locator("#prompt").fill("Please trigger question-answer with many mobile question options for internal scroll coverage.");
+  await page.locator("#send").click();
+  await page.locator(".question-card.pending", { hasText: "Option 9" }).waitFor({ timeout: 5_000 });
+  const manyOptionQuestionLayout = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>(".question-card.pending");
+    if (!card) return null;
+    const rect = card.getBoundingClientRect();
+    const style = getComputedStyle(card);
+    return { height: Math.round(rect.height), scrollHeight: card.scrollHeight, clientHeight: card.clientHeight, overflowY: style.overflowY, scrollTopBefore: card.scrollTop, documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
+  });
+  if (!manyOptionQuestionLayout || manyOptionQuestionLayout.height > 290 || manyOptionQuestionLayout.scrollHeight <= manyOptionQuestionLayout.clientHeight || manyOptionQuestionLayout.overflowY === "hidden") throw new Error(`Mobile many-option question should cap height and scroll internally: ${JSON.stringify(manyOptionQuestionLayout)}`);
+  await page.locator(".question-card.pending").evaluate((card) => { card.scrollTop = card.scrollHeight; });
+  const manyOptionQuestionScrollTop = await page.locator(".question-card.pending").evaluate((card) => card.scrollTop);
+  if (manyOptionQuestionScrollTop <= 0) throw new Error(`Mobile many-option question did not scroll internally: ${JSON.stringify({ manyOptionQuestionLayout, manyOptionQuestionScrollTop })}`);
+  if (manyOptionQuestionLayout.documentWidth > manyOptionQuestionLayout.viewportWidth + 2) throw new Error(`Mobile many-option question overflowed horizontally: ${JSON.stringify(manyOptionQuestionLayout)}`);
+  await page.locator(".question-card.pending [data-question-option-index='0']").click();
+  await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);
 
   await page.screenshot({ path: join(artifactDir, "question-answer.png"), fullPage: true });

@@ -20,7 +20,7 @@ export function RunningQueueStrip({ queue, onCancel, onEdit }: Props) {
   const visibleItems = expanded ? items : items.slice(0, 3);
 
   return (
-    <div className="relative z-[3] grid justify-center px-4 pt-3" style={{ gridTemplateColumns: "minmax(0, 860px)" }}>
+    <div className="running-queue-strip relative z-[3] grid justify-center px-4 pt-3" style={{ gridTemplateColumns: "minmax(0, 860px)" }}>
       <section className="running-queue grid gap-2 rounded-xl border border-border/50 bg-muted/25 px-3 py-2 text-sm" aria-label="Queued messages">
         <div className="flex items-center justify-between gap-3">
           <strong className="text-xs uppercase text-muted-foreground">Queued for this run</strong>
