@@ -121,6 +121,14 @@ A trusted local extension loaded by Bakery from an operator-configured path, usi
 - Not: an untrusted marketplace plugin or a browser-only script that bypasses Bakery's extension host.
 - Example: an operator configures an additional extension path, reloads resources, and Bakery discovers a command whose result renders in a transcript card.
 
+### Attachment
+
+An operator-provided file uploaded into a Bakery Agent Session so it can be referenced as prompt context.
+
+- Also known as: prompt attachment, uploaded attachment.
+- Not: an Artifact produced by the agent or tooling, though the first implementation may store uploaded attachments in the same local preview storage.
+- Example: an operator uploads a screenshot from a laptop or phone; Bakery shows a compact attachment preview in the composer and sends a prompt reference to the uploaded file.
+
 ### Extension Card
 
 A transcript card whose data and browser component are contributed through Bakery's extension UI contract rather than hard-coded in the core transcript renderer.
