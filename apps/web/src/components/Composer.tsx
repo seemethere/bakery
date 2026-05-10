@@ -678,11 +678,13 @@ function AttachmentTray({ images, onRemove }: { images: PromptImage[]; onRemove:
 function UploadedAttachmentTray({ attachments, onRemove }: { attachments: SessionAttachment[]; onRemove: (attachment: SessionAttachment) => void }) {
   if (attachments.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-2" aria-label="Uploaded attachments">
+    <div className="flex flex-wrap gap-1.5" aria-label="Uploaded attachments">
       {attachments.map((attachment) => (
-        <figure key={attachment.id} className="prompt-image relative m-0 grid w-[88px] overflow-hidden rounded-xl border border-border/50 bg-muted" style={{ gridTemplateRows: "58px auto" }}>
-          {attachment.kind === "image" ? <img src={attachment.url} alt={attachment.name} className="h-[58px] w-full object-cover" /> : <div className="grid h-[58px] place-items-center px-2 text-center text-[11px] text-muted-foreground">{attachment.mimeType}</div>}
-          <figcaption className="truncate px-1.5 py-1 text-[11px] text-muted-foreground" title={attachment.name}>
+        <figure key={attachment.id} className="prompt-image relative m-0 flex max-w-[180px] items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-muted/50 py-1 pl-1 pr-7">
+          {attachment.kind === "image"
+            ? <img src={attachment.url} alt="" className="size-8 shrink-0 rounded-md object-cover" />
+            : <div className="grid size-8 shrink-0 place-items-center rounded-md bg-background px-1 text-center text-[9px] text-muted-foreground">file</div>}
+          <figcaption className="min-w-0 truncate text-[11px] text-muted-foreground" title={attachment.name}>
             {attachment.name}
           </figcaption>
           <Button
@@ -691,7 +693,7 @@ function UploadedAttachmentTray({ attachments, onRemove }: { attachments: Sessio
             size="icon-xs"
             onClick={() => onRemove(attachment)}
             aria-label={`Remove ${attachment.name}`}
-            className="absolute right-1 top-1 bg-black/80 text-white hover:bg-black"
+            className="absolute right-0.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:bg-background/80 hover:text-foreground"
           >
             <X />
           </Button>
