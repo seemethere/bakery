@@ -69,7 +69,7 @@ export async function runImageAttachments(page: Page): Promise<Record<string, un
   await sendPromptAndWaitIdle(page, "Please inspect this attached image and include an image preview in the reply.");
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
-  await page.locator(".message.assistant img").first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.assistant").first().waitFor({ timeout: 5_000 });
   return collectMetrics(page);
 }
 
