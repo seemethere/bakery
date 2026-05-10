@@ -753,7 +753,7 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <div className={cn("flex min-w-0 items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-xs", !isController && "opacity-50")}>
+      <div className={cn("flex min-w-0 items-center gap-1 rounded-lg border border-border bg-background px-1.5 py-0.5 text-xs", !isController && "opacity-50")}>
         <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         <input
           ref={nativeFileInputRef}
@@ -764,7 +764,7 @@ function ComposerToolbar({
           disabled={!isController}
           aria-label="Choose attachment files"
           title="Choose attachment files"
-          className="max-w-[150px] cursor-pointer text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-medium file:text-foreground disabled:cursor-not-allowed"
+          className="w-[96px] cursor-pointer text-xs text-transparent file:mr-0 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-medium file:text-foreground disabled:cursor-not-allowed"
           onPointerDown={() => {
             if (isController) onAttachActivate();
           }}
@@ -774,7 +774,7 @@ function ComposerToolbar({
           onInput={handleNativeFileInput}
           onChange={handleNativeFileInput}
         />
-        <Button type="button" variant="outline" size="xs" disabled={!isController} onClick={() => submitNativeFileInput()}>
+        <Button type="button" variant="outline" size="xs" disabled={!isController} title="Upload selected files" onClick={() => submitNativeFileInput()} className="h-6 px-1.5">
           Upload
         </Button>
       </div>
