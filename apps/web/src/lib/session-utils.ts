@@ -64,17 +64,25 @@ function startOfLocalDay(time = Date.now()): number {
 }
 
 export function relativeTime(value: string | undefined): string {
+  return formatRelativeTime(value, false);
+}
+
+export function compactRelativeTime(value: string | undefined): string {
+  return formatRelativeTime(value, true);
+}
+
+function formatRelativeTime(value: string | undefined, compact: boolean): string {
   if (!value) return "never";
   const time = new Date(value).getTime();
   if (!Number.isFinite(time)) return value;
   const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
   if (seconds < 60) return "now";
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return compact ? `${minutes}m` : `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
+  if (hours < 48) return compact ? `${hours}h` : `${hours}h ago`;
   const days = Math.round(hours / 24);
-  if (days < 14) return `${days}d ago`;
+  if (days < 14) return compact ? `${days}d` : `${days}d ago`;
   return new Date(value).toLocaleDateString();
 }
 

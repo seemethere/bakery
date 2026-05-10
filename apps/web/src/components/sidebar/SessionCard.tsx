@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  compactRelativeTime,
   relativeTime,
   sessionActivityValue,
   sessionConnectionStatus,
@@ -46,6 +47,7 @@ export function SessionCard({
   const status = rawStatus && rawStatus !== "idle" ? rawStatus : undefined;
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export function SessionCard({
     <div
       data-session-id={session.id}
       className={cn(
-        "session-card group/session-card relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-1 rounded-md text-sm transition-colors",
+        "session-card group/session-card relative rounded-md text-sm transition-colors",
         "text-sidebar-foreground/70",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         isSelected && "active bg-sidebar-accent text-sidebar-accent-foreground font-medium",
@@ -79,9 +81,10 @@ export function SessionCard({
       <button
         type="button"
         onClick={() => !renaming && onSelect(session.id)}
-        className="grid min-w-0 gap-1 rounded-md px-2 py-2 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        title={showWorkspaceBadge ? `${title} — ${workspaceLabel}` : title}
+        className="grid w-full min-w-0 rounded-md px-2 py-1.5 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
-        <span className="flex items-center justify-between gap-2 min-w-0">
+        <span className="flex h-5 items-center justify-between gap-2 min-w-0">
           {renaming ? (
             <input
               ref={renameInputRef}
@@ -99,27 +102,27 @@ export function SessionCard({
             {status && <StatusBadge variant={status as StatusVariant}>{status}</StatusBadge>}
           </span>
         </span>
-        <small className="session-snippet block text-[11px] text-sidebar-foreground/40 truncate">
-          {relativeTime(activity)}
-        </small>
       </button>
-      {showWorkspaceBadge && (
-        <span
-          className="pointer-events-none absolute bottom-1.5 right-2 max-w-24 truncate text-[10px] font-normal text-sidebar-foreground/40"
-          title={workspaceLabel}
-        >
-          {workspaceLabel}
-        </span>
-      )}
+      <span
+        className={cn(
+          "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-normal tabular-nums text-sidebar-foreground/40 transition-opacity",
+          "group-hover/session-card:opacity-0 group-focus-within/session-card:opacity-0",
+          menuOpen && "opacity-0",
+        )}
+        title={relativeTime(activity)}
+        aria-hidden="true"
+      >
+        {compactRelativeTime(activity)}
+      </span>
 
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           className={cn(
-            "mr-1 mt-1 inline-flex size-7 items-center justify-center rounded-md transition-colors",
+            "absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors",
             "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-            "opacity-0 group-hover/session-card:opacity-100 data-open:opacity-100",
-            isSelected && "opacity-100",
+            "opacity-0 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100 data-open:opacity-100",
+            menuOpen && "opacity-100",
           )}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
