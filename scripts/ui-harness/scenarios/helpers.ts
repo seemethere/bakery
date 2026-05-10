@@ -122,6 +122,33 @@ export async function waitForSelectedSession(page: Page, sessionId: string): Pro
   await page.waitForFunction((id) => document.querySelector(".pi-web-agent")?.getAttribute("data-selected-session-id") === id, sessionId, { timeout: 5_000 });
 }
 
+export async function createSessionViaApi(page: Page): Promise<string> {
+  const session = await page.evaluate(async (base) => {
+    const response = await fetch(`${base}/api/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!response.ok) throw new Error(`create session failed: ${response.status}`);
+    return await response.json() as { id: string };
+  }, apiBase);
+  await page.goto(`${webBase}/sessions/${session.id}`, { waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, session.id);
+  return session.id;
+}
+
+export async function waitForNoSelectedSession(page: Page): Promise<void> {
+  await page.waitForFunction(() => (document.querySelector(".pi-web-agent")?.getAttribute("data-selected-session-id") ?? "") === "", null, { timeout: 5_000 });
+}
+
+export async function waitForMobileLayout(page: Page): Promise<void> {
+  await page.waitForFunction(() => window.matchMedia("(max-width: 767px)").matches, null, { timeout: 5_000 });
+}
+
+export async function waitForSidebarCollapsed(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelector(".pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+}
+
 export async function waitForAgentIdle(page: Page, timeout = 30_000): Promise<void> {
   await page.waitForFunction(() => {
     const app = document.querySelector(".pi-web-agent");

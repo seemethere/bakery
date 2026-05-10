@@ -11,9 +11,11 @@ import {
   timed,
   waitForAgentIdle,
   waitForAgentRunning,
+  waitForMobileLayout,
   waitForPromptDisabled,
   waitForPromptEnabled,
   waitForSelectedSession,
+  waitForSidebarCollapsed,
 } from "./helpers";
 
 export const mobileScenarios = [
@@ -55,7 +57,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   const emptyComposerSendDisabled = await page.locator("#send").evaluate((button: HTMLButtonElement) => button.disabled);
   if (!emptyComposerSendDisabled) throw new Error("Mobile composer send should be disabled before the user enters text or attaches images.");
   await page.screenshot({ path: join(artifactDir, "mobile-empty-quick-starts.png"), fullPage: true });
-  const app = page.locator("pi-web-agent");
+  const app = page.locator(".pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
     throw new Error("Mobile initial render should ignore desktop-open sidebar persistence and start with the drawer closed.");
   }
@@ -96,11 +98,11 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/sessions"]').click();
   await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
   await page.locator(`.sessions-page [data-session-id="${originalSessionId}"]`).click();
-  await page.waitForFunction((sessionId) => (document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } } | null)?.selectedSession?.id === sessionId, originalSessionId, { timeout: 5_000 });
+  await waitForSelectedSession(page, originalSessionId);
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+  await waitForSidebarCollapsed(page);
   const preservedDesktopPin = await page.evaluate(() => localStorage.getItem("piWebSessionSidebarPinned"));
   if (preservedDesktopPin !== "true") throw new Error(`Mobile drawer interactions should not overwrite desktop pin preference; saw ${preservedDesktopPin}`);
   await page.evaluate(() => {
@@ -137,7 +139,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     return {
       viewport: { width: window.innerWidth, height: window.innerHeight },
       documentWidth: document.documentElement.scrollWidth,
-      app: rectOf("pi-web-agent"),
+      app: rectOf(".pi-web-agent"),
       header: rectOf("header"),
       transcript: rectOf(".transcript"),
       footer: rectOf("footer"),
@@ -271,7 +273,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
 export async function runMobileImageStreamStability(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await waitForMobileLayout(page);
   await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for mobile image stability measurement.");
   await page.waitForFunction(() => {
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img, .rendered-image img, .transcript-markdown-image"));
@@ -307,7 +309,7 @@ export async function runMobileImageStreamStability(page: Page): Promise<Record<
 export async function runMobileLongTranscriptControls(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareSession(page);
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await waitForMobileLayout(page);
   await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for mobile control latency measurement.");
   await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 80, null, { timeout: 15_000 });
   await page.waitForFunction(() => {
@@ -330,10 +332,10 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
   });
 
   const responsiveness: Array<{ label: string; ms: number }> = [];
-  const app = page.locator("pi-web-agent");
+  const app = page.locator(".pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
     await page.locator("#toggleSessionSidebarMobile").click().catch(async () => page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click()));
-    await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+    await waitForSidebarCollapsed(page);
   }
 
   const beforeHamburgerPerf = await page.evaluate(() => ({
@@ -347,7 +349,7 @@ export async function runMobileLongTranscriptControls(page: Page): Promise<Recor
   }));
   responsiveness.push(await timed("mobile-close-session-drawer", async () => {
     await page.evaluate(() => document.querySelector<HTMLButtonElement>("#sessionSidebarBackdrop")?.click());
-    await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("session-sidebar-collapsed"), null, { timeout: 5_000 });
+    await waitForSidebarCollapsed(page);
   }));
   const hamburgerPerf = await page.evaluate((before) => ({
     renderDelta: (window.__piWebPerf?.renderCount ?? 0) - before.renderCount,

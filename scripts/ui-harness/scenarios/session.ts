@@ -4,6 +4,7 @@ import { apiBase, artifactDir, root, webBase } from "../config";
 import {
   assertComposerMode,
   collectMetrics,
+  createSessionViaApi,
   delay,
   prepareSession,
   selectedSessionId,
@@ -64,27 +65,22 @@ export async function runSessionRouting(page: Page): Promise<Record<string, unkn
   await waitForSelectedSession(page, firstSessionId);
   if (new URL(page.url()).pathname !== `/sessions/${firstSessionId}`) throw new Error(`Expected first session URL, saw ${page.url()}`);
 
-  const secondSession = await page.locator("pi-web-agent").evaluate(async (element) => {
-    const session = await (element as unknown as { createSession: () => Promise<{ id: string } | null> }).createSession();
-    if (!session) throw new Error("Could not create second session");
-    return { id: session.id };
-  });
-  await waitForSelectedSession(page, secondSession.id);
-  if (new URL(page.url()).pathname !== `/sessions/${secondSession.id}`) throw new Error(`Expected second session URL, saw ${page.url()}`);
+  const secondSessionId = await createSessionViaApi(page);
+  if (new URL(page.url()).pathname !== `/sessions/${secondSessionId}`) throw new Error(`Expected second session URL, saw ${page.url()}`);
 
   await page.goBack({ waitUntil: "domcontentloaded" });
   await waitForSelectedSession(page, firstSessionId);
   if (new URL(page.url()).pathname !== `/sessions/${firstSessionId}`) throw new Error(`Expected Back to restore first session URL, saw ${page.url()}`);
 
   await page.goBack({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => ((document.querySelector("pi-web-agent") as unknown as { selectedSession?: { id?: string } | null } | null)?.selectedSession ?? null) === null, null, { timeout: 5_000 });
-  if (new URL(page.url()).pathname !== "/") throw new Error(`Expected Back to restore home URL, saw ${page.url()}`);
+  await page.locator(".sessions-page").waitFor({ timeout: 5_000 });
+  if (new URL(page.url()).pathname !== "/sessions") throw new Error(`Expected Back to restore sessions page URL, saw ${page.url()}`);
 
-  await page.goto(`${webBase}/sessions/${secondSession.id}`, { waitUntil: "domcontentloaded" });
-  await waitForSelectedSession(page, secondSession.id);
+  await page.goto(`${webBase}/sessions/${secondSessionId}`, { waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, secondSessionId);
   await waitForAgentIdle(page, 5_000);
   await page.screenshot({ path: join(artifactDir, "session-routing.png"), fullPage: true });
-  return { firstSessionId, secondSessionId: secondSession.id, selectedSessionId: await selectedSessionId(page), pathname: new URL(page.url()).pathname };
+  return { firstSessionId, secondSessionId, selectedSessionId: await selectedSessionId(page), pathname: new URL(page.url()).pathname };
 }
 
 
@@ -266,7 +262,11 @@ export async function runSessionMetadata(page: Page): Promise<Record<string, unk
 
 export async function runTreeForkNavigation(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
-  const beforeSessions = await page.locator("pi-web-agent").evaluate((element) => ((element as unknown as { sessions?: unknown[] }).sessions ?? []).length);
+  const beforeSessions = await page.evaluate(async (base) => {
+    const response = await fetch(`${base}/api/sessions`);
+    if (!response.ok) throw new Error(`sessions fetch failed: ${response.status}`);
+    return ((await response.json()) as unknown[]).length;
+  }, apiBase);
   await sendPromptAndWaitIdle(page, "Create a transcript fork row without showing tree navigation UI.");
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
@@ -275,7 +275,11 @@ export async function runTreeForkNavigation(page: Page): Promise<Record<string, 
   const assistantRow = page.locator(".message.assistant").last();
   await assistantRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
   await userRow.locator('[data-row-action="fork"]').click();
-  await page.waitForFunction((count) => ((document.querySelector("pi-web-agent") as unknown as { sessions?: unknown[] } | null)?.sessions ?? []).length > count, beforeSessions, { timeout: 5_000 });
+  await page.waitForFunction(async ({ base, count }) => {
+    const response = await fetch(`${base}/api/sessions`);
+    if (!response.ok) return false;
+    return ((await response.json()) as unknown[]).length > count;
+  }, { base: apiBase, count: beforeSessions }, { timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
   await ensureSidebarSettingsVisible(page);
   await page.screenshot({ path: join(artifactDir, "transcript-fork-no-tree-ui.png"), fullPage: true });
