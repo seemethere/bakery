@@ -26,15 +26,15 @@ export function RunningQueueStrip({ queue, onCancel, onEdit }: Props) {
           <strong className="text-xs uppercase text-muted-foreground">Queued for this run</strong>
           <span className="text-xs text-muted-foreground">{items.length} pending</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid min-w-0 gap-2">
           {visibleItems.map(({ kind, queue: queueName, item, index }) => (
-            <span key={`${queueName}:${index}:${item.text}`} className={`queue-pill ${queueName === "followUp" ? "follow-up pending-transcript" : "steer"} inline-flex min-w-0 max-w-full items-center gap-1 rounded-lg border border-border/50 bg-background/70 px-2 py-1 text-xs`}>
+            <span key={`${queueName}:${index}:${item.text}`} className={`queue-pill ${queueName === "followUp" ? "follow-up pending-transcript" : "steer"} inline-flex w-full min-w-0 max-w-full items-center gap-1 overflow-hidden rounded-lg border border-border/50 bg-background/70 px-2 py-1 text-xs`}>
               <strong className="shrink-0">{kind}</strong>
-              <button type="button" className="queue-edit min-w-0 truncate text-left text-muted-foreground hover:text-foreground" title={item.text} onClick={() => { onCancel(queueName, index, item.text); onEdit(item.text); }}>
+              <button type="button" className="queue-edit min-w-0 flex-1 truncate text-left text-muted-foreground hover:text-foreground" title={item.text} onClick={() => { onCancel(queueName, index, item.text); onEdit(item.text); }}>
                 {item.text}
               </button>
               {item.imageCount ? <em className="shrink-0 not-italic text-muted-foreground">+{item.imageCount} img</em> : null}
-              <Button type="button" variant="ghost" size="icon-xs" className="queue-cancel" onClick={() => onCancel(queueName, index, item.text)} aria-label={`Cancel ${kind.toLowerCase()} ${index + 1}`} title="Cancel queued message">
+              <Button type="button" variant="ghost" size="icon-xs" className="queue-cancel shrink-0" onClick={() => onCancel(queueName, index, item.text)} aria-label={`Cancel ${kind.toLowerCase()} ${index + 1}`} title="Cancel queued message">
                 <XIcon />
               </Button>
             </span>
