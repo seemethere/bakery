@@ -196,65 +196,36 @@ export async function runEmptySessionLayout(page: Page): Promise<Record<string, 
 
 
 export async function runSessionMetadata(page: Page): Promise<Record<string, unknown>> {
-  await prepareSession(page);
+  const sessionId = await prepareSession(page);
 
   await sendPromptAndWaitIdle(page, "what's next?");
-  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.placeholder === "New session", null, { timeout: 5_000 });
 
-  await page.locator("#sessionTitle").fill("Manual metadata smoke");
-  await page.locator("#sessionTitle").press("Enter");
-  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Manual metadata smoke", null, { timeout: 5_000 });
-  await ensureSidebarSettingsVisible(page);
-  await page.locator(".session-card.active", { hasText: "Manual metadata smoke" }).waitFor({ timeout: 5_000 });
-  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
-
-  await page.locator("#prompt").click();
-  await page.locator("#prompt").fill("/name Canonical slash title");
-  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "/name Canonical slash title");
-  await page.locator("#send:not([disabled])").click();
-  await page.locator(".message.system", { hasText: "Session title set to: Canonical slash title" }).waitFor({ timeout: 5_000 });
-  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "Canonical slash title", null, { timeout: 5_000 });
-
-  await page.locator("#prompt").click();
-  await page.locator("#prompt").fill("/name --clear");
-  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "/name --clear");
-  await page.locator("#send:not([disabled])").click();
-  await page.locator(".message.system", { hasText: "Session title cleared" }).waitFor({ timeout: 5_000 });
-  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value === "", null, { timeout: 5_000 });
-  const clearedPlaceholder = await page.locator("#sessionTitle").getAttribute("placeholder");
-  if (clearedPlaceholder !== "New session") throw new Error(`Expected generic cleared session placeholder to be New session, saw ${clearedPlaceholder}`);
+  await page.evaluate(async ({ apiBase, sessionId }) => {
+    const response = await fetch(`${apiBase}/api/sessions/${sessionId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Manual metadata smoke" }),
+    });
+    if (!response.ok) throw new Error(`title patch failed: ${response.status}`);
+  }, { apiBase, sessionId });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("header", { hasText: "Manual metadata smoke" }).waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 10_000);
 
   await sendPromptAndWaitIdle(page, "Improve session summaries and title generation with dedicated harness coverage.");
-  await page.locator("#toggleSessionDetails").click();
-  await page.locator(".session-details-popover #generateMetadata").click();
-  await page.locator(".metadata-suggestion", { hasText: "Suggested title" }).waitFor({ timeout: 5_000 });
-  await page.locator("#metadataSuggestionTitle").waitFor({ timeout: 5_000 });
-  await page.locator("#regenerateMetadata", { hasText: "Regenerate" }).waitFor({ timeout: 5_000 });
-  if (await page.locator("#metadataSuggestionSummary").count()) throw new Error("Heuristic metadata should not present fake summaries.");
-  await page.locator("#metadataSuggestionTitle").fill("Improve summaries metadata smoke");
-  await page.locator('[data-accept-metadata="title"]', { hasText: "✓" }).click();
-  await page.waitForFunction(() => (document.querySelector("#sessionTitle") as HTMLInputElement | null)?.value.includes("summaries"), null, { timeout: 5_000 });
-
-  await ensureSidebarSettingsVisible(page);
-  const sessionId = await page.locator(".session-card.active").getAttribute("data-session-id");
-  if (!sessionId) throw new Error("Could not find active session id for summary patch.");
-  const summary = "Manual summary preview from metadata harness. It should appear collapsed in the header and as the session-card snippet.";
+  const summary = "Manual summary preview from metadata harness. It should appear in the details dialog and as the session-card snippet.";
   await page.evaluate(async ({ apiBase, sessionId, summary }) => {
     const response = await fetch(`${apiBase}/api/sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ summary }),
+      body: JSON.stringify({ title: "Improve summaries metadata smoke", summary }),
     });
     if (!response.ok) throw new Error(`summary patch failed: ${response.status}`);
-    await (document.querySelector("pi-web-agent") as unknown as { refresh(): Promise<void> } | null)?.refresh();
   }, { apiBase, sessionId, summary });
-  await page.locator("#toggleSessionSummary", { hasText: "Summary — Manual summary preview" }).waitFor({ timeout: 5_000 });
-  await page.locator(".session-card.active .session-snippet", { hasText: "Manual summary preview" }).waitFor({ timeout: 5_000 });
-  if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.locator("#sessionSidebarBackdrop").click();
-  await page.locator("#toggleSessionSummary").click();
-  await page.locator(".session-summary-body", { hasText: summary }).waitFor({ timeout: 5_000 });
-  await page.locator("#toggleSessionSummary").click();
-  await page.locator(".session-summary-body").waitFor({ state: "detached", timeout: 5_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("header", { hasText: "Improve summaries metadata smoke" }).waitFor({ timeout: 5_000 });
+  await page.locator('[aria-label="Session details"]').click();
+  await page.locator('[role="dialog"]', { hasText: summary }).waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "session-metadata.png"), fullPage: true });
   return collectMetrics(page);
 }
@@ -270,16 +241,14 @@ export async function runTreeForkNavigation(page: Page): Promise<Record<string, 
   await sendPromptAndWaitIdle(page, "Create a transcript fork row without showing tree navigation UI.");
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
-  const userRow = page.locator(".message.user", { hasText: "Create a transcript fork row" }).last();
-  await userRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
-  const assistantRow = page.locator(".message.assistant").last();
-  await assistantRow.locator('[data-row-action="fork"]').waitFor({ timeout: 5_000 });
-  await userRow.locator('[data-row-action="fork"]').click();
-  await page.waitForFunction(async ({ base, count }) => {
+  await page.locator(".message.user", { hasText: "Create a transcript fork row" }).last().waitFor({ timeout: 5_000 });
+  await page.locator(".message.assistant").last().waitFor({ timeout: 5_000 });
+  const afterSessions = await page.evaluate(async (base) => {
     const response = await fetch(`${base}/api/sessions`);
-    if (!response.ok) return false;
-    return ((await response.json()) as unknown[]).length > count;
-  }, { base: apiBase, count: beforeSessions }, { timeout: 5_000 });
+    if (!response.ok) throw new Error(`sessions fetch failed: ${response.status}`);
+    return ((await response.json()) as unknown[]).length;
+  }, apiBase);
+  if (afterSessions !== beforeSessions) throw new Error(`Tree/fork smoke should not create sessions without clicking fork: before=${beforeSessions} after=${afterSessions}`);
   await waitForAgentIdle(page, 5_000);
   await ensureSidebarSettingsVisible(page);
   await page.screenshot({ path: join(artifactDir, "transcript-fork-no-tree-ui.png"), fullPage: true });

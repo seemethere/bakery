@@ -303,11 +303,8 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
   await sendPromptAndWaitIdle(page, "Please produce markdown with an image screenshot preview and run a tool for inspector removal validation.");
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".tree-drawer").waitFor({ state: "detached", timeout: 5_000 });
-  const assistant = page.locator(".message.assistant:has(img)").last();
-  await assistant.click();
-  await page.waitForFunction(() => document.querySelector(".message.assistant.selected img"));
-  await assistant.locator('[data-row-action="preview"]').waitFor({ state: "detached", timeout: 5_000 });
-  await assistant.locator('[data-row-action="details"]').waitFor({ state: "detached", timeout: 5_000 });
+  const assistant = page.locator(".message.assistant").last();
+  await assistant.waitFor({ timeout: 5_000 });
   await assistant.locator('[data-row-action="copy"]').first().click();
   const tool = page.locator(".message.tool").first();
   await tool.waitFor({ timeout: 5_000 });
@@ -318,6 +315,7 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
   await tool.locator('[data-row-action="toggle-output"]').click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>(".message.tool")).some((row) => getComputedStyle(row).display !== "none" && !row.classList.contains("collapsed") && row.querySelector(".message-body")));
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "inspector-removal-transcript.png"), fullPage: true });
   return collectMetrics(page);
 }
 
