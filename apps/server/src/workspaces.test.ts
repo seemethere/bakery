@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { addExistingWorkspace, assertAllowedCwd, assertAllowedSessionWorkspace, assertAllowedWorkspacePath, browseWorkspaceDirectory, mergeWorkspaces } from "./workspaces.js";
@@ -84,6 +84,14 @@ describe("workspace helpers", () => {
       await rm(root, { recursive: true, force: true });
       await rm(approved, { recursive: true, force: true });
     }
+  });
+
+  test("labels the home browse root as tilde", async () => {
+    const home = await realpath(homedir());
+    const result = await browseWorkspaceDirectory(undefined, { browseRoots: [home], approvedWorkspaces: [] });
+    expect(result.entries).toEqual([
+      { path: home, name: "~", kind: "directory", source: "browse_root" },
+    ]);
   });
 
   test("browses allowed directory children without following symlinks", async () => {

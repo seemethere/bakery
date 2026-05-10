@@ -253,19 +253,11 @@ export function Sidebar({
         )}
 
         <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
-          <div className="group/workspaceshead flex h-7 items-center px-2">
+          <div className="group/workspaceshead flex h-7 items-center pl-2 pr-0">
             <span className="flex-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
               Workspaces
             </span>
-            <button
-              type="button"
-              aria-label="Add workspace"
-              title="Add workspace"
-              onClick={() => setWorkspaceBrowserOpen(true)}
-              className="flex size-4 items-center justify-center rounded text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground focus:text-sidebar-foreground"
-            >
-              <PlusIcon className="size-3" />
-            </button>
+            <SidebarSectionAction label="Add workspace" onClick={() => setWorkspaceBrowserOpen(true)} />
           </div>
 
           {isBootstrapping ? (
@@ -296,19 +288,11 @@ export function Sidebar({
 
         {!isBootstrapping && chatSessions.length > 0 && (
           <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
-            <div className="group/chatshead flex h-7 items-center px-2">
+            <div className="group/chatshead flex h-7 items-center pl-2 pr-0">
               <span className="flex-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
                 Chats
               </span>
-              <button
-                type="button"
-                aria-label="New chat"
-                title="New chat (no workspace)"
-                onClick={() => onNewSession()}
-                className="flex size-4 items-center justify-center rounded text-sidebar-foreground/40 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/chatshead:opacity-100 focus:opacity-100"
-              >
-                <PlusIcon className="size-3" />
-              </button>
+              <SidebarSectionAction label="New chat" tooltip="New chat (no workspace)" onClick={() => onNewSession()} />
             </div>
             <SidebarGroupContent>
               <div className="grid gap-1">
@@ -539,6 +523,28 @@ function WorkspaceGroup({
         )}
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+function SidebarSectionAction({ label, tooltip = label, onClick }: { label: string; tooltip?: string; onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={label}
+            onClick={onClick}
+            className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-sidebar-ring/50"
+          />
+        }
+      >
+        <PlusIcon className="size-3" aria-hidden="true" />
+      </TooltipTrigger>
+      <TooltipContent side="right">{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 

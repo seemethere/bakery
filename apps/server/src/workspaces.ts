@@ -1,4 +1,5 @@
 import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
@@ -32,7 +33,7 @@ export async function resolveWorkspaceRoots(roots: string[]): Promise<string[]> 
 }
 
 export function toWorkspaces(roots: string[]): Workspace[] {
-  return roots.map((path) => ({ path, label: basename(path) || path }));
+  return roots.map((path) => ({ path, label: workspaceDisplayName(path) }));
 }
 
 export function mergeWorkspaces(configRoots: string[], stored: Workspace[]): Workspace[] {
@@ -97,7 +98,7 @@ export async function assertAllowedSessionWorkspace(session: WebSession, scope: 
 export async function browseWorkspaceDirectory(path: string | undefined, scope: WorkspacePermissionScope): Promise<WorkspaceBrowseResponse> {
   if (!path) {
     const byPath = new Map<string, WorkspaceBrowseEntry>();
-    for (const root of scope.browseRoots) byPath.set(root, { path: root, name: basename(root) || root, kind: "directory", source: "browse_root" });
+    for (const root of scope.browseRoots) byPath.set(root, { path: root, name: workspaceDisplayName(root), kind: "directory", source: "browse_root" });
     for (const workspace of scope.approvedWorkspaces) byPath.set(workspace.path, { path: workspace.path, name: workspace.label, kind: "directory", source: "approved_workspace" });
     return {
       path: null,
@@ -130,6 +131,10 @@ export async function addExistingWorkspace(path: string): Promise<Workspace> {
   const stats = await lstat(resolved);
   if (!stats.isDirectory()) throw new Error("Workspace must be an existing directory");
   return { path: resolved, label: basename(resolved) || resolved };
+}
+
+function workspaceDisplayName(path: string): string {
+  return path === homedir() ? "~" : basename(path) || path;
 }
 
 function safeDirectoryName(value: string): string {
