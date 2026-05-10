@@ -282,6 +282,11 @@ export class MetadataStore {
     return workspace;
   }
 
+  deleteWorkspace(path: string): boolean {
+    const result = this.db.query("DELETE FROM workspaces WHERE path = ?").run(path);
+    return result.changes > 0;
+  }
+
   listSessions(): WebSession[] {
     const rows = this.db
       .query<SessionRow, []>("SELECT * FROM web_sessions ORDER BY last_opened_at DESC")

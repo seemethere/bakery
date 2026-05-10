@@ -32,8 +32,24 @@ A server-backed pi coding-agent conversation bound to a workspace directory and 
 
 The filesystem directory that bounds an agent session's code access and project context.
 
-- Not: the entire machine unless the configured allowed root intentionally permits it.
+- Not: the entire machine unless the operator explicitly approves a broad directory as a workspace boundary.
 - Example: `/Users/example/projects/bakery` is the workspace for a Bakery development session.
+
+### Browse Root
+
+A configured filesystem directory that Bakery may expose for workspace discovery in the browser UI.
+
+- Also known as: workspace root when referring to the current `PI_WEB_WORKSPACE_ROOT` configuration.
+- Not: the only possible runtime permission boundary forever; an operator-approved workspace also grants runtime permission for that workspace.
+- Example: `/Users/example/projects` is a Browse Root, so the Add Workspace file tree can show project directories beneath it.
+
+### Approved Workspace
+
+A workspace directory the operator has explicitly added to Bakery and trusted for agent sessions.
+
+- Also known as: user-added workspace, persisted workspace.
+- Not: merely a folder visible in the browser file tree; approval happens when the operator adds the workspace.
+- Example: an operator manually adds `/Users/example/Desktop/spike`; Bakery stores it as an Approved Workspace and can start future sessions there even if it is outside the configured Browse Roots.
 
 ### Bakery Launcher
 

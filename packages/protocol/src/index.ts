@@ -127,6 +127,25 @@ export const workspaceSchema = z.object({
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
+export const workspaceBrowseEntrySchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  kind: z.enum(["directory", "file"]),
+  source: z.enum(["browse_root", "approved_workspace", "child"]),
+});
+export type WorkspaceBrowseEntry = z.infer<typeof workspaceBrowseEntrySchema>;
+
+export const workspaceBrowseQuerySchema = z.object({
+  path: z.string().min(1).optional(),
+});
+export type WorkspaceBrowseQuery = z.infer<typeof workspaceBrowseQuerySchema>;
+
+export const workspaceBrowseResponseSchema = z.object({
+  path: z.string().nullable(),
+  entries: z.array(workspaceBrowseEntrySchema),
+});
+export type WorkspaceBrowseResponse = z.infer<typeof workspaceBrowseResponseSchema>;
+
 export const addWorkspaceRequestSchema = z.object({
   path: z.string().min(1),
 });

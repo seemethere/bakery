@@ -16,11 +16,11 @@ import type { MetadataStore } from "./metadata-store.js";
 import { messageText } from "./metadata-routes.js";
 import type { PiSessionRunner } from "./pi-runner.js";
 import { compactWorkflowLaunchText } from "./workflow-skills.js";
-import { assertAllowedCwd } from "./workspaces.js";
+import { assertAllowedSessionWorkspace, assertAllowedWorkspacePath, type WorkspacePermissionScope } from "./workspaces.js";
 
 type SessionRouteDeps = {
   config: ServerConfig;
-  workspaceRoots: string[];
+  getWorkspacePermissionScope(): WorkspacePermissionScope;
   store: MetadataStore;
   runner: PiSessionRunner;
   disposeHub(sessionId: string): Promise<boolean>;
@@ -127,7 +127,7 @@ export async function createForkFile(sourceFile: string, cwd: string, entryId: s
 }
 
 export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDeps): void {
-  const { config, workspaceRoots, store, runner } = deps;
+  const { config, store, runner } = deps;
 
   app.get("/api/sessions", async () => Promise.all(store.listSessions().map((session) => enrichSession(session, deps))));
 
@@ -154,7 +154,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
         return reply.code(201).send(session);
       }
 
-      const sourceCwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
+      const sourceCwd = await assertAllowedWorkspacePath(parsed.data.cwd, deps.getWorkspacePermissionScope());
       if (parsed.data.isolation === "git_worktree") {
         const worktree = await createGitWorktreeSession({ sourceCwd, sessionId: id, worktreeDir: config.worktreeDir });
         const session = store.createSession({
@@ -188,7 +188,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (existing.kind !== "draft") return reply.code(409).send({ error: "workspace can only be attached to draft sessions" });
     if (runner.getSession(existing.id)) return reply.code(409).send({ error: "session already started" });
     try {
-      const cwd = await assertAllowedCwd(parsed.data.cwd, workspaceRoots);
+      const cwd = await assertAllowedWorkspacePath(parsed.data.cwd, deps.getWorkspacePermissionScope());
       const updated = store.attachWorkspace(existing.id, cwd);
       if (!updated) return reply.code(404).send({ error: "session not found" });
       return reply.code(200).send(updated);
@@ -232,6 +232,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!webSession) return reply.code(404).send({ error: "session not found" });
     if (webSession.cwd === null) return reply.code(409).send({ error: "session has no workspace" });
     try {
+      await assertAllowedSessionWorkspace(webSession, deps.getWorkspacePermissionScope());
       const handle = await runner.createSession({
         id: webSession.id,
         cwd: webSession.cwd,
@@ -254,6 +255,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!source) return reply.code(404).send({ error: "session not found" });
     if (source.cwd === null) return reply.code(409).send({ error: "cannot fork a session without a workspace" });
     try {
+      await assertAllowedSessionWorkspace(source, deps.getWorkspacePermissionScope());
       const id = crypto.randomUUID();
       const fork = await createForkFile(source.piSessionFile, source.cwd, parsed.data.entryId, config.sessionDir, parsed.data.position);
       const title = parsed.data.title ?? `Fork of ${source.title ?? source.cwd}`;
