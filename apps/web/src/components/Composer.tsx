@@ -202,17 +202,21 @@ export function Composer({
 
   useEffect(() => {
     function handleWindowFocus() {
-      if (!imagePickerPendingRef.current) return;
-      clearTimeout(imagePickerReturnTimerRef.current);
-      imagePickerReturnTimerRef.current = setTimeout(() => {
-        if (!imagePickerPendingRef.current) return;
-        imagePickerPendingRef.current = false;
-        setNotice("No image was attached. If you selected an image from a remote or mobile picker, try a PNG, JPEG, GIF, or WebP file.");
-      }, 800);
+      schedulePickerNoChangeNotice(800);
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") schedulePickerNoChangeNotice(800);
     }
 
     window.addEventListener("focus", handleWindowFocus);
-    return () => window.removeEventListener("focus", handleWindowFocus);
+    window.addEventListener("pageshow", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("pageshow", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -408,9 +412,20 @@ export function Composer({
     });
   }
 
+  function schedulePickerNoChangeNotice(delayMs: number) {
+    if (!imagePickerPendingRef.current) return;
+    clearTimeout(imagePickerReturnTimerRef.current);
+    imagePickerReturnTimerRef.current = setTimeout(() => {
+      if (!imagePickerPendingRef.current) return;
+      imagePickerPendingRef.current = false;
+      setNotice("Image picker opened, but Bakery did not receive any files. Try a PNG/JPEG file, or drag and drop the image into the composer.");
+    }, delayMs);
+  }
+
   function markImagePickerOpening() {
     imagePickerPendingRef.current = true;
     clearTimeout(imagePickerReturnTimerRef.current);
+    schedulePickerNoChangeNotice(2500);
   }
 
   function handleImageInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -814,6 +829,9 @@ function ComposerToolbar({
         title="Attach images"
         aria-label="Attach images"
         aria-disabled={!isController}
+        onPointerDown={() => {
+          if (isController) onAttachActivate();
+        }}
         onKeyDown={(event) => {
           if (!isController) return;
           if (event.key !== "Enter" && event.key !== " ") return;

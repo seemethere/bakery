@@ -38,7 +38,8 @@ export function imageDataTransferResult(dataTransfer: DataTransfer | null | unde
   if (supportedFiles.length > 0) return { files: supportedFiles, imageLike: true };
 
   const types = Array.from(dataTransfer?.types ?? []).map((type) => type.toLowerCase());
-  const imageLikeFromTypes = types.some((type) => type === "files" || type.includes("image"));
+  const html = types.includes("text/html") ? (dataTransfer?.getData("text/html") ?? "") : "";
+  const imageLikeFromTypes = types.some((type) => type === "files" || type.includes("image")) || /<img\b|data:image\//i.test(html);
   const imageLikeFromFiles = transferFiles.some(isImageLikeFile);
   const itemFiles: File[] = [];
   let imageLikeFromItems = false;
