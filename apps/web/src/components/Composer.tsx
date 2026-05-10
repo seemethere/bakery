@@ -265,7 +265,6 @@ export function Composer({
     setNotice("");
     setDraft("");
     setUploadedAttachments([]);
-    setUploadedAttachments([]);
     if (draftKey) localStorage.removeItem(draftKey);
   }
 
@@ -753,8 +752,8 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <div className={cn("flex min-w-0 items-center gap-1 rounded-lg border border-border bg-background px-1.5 py-0.5 text-xs", !isController && "opacity-50")}>
-        <Paperclip aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+      <div className={cn("relative grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50", !isController && "opacity-50")} title="Attach files">
+        <Paperclip aria-hidden="true" className="pointer-events-none size-4 text-muted-foreground" />
         <input
           ref={nativeFileInputRef}
           id="attachImages"
@@ -762,9 +761,9 @@ function ComposerToolbar({
           accept="image/*"
           multiple
           disabled={!isController}
-          aria-label="Choose attachment files"
-          title="Choose attachment files"
-          className="w-[96px] cursor-pointer text-xs text-transparent file:mr-0 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-medium file:text-foreground disabled:cursor-not-allowed"
+          aria-label="Attach files"
+          title="Attach files"
+          className="absolute inset-0 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
           onPointerDown={() => {
             if (isController) onAttachActivate();
           }}
@@ -774,9 +773,6 @@ function ComposerToolbar({
           onInput={handleNativeFileInput}
           onChange={handleNativeFileInput}
         />
-        <Button type="button" variant="outline" size="xs" disabled={!isController} title="Upload selected files" onClick={() => submitNativeFileInput()} className="h-6 px-1.5">
-          Upload
-        </Button>
       </div>
 
       {isRunning && (
