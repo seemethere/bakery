@@ -1,9 +1,9 @@
-import { forwardRef, useCallback, useEffect, useId, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from "react";
 import type { ArtifactUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import { ChevronDown, CircleHelp, ClipboardList, Command, MessageSquareText, Paperclip, Plus, SendHorizontal, Settings2, ShieldOff, Square, Terminal, X } from "lucide-react";
 import { AutocompletePopup } from "@/components/AutocompletePopup";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StepSlider } from "@/components/ui/step-slider";
 import { Switch } from "@/components/ui/switch";
@@ -137,8 +137,6 @@ export function Composer({
   fetchJson,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const imageInputId = useId();
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<PromptImage[]>([]);
   const imagePickerPendingRef = useRef(false);
   const imagePickerReturnTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -422,25 +420,6 @@ export function Composer({
     }, delayMs);
   }
 
-  function markImagePickerOpening() {
-    imagePickerPendingRef.current = true;
-    clearTimeout(imagePickerReturnTimerRef.current);
-    schedulePickerNoChangeNotice(2500);
-  }
-
-  function handleImageInputChange(event: ChangeEvent<HTMLInputElement>) {
-    imagePickerPendingRef.current = false;
-    clearTimeout(imagePickerReturnTimerRef.current);
-    const input = event.currentTarget;
-    const files = Array.from(input.files ?? []);
-    input.value = "";
-    if (files.length === 0) {
-      setNotice("No image was selected.");
-      return;
-    }
-    void handleImageFiles(files);
-  }
-
   function removePromptImage(id: string) {
     setImages((prev) => {
       const next = prev.filter((image) => image.id !== id);
@@ -561,20 +540,6 @@ export function Composer({
       >
         <AttachmentTray images={images} onRemove={removePromptImage} />
 
-        <input
-          ref={imageInputRef}
-          id={imageInputId}
-          data-testid="image-file-input"
-          type="file"
-          accept="image/*"
-          multiple
-          disabled={!isController}
-          tabIndex={-1}
-          aria-hidden="true"
-          onChange={handleImageInputChange}
-          className="sr-only"
-        />
-
         <ComposerTextarea
           ref={textareaRef}
           value={draft}
@@ -613,8 +578,12 @@ export function Composer({
           onSetModel={onSetModel}
           onSetThinking={onSetThinking}
           onShowThinkingChange={onShowThinkingChange}
-          attachInputId={imageInputId}
-          onAttachActivate={markImagePickerOpening}
+          onAttachActivate={() => schedulePickerNoChangeNotice(2500)}
+          onAttachResolved={() => {
+            imagePickerPendingRef.current = false;
+            clearTimeout(imagePickerReturnTimerRef.current);
+          }}
+          onImageFilesSelected={(files) => void handleImageFiles(files)}
           onAbort={onAbort}
           onFollowUp={() => void handleSend(true)}
           onSend={() => void handleSend(false)}
@@ -749,8 +718,9 @@ function ComposerToolbar({
   onSetModel,
   onSetThinking,
   onShowThinkingChange,
-  attachInputId,
   onAttachActivate,
+  onAttachResolved,
+  onImageFilesSelected,
   onAbort,
   onFollowUp,
   onSend,
@@ -775,8 +745,9 @@ function ComposerToolbar({
   onSetModel: (model: string) => void;
   onSetThinking: (level: string) => void;
   onShowThinkingChange: (show: boolean) => void;
-  attachInputId: string;
   onAttachActivate: () => void;
+  onAttachResolved: () => void;
+  onImageFilesSelected: (files: File[]) => void;
   onAbort: () => void;
   onFollowUp: () => void;
   onSend: () => void;
@@ -821,34 +792,41 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <label
-        id="attachImages"
-        htmlFor={isController ? attachInputId : undefined}
-        role="button"
-        tabIndex={isController ? 0 : -1}
-        title="Attach images"
-        aria-label="Attach images"
-        aria-disabled={!isController}
-        onPointerDown={() => {
-          if (isController) onAttachActivate();
-        }}
-        onKeyDown={(event) => {
-          if (!isController) return;
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          onAttachActivate();
-          document.getElementById(attachInputId)?.click();
-        }}
-        onClick={(event) => {
-          if (!isController) {
-            event.preventDefault();
-            return;
-          }
-          onAttachActivate();
-        }}
-        className={cn(buttonVariants({ variant: "outline", size: "icon" }), !isController && "pointer-events-none cursor-not-allowed opacity-50")}
-      >
-        <Paperclip />
+      <label className="relative inline-flex" title="Attach images">
+        <input
+          id="attachImages"
+          type="file"
+          accept="image/*"
+          multiple
+          disabled={!isController}
+          aria-label="Attach images"
+          className="absolute inset-0 z-10 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+          onClick={() => {
+            if (isController) onAttachActivate();
+          }}
+          onChange={(event) => {
+            onAttachResolved();
+            const input = event.currentTarget;
+            const files = Array.from(input.files ?? []);
+            input.value = "";
+            if (files.length === 0) {
+              // Some browsers do not fire change when the picker is cancelled; keep
+              // this for browsers that do fire an empty change event.
+              return;
+            }
+            onImageFilesSelected(files);
+          }}
+        />
+        <span
+          aria-hidden="true"
+          className={cn(
+            "inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-sm font-medium transition-all",
+            "hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+            !isController && "cursor-not-allowed opacity-50",
+          )}
+        >
+          <Paperclip />
+        </span>
       </label>
 
       {isRunning && (

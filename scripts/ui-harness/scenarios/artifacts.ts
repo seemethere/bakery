@@ -32,7 +32,7 @@ export const artifactScenarios = [
 export async function chooseImageWithPaperclip(page: Page, imagePath: string, options: { forceRenderWhileOpen?: boolean } = {}): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
   await page.locator("#prompt").focus();
-  await page.locator("#attachImages").click();
+  await page.locator('#attachImages[type="file"]').click();
   const fileChooser = await chooser;
   // Real native file pickers often stay open long enough for unrelated app renders
   // to happen. Force one here so the harness catches input replacement races.
@@ -68,7 +68,7 @@ async function pasteUnsupportedImage(page: Page): Promise<void> {
 export async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
-  await page.locator('[data-testid="image-file-input"]').waitFor({ timeout: 5_000 });
+  await page.locator('#attachImages[type="file"]').waitFor({ timeout: 5_000 });
   await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "image-attachments-thumbnail.png"), fullPage: true });
