@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { Browser, Page } from "playwright";
 import { apiBase, artifactDir, root, webBase } from "../config";
+import { chooseImageWithPaperclip } from "./artifacts";
 import {
   assertComposerMode,
   collectMetrics,

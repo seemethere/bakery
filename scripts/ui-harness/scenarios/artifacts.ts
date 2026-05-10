@@ -29,7 +29,7 @@ export const artifactScenarios = [
   "missing-remote-image-artifact",
 ] as const;
 
-async function chooseImageWithPaperclip(page: Page, imagePath: string, options: { forceRenderWhileOpen?: boolean } = {}): Promise<void> {
+export async function chooseImageWithPaperclip(page: Page, imagePath: string, options: { forceRenderWhileOpen?: boolean } = {}): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
   await page.locator("#prompt").focus();
   await page.locator("#attachImages").click();

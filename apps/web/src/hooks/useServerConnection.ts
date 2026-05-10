@@ -254,6 +254,9 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
               Array.isArray(eventData.followUp) ? eventData.followUp : [],
             );
           }
+          if (eventType === "message_end" && isRecord(eventData) && isRecord(eventData.message) && eventData.message.role === "user") {
+            removePendingTranscriptQueueItem(String(eventData.message.content ?? ""));
+          }
           if (eventType === "agent_start" || eventType === "turn_start") {
             setConnectionStatus("running");
           } else if (eventType === "agent_end" || eventType === "turn_end") {
@@ -624,6 +627,14 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
       return [...queued, ...pendingTranscript];
     };
     const next = { steering: reconcile("steering", steering), followUp: reconcile("followUp", followUp) };
+    runningQueueRef.current = next;
+    setRunningQueue(next);
+  }
+
+  function removePendingTranscriptQueueItem(text: string) {
+    const nextFollowUp = runningQueueRef.current.followUp.filter((item) => item.status !== "pendingTranscript" || item.text !== text);
+    if (nextFollowUp.length === runningQueueRef.current.followUp.length) return;
+    const next = { ...runningQueueRef.current, followUp: nextFollowUp };
     runningQueueRef.current = next;
     setRunningQueue(next);
   }
