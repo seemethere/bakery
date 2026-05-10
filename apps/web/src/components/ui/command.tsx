@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
-import { SearchIcon } from "lucide-react";
+import { SearchIcon, XIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -11,7 +11,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogClose,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 function Command({
   className,
@@ -40,14 +42,26 @@ function CommandDialog({
 }) {
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
+      <DialogContent className="w-[calc(100vw-4rem)] max-w-[900px] overflow-hidden p-0 sm:max-w-[900px]" showCloseButton={false}>
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-14 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-14 [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children as React.ReactNode}
         </Command>
+        <DialogClose
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+            />
+          }
+        >
+          <XIcon />
+          <span className="sr-only">Close</span>
+        </DialogClose>
       </DialogContent>
     </Dialog>
   );
@@ -83,7 +97,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
+        "max-h-[70vh] scroll-py-1 overflow-x-hidden overflow-y-auto",
         className,
       )}
       {...props}
