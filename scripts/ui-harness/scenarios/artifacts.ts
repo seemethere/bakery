@@ -56,9 +56,19 @@ async function pasteImage(page: Page, imageName = "pasted.png", target: "prompt"
   }, imageName);
 }
 
+async function pasteUnsupportedImage(page: Page): Promise<void> {
+  await page.locator("#prompt").evaluate((element) => {
+    const file = new File(["<svg xmlns='http://www.w3.org/2000/svg' />"], "vector.svg", { type: "image/svg+xml" });
+    const data = new DataTransfer();
+    data.items.add(file);
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+  });
+}
+
 export async function runImageAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
+  await page.locator('[data-testid="image-file-input"]').waitFor({ timeout: 5_000 });
   await chooseImageWithPaperclip(page, imagePath, { forceRenderWhileOpen: true });
   await page.locator(".prompt-image img").waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image button").click();
@@ -75,6 +85,11 @@ export async function runImageAttachments(page: Page): Promise<Record<string, un
 
 export async function runImagePasteAttachments(page: Page): Promise<Record<string, unknown>> {
   await prepareSession(page);
+  await page.locator("#prompt").focus();
+  await pasteUnsupportedImage(page);
+  await page.locator(".notice", { hasText: "Clipboard image type is not supported" }).waitFor({ timeout: 5_000 });
+  await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
+
   await pasteImage(page, "body-pasted.png", "body");
   await page.locator(".prompt-image", { hasText: "body-pasted.png" }).waitFor({ timeout: 5_000 });
   await page.locator(".prompt-image button").click();

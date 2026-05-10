@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
 import { contextUsageLabel, modelOptionLabel, modelThinkingLabel } from "@/lib/model-settings";
-import { artifactPathForFile, imageFilesFromDataTransfer, imageMimeType, isSupportedImageFile, loadImageFile, maxArtifactImageBytes, maxPromptImages, readFileAsBase64, supportedPromptImageTypes, type PromptImage } from "@/lib/prompt-images";
+import { artifactPathForFile, imageDataTransferResult, imageMimeType, isSupportedImageFile, loadImageFile, maxArtifactImageBytes, maxPromptImages, readFileAsBase64, supportedPromptImageTypes, type PromptImage } from "@/lib/prompt-images";
 import { cn } from "@/lib/utils";
 
 export type ComposerStatus = "idle" | "running" | "aborting" | "connecting" | "disconnected" | "error";
@@ -137,6 +137,7 @@ export function Composer({
   fetchJson,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(() => (draftKey ? (localStorage.getItem(draftKey) ?? "") : ""));
   const [images, setImages] = useState<PromptImage[]>([]);
   const [notice, setNotice] = useState("");
@@ -371,25 +372,31 @@ export function Composer({
   }
 
   function openImagePicker() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/png,image/jpeg,image/gif,image/webp";
-    input.multiple = true;
-    input.style.cssText = "position:fixed;left:-10000px;top:0";
-    input.addEventListener("change", () => {
-      void handleImageFiles(input.files ?? []);
-      input.remove();
-    }, { once: true });
-    document.body.append(input);
-    input.click();
+    imageInputRef.current?.click();
+  }
+
+  function handleImageInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (files.length > 0) void handleImageFiles(files);
+  }
+
+  function handleImagePaste(dataTransfer: DataTransfer | null | undefined): boolean {
+    const result = imageDataTransferResult(dataTransfer);
+    if (result.files.length > 0) {
+      void handleImageFiles(result.files);
+      return true;
+    }
+    if (result.imageLike) {
+      setNotice("Clipboard image type is not supported. Use PNG, JPEG, GIF, or WebP.");
+      return true;
+    }
+    return false;
   }
 
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = imageFilesFromDataTransfer(event.clipboardData);
-    if (files.length > 0) {
-      event.preventDefault();
-      void handleImageFiles(files);
-    }
+    if (handleImagePaste(event.clipboardData)) event.preventDefault();
   }, [draftKey, fetchJson, images, sessionId]);
 
   useEffect(() => {
@@ -403,10 +410,8 @@ export function Composer({
       const isOtherEditable = Boolean(element?.closest('textarea,input,[contenteditable="true"]')) && !isPrompt;
       if (isOtherEditable) return;
 
-      const files = imageFilesFromDataTransfer(event.clipboardData);
-      if (files.length === 0) return;
+      if (!handleImagePaste(event.clipboardData)) return;
       event.preventDefault();
-      void handleImageFiles(files);
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
 
@@ -488,6 +493,18 @@ export function Composer({
         )}
       >
         <AttachmentTray images={images} onRemove={(id) => setImages((prev) => prev.filter((image) => image.id !== id))} />
+
+        <input
+          ref={imageInputRef}
+          data-testid="image-file-input"
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={handleImageInputChange}
+          className="pointer-events-none absolute size-px opacity-0"
+        />
 
         <ComposerTextarea
           ref={textareaRef}

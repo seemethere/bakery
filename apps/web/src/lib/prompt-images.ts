@@ -23,14 +23,37 @@ export function isSupportedImageFile(file: Pick<File, "type" | "name">): boolean
   return supportedPromptImageTypes.has(mimeType) || /\.(?:png|jpe?g|gif|webp)$/i.test(file.name);
 }
 
-export function imageFilesFromDataTransfer(dataTransfer: DataTransfer | null | undefined): File[] {
-  const files = Array.from(dataTransfer?.files ?? []).filter(isSupportedImageFile);
-  if (files.length > 0) return files;
+export type ImageDataTransferResult = {
+  files: File[];
+  imageLike: boolean;
+};
 
-  return Array.from(dataTransfer?.items ?? [])
-    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => Boolean(file && isSupportedImageFile(file)));
+function isImageLikeFile(file: Pick<File, "type" | "name">): boolean {
+  return file.type.startsWith("image/") || /\.(?:png|jpe?g|gif|webp|heic|heif|tiff?|svg)$/i.test(file.name);
+}
+
+export function imageDataTransferResult(dataTransfer: DataTransfer | null | undefined): ImageDataTransferResult {
+  const transferFiles = Array.from(dataTransfer?.files ?? []);
+  const supportedFiles = transferFiles.filter(isSupportedImageFile);
+  if (supportedFiles.length > 0) return { files: supportedFiles, imageLike: true };
+
+  const imageLikeFromFiles = transferFiles.some(isImageLikeFile);
+  const itemFiles: File[] = [];
+  let imageLikeFromItems = false;
+  for (const item of Array.from(dataTransfer?.items ?? [])) {
+    if (item.kind !== "file") continue;
+    if (item.type.startsWith("image/")) imageLikeFromItems = true;
+    const file = item.getAsFile();
+    if (!file) continue;
+    if (isImageLikeFile(file)) imageLikeFromItems = true;
+    if (isSupportedImageFile(file)) itemFiles.push(file);
+  }
+
+  return { files: itemFiles, imageLike: imageLikeFromFiles || imageLikeFromItems || itemFiles.length > 0 };
+}
+
+export function imageFilesFromDataTransfer(dataTransfer: DataTransfer | null | undefined): File[] {
+  return imageDataTransferResult(dataTransfer).files;
 }
 
 export function imageMimeType(file: Pick<File, "type" | "name">): string {

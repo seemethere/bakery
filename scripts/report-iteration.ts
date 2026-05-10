@@ -1769,6 +1769,12 @@ const validationRules: ValidationRule[] = [
     reason: "Composer changes should validate prompt send and slash entry behavior through focused UI scenarios.",
   },
   {
+    name: "web-react-image-intake",
+    matches: ["apps/web/src/components/Composer.tsx", "apps/web/src/lib/prompt-images.ts", "scripts/ui-harness/scenarios/artifacts.ts"],
+    scenarios: ["image-attachments", "image-paste-attachments", "image-artifact-drop-upload"],
+    reason: "Image intake and artifact scenario changes should validate paperclip selection, paste attachments, and artifact upload rendering.",
+  },
+  {
     name: "web-react-autocomplete",
     matches: ["apps/web/src/components/AutocompletePopup.tsx"],
     scenarios: ["slash-commands", "file-autocomplete"],
