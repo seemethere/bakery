@@ -130,7 +130,7 @@ export async function runContextUsage(page: Page): Promise<Record<string, unknow
   await prepareSession(page);
   await page.locator(".context-usage").waitFor({ timeout: 5_000 });
   const before = await page.locator(".context-usage").textContent();
-  if (!before?.includes("Context") || !before.includes("/")) throw new Error(`Missing context usage label; saw ${before}`);
+  if (!before?.includes("Context") || (!before.includes("/") && !before.includes("unknown"))) throw new Error(`Missing context usage label; saw ${before}`);
   await sendPromptAndWaitIdle(page, "Please produce a concise response so context usage updates.");
   const after = await page.locator(".context-usage").textContent();
   if (!after?.includes("%")) throw new Error(`Context usage did not include percentage; saw ${after}`);

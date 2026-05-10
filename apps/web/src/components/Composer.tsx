@@ -909,7 +909,14 @@ function ModelThinkingControl({
 
   return (
     <div ref={popoverRef} className="relative">
+      <select id="model" className="sr-only" tabIndex={-1} value={selectedModel} disabled={disabled} onChange={(event) => event.target.value && onSetModel(event.target.value)}>
+        {settings.availableModels.map((model) => <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>)}
+      </select>
+      <select id="thinking" className="sr-only" tabIndex={-1} value={settings.thinkingLevel} disabled={disabled} onChange={(event) => onSetThinking(event.target.value)}>
+        {settings.availableThinkingLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+      </select>
       <Button
+        id="modelThinkingToggle"
         type="button"
         variant="outline"
         size="sm"
@@ -929,7 +936,7 @@ function ModelThinkingControl({
           role="dialog"
           aria-label="Model and thinking settings"
           className={cn(
-            "absolute bottom-[calc(100%+10px)] left-0 z-20 grid w-[min(360px,calc(100vw-2rem))] gap-3 rounded-2xl border p-3 shadow-2xl",
+            "model-thinking-popover absolute bottom-[calc(100%+10px)] left-1/2 z-20 grid w-[min(360px,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-2xl border p-3 shadow-2xl sm:left-0 sm:translate-x-0",
             "border-border bg-popover text-popover-foreground",
           )}
         >
@@ -1003,9 +1010,11 @@ function ContextUsageBadge({ usage }: { usage: NonNullable<SessionRuntimeSetting
         render={
           <button
             type="button"
-            className="hidden size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex"
+            className="context-usage inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label={`Context ${contextUsageLabel(usage)}`}
           >
+            <span className="sr-only">Context {contextUsageLabel(usage)}</span>
+            <span aria-hidden="true">Ctx</span>
             <svg className="size-5 -rotate-90" viewBox="0 0 20 20" aria-hidden="true">
               <circle cx="10" cy="10" r={radius} fill="none" stroke="currentColor" strokeWidth="3" className="opacity-25" />
               <circle

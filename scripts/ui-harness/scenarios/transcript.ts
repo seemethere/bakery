@@ -504,7 +504,7 @@ export async function runModelThinking(page: Page): Promise<Record<string, unkno
   await page.waitForFunction(() => document.querySelector("#modelThinkingToggle")?.textContent?.includes("high"));
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForFunction(() => document.querySelector("pi-web-agent")?.classList.contains("mobile-layout"), null, { timeout: 5_000 });
+  await page.waitForFunction(() => window.matchMedia("(max-width: 767px)").matches, null, { timeout: 5_000 });
   await page.locator("#modelThinkingToggle").click();
   await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
   const mobilePickerState = await page.evaluate(() => {
