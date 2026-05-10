@@ -117,7 +117,7 @@ export async function runImageArtifactDropUpload(page: Page): Promise<Record<str
   await prepareSession(page);
   const imagePath = join(artifactDir, "fixture.png");
   await chooseImageWithPaperclip(page, imagePath);
-  await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value.includes(".bakery/attachments/"), null, { timeout: 5_000 });
+  await page.locator(".prompt-image", { hasText: "fixture.png" }).waitFor({ timeout: 5_000 });
   const uploadSources = await page.locator(".prompt-image img").evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
   if (!uploadSources.every((src) => src.includes("/api/sessions/") && src.includes("/artifacts/raw"))) throw new Error(`Expected uploaded attachment thumbnails to use artifact raw endpoint, saw ${uploadSources.join(", ")}`);
   await page.locator("#send").click();

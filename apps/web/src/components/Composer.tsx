@@ -72,9 +72,16 @@ function payloadForMode(draft: string, mode: ComposerMode): string {
   return mode === "bash-no-context" ? `!! ${command}` : `! ${command}`;
 }
 
-function sendTextForMode(draft: string, imageCount: number, mode: ComposerMode): string {
-  if (draft.trim().length === 0 && imageCount > 0) return "Please inspect the attached image.";
+function sendTextForMode(draft: string, imageCount: number, attachmentCount: number, mode: ComposerMode): string {
+  if (draft.trim().length === 0 && (imageCount > 0 || attachmentCount > 0)) return attachmentCount > 0 ? "Please inspect the attached file." : "Please inspect the attached image.";
   return payloadForMode(draft, mode);
+}
+
+function appendAttachmentContext(text: string, attachments: SessionAttachment[]): string {
+  if (attachments.length === 0) return text;
+  const lines = attachments.map((attachment) => `- ${attachment.name}: ${attachment.path}`);
+  const context = `Attached files:\n${lines.join("\n")}`;
+  return text.trim().length > 0 ? `${text.trimEnd()}\n\n${context}` : context;
 }
 
 function sendModeForComposerMode(mode: ComposerMode): SendMode {
@@ -159,7 +166,7 @@ export function Composer({
   const isBash = modeIsBash(composerMode);
   const isAsk = composerMode === "ask";
   const isPlan = composerMode === "plan";
-  const canSend = isController && (draft.trim().length > 0 || images.length > 0) && status !== "aborting" && status !== "connecting";
+  const canSend = isController && (draft.trim().length > 0 || images.length > 0 || uploadedAttachments.length > 0) && status !== "aborting" && status !== "connecting";
   const isDisconnected = status === "disconnected" || status === "error";
   const modeLabel = composerModeLabel(composerMode, status);
   const showEmptyLanding = isEmptySession && draft.trim().length === 0 && images.length === 0 && uploadedAttachments.length === 0;
@@ -238,7 +245,7 @@ export function Composer({
 
   async function handleSend(followUp = false) {
     if (!canSend) return;
-    const text = sendTextForMode(draft, images.length, composerMode);
+    const text = appendAttachmentContext(sendTextForMode(draft, images.length, uploadedAttachments.length, composerMode), uploadedAttachments);
     const trimmed = text.trim();
     if (isRunning && trimmed.startsWith("!")) {
       setNotice("Bash commands are available when the session is idle.");
@@ -246,7 +253,7 @@ export function Composer({
     }
     if (/^\/new(?:\s|$)/i.test(trimmed)) {
       if (images.length > 0) {
-        setNotice("Remove image attachments before using /new.");
+        setNotice("Remove attachments before using /new.");
         return;
       }
       if (trimmed !== "/new") {
@@ -327,32 +334,6 @@ export function Composer({
     }
   }
 
-  function appendAttachmentReferences(paths: string[]) {
-    if (paths.length === 0) return;
-    setDraft((prev) => {
-      const existing = new Set(prev.match(/\.bakery\/attachments\/\S+/g) ?? []);
-      const nextPaths = paths.filter((path) => !existing.has(path));
-      if (nextPaths.length === 0) return prev;
-      const prefix = prev.trim().length === 0 || prev.endsWith("\n") ? "" : "\n";
-      const suffix = nextPaths.map((path) => `Attachment: ${path}`).join("\n");
-      const next = `${prev}${prefix}${suffix}`;
-      if (draftKey) localStorage.setItem(draftKey, next);
-      return next;
-    });
-  }
-
-  function removeAttachmentReference(path: string) {
-    setDraft((prev) => {
-      const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const next = prev
-        .replace(new RegExp(`^Attachment:\\s*${escaped}\\s*$\\n?`, "gim"), "")
-        .replace(new RegExp(`^Screenshot artifact:\\s*${escaped}\\s*$\\n?`, "gim"), "")
-        .replace(/\n{3,}/g, "\n\n");
-      if (draftKey) localStorage.setItem(draftKey, next);
-      return next;
-    });
-  }
-
   async function uploadImageArtifacts(files: File[]): Promise<{ paths: string[]; notices: string[] }> {
     const notices: string[] = [];
     if (!sessionId || !fetchJson) return { paths: [], notices: ["Image attached; artifact upload is unavailable until the session is ready."] };
@@ -409,7 +390,6 @@ export function Composer({
         return;
       }
       setUploadedAttachments((prev) => [...prev, ...response.attachments]);
-      appendAttachmentReferences(response.attachments.map((attachment) => attachment.path));
       setNotice("");
     } catch (error) {
       setNotice(`Attachment upload failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -452,7 +432,6 @@ export function Composer({
     void uploadImageArtifacts(fileArray).then((uploadResult) => {
       const currentIds = new Set(imagesRef.current.map((image) => image.id));
       const wholeBatchStillAttached = loadedIds.size > 0 && Array.from(loadedIds).every((id) => currentIds.has(id));
-      if (wholeBatchStillAttached) appendAttachmentReferences(uploadResult.paths);
       if (wholeBatchStillAttached && uploadResult.notices.length > 0) setNotice(uploadResult.notices[0] ?? "");
     });
   }
@@ -588,7 +567,6 @@ export function Composer({
         <AttachmentTray images={images} onRemove={removePromptImage} />
         <UploadedAttachmentTray attachments={uploadedAttachments} onRemove={(attachment) => {
           setUploadedAttachments((prev) => prev.filter((item) => item.id !== attachment.id));
-          removeAttachmentReference(attachment.path);
         }} />
 
         <ComposerTextarea
