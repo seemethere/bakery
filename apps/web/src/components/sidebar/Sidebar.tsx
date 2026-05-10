@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { WebSession, Workspace } from "@pi-web-agent/protocol";
+import type { WebSession, Workspace, WorkspaceBrowseResponse } from "@pi-web-agent/protocol";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
+import { WorkspaceBrowserDialog } from "@/components/workspaces/WorkspaceBrowserDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -76,6 +77,9 @@ type Props = {
   onSelectSession: (id: string) => void;
   onNewSession: (cwd?: string) => void;
   onNewIsolatedSession: (cwd?: string) => void;
+  onBrowseWorkspaces: (path?: string) => Promise<WorkspaceBrowseResponse | null>;
+  onAddWorkspace: (path: string) => Promise<Workspace | null>;
+  onRevokeWorkspace: (path: string) => Promise<boolean>;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
   onTogglePinSession: (id: string, pinned: boolean) => void;
@@ -94,6 +98,9 @@ export function Sidebar({
   onSelectSession,
   onNewSession,
   onNewIsolatedSession,
+  onBrowseWorkspaces,
+  onAddWorkspace,
+  onRevokeWorkspace,
   onDeleteSession,
   onRenameSession,
   onTogglePinSession,
@@ -103,6 +110,7 @@ export function Sidebar({
     () => storedCollapsedWorkspaceGroups(),
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const [workspaceBrowserOpen, setWorkspaceBrowserOpen] = useState(false);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -245,10 +253,19 @@ export function Sidebar({
         )}
 
         <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
-          <div className="flex h-7 items-center px-2">
+          <div className="group/workspaceshead flex h-7 items-center px-2">
             <span className="flex-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
               Workspaces
             </span>
+            <button
+              type="button"
+              aria-label="Add workspace"
+              title="Add workspace"
+              onClick={() => setWorkspaceBrowserOpen(true)}
+              className="flex size-4 items-center justify-center rounded text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground focus:text-sidebar-foreground"
+            >
+              <PlusIcon className="size-3" />
+            </button>
           </div>
 
           {isBootstrapping ? (
@@ -336,6 +353,15 @@ export function Sidebar({
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
+
+      <WorkspaceBrowserDialog
+        open={workspaceBrowserOpen}
+        onOpenChange={setWorkspaceBrowserOpen}
+        onBrowse={onBrowseWorkspaces}
+        onAddWorkspace={onAddWorkspace}
+        onRevokeWorkspace={onRevokeWorkspace}
+        onOpenWorkspace={(path) => onNewSession(path)}
+      />
 
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
         <CommandInput placeholder="Search sessions, workspaces, actions…" />

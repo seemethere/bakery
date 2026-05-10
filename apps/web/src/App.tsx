@@ -84,6 +84,9 @@ function AppInner() {
       onSelectSession={handleSelectSession}
       onNewSession={(cwd) => void handleNewSession(cwd)}
       onNewIsolatedSession={(cwd) => void handleNewIsolatedSession(cwd)}
+      onBrowseWorkspaces={conn.browseWorkspaces}
+      onAddWorkspace={conn.addWorkspace}
+      onRevokeWorkspace={conn.revokeWorkspace}
       onDeleteSession={(id) => void handleDeleteSession(id)}
       onRenameSession={(id, title) => void conn.renameSession(id, title)}
       onTogglePinSession={(id, pinned) => void conn.togglePinSession(id, pinned)}

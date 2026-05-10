@@ -13,6 +13,8 @@ import type {
   SessionSnapshot,
   WebSession,
   Workspace,
+  WorkspaceActionResult,
+  WorkspaceBrowseResponse,
   ExtensionCatalog,
 } from "@pi-web-agent/protocol";
 import type { ConnectionStatus } from "@/lib/session-utils";
@@ -101,6 +103,9 @@ export type ServerConnectionHandle = {
   newSession: (cwd?: string) => Promise<WebSession | null>;
   newIsolatedSession: (cwd?: string) => Promise<WebSession | null>;
   attachWorkspace: (sessionId: string, cwd: string) => Promise<WebSession | null>;
+  browseWorkspaces: (path?: string) => Promise<WorkspaceBrowseResponse | null>;
+  addWorkspace: (path: string) => Promise<Workspace | null>;
+  revokeWorkspace: (path: string) => Promise<boolean>;
   deleteSession: (id: string) => Promise<{ deleted: boolean; nextSession: WebSession | null; error?: string }>;
   renameSession: (id: string, title: string) => Promise<{ renamed: boolean; error?: string }>;
   togglePinSession: (id: string, pinned: boolean) => Promise<WebSession | null>;
@@ -430,6 +435,39 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     }
   }, [api, connectWebSocket]);
 
+  const browseWorkspaces = useCallback(async (path?: string) => {
+    try {
+      const query = path ? `?path=${encodeURIComponent(path)}` : "";
+      return await api<WorkspaceBrowseResponse>(`/api/workspaces/browse${query}`);
+    } catch {
+      return null;
+    }
+  }, [api]);
+
+  const addWorkspace = useCallback(async (path: string) => {
+    try {
+      const result = await api<WorkspaceActionResult>("/api/workspaces", {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      });
+      setWorkspaces((prev) => [...prev.filter((workspace) => workspace.path !== result.workspace.path), result.workspace]
+        .sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path)));
+      return result.workspace;
+    } catch {
+      return null;
+    }
+  }, [api]);
+
+  const revokeWorkspace = useCallback(async (path: string) => {
+    try {
+      await api<void>(`/api/workspaces?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+      setWorkspaces((prev) => prev.filter((workspace) => workspace.path !== path));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [api]);
+
   const newIsolatedSession = useCallback(async (cwdOverride?: string) => {
     const cwd = cwdOverride ?? workspaces[0]?.path;
     if (!cwd) return null;
@@ -732,6 +770,9 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     newSession,
     newIsolatedSession,
     attachWorkspace,
+    browseWorkspaces,
+    addWorkspace,
+    revokeWorkspace,
     deleteSession,
     renameSession,
     togglePinSession,

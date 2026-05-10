@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import type { WebSession, Workspace } from "@pi-web-agent/protocol";
+import type { WebSession, Workspace, WorkspaceBrowseResponse } from "@pi-web-agent/protocol";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Header } from "@/components/Header";
 import { parseAppRoute } from "@/lib/router";
@@ -23,6 +23,9 @@ type Props = {
   onSelectSession: (id: string) => void;
   onNewSession: (cwd?: string) => void;
   onNewIsolatedSession: (cwd?: string) => void;
+  onBrowseWorkspaces: (path?: string) => Promise<WorkspaceBrowseResponse | null>;
+  onAddWorkspace: (path: string) => Promise<Workspace | null>;
+  onRevokeWorkspace: (path: string) => Promise<boolean>;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
   onTogglePinSession: (id: string, pinned: boolean) => void;
@@ -45,6 +48,9 @@ export function Layout({
   onSelectSession,
   onNewSession,
   onNewIsolatedSession,
+  onBrowseWorkspaces,
+  onAddWorkspace,
+  onRevokeWorkspace,
   onDeleteSession,
   onRenameSession,
   onTogglePinSession,
@@ -84,6 +90,9 @@ export function Layout({
         onSelectSession={onSelectSession}
         onNewSession={onNewSession}
         onNewIsolatedSession={onNewIsolatedSession}
+        onBrowseWorkspaces={onBrowseWorkspaces}
+        onAddWorkspace={onAddWorkspace}
+        onRevokeWorkspace={onRevokeWorkspace}
         onDeleteSession={onDeleteSession}
         onRenameSession={onRenameSession}
         onTogglePinSession={onTogglePinSession}
