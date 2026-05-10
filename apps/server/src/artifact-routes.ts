@@ -19,6 +19,7 @@ const imageMimeTypes = new Map([
 ]);
 
 const imageExtensionsByMime = new Map(Array.from(imageMimeTypes, ([extension, mime]) => [mime, extension === ".jpg" ? ".jpeg" : extension]));
+const promptAttachmentMimeTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 type ArtifactRouteDeps = {
   artifactDir: string;
@@ -124,7 +125,7 @@ export function registerArtifactRoutes(app: FastifyInstance, deps: ArtifactRoute
       const providedMime = part.mimetype || "application/octet-stream";
       const extensionMime = imageMimeTypes.get(extensionOf(part.filename));
       const mimeType = imageExtensionsByMime.has(providedMime) ? providedMime : extensionMime;
-      if (!mimeType) return reply.code(415).send({ error: `unsupported attachment type: ${providedMime || part.filename}` });
+      if (!mimeType || !promptAttachmentMimeTypes.has(mimeType)) return reply.code(415).send({ error: `unsupported attachment type: ${providedMime || part.filename}` });
       const extension = imageExtensionsByMime.get(mimeType)!;
       const originalName = safeAttachmentName(part.filename || `attachment${extension}`, `attachment${extension}`);
       const baseName = /\.[a-z0-9]+$/i.test(originalName) ? originalName.replace(/\.[a-z0-9]+$/i, "") : originalName;

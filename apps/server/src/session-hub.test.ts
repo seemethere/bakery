@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { NormalizedAgentEvent, ServerEnvelope, WebSession } from "@pi-web-agent/protocol";
-import { activeToolCallId, activeToolSnapshotFromEvent, dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand, SessionHub } from "./session-hub.js";
+import { activeToolCallId, activeToolSnapshotFromEvent, attachmentPathsFromText, dataUrlToImageContent, mergeSnapshotMessagesWithWebCommands, parseNameCommand, SessionHub } from "./session-hub.js";
 
 describe("parseNameCommand", () => {
   test("ignores non-name commands", () => {
@@ -31,6 +35,13 @@ describe("dataUrlToImageContent", () => {
 
   test("rejects unsupported data URLs", () => {
     expect(() => dataUrlToImageContent("data:text/plain;base64,SGVsbG8=")).toThrow("Images must be png, jpeg, gif, or webp data URLs");
+  });
+});
+
+describe("attachmentPathsFromText", () => {
+  test("finds unique Bakery attachment references in prompt context", () => {
+    const path = ".bakery/attachments/2026-05-10T00-00-00-000Z-shot.png";
+    expect(attachmentPathsFromText(`Please inspect this.\n\nAttached files:\n- shot.png: ${path}\n- duplicate: ${path}`)).toEqual([path]);
   });
 });
 
@@ -282,5 +293,56 @@ describe("active tool execution snapshots", () => {
 
     expect(envelopes[0]?.payload.type).toBe("session_snapshot");
     if (envelopes[0]?.payload.type === "session_snapshot") expect(envelopes[0].payload.snapshot.activeToolExecutions).toBeUndefined();
+  });
+});
+
+describe("session attachment prompt images", () => {
+  test("loads uploaded attachment references as agent image content", async () => {
+    const session = webSession();
+    const artifactDir = await mkdtemp(join(tmpdir(), "bakery-attachments-"));
+    const attachmentPath = ".bakery/attachments/2026-05-10T00-00-00-000Z-shot.png";
+    const artifactId = createHash("sha256").update(session.id).update("\0").update(attachmentPath).digest("hex").slice(0, 32);
+    await mkdir(join(artifactDir, session.id), { recursive: true });
+    await writeFile(join(artifactDir, session.id, `${artifactId}.png`), Buffer.from("image-bytes"));
+
+    const prompts: Array<{ text: string; images: unknown[] | undefined }> = [];
+    const handle = {
+      id: session.id,
+      cwd: session.cwd,
+      subscribe: () => () => undefined,
+      subscribeQuestion: () => () => undefined,
+      snapshot: async () => ({ session, status: "idle", messages: [] }),
+      getSettings: async () => ({ model: null, availableModels: [], thinkingLevel: "low", availableThinkingLevels: ["low"], contextUsage: { tokens: null, contextWindow: null, percent: null } }),
+      getCommands: () => [],
+      runBuiltinCommand: async () => ({ handled: false }),
+      prompt: async (text: string, images: unknown[] | undefined) => { prompts.push({ text, images }); },
+    };
+    const store = {
+      getSession: () => session,
+      listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
+      addSubmittedPrompt: (_sessionId: string, input: { kind: "prompt"; text: string }) => ({ id: "prompt:1", kind: input.kind, text: input.text, timestamp: "2026-05-10T00:00:00.000Z", reconciledAt: null, error: null }),
+      markSubmittedPromptError: () => undefined,
+      updateSession: () => session,
+    };
+    let onMessage: ((data: string) => void) | undefined;
+    const sent: unknown[] = [];
+    const socket = {
+      send: (data: string) => { sent.push(JSON.parse(data)); },
+      close: () => undefined,
+      on: (event: string, callback: (...args: never[]) => void) => {
+        if (event === "message") onMessage = (data) => callback(data as never);
+      },
+    };
+    const hub = new SessionHub(session.id, handle as never, { store, config: { artifactDir, sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+
+    hub.add(socket, "client-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    onMessage?.(JSON.stringify({ type: "prompt", text: `Please inspect it.\n\nAttached files:\n- shot.png: ${attachmentPath}` }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.images).toEqual([{ type: "image", mimeType: "image/png", data: Buffer.from("image-bytes").toString("base64") }]);
   });
 });

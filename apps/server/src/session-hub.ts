@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
   PROTOCOL_VERSION,
@@ -26,6 +29,39 @@ export function dataUrlToImageContent(value: string): ImageContent {
   const match = /^data:(image\/(?:png|jpe?g|gif|webp));base64,([a-z0-9+/=\s]+)$/i.exec(value);
   if (!match) throw new Error("Images must be png, jpeg, gif, or webp data URLs");
   return { type: "image", mimeType: match[1]!.toLowerCase(), data: match[2]!.replace(/\s/g, "") };
+}
+
+const attachmentImageMimeTypes = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+const attachmentImageExtensionsByMime = new Map(Array.from(attachmentImageMimeTypes, ([extension, mime]) => [mime, extension === ".jpg" ? ".jpeg" : extension]));
+
+function artifactIdFor(sessionId: string, path: string): string {
+  return createHash("sha256").update(sessionId).update("\0").update(path).digest("hex").slice(0, 32);
+}
+
+function extensionOf(path: string): string {
+  const match = /\.([a-z0-9]+)$/i.exec(path);
+  return match ? `.${match[1]!.toLowerCase()}` : "";
+}
+
+export function attachmentPathsFromText(text: string): string[] {
+  const paths = new Set<string>();
+  for (const match of text.matchAll(/\.bakery\/attachments\/[^\s`'"\])]+\.(?:png|jpe?g|gif|webp)/gi)) paths.add(match[0]!);
+  return [...paths];
+}
+
+async function imageContentForStoredAttachment(artifactDir: string, sessionId: string, path: string): Promise<ImageContent | null> {
+  const mimeType = attachmentImageMimeTypes.get(extensionOf(path));
+  const extension = mimeType ? attachmentImageExtensionsByMime.get(mimeType) : undefined;
+  if (!mimeType || !extension) return null;
+  const artifactId = artifactIdFor(sessionId, path);
+  const data = await readFile(join(artifactDir, sessionId, `${artifactId}${extension}`));
+  return { type: "image", mimeType, data: data.toString("base64") };
 }
 
 function askPrompt(text: string): string {
@@ -586,6 +622,24 @@ export class SessionHub {
     }
   }
 
+  private async imagesForPromptText(text: string, dataUrls?: string[]): Promise<ImageContent[] | undefined> {
+    const images = dataUrls?.map(dataUrlToImageContent) ?? [];
+    const paths = attachmentPathsFromText(text);
+    if (paths.length > 0) {
+      const artifactDir = this.deps.config.artifactDir;
+      if (!artifactDir) throw new Error("Attachment storage is not configured.");
+      for (const path of paths) {
+        try {
+          const image = await imageContentForStoredAttachment(artifactDir, this.sessionId, path);
+          if (image) images.push(image);
+        } catch (error) {
+          throw new Error(`Attached image is not available to the agent: ${path} (${error instanceof Error ? error.message : String(error)})`);
+        }
+      }
+    }
+    return images.length > 0 ? images : undefined;
+  }
+
   private commandServices() {
     return {
       getSessionCwd: () => this.handle?.cwd ?? process.cwd(),
@@ -743,7 +797,7 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await this.promptWithReceipt(handle, "ask", parsed.data.text, askPrompt(parsed.data.text), parsed.data.images?.map(dataUrlToImageContent));
+        await this.promptWithReceipt(handle, "ask", parsed.data.text, askPrompt(parsed.data.text), await this.imagesForPromptText(parsed.data.text, parsed.data.images));
         await this.broadcastSettingsUpdate();
       } else if (parsed.data.type === "prompt") {
         const nameCommand = parseNameCommand(parsed.data.text);
@@ -767,7 +821,8 @@ export class SessionHub {
           return;
         }
         const handle = await this.ensureHandle();
-        if (await this.runBundledCommandText(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent))) return;
+        const images = await this.imagesForPromptText(parsed.data.text, parsed.data.images);
+        if (await this.runBundledCommandText(parsed.data.text, images)) return;
         const builtinResult = await handle.runBuiltinCommand(parsed.data.text);
         if (builtinResult.handled) {
           if (builtinResult.launchPrompt) {
@@ -776,7 +831,7 @@ export class SessionHub {
               const updated = this.deps.store.updateSession(webSession.id, { title: builtinResult.title ?? "Workflow", titleSource: "first_prompt" });
               if (updated) this.broadcastMetadataUpdate(updated);
             }
-            await this.promptWithReceipt(handle, "prompt", builtinResult.launchPrompt, builtinResult.launchPrompt, parsed.data.images?.map(dataUrlToImageContent));
+            await this.promptWithReceipt(handle, "prompt", builtinResult.launchPrompt, builtinResult.launchPrompt, images);
             await this.broadcastSettingsUpdate();
             return;
           }
@@ -791,10 +846,10 @@ export class SessionHub {
             if (updated) this.broadcastMetadataUpdate(updated);
           }
         }
-        await this.promptWithReceipt(handle, "prompt", parsed.data.text, parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+        await this.promptWithReceipt(handle, "prompt", parsed.data.text, parsed.data.text, images);
         await this.broadcastSettingsUpdate();
-      } else if (parsed.data.type === "steer") await this.requireHandle().steer(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
-      else if (parsed.data.type === "follow_up") await this.requireHandle().followUp(parsed.data.text, parsed.data.images?.map(dataUrlToImageContent));
+      } else if (parsed.data.type === "steer") await this.requireHandle().steer(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
+      else if (parsed.data.type === "follow_up") await this.requireHandle().followUp(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
       else if (parsed.data.type === "cancel_queued_message") {
         const queued = await this.requireHandle().cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
         this.broadcast({
