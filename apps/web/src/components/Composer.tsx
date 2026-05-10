@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from "react";
-import type { SessionRuntimeSettings } from "@pi-web-agent/protocol";
+import type { ArtifactUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import { ChevronDown, CircleHelp, ClipboardList, Command, MessageSquareText, Paperclip, Plus, SendHorizontal, Settings2, ShieldOff, Square, Terminal, X } from "lucide-react";
 import { AutocompletePopup } from "@/components/AutocompletePopup";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
 import { contextUsageLabel, modelOptionLabel, modelThinkingLabel } from "@/lib/model-settings";
-import { imageFilesFromDataTransfer, isSupportedImageFile, loadImageFile, maxPromptImages, type PromptImage } from "@/lib/prompt-images";
+import { artifactPathForFile, imageFilesFromDataTransfer, imageMimeType, isSupportedImageFile, loadImageFile, maxArtifactImageBytes, maxPromptImages, readFileAsBase64, supportedPromptImageTypes, type PromptImage } from "@/lib/prompt-images";
 import { cn } from "@/lib/utils";
 
 export type ComposerStatus = "idle" | "running" | "aborting" | "connecting" | "disconnected" | "error";
@@ -286,6 +286,50 @@ export function Composer({
     }
   }
 
+  function appendArtifactPaths(paths: string[]) {
+    if (paths.length === 0) return;
+    setDraft((prev) => {
+      const prefix = prev.trim().length === 0 || prev.endsWith("\n") ? "" : "\n";
+      const suffix = paths.map((path) => `Screenshot artifact: ${path}`).join("\n");
+      const next = `${prev}${prefix}${suffix}`;
+      if (draftKey) localStorage.setItem(draftKey, next);
+      return next;
+    });
+  }
+
+  async function uploadImageArtifacts(files: File[]): Promise<{ paths: string[]; notices: string[] }> {
+    const notices: string[] = [];
+    if (!sessionId || !fetchJson) return { paths: [], notices: ["Image attached; artifact upload is unavailable until the session is ready."] };
+
+    const paths: string[] = [];
+    for (const file of files) {
+      const mimeType = imageMimeType(file);
+      if (!supportedPromptImageTypes.has(mimeType)) {
+        notices.push(`Unsupported image type: ${file.type || file.name}`);
+        continue;
+      }
+      if (file.size > maxArtifactImageBytes) {
+        notices.push(`${file.name || "Image"} is larger than ${maxArtifactImageBytes / 1024 / 1024}MB and was not uploaded as an artifact.`);
+        continue;
+      }
+
+      const path = artifactPathForFile(file);
+      try {
+        const data = await readFileAsBase64(file);
+        const uploaded = await fetchJson<ArtifactUploadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, mimeType, data }),
+        });
+        paths.push(uploaded.path);
+      } catch (error) {
+        notices.push(`Could not upload ${file.name || "image"} as an artifact: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    return { paths, notices };
+  }
+
   async function handleImageFiles(files: FileList | File[]) {
     const fileArray = Array.from(files).filter(isSupportedImageFile);
     if (fileArray.length === 0) {
@@ -294,21 +338,28 @@ export function Composer({
     }
 
     const remaining = maxPromptImages - images.length;
-    if (remaining <= 0) {
-      setNotice(`Maximum ${maxPromptImages} images allowed.`);
-      return;
-    }
-
-    const results = await Promise.all(fileArray.slice(0, remaining).map(loadImageFile));
+    const promptFiles = remaining > 0 ? fileArray.slice(0, remaining) : [];
+    const results = await Promise.all(promptFiles.map(loadImageFile));
     const loaded: PromptImage[] = [];
+    const notices: string[] = [];
     for (const result of results) {
-      if (typeof result === "string") setNotice(result);
+      if (typeof result === "string") notices.push(result);
       else loaded.push(result);
     }
-    if (loaded.length > 0) {
-      setImages((prev) => [...prev, ...loaded]);
-      setNotice(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"}.`);
-    }
+    if (remaining <= 0) notices.push(`Maximum ${maxPromptImages} images allowed.`);
+    else if (fileArray.length > remaining) notices.push(`Attached the first ${remaining} image${remaining === 1 ? "" : "s"}; maximum ${maxPromptImages} images allowed.`);
+
+    if (loaded.length > 0) setImages((prev) => [...prev, ...loaded]);
+
+    const uploadResult = await uploadImageArtifacts(fileArray);
+    appendArtifactPaths(uploadResult.paths);
+    notices.push(...uploadResult.notices);
+
+    if (loaded.length > 0 && uploadResult.paths.length > 0) notices.unshift(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"} and uploaded ${uploadResult.paths.length} artifact${uploadResult.paths.length === 1 ? "" : "s"}.`);
+    else if (loaded.length > 0) notices.unshift(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"}.`);
+    else if (uploadResult.paths.length > 0) notices.unshift(`Uploaded ${uploadResult.paths.length} image artifact${uploadResult.paths.length === 1 ? "" : "s"}.`);
+
+    if (notices.length > 0) setNotice(notices[0] ?? "");
   }
 
   function openImagePicker() {
@@ -331,7 +382,7 @@ export function Composer({
       event.preventDefault();
       void handleImageFiles(files);
     }
-  }, [images]);
+  }, [draftKey, fetchJson, images, sessionId]);
 
   useEffect(() => {
     if (!isController) return;
@@ -353,7 +404,7 @@ export function Composer({
 
     document.addEventListener("paste", handleDocumentPaste);
     return () => document.removeEventListener("paste", handleDocumentPaste);
-  }, [images, isController]);
+  }, [draftKey, fetchJson, images, isController, sessionId]);
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();

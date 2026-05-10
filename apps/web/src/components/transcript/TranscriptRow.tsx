@@ -190,7 +190,7 @@ function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: s
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
       {artifacts.map((artifact) => (
-        <figure key={artifact.path} data-testid="artifact-image" className="m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
+        <figure key={artifact.path} data-testid="artifact-image" className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
           <img src={artifact.url} alt={artifact.path} loading="lazy" className="max-h-56 w-full object-contain" />
           <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path.split("/").pop()}</figcaption>
         </figure>
