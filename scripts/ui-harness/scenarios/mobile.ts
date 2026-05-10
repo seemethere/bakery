@@ -164,6 +164,15 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   }
   await page.locator('.session-sidebar:not(.collapsed) [data-route-path="/settings"]').click();
   await page.locator(".settings-page #apiBase").waitFor({ timeout: 5_000 });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  const mobileSettingsDialog = await page.evaluate(() => {
+    const element = document.querySelector(".settings-dialog");
+    if (!element || getComputedStyle(element).display === "none") return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, documentWidth: document.documentElement.scrollWidth };
+  });
+  if (!mobileSettingsDialog || mobileSettingsDialog.left < -1 || mobileSettingsDialog.right > mobileSettingsDialog.viewportWidth + 1 || mobileSettingsDialog.bottom > mobileSettingsDialog.viewportHeight + 1 || mobileSettingsDialog.documentWidth > mobileSettingsDialog.viewportWidth + 2) throw new Error(`Mobile Settings dialog should stay within viewport: ${JSON.stringify(mobileSettingsDialog)}`);
   await page.keyboard.press("Escape");
   await page.locator(".settings-dialog").waitFor({ state: "detached", timeout: 5_000 });
   if (await page.locator("#sessionSidebarBackdrop").isVisible().catch(() => false)) await page.keyboard.press("Escape");
@@ -241,6 +250,32 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   if (layout.prompt && layout.controls && layout.prompt.bottom > layout.controls.top) {
     throw new Error(`Mobile controls overlap prompt: prompt bottom ${layout.prompt.bottom}px, controls top ${layout.controls.top}px`);
   }
+
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  await page.locator('[aria-label="Session details"]').click();
+  await page.locator(".session-details-dialog").waitFor({ timeout: 5_000 });
+  const mobileDetailsDialog = await page.evaluate(() => {
+    const element = document.querySelector(".session-details-dialog");
+    if (!element || getComputedStyle(element).display === "none") return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, documentWidth: document.documentElement.scrollWidth };
+  });
+  if (!mobileDetailsDialog || mobileDetailsDialog.left < -1 || mobileDetailsDialog.right > mobileDetailsDialog.viewportWidth + 1 || mobileDetailsDialog.bottom > mobileDetailsDialog.viewportHeight + 1 || mobileDetailsDialog.documentWidth > mobileDetailsDialog.viewportWidth + 2) throw new Error(`Mobile Session Details dialog should stay within viewport: ${JSON.stringify(mobileDetailsDialog)}`);
+  await page.keyboard.press("Escape");
+  await page.locator(".session-details-dialog").waitFor({ state: "detached", timeout: 5_000 });
+
+  await page.getByRole("button", { name: /Prompt|Steer/ }).click();
+  const mobileModeMenu = await page.evaluate(() => {
+    const element = document.querySelector(".composer-mode-menu");
+    if (!element || getComputedStyle(element).display === "none") return null;
+    const rect = element.getBoundingClientRect();
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right), bottom: Math.round(rect.bottom), width: Math.round(rect.width), height: Math.round(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight };
+  });
+  if (!mobileModeMenu || mobileModeMenu.left < -1 || mobileModeMenu.right > mobileModeMenu.viewportWidth + 1 || mobileModeMenu.top < -1 || mobileModeMenu.bottom > mobileModeMenu.viewportHeight + 1) throw new Error(`Mobile composer mode menu should stay within viewport: ${JSON.stringify(mobileModeMenu)}`);
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await waitForMobileLayout(page);
 
   const sheet = null;
 

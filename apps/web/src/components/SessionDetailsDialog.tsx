@@ -125,9 +125,9 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
       >
         <InfoIcon />
       </DialogTrigger>
-      <DialogContent className="max-h-[min(780px,calc(100vh-2rem))] overflow-y-auto p-0 sm:max-w-2xl" showCloseButton={false}>
-        <DialogHeader className="border-b border-border/60 px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
+      <DialogContent className="session-details-dialog max-h-[calc(100dvh-1rem)] overflow-y-auto p-0 sm:max-h-[min(780px,calc(100vh-2rem))] sm:max-w-2xl" showCloseButton={false}>
+        <DialogHeader className="border-b border-border/60 px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
             <div className="grid min-w-0 gap-1.5">
               <DialogTitle className="truncate text-xl">{title}</DialogTitle>
               <DialogDescription className={cn("max-w-xl text-sm leading-6", !session.summary && "italic text-muted-foreground/70")}>
@@ -151,7 +151,7 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
           {metadataError && <p className="mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-xs text-destructive">{metadataError}</p>}
         </DialogHeader>
 
-        <div className="grid gap-5 px-5 py-5">
+        <div className="grid gap-4 px-4 py-4 sm:gap-5 sm:px-5 sm:py-5">
           <section className="grid gap-3">
             <SectionTitle title="Workspace" />
             <div className="grid gap-2">

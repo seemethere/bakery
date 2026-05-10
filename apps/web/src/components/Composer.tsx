@@ -892,7 +892,7 @@ function ModeMenu({
         <div
           role="menu"
           aria-label="Composer mode"
-          className="absolute bottom-[calc(100%+10px)] left-0 z-20 grid w-max max-w-[calc(100vw-2rem)] gap-1 rounded-2xl border border-border bg-popover p-2 shadow-2xl"
+          className="composer-mode-menu absolute bottom-[calc(100%+10px)] left-0 z-20 grid w-max max-w-[calc(100vw-2rem)] gap-1 rounded-2xl border border-border bg-popover p-2 shadow-2xl"
         >
           {options.map((option) => (
             <Tooltip key={option.mode}>

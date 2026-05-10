@@ -107,7 +107,7 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="settings-dialog settings-page grid h-[min(680px,calc(100vh-2rem))] overflow-hidden p-0 sm:max-w-[min(920px,calc(100vw-2rem))]"
+        className="settings-dialog settings-page grid h-[min(680px,calc(100dvh-1rem))] overflow-hidden p-0 sm:max-w-[min(920px,calc(100vw-2rem))]"
         showCloseButton
       >
         <DialogTitle className="sr-only">Settings</DialogTitle>
@@ -152,13 +152,13 @@ export function SettingsDialog({
           </Sidebar>
 
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <header className="flex shrink-0 items-start gap-3 border-b px-4 py-4 pr-12">
+            <header className="flex shrink-0 items-start gap-3 border-b px-4 py-3 pr-12 sm:py-4">
               <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground md:hidden">
                 <SettingsIcon className="size-4" />
               </div>
               <div className="grid min-w-0 gap-1">
-                <h2 className="m-0 truncate text-xl font-semibold text-foreground">{activeSectionDetails.label}</h2>
-                <p className="m-0 max-w-2xl text-sm text-muted-foreground">{activeSectionDetails.description}</p>
+                <h2 className="m-0 truncate text-lg font-semibold text-foreground sm:text-xl">{activeSectionDetails.label}</h2>
+                <p className="m-0 max-w-2xl text-xs leading-5 text-muted-foreground sm:text-sm">{activeSectionDetails.description}</p>
               </div>
             </header>
 
