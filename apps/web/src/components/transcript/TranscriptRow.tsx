@@ -499,6 +499,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
     <div
       className={cn(
         "message tool group/row relative mx-4 my-1 rounded-lg border text-sm",
+        isDeveloperBashItem(item) && "developer-bash",
         item.status === "running" && "running",
         item.status === "done" && "done",
         item.status === "error" && "error",
@@ -510,6 +511,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
       data-transcript-kind={item.kind}
       data-transcript-status={item.status ?? "done"}
       data-tool-state={item.status ?? "done"}
+      data-tool-action={action}
       data-collapsed={expanded ? "false" : "true"}
     >
       <div className="absolute right-1 top-1 z-[1]">
@@ -697,5 +699,7 @@ export function TranscriptRow({
   }
   if (item.kind === "tool") return <ToolRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "question") return <QuestionSummaryRow item={item} />;
+  const extensionPayload = extensionCardPayload(item);
+  if (extensionPayload) return <ExtensionCardRow item={item} payload={extensionPayload} context={context} />;
   return <SystemRow item={item} context={context} />;
 }

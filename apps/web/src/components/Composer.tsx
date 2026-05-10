@@ -209,6 +209,10 @@ export function Composer({
     if (!canSend) return;
     const text = sendTextForMode(draft, images.length, composerMode);
     const trimmed = text.trim();
+    if (isRunning && trimmed.startsWith("!")) {
+      setNotice("Bash commands are available when the session is idle.");
+      return;
+    }
     if (/^\/new(?:\s|$)/i.test(trimmed)) {
       if (images.length > 0) {
         setNotice("Remove image attachments before using /new.");

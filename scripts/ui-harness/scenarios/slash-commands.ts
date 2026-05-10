@@ -141,6 +141,8 @@ export async function runConfiguredExtensionSmoke(page: Page): Promise<Record<st
   await page.locator("#prompt").press("Enter");
   await page.locator(".message", { hasText: "Bakery extensions loaded" }).waitFor({ timeout: 5_000 });
   await page.locator(".message", { hasText: "Extension issues" }).waitFor({ timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
+  await page.locator("#prompt").click();
   await page.locator("#prompt").fill("/");
   await page.locator(".command-autocomplete", { hasText: "/local-demo" }).waitFor({ timeout: 5_000 });
   return collectMetrics(page);
@@ -152,7 +154,7 @@ export async function runBashCommands(page: Page): Promise<Record<string, unknow
   await page.locator("#send").click();
   const bashRow = page.locator(".message.tool.developer-bash:not(.collapsed)", { hasText: "echo bakery bash" }).last();
   await bashRow.waitFor({ timeout: 5_000 });
-  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row.developer-bash:not(.collapsed)")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("included in context")), null, { timeout: 5_000 });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll(".message.tool.developer-bash:not(.collapsed)")).some((row) => (row.textContent ?? "").includes("included in context")), null, { timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
   await page.waitForFunction(() => (document.querySelector("#prompt") as HTMLTextAreaElement | null)?.value === "", null, { timeout: 5_000 });
 
@@ -160,7 +162,7 @@ export async function runBashCommands(page: Page): Promise<Record<string, unknow
   await page.locator("#send").click();
   const hiddenRow = page.locator(".message.tool.developer-bash:not(.collapsed)", { hasText: "echo bakery hidden" }).last();
   await hiddenRow.waitFor({ timeout: 5_000 });
-  await page.waitForFunction(() => Array.from(document.querySelectorAll("pi-transcript-row.developer-bash:not(.collapsed)")).some((row) => (row.shadowRoot?.textContent ?? row.textContent ?? "").includes("excluded from context")), null, { timeout: 5_000 });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll(".message.tool.developer-bash:not(.collapsed)")).some((row) => (row.textContent ?? "").includes("excluded from context")), null, { timeout: 5_000 });
   await waitForAgentIdle(page, 5_000);
 
   await page.locator("#prompt").fill("Please produce a long streaming performance response while bash is blocked.");

@@ -489,7 +489,7 @@ export class SessionHub {
   }
 
   private async runBashCommand(command: string, excludeFromContext?: boolean): Promise<void> {
-    const handle = this.requireHandle();
+    const handle = await this.ensureHandle();
     const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) throw new Error("session not found");
     const snapshot = await handle.snapshot(webSession);
@@ -726,7 +726,6 @@ export class SessionHub {
 
     try {
       if (parsed.data.type === "bash") {
-        this.requireHandle();
         await this.runBashCommand(parsed.data.command, parsed.data.excludeFromContext);
       } else if (parsed.data.type === "command") {
         const handle = await this.ensureHandle();
