@@ -25,14 +25,14 @@ export function Header({ session, workspaces, connectionStatus, isBootstrapping 
   const meta = session ? sessionMetadataLabel(session) : null;
 
   return (
-    <header className="flex items-start justify-between gap-3 px-4 py-3.5 border-b border-border/60 bg-background/80 backdrop-blur-sm min-w-0 overflow-visible">
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+    <header className="flex min-w-0 items-start justify-between gap-2 overflow-visible border-b border-border/60 bg-background/80 px-3 py-2.5 backdrop-blur-sm sm:gap-3 sm:px-4 sm:py-3.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <SidebarTrigger
           id={isMobile ? "toggleSessionSidebarMobile" : "toggleSessionSidebar"}
           aria-label="Toggle navigation"
           className="shrink-0"
         />
-        <div className="grid gap-0.5 min-w-0">
+        <div className="grid min-w-0 gap-0.5">
           {isBootstrapping ? (
             <>
               <Skeleton className="h-4 w-36" />
@@ -40,7 +40,7 @@ export function Header({ session, workspaces, connectionStatus, isBootstrapping 
             </>
           ) : session && title ? (
             <>
-              <strong className="text-sm font-semibold text-foreground truncate">{title}</strong>
+              <strong className="session-title truncate text-sm font-semibold text-foreground">{title}</strong>
               <HeaderSessionMeta
                 session={session}
                 meta={meta}
@@ -62,7 +62,7 @@ export function Header({ session, workspaces, connectionStatus, isBootstrapping 
           </span>
         )}
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
         {!isBootstrapping && session && (
           <SessionDetailsDialog
             session={session}
@@ -120,11 +120,11 @@ function HeaderSessionMeta({
   const canPickWorkspace = session.kind === "draft" && !hasWorkspace;
 
   if (!canPickWorkspace) {
-    return meta ? <span className="text-xs text-muted-foreground truncate">{meta}</span> : null;
+    return meta ? <span className="session-workspace hidden truncate text-xs text-muted-foreground sm:block">{meta}</span> : null;
   }
 
   return (
-    <div ref={popoverRef} className="relative min-w-0">
+    <div ref={popoverRef} className="session-workspace relative hidden min-w-0 sm:block">
       <Button
         type="button"
         variant="ghost"
@@ -176,7 +176,7 @@ function StatusPill({ status }: { status: ConnectionStatus }) {
   return (
     <span
       className={cn(
-        "text-[11px] font-bold px-2.5 py-1 rounded-full border uppercase tracking-wide",
+        "header-status hidden rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide sm:inline-flex",
         status === "running" && "border-blue-400/40 bg-blue-400/10 text-blue-400",
         status === "connecting" && "border-yellow-400/40 bg-yellow-400/10 text-yellow-500",
         status === "disconnected" && "border-border/60 bg-muted/50 text-muted-foreground",

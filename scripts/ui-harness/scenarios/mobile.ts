@@ -99,6 +99,32 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   await waitForAgentRunning(page);
   await waitForAgentIdle(page, 30_000);
   await page.locator(".message.user", { hasText: "Mobile layout regression draft" }).waitFor({ timeout: 5_000 });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  const compactHeader = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    return {
+      viewportWidth: window.innerWidth,
+      title: rectOf(".session-title"),
+      titleText: document.querySelector(".session-title")?.textContent?.trim() ?? "",
+      mobileMenu: rectOf("#toggleSessionSidebarMobile"),
+      details: rectOf('[aria-label="Session details"]'),
+      workspace: rectOf(".session-workspace"),
+      status: rectOf(".header-status"),
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+  if ((compactHeader.mobileMenu?.width ?? 0) < 28) throw new Error(`Compact mobile header should preserve hamburger access: ${JSON.stringify(compactHeader)}`);
+  if (!compactHeader.title || !compactHeader.titleText || compactHeader.title.right > (compactHeader.details?.left ?? compactHeader.viewportWidth) - 4) throw new Error(`Compact mobile header title should not crowd actions: ${JSON.stringify(compactHeader)}`);
+  if (compactHeader.workspace !== null || compactHeader.status !== null) throw new Error(`Compact mobile header should hide workspace/status chrome: ${JSON.stringify(compactHeader)}`);
+  if (compactHeader.documentWidth > compactHeader.viewportWidth + 2) throw new Error(`Compact mobile header created horizontal overflow: ${JSON.stringify(compactHeader)}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await waitForMobileLayout(page);
 
   const app = page.locator(".pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
@@ -161,6 +187,8 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
       documentWidth: document.documentElement.scrollWidth,
       app: rectOf(".pi-web-agent"),
       header: rectOf("header"),
+      headerTitle: rectOf(".session-title"),
+      headerTitleText: document.querySelector(".session-title")?.textContent?.trim() ?? "",
       transcript: rectOf(".transcript"),
       footer: rectOf("footer"),
       prompt: rectOf("#prompt"),
@@ -184,6 +212,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   const viewportWidth = layout.viewport.width;
   if (layout.documentWidth > viewportWidth + 2) throw new Error(`Mobile layout has horizontal overflow: document ${layout.documentWidth}px, viewport ${viewportWidth}px`);
   if ((layout.mobileMenu?.width ?? 0) < 28) throw new Error(`Mobile hamburger missing or too small: ${layout.mobileMenu?.width}px`);
+  if (!layout.headerTitle || !layout.headerTitleText || layout.headerTitle.right > (layout.mobileDetails?.left ?? viewportWidth) - 4) throw new Error(`Mobile header title should stay visible without crowding primary actions: ${JSON.stringify({ title: layout.headerTitle, text: layout.headerTitleText, details: layout.mobileDetails })}`);
   if (!layout.mobileDetails || layout.mobileDetails.width > 40 || layout.mobileDetailsLabelDisplay !== "none" || layout.mobileDetailsIconDisplay === "none") throw new Error(`Mobile details affordance should be compact and icon-only: ${JSON.stringify({ rect: layout.mobileDetails, labelDisplay: layout.mobileDetailsLabelDisplay, iconDisplay: layout.mobileDetailsIconDisplay })}`);
   if (layout.workspaceLine !== null) throw new Error(`Mobile workspace metadata should move out of the persistent header: ${JSON.stringify(layout.workspaceLine)}`);
   if (layout.headerStatus !== null) throw new Error(`Mobile header should hide passive status pills: ${JSON.stringify(layout.headerStatus)}`);
