@@ -107,10 +107,10 @@ export async function runImagePasteAttachments(page: Page): Promise<Record<strin
   await waitForAgentRunning(page, 5_000);
   await waitForAgentIdle(page, 10_000);
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".message.user img").first().waitFor({ timeout: 5_000 });
+  await page.locator(".message.user", { hasText: ".bakery/attachments/" }).first().waitFor({ timeout: 5_000 });
   const bodyText = await page.locator("body").textContent();
   if (bodyText?.includes("bad_message")) throw new Error("Image-only pasted prompt was rejected as bad_message");
-  return { userImages: await page.locator(".message.user img").count(), ...(await collectMetrics(page)) };
+  return { uploadedAttachmentImages: await page.locator(".prompt-image img").count(), ...(await collectMetrics(page)) };
 }
 
 export async function runImageArtifactDropUpload(page: Page): Promise<Record<string, unknown>> {

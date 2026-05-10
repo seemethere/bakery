@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, FormEvent, KeyboardEvent } from "react";
-import type { ArtifactUploadResponse, SessionAttachment, SessionAttachmentUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
+import type { SessionAttachment, SessionAttachmentUploadResponse, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import { ChevronDown, CircleHelp, ClipboardList, Command, MessageSquareText, Paperclip, Plus, SendHorizontal, Settings2, ShieldOff, Square, Terminal, X } from "lucide-react";
 import { AutocompletePopup } from "@/components/AutocompletePopup";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
 import { contextUsageLabel, modelOptionLabel, modelThinkingLabel } from "@/lib/model-settings";
-import { artifactPathForFile, imageDataTransferResult, imageMimeType, isSupportedImageFile, loadImageFile, maxArtifactImageBytes, maxPromptImages, readFileAsBase64, supportedPromptImageTypes, type PromptImage } from "@/lib/prompt-images";
+import { imageDataTransferResult, type PromptImage } from "@/lib/prompt-images";
 import { cn } from "@/lib/utils";
 
 export type ComposerStatus = "idle" | "running" | "aborting" | "connecting" | "disconnected" | "error";
@@ -144,11 +144,9 @@ export function Composer({
   fetchJson,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const imagesRef = useRef<PromptImage[]>([]);
   const imagePickerPendingRef = useRef(false);
   const imagePickerReturnTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [draft, setDraft] = useState(() => (draftKey ? (localStorage.getItem(draftKey) ?? "") : ""));
-  const [images, setImages] = useState<PromptImage[]>([]);
   const [uploadedAttachments, setUploadedAttachments] = useState<SessionAttachment[]>([]);
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -166,15 +164,11 @@ export function Composer({
   const isBash = modeIsBash(composerMode);
   const isAsk = composerMode === "ask";
   const isPlan = composerMode === "plan";
-  const canSend = isController && (draft.trim().length > 0 || images.length > 0 || uploadedAttachments.length > 0) && status !== "aborting" && status !== "connecting";
+  const canSend = isController && (draft.trim().length > 0 || uploadedAttachments.length > 0) && status !== "aborting" && status !== "connecting";
   const isDisconnected = status === "disconnected" || status === "error";
   const modeLabel = composerModeLabel(composerMode, status);
-  const showEmptyLanding = isEmptySession && draft.trim().length === 0 && images.length === 0 && uploadedAttachments.length === 0;
+  const showEmptyLanding = isEmptySession && draft.trim().length === 0 && uploadedAttachments.length === 0;
   const emptyComposerGrown = isEmptySession && draft.includes("\n");
-
-  useEffect(() => {
-    imagesRef.current = images;
-  }, [images]);
 
   useEffect(() => {
     if (draftKey) localStorage.setItem(draftKey, draft);
@@ -245,14 +239,14 @@ export function Composer({
 
   async function handleSend(followUp = false) {
     if (!canSend) return;
-    const text = appendAttachmentContext(sendTextForMode(draft, images.length, uploadedAttachments.length, composerMode), uploadedAttachments);
+    const text = appendAttachmentContext(sendTextForMode(draft, 0, uploadedAttachments.length, composerMode), uploadedAttachments);
     const trimmed = text.trim();
     if (isRunning && trimmed.startsWith("!")) {
       setNotice("Bash commands are available when the session is idle.");
       return;
     }
     if (/^\/new(?:\s|$)/i.test(trimmed)) {
-      if (images.length > 0) {
+      if (uploadedAttachments.length > 0) {
         setNotice("Remove attachments before using /new.");
         return;
       }
@@ -266,12 +260,11 @@ export function Composer({
         return;
       }
     } else {
-      onSend(text, images, followUp, sendModeForComposerMode(composerMode));
+      onSend(text, [], followUp, sendModeForComposerMode(composerMode));
     }
     setNotice("");
     setDraft("");
-    imagesRef.current = [];
-    setImages([]);
+    setUploadedAttachments([]);
     setUploadedAttachments([]);
     if (draftKey) localStorage.removeItem(draftKey);
   }
@@ -334,39 +327,6 @@ export function Composer({
     }
   }
 
-  async function uploadImageArtifacts(files: File[]): Promise<{ paths: string[]; notices: string[] }> {
-    const notices: string[] = [];
-    if (!sessionId || !fetchJson) return { paths: [], notices: ["Image attached; artifact upload is unavailable until the session is ready."] };
-
-    const paths: string[] = [];
-    for (const file of files) {
-      const mimeType = imageMimeType(file);
-      if (!supportedPromptImageTypes.has(mimeType)) {
-        notices.push(`Unsupported image type: ${file.type || file.name}`);
-        continue;
-      }
-      if (file.size > maxArtifactImageBytes) {
-        notices.push(`${file.name || "Image"} is larger than ${maxArtifactImageBytes / 1024 / 1024}MB and was not uploaded as an artifact.`);
-        continue;
-      }
-
-      const path = artifactPathForFile(file);
-      try {
-        const data = await readFileAsBase64(file);
-        const uploaded = await fetchJson<ArtifactUploadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path, mimeType, data }),
-        });
-        paths.push(uploaded.path);
-      } catch (error) {
-        notices.push(`Could not upload ${file.name || "image"} as an artifact: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-
-    return { paths, notices };
-  }
-
   async function uploadSessionAttachments(files: FileList | File[]) {
     const stableFiles = Array.from(files);
     if (stableFiles.length === 0) {
@@ -396,46 +356,6 @@ export function Composer({
     }
   }
 
-  async function handleImageFiles(files: FileList | File[]) {
-    const incomingFiles = Array.from(files);
-    const fileArray = incomingFiles.filter(isSupportedImageFile);
-    if (fileArray.length === 0) {
-      const seen = incomingFiles.map((file) => file.type || file.name || "unknown file").slice(0, 3).join(", ");
-      setNotice(seen ? `No supported image files found. Supported: PNG, JPEG, GIF, WebP. Saw: ${seen}.` : "No supported image files found.");
-      return;
-    }
-
-    const remaining = maxPromptImages - images.length;
-    const promptFiles = remaining > 0 ? fileArray.slice(0, remaining) : [];
-    const results = await Promise.all(promptFiles.map(loadImageFile));
-    const loaded: PromptImage[] = [];
-    const notices: string[] = [];
-    for (const result of results) {
-      if (typeof result === "string") notices.push(result);
-      else loaded.push(result);
-    }
-    if (remaining <= 0) notices.push(`Maximum ${maxPromptImages} images allowed.`);
-    else if (fileArray.length > remaining) notices.push(`Attached the first ${remaining} image${remaining === 1 ? "" : "s"}; maximum ${maxPromptImages} images allowed.`);
-
-    if (loaded.length > 0) {
-      setImages((prev) => {
-        const next = [...prev, ...loaded];
-        imagesRef.current = next;
-        return next;
-      });
-    }
-
-    if (loaded.length > 0) notices.unshift(`Attached ${loaded.length} image${loaded.length === 1 ? "" : "s"}.`);
-    if (notices.length > 0) setNotice(notices[0] ?? "");
-
-    const loadedIds = new Set(loaded.map((image) => image.id));
-    void uploadImageArtifacts(fileArray).then((uploadResult) => {
-      const currentIds = new Set(imagesRef.current.map((image) => image.id));
-      const wholeBatchStillAttached = loadedIds.size > 0 && Array.from(loadedIds).every((id) => currentIds.has(id));
-      if (wholeBatchStillAttached && uploadResult.notices.length > 0) setNotice(uploadResult.notices[0] ?? "");
-    });
-  }
-
   function schedulePickerNoChangeNotice(delayMs: number) {
     if (!imagePickerPendingRef.current) return;
     clearTimeout(imagePickerReturnTimerRef.current);
@@ -446,18 +366,10 @@ export function Composer({
     }, delayMs);
   }
 
-  function removePromptImage(id: string) {
-    setImages((prev) => {
-      const next = prev.filter((image) => image.id !== id);
-      imagesRef.current = next;
-      return next;
-    });
-  }
-
   function handleImagePaste(dataTransfer: DataTransfer | null | undefined): boolean {
     const result = imageDataTransferResult(dataTransfer);
     if (result.files.length > 0) {
-      void handleImageFiles(result.files);
+      void uploadSessionAttachments(result.files);
       return true;
     }
     if (result.imageLike) {
@@ -469,7 +381,7 @@ export function Composer({
 
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
     if (handleImagePaste(event.clipboardData)) event.preventDefault();
-  }, [draftKey, fetchJson, images, sessionId]);
+  }, [draftKey, fetchJson, sessionId]);
 
   useEffect(() => {
     if (!isController) return;
@@ -489,7 +401,7 @@ export function Composer({
 
     document.addEventListener("paste", handleDocumentPaste);
     return () => document.removeEventListener("paste", handleDocumentPaste);
-  }, [draftKey, fetchJson, images, isController, sessionId]);
+  }, [draftKey, fetchJson, isController, sessionId]);
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
@@ -564,7 +476,6 @@ export function Composer({
           dragging && "border-blue-400/60 bg-blue-400/5",
         )}
       >
-        <AttachmentTray images={images} onRemove={removePromptImage} />
         <UploadedAttachmentTray attachments={uploadedAttachments} onRemove={(attachment) => {
           setUploadedAttachments((prev) => prev.filter((item) => item.id !== attachment.id));
         }} />
@@ -645,32 +556,6 @@ function ComposerNotice({ disconnected, notice }: { disconnected: boolean; notic
           {notice}
         </p>
       )}
-    </div>
-  );
-}
-
-function AttachmentTray({ images, onRemove }: { images: PromptImage[]; onRemove: (id: string) => void }) {
-  if (images.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-2" aria-label="Attached images">
-      {images.map((image) => (
-        <figure key={image.id} className="prompt-image relative m-0 grid w-[88px] overflow-hidden rounded-xl border border-border/50 bg-muted" style={{ gridTemplateRows: "58px auto" }}>
-          <img src={image.dataUrl} alt={image.name} className="h-[58px] w-full object-cover" />
-          <figcaption className="truncate px-1.5 py-1 text-[11px] text-muted-foreground" title={image.name}>
-            {image.name}
-          </figcaption>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => onRemove(image.id)}
-            aria-label={`Remove ${image.name}`}
-            className="absolute right-1 top-1 bg-black/80 text-white hover:bg-black"
-          >
-            <X />
-          </Button>
-        </figure>
-      ))}
     </div>
   );
 }
