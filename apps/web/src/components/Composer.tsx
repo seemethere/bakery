@@ -193,7 +193,9 @@ export function Composer({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+    const computedMaxHeight = Number.parseFloat(window.getComputedStyle(el).maxHeight);
+    const maxHeight = Number.isFinite(computedMaxHeight) && computedMaxHeight > 0 ? computedMaxHeight : 132;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
   }, [draft]);
 
   useEffect(() => {
@@ -467,7 +469,7 @@ export function Composer({
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         className={cn(
-          "relative z-[1] grid min-w-0 gap-2 rounded-2xl border bg-card p-2 shadow-xl",
+          "composer-shell relative z-[1] grid min-w-0 gap-2 rounded-2xl border bg-card p-2 shadow-xl",
           "border-border/60 focus-within:border-sidebar-primary/50",
           isAsk && "border-emerald-500/50 bg-emerald-500/5 focus-within:border-emerald-400/70",
           isPlan && "border-yellow-500/50 bg-yellow-500/5 focus-within:border-yellow-400/70",
@@ -714,7 +716,7 @@ function ComposerToolbar({
   }
 
   return (
-    <div className="flex min-h-8 flex-wrap items-center gap-2 px-1">
+    <div className="composer-toolbar flex min-h-8 flex-wrap items-center gap-2 px-1">
       <ModeMenu
         label={modeLabel}
         mode={mode}
@@ -752,7 +754,7 @@ function ComposerToolbar({
         </Button>
       )}
 
-      <div className={cn("relative grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50", !isController && "opacity-50")} title="Attach files">
+      <div className={cn("composer-attach-control relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-background hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50", !isController && "opacity-50")} title="Attach files">
         <Paperclip aria-hidden="true" className="pointer-events-none size-4 text-muted-foreground" />
         <input
           ref={nativeFileInputRef}

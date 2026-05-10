@@ -57,14 +57,56 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   const emptyComposerSendDisabled = await page.locator("#send").evaluate((button: HTMLButtonElement) => button.disabled);
   if (!emptyComposerSendDisabled) throw new Error("Mobile composer send should be disabled before the user enters text or attaches images.");
   await page.screenshot({ path: join(artifactDir, "mobile-empty-quick-starts.png"), fullPage: true });
+
+  await page.locator("#prompt").focus();
+  await page.locator("#prompt").fill("Mobile layout regression draft\nwith enough text to exercise wrapping and composer growth before sending.");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await waitForMobileLayout(page);
+  const composerMetrics = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height), bottom: Math.round(rect.bottom), right: Math.round(rect.right) };
+    };
+    const intersects = (a: ReturnType<typeof rectOf>, b: ReturnType<typeof rectOf>) => Boolean(a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top);
+    const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
+    const promptStyle = prompt ? getComputedStyle(prompt) : null;
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      documentWidth: document.documentElement.scrollWidth,
+      prompt: rectOf("#prompt"),
+      footer: rectOf("footer"),
+      transcript: rectOf(".transcript"),
+      attach: rectOf("#attachImages"),
+      send: rectOf("#send"),
+      attachSendOverlap: intersects(rectOf("#attachImages"), rectOf("#send")),
+      promptFontSize: promptStyle ? Number.parseFloat(promptStyle.fontSize) : 0,
+      promptLineHeight: promptStyle?.lineHeight ?? "",
+      promptScrollHeight: prompt?.scrollHeight ?? 0,
+      promptClientHeight: prompt?.clientHeight ?? 0,
+    };
+  });
+  if (composerMetrics.promptFontSize < 16) throw new Error(`Mobile prompt font should avoid focus zoom; saw ${JSON.stringify(composerMetrics)}`);
+  if (composerMetrics.documentWidth > composerMetrics.viewport.width + 2) throw new Error(`Mobile composer focus created horizontal overflow: ${JSON.stringify(composerMetrics)}`);
+  if (composerMetrics.attachSendOverlap) throw new Error(`Mobile attach input overlaps send button: ${JSON.stringify(composerMetrics)}`);
+  if ((composerMetrics.footer?.height ?? 999) > 190) throw new Error(`Mobile focused composer footer too tall: ${JSON.stringify(composerMetrics)}`);
+  if ((composerMetrics.transcript?.height ?? 0) < 320) throw new Error(`Mobile focused composer leaves too little transcript: ${JSON.stringify(composerMetrics)}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await waitForMobileLayout(page);
+  await page.locator("#send:not([disabled])").waitFor({ timeout: 5_000 });
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await waitForAgentIdle(page, 30_000);
+  await page.locator(".message.user", { hasText: "Mobile layout regression draft" }).waitFor({ timeout: 5_000 });
+
   const app = page.locator(".pi-web-agent");
   if (!await app.evaluate((element) => element.classList.contains("session-sidebar-collapsed"))) {
     throw new Error("Mobile initial render should ignore desktop-open sidebar persistence and start with the drawer closed.");
   }
   await page.locator("#toggleSessionSidebarMobile").waitFor({ timeout: 5_000 });
   await page.locator(".right-panel").waitFor({ state: "detached", timeout: 5_000 });
-  await page.locator(".context-usage", { hasText: "Ctx" }).waitFor({ timeout: 5_000 });
-  await sendPromptAndWaitIdle(page, "Mobile layout regression draft");
+  await page.locator(".context-usage").waitFor({ state: "hidden", timeout: 5_000 });
   await page.locator("#toggleSessionSidebarMobile").click();
   await page.locator(".session-sidebar:not(.collapsed) #newSession").waitFor({ timeout: 5_000 });
   const originalSessionId = await selectedSessionId(page);
@@ -147,7 +189,7 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   if (layout.headerStatus !== null) throw new Error(`Mobile header should hide passive status pills: ${JSON.stringify(layout.headerStatus)}`);
   if (layout.closedSidebar !== null) throw new Error(`Mobile closed sidebar should not occupy a rail: ${JSON.stringify(layout.closedSidebar)}`);
   if (layout.inspectorPanels !== 0) throw new Error(`Mobile inspector/tree panels should be detached, saw ${layout.inspectorPanels}`);
-  if (!layout.contextUsage || !layout.contextUsageText.includes("Ctx")) throw new Error(`Mobile context usage should be visible and compact: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
+  if (layout.contextUsage !== null) throw new Error(`Mobile context usage should collapse to protect composer space: ${JSON.stringify({ rect: layout.contextUsage, text: layout.contextUsageText })}`);
   if (!layout.modelThinkingTrigger || !layout.modelThinkingText) throw new Error(`Mobile model/thinking trigger should be visible: ${JSON.stringify({ rect: layout.modelThinkingTrigger, text: layout.modelThinkingText })}`);
   if (layout.drawerOrder.newSessionIndex < 0 || layout.drawerOrder.settingsIndex < 0 || layout.drawerOrder.newSessionIndex > layout.drawerOrder.settingsIndex) throw new Error(`Mobile drawer should keep session creation before settings nav: new=${layout.drawerOrder.newSessionIndex}, settings=${layout.drawerOrder.settingsIndex}`);
   if ((layout.header?.height ?? 999) > 72) throw new Error(`Mobile header too tall: ${layout.header?.height}px`);
