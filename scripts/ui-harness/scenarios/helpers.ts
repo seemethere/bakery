@@ -83,6 +83,17 @@ export async function collectMetrics(page: Page): Promise<Record<string, unknown
   });
 }
 
+async function harnessWorkspace(page: Page): Promise<string> {
+  return await page.evaluate(async (base) => {
+    const response = await fetch(`${base}/api/workspaces`);
+    if (!response.ok) throw new Error(`workspaces fetch failed: ${response.status}`);
+    const workspaces = await response.json() as Array<{ path: string }>;
+    const path = workspaces[0]?.path;
+    if (!path) throw new Error("Harness expected at least one workspace");
+    return path;
+  }, apiBase);
+}
+
 export async function prepareSession(page: Page): Promise<string> {
   await page.addInitScript(({ apiBase }) => {
     localStorage.setItem("piWebApiBase", apiBase);
@@ -101,17 +112,14 @@ export async function prepareSession(page: Page): Promise<string> {
   const mobileMenu = page.locator("#toggleSessionSidebarMobile");
   if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
   await page.locator("#newSession").waitFor({ state: "visible", timeout: 5_000 });
-  const created = page.waitForResponse((response) => response.url() === `${apiBase}/api/sessions` && response.request().method() === "POST" && response.status() === 201);
-  await page.locator("#newSession").click();
-  const response = await created;
-  const session = await response.json() as { id: string };
+  const sessionId = await createSessionViaApi(page);
   await page.locator("#prompt").waitFor({ state: "visible" });
   await waitForAgentIdle(page, 5_000);
   if (await page.locator("#toggleSessionSidebarMobile").isVisible().catch(() => false)) {
     const sidebarOpen = await page.locator(".pi-web-agent").evaluate((element) => !element.classList.contains("session-sidebar-collapsed"));
     if (sidebarOpen) await page.locator("#toggleSessionSidebar").click();
   }
-  return session.id;
+  return sessionId;
 }
 
 export async function selectedSessionId(page: Page): Promise<string | null> {
@@ -123,15 +131,15 @@ export async function waitForSelectedSession(page: Page, sessionId: string): Pro
 }
 
 export async function createSessionViaApi(page: Page): Promise<string> {
-  const session = await page.evaluate(async (base) => {
+  const session = await page.evaluate(async ({ base, cwd }) => {
     const response = await fetch(`${base}/api/sessions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ cwd }),
     });
     if (!response.ok) throw new Error(`create session failed: ${response.status}`);
     return await response.json() as { id: string };
-  }, apiBase);
+  }, { base: apiBase, cwd: await harnessWorkspace(page) });
   await page.goto(`${webBase}/sessions/${session.id}`, { waitUntil: "domcontentloaded" });
   await waitForSelectedSession(page, session.id);
   return session.id;

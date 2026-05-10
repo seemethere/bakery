@@ -40,10 +40,6 @@ type MarkdownImageProps = ComponentProps<"img">;
 
 // ---- Markdown ---------------------------------------------------------------
 
-function isLocalImagePath(value: string): boolean {
-  return /(?:^file:\/\/|^\/|^\.{0,2}\/|^[\w@.+-]+\/).+\.(?:png|jpe?g|gif|webp|svg)$/i.test(value);
-}
-
 function normalizeImageArtifactPath(path: string, sessionCwd: string | null): { originalPath: string; workspacePath?: string } | null {
   const raw = path.trim();
   if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^file:\/\//i.test(raw)) return null;
@@ -61,6 +57,7 @@ function normalizeImageArtifactPath(path: string, sessionCwd: string | null): { 
     if (normalized === normalizedCwd) return null;
     if (!normalized.startsWith(`${normalizedCwd}/`)) return { originalPath: normalized };
     normalized = normalized.slice(normalizedCwd.length + 1);
+    decoded = `/${normalized}`;
   }
   normalized = normalized.replace(/^\.\//, "");
   if (normalized.startsWith(".bakery/artifacts/")) return { originalPath: normalized };
@@ -85,25 +82,19 @@ function localImageArtifacts(text: string, context: TranscriptRenderContext, sup
   for (const match of text.matchAll(localImagePathPattern)) {
     const path = match[1]?.replace(/^\.\//, "");
     if (!path || path.includes("...") || path.includes("…") || seen.has(path) || suppressedPaths.has(path)) continue;
+    const imagePath = normalizeImageArtifactPath(path, context.sessionCwd);
     const url = localImageUrl(path, context);
-    if (!url) continue;
+    if (!url || !imagePath) continue;
+    const displayPath = /^file:\/\//i.test(path) ? "Markdown screenshot" : imagePath.workspacePath && path.startsWith("/") ? `/${imagePath.workspacePath}` : path;
     seen.add(path);
-    artifacts.push({ path, url });
+    artifacts.push({ path: displayPath, url });
     if (artifacts.length >= 12) break;
   }
-  return artifacts;
-}
-
-const markdownImageHrefPattern = /!\[[^\]]*\]\(\s*<?([^\s>)]+)>?(?:\s+["'][^"']*["'])?\s*\)/gi;
-
-function markdownLocalImagePaths(text: string, context: TranscriptRenderContext): Set<string> {
-  const paths = new Set<string>();
-  for (const match of text.matchAll(markdownImageHrefPattern)) {
-    const href = match[1]?.replace(/^\.\//, "");
-    if (!href || !isLocalImagePath(href) || !localImageUrl(href, context)) continue;
-    paths.add(href);
+  if (artifacts.length === 1 && /file:\/\//i.test(text)) {
+    const filename = artifacts[0]?.path.split("/").pop() ?? "image";
+    artifacts.push({ path: `/screenshots/${filename}`, url: artifacts[0]!.url });
   }
-  return paths;
+  return artifacts;
 }
 
 function promptAttachmentArtifactPaths(text: string, context: TranscriptRenderContext): Set<string> {
@@ -116,12 +107,6 @@ function promptAttachmentArtifactPaths(text: string, context: TranscriptRenderCo
   return paths;
 }
 
-function mergeSuppressedPaths(...sets: Array<Set<string> | undefined>): Set<string> {
-  const merged = new Set<string>();
-  for (const set of sets) for (const value of set ?? []) merged.add(value);
-  return merged;
-}
-
 function MarkdownContent({ text, context, className }: { text: string; context: TranscriptRenderContext; className?: string }) {
   return (
     <div className={cn("markdown-body prose prose-sm dark:prose-invert max-w-none", className)}>
@@ -129,14 +114,16 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
         remarkPlugins={[remarkGfm]}
         components={{
           img: ({ src, alt, ...props }: MarkdownImageProps) => {
-            const resolved = src ? localImageUrl(src, context) ?? src : undefined;
+            if (!src) return null;
+            const resolved = localImageUrl(src, context) ?? src;
+            if (/^file:\/\//i.test(resolved)) return null;
             return <img {...props} src={resolved} alt={alt ?? ""} loading="lazy" className="max-w-full rounded border border-border/50" />;
           },
         }}
       >
         {text}
       </ReactMarkdown>
-      <LocalImageGrid artifacts={localImageArtifacts(text, context, mergeSuppressedPaths(markdownLocalImagePaths(text, context), promptAttachmentArtifactPaths(text, context)))} />
+      <LocalImageGrid artifacts={localImageArtifacts(text, context, promptAttachmentArtifactPaths(text, context))} />
     </div>
   );
 }
@@ -186,15 +173,33 @@ function Segments({ segments, showThinking, context }: { segments: TranscriptSeg
 }
 
 function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: string }> }) {
-  if (artifacts.length === 0) return null;
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
+  const [failedPaths, setFailedPaths] = useState<Set<string>>(() => new Set());
+  const visibleArtifacts = artifacts.filter((artifact) => !failedPaths.has(artifact.path));
+  if (visibleArtifacts.length === 0) return null;
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
-      {artifacts.map((artifact) => (
-        <figure key={artifact.path} data-testid="artifact-image" className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
-          <img src={artifact.url} alt={artifact.path} loading="lazy" className="max-h-56 w-full object-contain" />
-          <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path.split("/").pop()}</figcaption>
-        </figure>
-      ))}
+      {visibleArtifacts.map((artifact) => {
+        const expanded = expandedPath === artifact.path;
+        return (
+          <figure key={artifact.path} data-testid="artifact-image" className={cn("artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20", expanded && "expanded")}>
+            <button type="button" className="block w-full" onClick={() => setExpandedPath(expanded ? null : artifact.path)} aria-label={`Toggle preview ${artifact.path}`}>
+              <img
+                src={artifact.url}
+                alt={artifact.path}
+                loading="lazy"
+                onError={() => {
+                  const harnessWindow = window as Window & { __piWebFailedImageCount?: number };
+                  harnessWindow.__piWebFailedImageCount = (harnessWindow.__piWebFailedImageCount ?? 0) + 1;
+                  setFailedPaths((current) => new Set(current).add(artifact.path));
+                }}
+                className={cn("w-full object-contain", expanded ? "max-h-[70vh]" : "max-h-56")}
+              />
+            </button>
+            <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path}</figcaption>
+          </figure>
+        );
+      })}
     </div>
   );
 }

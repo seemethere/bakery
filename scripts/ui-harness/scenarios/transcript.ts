@@ -478,8 +478,14 @@ export async function runToolImageHeavyTranscript(page: Page): Promise<Record<st
   }, null, { timeout: 15_000 });
   const responsiveness = [
     await timed("fill-prompt-after-heavy-transcript", () => page.locator("#prompt").fill("typing after tool/image-heavy transcript")),
-    await timed("toggle-inspector-after-heavy-transcript", () => page.locator("#toggleRightPanel").click()),
-    await timed("toggle-thinking-after-heavy-transcript", () => page.locator("#showThinking").click()),
+    await timed("toggle-model-settings-after-heavy-transcript", async () => {
+      await page.locator("#modelThinkingToggle").click();
+      await page.locator(".model-thinking-popover").waitFor({ timeout: 5_000 });
+    }),
+    await timed("open-tool-menu-after-heavy-transcript", async () => {
+      await page.locator('.message.tool [data-row-action="menu"]').first().click();
+      await page.locator(".message-action-menu").waitFor({ timeout: 5_000 });
+    }),
   ];
   await page.screenshot({ path: join(artifactDir, "tool-image-heavy-transcript.png"), fullPage: true });
   return {
