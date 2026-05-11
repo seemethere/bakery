@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SessionKind, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
+import type { AppSettings, AutoGenerateMetadataOverride, SessionIsolationKind, SessionKind, SessionReviewStatus, SummarySource, TitleSource, ToolPermissionMode, WebSession, Workspace } from "@pi-web-agent/protocol";
 
 export type SessionPreferences = {
   webSessionId: string;
@@ -64,6 +64,8 @@ type SessionRow = {
   worktree_branch: string | null;
   worktree_base_commit: string | null;
   worktree_source_dirty: number;
+  review_status: SessionReviewStatus | null;
+  review_updated_at: string | null;
   title: string | null;
   title_source: TitleSource;
   summary: string | null;
@@ -89,6 +91,8 @@ function mapSession(row: SessionRow): WebSession {
     worktreeBranch: row.worktree_branch,
     worktreeBaseCommit: row.worktree_base_commit,
     worktreeSourceDirty: Boolean(row.worktree_source_dirty),
+    reviewStatus: row.review_status,
+    reviewUpdatedAt: row.review_updated_at,
     title: row.title,
     titleSource: row.title_source,
     summary: row.summary,
@@ -203,6 +207,9 @@ export class MetadataStore {
     this.addColumn("web_sessions", "worktree_branch TEXT", "worktree_branch");
     this.addColumn("web_sessions", "worktree_base_commit TEXT", "worktree_base_commit");
     this.addColumn("web_sessions", "worktree_source_dirty INTEGER NOT NULL DEFAULT 0", "worktree_source_dirty");
+    this.addColumn("web_sessions", "review_status TEXT", "review_status");
+    this.addColumn("web_sessions", "review_updated_at TEXT", "review_updated_at");
+    this.db.query("UPDATE web_sessions SET review_status = 'pending' WHERE isolation_kind = 'git_worktree' AND review_status IS NULL").run();
     this.addColumn("web_sessions", "title_source TEXT NOT NULL DEFAULT 'unset'", "title_source");
     this.addColumn("web_sessions", "summary TEXT", "summary");
     this.addColumn("web_sessions", "summary_source TEXT NOT NULL DEFAULT 'unset'", "summary_source");
@@ -237,6 +244,8 @@ export class MetadataStore {
             worktree_branch TEXT,
             worktree_base_commit TEXT,
             worktree_source_dirty INTEGER NOT NULL DEFAULT 0,
+            review_status TEXT,
+            review_updated_at TEXT,
             title_source TEXT NOT NULL DEFAULT 'unset',
             summary TEXT,
             summary_source TEXT NOT NULL DEFAULT 'unset',
@@ -247,8 +256,8 @@ export class MetadataStore {
             pinned INTEGER NOT NULL DEFAULT 0,
             kind TEXT NOT NULL DEFAULT 'workspace'
           );
-          INSERT INTO web_sessions_new (id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind)
-            SELECT id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind FROM web_sessions;
+          INSERT INTO web_sessions_new (id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, review_status, review_updated_at, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind)
+            SELECT id, cwd, pi_session_file, title, created_at, last_opened_at, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, review_status, review_updated_at, title_source, summary, summary_source, summary_updated_at, metadata_generation_count, metadata_last_generated_at, auto_generate_metadata_override, pinned, kind FROM web_sessions;
           DROP TABLE web_sessions;
           ALTER TABLE web_sessions_new RENAME TO web_sessions;
         `);
@@ -299,11 +308,13 @@ export class MetadataStore {
     return row ? mapSession(row) : undefined;
   }
 
-  createSession(input: { id: string; cwd: string | null; piSessionFile: string; kind?: SessionKind; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean }): WebSession {
+  createSession(input: { id: string; cwd: string | null; piSessionFile: string; kind?: SessionKind; title?: string | null; titleSource?: TitleSource; summary?: string | null; summarySource?: SummarySource; isolationKind?: SessionIsolationKind; sourceCwd?: string | null; worktreePath?: string | null; worktreeBranch?: string | null; worktreeBaseCommit?: string | null; worktreeSourceDirty?: boolean; reviewStatus?: SessionReviewStatus | null }): WebSession {
     const now = new Date().toISOString();
+    const isolationKind = input.isolationKind ?? "none";
+    const reviewStatus = input.reviewStatus ?? (isolationKind === "git_worktree" ? "pending" : null);
     this.db
-      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, kind, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(input.id, input.cwd, input.piSessionFile, input.kind ?? "workspace", input.isolationKind ?? "none", input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
+      .query("INSERT INTO web_sessions (id, cwd, pi_session_file, kind, isolation_kind, source_cwd, worktree_path, worktree_branch, worktree_base_commit, worktree_source_dirty, review_status, review_updated_at, title, title_source, summary, summary_source, summary_updated_at, created_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(input.id, input.cwd, input.piSessionFile, input.kind ?? "workspace", isolationKind, input.sourceCwd ?? null, input.worktreePath ?? null, input.worktreeBranch ?? null, input.worktreeBaseCommit ?? null, input.worktreeSourceDirty ? 1 : 0, reviewStatus, null, input.title ?? null, input.titleSource ?? (input.title ? "manual" : "unset"), input.summary ?? null, input.summarySource ?? (input.summary ? "derived" : "unset"), input.summary ? now : null, now, now);
     this.db.query("INSERT INTO session_preferences (web_session_id) VALUES (?)").run(input.id);
     const session = this.getSession(input.id);
     if (!session) throw new Error("Failed to create session");
@@ -336,6 +347,11 @@ export class MetadataStore {
 
   attachWorkspace(id: string, cwd: string): WebSession | undefined {
     this.db.query("UPDATE web_sessions SET cwd = ?, kind = 'workspace' WHERE id = ?").run(cwd, id);
+    return this.getSession(id);
+  }
+
+  updateSessionReview(id: string, status: SessionReviewStatus): WebSession | undefined {
+    this.db.query("UPDATE web_sessions SET review_status = ?, review_updated_at = ? WHERE id = ?").run(status, new Date().toISOString(), id);
     return this.getSession(id);
   }
 

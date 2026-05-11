@@ -57,6 +57,8 @@ function webSession(overrides: Partial<WebSession> = {}): WebSession {
     worktreeBranch: null,
     worktreeBaseCommit: null,
     worktreeSourceDirty: false,
+    reviewStatus: null,
+    reviewUpdatedAt: null,
     title: null,
     titleSource: "unset",
     summary: null,

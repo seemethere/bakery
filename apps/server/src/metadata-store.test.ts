@@ -39,6 +39,58 @@ describe("MetadataStore workspaces", () => {
     }
   });
 
+  test("defaults review state only for isolated worktree sessions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      const standard = store.createSession({ id: "standard-1", cwd: dir, piSessionFile: join(dir, "standard.jsonl") });
+      const isolated = store.createSession({
+        id: "isolated-1",
+        cwd: join(dir, "worktree"),
+        piSessionFile: join(dir, "isolated.jsonl"),
+        isolationKind: "git_worktree",
+        sourceCwd: dir,
+        worktreePath: join(dir, "worktree"),
+        worktreeBranch: "bakery/session/test",
+        worktreeBaseCommit: "abc123",
+      });
+
+      expect(standard.reviewStatus).toBeNull();
+      expect(standard.reviewUpdatedAt).toBeNull();
+      expect(isolated.reviewStatus).toBe("pending");
+      expect(isolated.reviewUpdatedAt).toBeNull();
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("updates session review state", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      const session = store.createSession({
+        id: "isolated-1",
+        cwd: join(dir, "worktree"),
+        piSessionFile: join(dir, "isolated.jsonl"),
+        isolationKind: "git_worktree",
+        sourceCwd: dir,
+        worktreePath: join(dir, "worktree"),
+        worktreeBranch: "bakery/session/test",
+        worktreeBaseCommit: "abc123",
+      });
+
+      const updated = store.updateSessionReview(session.id, "approved");
+
+      expect(updated).toMatchObject({ id: session.id, reviewStatus: "approved" });
+      expect(typeof updated?.reviewUpdatedAt).toBe("string");
+      expect(store.getSession(session.id)?.reviewStatus).toBe("approved");
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("attaching a workspace promotes draft sessions to workspace sessions", () => {
     const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
     try {

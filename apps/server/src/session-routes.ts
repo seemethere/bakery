@@ -5,13 +5,14 @@ import {
   createSessionRequestSchema,
   forkSessionRequestSchema,
   navigateTreeRequestSchema,
+  updateSessionReviewRequestSchema,
   type SessionTreeNode,
   type WebSession,
 } from "@pi-web-agent/protocol";
 import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { FastifyInstance } from "fastify";
 import type { ServerConfig } from "./config.js";
-import { createGitWorktreeSession } from "./git-worktrees.js";
+import { createGitWorktreeSession, summarizeGitWorktreeChanges } from "./git-worktrees.js";
 import type { MetadataStore } from "./metadata-store.js";
 import { messageText } from "./metadata-routes.js";
 import type { PiSessionRunner } from "./pi-runner.js";
@@ -202,6 +203,26 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     if (!session) return reply.code(404).send({ error: "session not found" });
     store.touchSession(session.id);
     return store.getSession(session.id) ?? session;
+  });
+
+  app.get<{ Params: { id: string } }>("/api/sessions/:id/review-summary", async (request, reply) => {
+    const session = store.getSession(request.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    if (session.isolationKind !== "git_worktree") {
+      return { state: "unavailable", baseCommit: null, changedFileCount: 0, files: [], truncated: false, message: "Session review requires an isolated Git worktree." };
+    }
+    return summarizeGitWorktreeChanges({ worktreePath: session.worktreePath, baseCommit: session.worktreeBaseCommit });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/sessions/:id/review", async (request, reply) => {
+    const parsed = updateSessionReviewRequestSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+    const session = store.getSession(request.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    if (session.isolationKind !== "git_worktree") return reply.code(409).send({ error: "session review requires an isolated Git worktree" });
+    const updated = store.updateSessionReview(session.id, parsed.data.status);
+    if (!updated) return reply.code(404).send({ error: "session not found" });
+    return updated;
   });
 
   app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {

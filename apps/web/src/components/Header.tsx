@@ -16,10 +16,11 @@ type Props = {
   isBootstrapping?: boolean;
   fetchJson: <T>(path: string, init?: RequestInit) => Promise<T>;
   onUpdateSessionMetadata: (id: string, input: { title?: string | null; summary?: string | null }) => Promise<WebSession | null>;
+  onUpdateSessionReview: (id: string, status: NonNullable<WebSession["reviewStatus"]>) => Promise<WebSession | null>;
   onAttachWorkspace: (sessionId: string, cwd: string) => Promise<WebSession | null>;
 };
 
-export function Header({ session, workspaces, connectionStatus, isBootstrapping = false, fetchJson, onUpdateSessionMetadata, onAttachWorkspace }: Props) {
+export function Header({ session, workspaces, connectionStatus, isBootstrapping = false, fetchJson, onUpdateSessionMetadata, onUpdateSessionReview, onAttachWorkspace }: Props) {
   const isMobile = useIsMobile();
   const title = session ? sessionDisplayTitle(session) : null;
   const meta = session ? sessionMetadataLabel(session) : null;
@@ -68,6 +69,7 @@ export function Header({ session, workspaces, connectionStatus, isBootstrapping 
             session={session}
             fetchJson={fetchJson}
             onUpdateSessionMetadata={onUpdateSessionMetadata}
+            onUpdateSessionReview={onUpdateSessionReview}
           />
         )}
         {!isBootstrapping && <StatusPill status={connectionStatus} />}

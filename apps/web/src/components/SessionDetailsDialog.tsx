@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type React from "react";
-import type { PreviewStackStatus, SessionMetadataSuggestion, SessionTreeNode, SessionTreeResponse, WebSession } from "@pi-web-agent/protocol";
+import type { PreviewStackStatus, SessionMetadataSuggestion, SessionReviewSummary, SessionTreeNode, SessionTreeResponse, WebSession } from "@pi-web-agent/protocol";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, InfoIcon, PlayIcon, RefreshCwIcon, SparklesIcon, SquareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +20,7 @@ type Props = {
   session: WebSession;
   fetchJson: <T>(path: string, init?: RequestInit) => Promise<T>;
   onUpdateSessionMetadata: (id: string, input: { title?: string | null; summary?: string | null }) => Promise<WebSession | null>;
+  onUpdateSessionReview: (id: string, status: NonNullable<WebSession["reviewStatus"]>) => Promise<WebSession | null>;
 };
 
 function formatDate(value: string | null | undefined): string {
@@ -33,15 +34,31 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
-export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetadata }: Props) {
+export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetadata, onUpdateSessionReview }: Props) {
   const [open, setOpen] = useState(false);
   const [previewStatus, setPreviewStatus] = useState<PreviewStackStatus | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [reviewSummary, setReviewSummary] = useState<SessionReviewSummary | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [metadataError, setMetadataError] = useState("");
   const [sessionTree, setSessionTree] = useState<SessionTreeResponse | null>(null);
   const [copied, setCopied] = useState("");
+
+  async function refreshReviewSummary() {
+    if (!open || session.isolationKind !== "git_worktree") return;
+    setReviewLoading(true);
+    setReviewError("");
+    try {
+      setReviewSummary(await fetchJson<SessionReviewSummary>(`/api/sessions/${encodeURIComponent(session.id)}/review-summary`));
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReviewLoading(false);
+    }
+  }
 
   async function refreshPreview() {
     if (!open) return;
@@ -58,6 +75,7 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
 
   useEffect(() => {
     if (!open) return;
+    void refreshReviewSummary();
     void refreshPreview();
     void fetchJson<SessionTreeResponse>(`/api/sessions/${encodeURIComponent(session.id)}/tree`).then(setSessionTree).catch(() => setSessionTree(null));
   }, [open, session.id]);
@@ -82,6 +100,19 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
       setMetadataError(error instanceof Error ? error.message : String(error));
     } finally {
       setMetadataLoading(false);
+    }
+  }
+
+  async function handleReviewAction(status: NonNullable<WebSession["reviewStatus"]>) {
+    setReviewLoading(true);
+    setReviewError("");
+    try {
+      const updated = await onUpdateSessionReview(session.id, status);
+      if (!updated) throw new Error("Review state update failed.");
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReviewLoading(false);
     }
   }
 
@@ -175,6 +206,66 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
             </section>
           )}
 
+          {isIsolated && (
+            <section className="grid gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <SectionTitle title="Session Review" />
+                <Button type="button" size="icon-xs" variant="ghost" onClick={() => void refreshReviewSummary()} disabled={reviewLoading} aria-label="Refresh review summary" title="Refresh review summary">
+                  <RefreshCwIcon className={cn(reviewLoading && "animate-spin")} />
+                </Button>
+              </div>
+              <div className="grid gap-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge tone={reviewBadgeTone(session.reviewStatus)}>{reviewStatusLabel(session.reviewStatus)}</StatusBadge>
+                  <span className="text-xs text-muted-foreground">
+                    {session.reviewUpdatedAt ? `Updated ${formatDate(session.reviewUpdatedAt)}` : "No review decision yet."}
+                  </span>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Approval records your decision only. It does not apply changes, merge branches, delete worktrees, or touch the source checkout yet.
+                </p>
+              </div>
+              {reviewSummary ? (
+                <div className="grid gap-2 rounded-md border border-border/50 bg-background px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{reviewSummary.changedFileCount} changed {reviewSummary.changedFileCount === 1 ? "file" : "files"}</span>
+                    {reviewSummary.state !== "available" && <StatusBadge tone={reviewSummary.state === "error" ? "danger" : "warning"}>{reviewSummary.state}</StatusBadge>}
+                  </div>
+                  {reviewSummary.message && <p className="text-xs text-muted-foreground">{reviewSummary.message}</p>}
+                  {reviewSummary.files.length > 0 ? (
+                    <div className="max-h-36 overflow-y-auto rounded border border-border/40 bg-muted/20 p-1 font-mono text-xs">
+                      {reviewSummary.files.map((file) => (
+                        <div key={`${file.status}:${file.path}`} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 rounded px-2 py-1">
+                          <span className="text-muted-foreground">{file.status}</span>
+                          <span className="truncate" title={file.path}>{file.path}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No worktree file changes found.</p>
+                  )}
+                  {reviewSummary.truncated && <p className="text-xs text-muted-foreground">Showing the first {reviewSummary.files.length} files.</p>}
+                </div>
+              ) : reviewLoading ? (
+                <Skeleton className="h-20 w-full" />
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant={session.reviewStatus === "approved" ? "default" : "outline"} onClick={() => void handleReviewAction("approved")} disabled={reviewLoading || session.reviewStatus === "approved"}>
+                  Approve
+                </Button>
+                <Button type="button" size="sm" variant={session.reviewStatus === "rejected" ? "destructive" : "outline"} onClick={() => void handleReviewAction("rejected")} disabled={reviewLoading || session.reviewStatus === "rejected"}>
+                  Reject
+                </Button>
+                {session.reviewStatus !== "pending" && (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => void handleReviewAction("pending")} disabled={reviewLoading}>
+                    Mark pending
+                  </Button>
+                )}
+              </div>
+              {reviewError && <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-xs text-destructive">{reviewError}</p>}
+            </section>
+          )}
+
           <section className="grid gap-3">
             <div className="flex items-center justify-between gap-3">
               <SectionTitle title="Session Tree" />
@@ -264,6 +355,18 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
       </DialogContent>
     </Dialog>
   );
+}
+
+function reviewStatusLabel(status: WebSession["reviewStatus"]): string {
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Pending review";
+}
+
+function reviewBadgeTone(status: WebSession["reviewStatus"]): "neutral" | "success" | "warning" | "danger" {
+  if (status === "approved") return "success";
+  if (status === "rejected") return "danger";
+  return "warning";
 }
 
 function SectionTitle({ title }: { title: string }) {

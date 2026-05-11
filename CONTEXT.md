@@ -197,6 +197,15 @@ An operator-started review environment for an isolated agent session that runs t
 - Not: the primary development server or an automatically merged workspace.
 - Example: an operator starts a Preview Stack from an isolated session's Details panel, opens the generated URL, reviews the branch's UI changes with fake-agent data, then stops the stack.
 
+### Session Review
+
+The operator's approve/reject decision for an isolated agent session's worktree changes after inspecting the session state, change summary, and optionally a Preview Stack.
+
+- Also known as: review lifecycle, approve/reject lifecycle.
+- Not: the same as a Plan Card approval; Plan Card approval accepts an implementation prompt, while Session Review decides what to do with an isolated worktree's code changes.
+- Not: automatically merging or applying changes in the first implementation; active apply/merge behavior is a later capability gated by the Session Review decision.
+- Example: an operator opens Session Details for an isolated session, sees the changed-file summary and preview URL, marks the session approved, and later applies the worktree changes back to the source branch.
+
 ### Event Fork
 
 A new Bakery agent session created from a selected session-tree-backed transcript event, used as Bakery's rollback/go-to behavior without mutating the source session's active leaf.

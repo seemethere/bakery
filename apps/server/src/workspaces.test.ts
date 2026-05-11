@@ -131,6 +131,8 @@ describe("workspace helpers", () => {
         worktreeBranch: "bakery/session/test",
         worktreeBaseCommit: "abc123",
         worktreeSourceDirty: false,
+        reviewStatus: "pending",
+        reviewUpdatedAt: null,
         title: null,
         titleSource: "unset",
         summary: null,

@@ -30,6 +30,7 @@ type Props = {
   onRenameSession: (id: string, title: string) => void;
   onTogglePinSession: (id: string, pinned: boolean) => void;
   onUpdateSessionMetadata: (id: string, input: { title?: string | null; summary?: string | null }) => Promise<WebSession | null>;
+  onUpdateSessionReview: (id: string, status: NonNullable<WebSession["reviewStatus"]>) => Promise<WebSession | null>;
   onAttachWorkspace: (sessionId: string, cwd: string) => Promise<WebSession | null>;
   onWorkspaceChange: (path: string) => void;
   onOpenSettings: () => void;
@@ -55,6 +56,7 @@ export function Layout({
   onRenameSession,
   onTogglePinSession,
   onUpdateSessionMetadata,
+  onUpdateSessionReview,
   onAttachWorkspace,
   onWorkspaceChange,
   onOpenSettings,
@@ -109,6 +111,7 @@ export function Layout({
           isBootstrapping={isBootstrapping}
           fetchJson={fetchJson}
           onUpdateSessionMetadata={onUpdateSessionMetadata}
+          onUpdateSessionReview={onUpdateSessionReview}
           onAttachWorkspace={onAttachWorkspace}
         />
 

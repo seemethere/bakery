@@ -111,6 +111,7 @@ export type ServerConnectionHandle = {
   togglePinSession: (id: string, pinned: boolean) => Promise<WebSession | null>;
   forkSession: (sourceSessionId: string, entryId: string) => Promise<WebSession | null>;
   updateSessionMetadata: (id: string, input: { title?: string | null; summary?: string | null }) => Promise<WebSession | null>;
+  updateSessionReview: (id: string, status: NonNullable<WebSession["reviewStatus"]>) => Promise<WebSession | null>;
   cancelQueuedMessage: (queue: RunningQueueName, index: number, text?: string) => void;
   send: (sessionId: string, text: string, images: PromptImage[], followUp: boolean, mode?: SendMode) => void;
   abort: (sessionId: string) => void;
@@ -617,6 +618,19 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     }
   }, [api, mergeSessionUpdate]);
 
+  const updateSessionReview = useCallback(async (id: string, status: NonNullable<WebSession["reviewStatus"]>) => {
+    try {
+      const updated = await api<WebSession>(`/api/sessions/${encodeURIComponent(id)}/review`, {
+        method: "POST",
+        body: JSON.stringify({ status }),
+      });
+      mergeSessionUpdate(updated);
+      return updated;
+    } catch {
+      return null;
+    }
+  }, [api, mergeSessionUpdate]);
+
   const send = useCallback((_sessionId: string, text: string, images: PromptImage[], followUp: boolean, mode: SendMode = "prompt") => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -778,6 +792,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
     togglePinSession,
     forkSession,
     updateSessionMetadata,
+    updateSessionReview,
     cancelQueuedMessage,
     send,
     abort,

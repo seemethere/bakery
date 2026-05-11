@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { SessionReviewFile, SessionReviewSummary } from "@pi-web-agent/protocol";
 
 export type GitWorktreeSession = {
   cwd: string;
@@ -32,8 +34,56 @@ async function gitOk(args: string[], cwd: string): Promise<string> {
   return result.stdout.trim();
 }
 
+function parseNameStatusLine(line: string): SessionReviewFile | null {
+  const parts = line.split("\t");
+  const status = parts[0]?.trim();
+  const path = parts.at(-1)?.trim();
+  if (!status || !path) return null;
+  return { status, path };
+}
+
+function parseUntrackedStatusLine(line: string): SessionReviewFile | null {
+  if (!line.startsWith("?? ")) return null;
+  const path = line.slice(3).trim();
+  return path ? { status: "??", path } : null;
+}
+
+function summarizeFiles(files: SessionReviewFile[], limit: number): Pick<SessionReviewSummary, "changedFileCount" | "files" | "truncated"> {
+  // Keep one row per path. The caller adds tracked diff rows first and untracked
+  // status rows second, so this only replaces a path when Git reports a clearer
+  // working-tree/untracked state for the same display path.
+  const byPath = new Map<string, SessionReviewFile>();
+  for (const file of files) byPath.set(file.path, file);
+  const all = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+  return { changedFileCount: all.length, files: all.slice(0, limit), truncated: all.length > limit };
+}
+
 function safePathSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "repo";
+}
+
+export async function summarizeGitWorktreeChanges(options: {
+  worktreePath: string | null;
+  baseCommit: string | null;
+  limit?: number;
+}): Promise<SessionReviewSummary> {
+  if (!options.worktreePath || !options.baseCommit) {
+    return { state: "unavailable", baseCommit: options.baseCommit, changedFileCount: 0, files: [], truncated: false, message: "Session review requires an isolated Git worktree." };
+  }
+  if (!existsSync(options.worktreePath)) {
+    return { state: "unavailable", baseCommit: options.baseCommit, changedFileCount: 0, files: [], truncated: false, message: "The session worktree no longer exists." };
+  }
+  try {
+    const diff = await gitOk(["diff", "--name-status", "--find-renames", options.baseCommit], options.worktreePath);
+    const status = await gitOk(["status", "--porcelain=v1", "--untracked-files=all"], options.worktreePath);
+    const files = [
+      ...diff.split("\n").map(parseNameStatusLine).filter((file): file is SessionReviewFile => Boolean(file)),
+      ...status.split("\n").map(parseUntrackedStatusLine).filter((file): file is SessionReviewFile => Boolean(file)),
+    ];
+    return { state: "available", baseCommit: options.baseCommit, ...summarizeFiles(files, options.limit ?? 50) };
+  } catch (error) {
+    return { state: "error", baseCommit: options.baseCommit, changedFileCount: 0, files: [], truncated: false, message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export async function createGitWorktreeSession(options: {

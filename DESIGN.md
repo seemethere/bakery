@@ -129,6 +129,7 @@ Local default: allow `bypass` and `confirm`, default `bypass`.
 - Changing projects means creating/opening another session.
 - Sessions may optionally be isolated by creating a managed Git worktree for the session. In that mode the session `cwd` is the worktree path, the source repo/cwd is kept as metadata, and Bakery creates a named branch such as `bakery/session/<short-id>` from the source `HEAD`.
 - If the source repo has uncommitted changes when creating an isolated worktree session, v1 warns that the worktree starts from `HEAD`; it does not copy dirty source changes.
+- Isolated worktree sessions have a passive Session Review state (`pending`, `approved`, or `rejected`) so the operator can record a review decision before any later apply/merge/discard action mutates the source checkout.
 - Use pi native JSONL session files as the source of truth for conversation history, model state, and tree/branch structure.
 - The web app stores only metadata/index data in SQLite.
 
@@ -145,6 +146,8 @@ web_sessions (
   worktree_branch TEXT,
   worktree_base_commit TEXT,
   worktree_source_dirty INTEGER NOT NULL DEFAULT 0,
+  review_status TEXT,
+  review_updated_at TEXT,
   title TEXT,
   created_at TEXT NOT NULL,
   last_opened_at TEXT NOT NULL

@@ -205,6 +205,30 @@ export type SessionIsolationKind = z.infer<typeof sessionIsolationKindSchema>;
 export const sessionKindSchema = z.enum(["draft", "workspace", "chat_only"]);
 export type SessionKind = z.infer<typeof sessionKindSchema>;
 
+export const sessionReviewStatusSchema = z.enum(["pending", "approved", "rejected"]);
+export type SessionReviewStatus = z.infer<typeof sessionReviewStatusSchema>;
+
+export const sessionReviewFileSchema = z.object({
+  path: z.string(),
+  status: z.string(),
+});
+export type SessionReviewFile = z.infer<typeof sessionReviewFileSchema>;
+
+export const sessionReviewSummarySchema = z.object({
+  state: z.enum(["available", "unavailable", "error"]),
+  baseCommit: z.string().nullable(),
+  changedFileCount: z.number().int().nonnegative(),
+  files: z.array(sessionReviewFileSchema),
+  truncated: z.boolean(),
+  message: z.string().optional(),
+});
+export type SessionReviewSummary = z.infer<typeof sessionReviewSummarySchema>;
+
+export const updateSessionReviewRequestSchema = z.object({
+  status: sessionReviewStatusSchema,
+});
+export type UpdateSessionReviewRequest = z.infer<typeof updateSessionReviewRequestSchema>;
+
 export const webSessionSchema = z.object({
   id: z.string(),
   kind: sessionKindSchema,
@@ -216,6 +240,8 @@ export const webSessionSchema = z.object({
   worktreeBranch: z.string().nullable(),
   worktreeBaseCommit: z.string().nullable(),
   worktreeSourceDirty: z.boolean(),
+  reviewStatus: sessionReviewStatusSchema.nullable(),
+  reviewUpdatedAt: z.string().nullable(),
   title: z.string().nullable(),
   titleSource: titleSourceSchema,
   summary: z.string().nullable(),

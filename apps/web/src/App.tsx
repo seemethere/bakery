@@ -91,6 +91,7 @@ function AppInner() {
       onRenameSession={(id, title) => void conn.renameSession(id, title)}
       onTogglePinSession={(id, pinned) => void conn.togglePinSession(id, pinned)}
       onUpdateSessionMetadata={conn.updateSessionMetadata}
+      onUpdateSessionReview={conn.updateSessionReview}
       onAttachWorkspace={conn.attachWorkspace}
       onWorkspaceChange={() => {}}
       onOpenSettings={() => setSettingsOpen(true)}
