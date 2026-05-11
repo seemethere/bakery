@@ -8,6 +8,7 @@ import {
 } from "@pi-web-agent/protocol";
 import type { FastifyInstance } from "fastify";
 import type { MetadataStore } from "./metadata-store.js";
+import { assertAllowedSessionWorkspace, type WorkspacePermissionScope } from "./workspaces.js";
 
 const imageMimeTypes = new Map([
   [".png", "image/png"],
@@ -25,6 +26,7 @@ type ArtifactRouteDeps = {
   artifactDir: string;
   authToken?: string | undefined;
   store: MetadataStore;
+  getWorkspacePermissionScope(): WorkspacePermissionScope;
 };
 
 function artifactIdFor(sessionId: string, path: string): string {
@@ -75,6 +77,7 @@ export function registerArtifactRoutes(app: FastifyInstance, deps: ArtifactRoute
     if (!mime) return reply.code(415).send({ error: "only image previews are supported" });
     if (session.cwd === null) return reply.code(404).send({ error: "session has no workspace" });
     try {
+      await assertAllowedSessionWorkspace(session, deps.getWorkspacePermissionScope());
       const file = await resolveSessionFile(session.cwd, parsed.data.path);
       const info = await stat(file);
       if (!info.isFile()) return reply.code(404).send({ error: "file not found" });

@@ -7,10 +7,12 @@ import type { FastifyInstance } from "fastify";
 import { completeFiles, searchFiles } from "./file-search.js";
 import type { MetadataStore } from "./metadata-store.js";
 import type { PiSessionRunner } from "./pi-runner.js";
+import { assertAllowedSessionWorkspace, type WorkspacePermissionScope } from "./workspaces.js";
 
 type SearchRouteDeps = {
   store: MetadataStore;
   runner: PiSessionRunner;
+  getWorkspacePermissionScope(): WorkspacePermissionScope;
 };
 
 export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps): void {
@@ -23,6 +25,7 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
     try {
+      await assertAllowedSessionWorkspace(session, deps.getWorkspacePermissionScope());
       const handle = await runner.createSession({
         id: session.id,
         cwd: session.cwd,
@@ -40,7 +43,7 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
         .slice(0, parsed.data.limit);
       return { query: parsed.data.q, commands };
     } catch (error) {
-      return reply.code(500).send({ error: error instanceof Error ? error.message : String(error) });
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -50,8 +53,13 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     const parsed = fileSearchQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     if (session.cwd === null) return { query: parsed.data.q, files: [] };
-    const files = await searchFiles(session.cwd, parsed.data.q, parsed.data.limit);
-    return { query: parsed.data.q, files };
+    try {
+      await assertAllowedSessionWorkspace(session, deps.getWorkspacePermissionScope());
+      const files = await searchFiles(session.cwd, parsed.data.q, parsed.data.limit);
+      return { query: parsed.data.q, files };
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.get<{ Params: { id: string }; Querystring: { prefix?: string; limit?: string | number } }>("/api/sessions/:id/files/complete", async (request, reply) => {
@@ -60,7 +68,12 @@ export function registerSearchRoutes(app: FastifyInstance, deps: SearchRouteDeps
     const parsed = fileCompleteQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
     if (session.cwd === null) return { prefix: parsed.data.prefix, files: [] };
-    const files = await completeFiles(session.cwd, parsed.data.prefix, parsed.data.limit);
-    return { prefix: parsed.data.prefix, files };
+    try {
+      await assertAllowedSessionWorkspace(session, deps.getWorkspacePermissionScope());
+      const files = await completeFiles(session.cwd, parsed.data.prefix, parsed.data.limit);
+      return { prefix: parsed.data.prefix, files };
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 }

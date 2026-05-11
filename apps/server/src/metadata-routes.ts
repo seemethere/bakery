@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import type { ServerConfig } from "./config.js";
 import type { MetadataStore } from "./metadata-store.js";
 import type { PiSessionRunner, SessionHandle } from "./pi-runner.js";
+import { assertAllowedSessionWorkspace, type WorkspacePermissionScope } from "./workspaces.js";
 
 export type MetadataUpdateBroadcaster = {
   broadcastMetadataUpdate(session: WebSession): void;
@@ -19,6 +20,7 @@ export type MetadataRouteDeps = {
   config: ServerConfig;
   store: MetadataStore;
   runner: PiSessionRunner;
+  getWorkspacePermissionScope(): WorkspacePermissionScope;
   getBroadcaster(sessionId: string): MetadataUpdateBroadcaster | undefined;
 };
 
@@ -198,6 +200,7 @@ async function generateModelBackedMetadata(session: WebSession, deps: MetadataRo
   if (messages.length < 2 || meaningfulUsers === 0) return heuristic.deferred ? heuristic : { ...heuristic, deferred: true, reason: "Not enough session context for a useful summary yet." };
   if (session.cwd === null) return { ...heuristic, deferred: true, reason: "Session has no workspace; metadata generation requires one." };
 
+  await assertAllowedSessionWorkspace(session, deps.getWorkspacePermissionScope());
   const handle = await deps.runner.createSession({ id: session.id, cwd: session.cwd, piSessionFile: session.piSessionFile });
   const { model, apiKey, headers } = await resolveMetadataModel(handle, deps);
   const abort = AbortSignal.timeout(60_000);

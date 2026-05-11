@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { WebSession, Workspace } from "@pi-web-agent/protocol";
+import type { WebSession, Workspace, WorkspaceBrowseResponse } from "@pi-web-agent/protocol";
 import {
   ChevronDownIcon,
-  ChevronRightIcon,
+  FolderIcon,
   FolderGit2Icon,
+  FolderOpenIcon,
   PinIcon,
   PlusIcon,
   SearchIcon,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
+import { WorkspaceBrowserDialog } from "@/components/workspaces/WorkspaceBrowserDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -76,6 +78,9 @@ type Props = {
   onSelectSession: (id: string) => void;
   onNewSession: (cwd?: string) => void;
   onNewIsolatedSession: (cwd?: string) => void;
+  onBrowseWorkspaces: (path?: string) => Promise<WorkspaceBrowseResponse | null>;
+  onAddWorkspace: (path: string) => Promise<Workspace | null>;
+  onRevokeWorkspace: (path: string) => Promise<boolean>;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, title: string) => void;
   onTogglePinSession: (id: string, pinned: boolean) => void;
@@ -94,6 +99,9 @@ export function Sidebar({
   onSelectSession,
   onNewSession,
   onNewIsolatedSession,
+  onBrowseWorkspaces,
+  onAddWorkspace,
+  onRevokeWorkspace,
   onDeleteSession,
   onRenameSession,
   onTogglePinSession,
@@ -103,6 +111,7 @@ export function Sidebar({
     () => storedCollapsedWorkspaceGroups(),
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const [workspaceBrowserOpen, setWorkspaceBrowserOpen] = useState(false);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -149,74 +158,78 @@ export function Sidebar({
       <SidebarHeader className="gap-1.5 pb-2">
         {!isMobile && <SidebarBrand />}
 
-        <div className="flex w-full gap-0 group-data-[collapsible=icon]:block">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  id="newSession"
-                  onClick={() => onNewSession()}
-                  className="group/new-session h-8 flex-1 justify-start gap-1.5 rounded-r-none group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:rounded-md group-data-[collapsible=icon]:px-0"
-                >
-                  <PlusIcon className="size-4" />
-                  <span className="flex-1 text-left group-data-[collapsible=icon]:hidden">New session</span>
-                  <kbd className="rounded border border-primary-foreground/30 px-1 py-0.5 text-[9px] tracking-wide text-primary-foreground/70 opacity-0 transition-opacity group-hover/new-session:opacity-100 group-data-[collapsible=icon]:hidden">
-                    ⌘I
-                  </kbd>
-                </Button>
-              }
-            />
-            <TooltipContent side="right">New session ⌘I</TooltipContent>
-          </Tooltip>
+        <div className="grid w-full gap-1 group-data-[collapsible=icon]:block">
+          <div className="group/new-session-row flex min-w-0 items-center rounded-md transition-colors hover:bg-sidebar-accent/55">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    id="newSession"
+                    type="button"
+                    onClick={() => onNewSession()}
+                    className="group/new-session flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
+                  >
+                    <PlusIcon className="size-4 text-sidebar-foreground/55 group-hover/new-session:text-sidebar-foreground/75" />
+                    <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">New session</span>
+                    <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/35 opacity-0 transition-opacity group-hover/new-session:opacity-100 group-data-[collapsible=icon]:hidden">
+                      ⌘I
+                    </kbd>
+                  </button>
+                }
+              />
+              <TooltipContent side="right">New session ⌘I</TooltipContent>
+            </Tooltip>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  className="h-8 w-8 rounded-l-none border-l border-primary-foreground/20 px-0 group-data-[collapsible=icon]:hidden"
-                  aria-label="More session types"
-                />
-              }
-            >
-              <ChevronDownIcon className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="bottom" className="w-48">
-              <DropdownMenuItem onClick={() => onNewIsolatedSession()}>
-                <FolderGit2Icon />
-                Isolated session
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    className="mr-1 hidden size-7 items-center justify-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/new-session-row:flex group-data-[collapsible=icon]:hidden"
+                    aria-label="More session types"
+                  />
+                }
+              >
+                <ChevronDownIcon className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="bottom" className="w-48">
+                <DropdownMenuItem onClick={() => onNewIsolatedSession()}>
+                  <FolderGit2Icon />
+                  Isolated session
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-        {!isMobile && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  onClick={() => setSearchOpen(true)}
-                  className="group/search flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-sidebar-accent group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
-                >
-                  <SearchIcon className="size-3.5 text-sidebar-foreground/40" />
-                  <span className="flex-1 truncate text-xs text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
-                    Search sessions…
-                  </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="group/search flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground/80 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
+              >
+                <SearchIcon className="size-3.5 text-sidebar-foreground/45 group-hover/search:text-sidebar-foreground/70" />
+                <span className="flex-1 truncate group-data-[collapsible=icon]:hidden">
+                  Search
+                </span>
+                {!isMobile && (
                   <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/30 opacity-0 transition-opacity group-hover/search:opacity-100 group-data-[collapsible=icon]:hidden">
                     ⌘K
                   </kbd>
-                </button>
-              }
-            />
-            <TooltipContent side="right">Search sessions ⌘K</TooltipContent>
-          </Tooltip>
-        )}
+                )}
+              </button>
+            }
+          />
+          <TooltipContent side="right">Search sessions{!isMobile ? " ⌘K" : ""}</TooltipContent>
+        </Tooltip>
+        </div>
       </SidebarHeader>
 
       <SidebarContent>
         {pinned.length > 0 && !isBootstrapping && (
           <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
             <div className="flex h-6 items-center px-2">
-              <span className="text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
+              <span className="text-xs font-medium text-sidebar-foreground/35">
                 Pinned
               </span>
             </div>
@@ -245,10 +258,11 @@ export function Sidebar({
         )}
 
         <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
-          <div className="flex h-7 items-center px-2">
-            <span className="flex-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
+          <div className="group/workspaceshead flex h-7 items-center pl-2 pr-0">
+            <span className="flex-1 text-xs font-medium text-sidebar-foreground/35">
               Workspaces
             </span>
+            <SidebarSectionAction label="Add workspace" onClick={() => setWorkspaceBrowserOpen(true)} />
           </div>
 
           {isBootstrapping ? (
@@ -278,20 +292,16 @@ export function Sidebar({
         </SidebarGroup>
 
         {!isBootstrapping && chatSessions.length > 0 && (
+          <div className="mx-3 my-1 border-t border-sidebar-border/50 group-data-[collapsible=icon]:hidden" />
+        )}
+
+        {!isBootstrapping && chatSessions.length > 0 && (
           <SidebarGroup className="py-0 group-data-[collapsible=icon]:hidden">
-            <div className="group/chatshead flex h-7 items-center px-2">
-              <span className="flex-1 text-[10px] uppercase tracking-wider text-sidebar-foreground/30">
+            <div className="group/chatshead flex h-7 items-center pl-2 pr-0">
+              <span className="flex-1 text-xs font-medium text-sidebar-foreground/35">
                 Chats
               </span>
-              <button
-                type="button"
-                aria-label="New chat"
-                title="New chat (no workspace)"
-                onClick={() => onNewSession()}
-                className="flex size-4 items-center justify-center rounded text-sidebar-foreground/40 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/chatshead:opacity-100 focus:opacity-100"
-              >
-                <PlusIcon className="size-3" />
-              </button>
+              <SidebarSectionAction label="New chat" tooltip="New chat (no workspace)" onClick={() => onNewSession()} />
             </div>
             <SidebarGroupContent>
               <div className="grid gap-1">
@@ -336,6 +346,15 @@ export function Sidebar({
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
+
+      <WorkspaceBrowserDialog
+        open={workspaceBrowserOpen}
+        onOpenChange={setWorkspaceBrowserOpen}
+        onBrowse={onBrowseWorkspaces}
+        onAddWorkspace={onAddWorkspace}
+        onRevokeWorkspace={onRevokeWorkspace}
+        onOpenWorkspace={(path) => onNewSession(path)}
+      />
 
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
         <CommandInput placeholder="Search sessions, workspaces, actions…" />
@@ -444,26 +463,32 @@ function WorkspaceGroup({
     <Collapsible open={expanded} onOpenChange={onToggle}>
       <CollapsibleTrigger
         render={
-          <button className="group/wg flex h-7 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-sidebar-accent">
-            <ChevronRightIcon
-              className={cn(
-                "size-3 text-sidebar-foreground/40 transition-transform duration-150",
-                expanded && "rotate-90",
-              )}
-            />
+          <button className="group/wg flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-sidebar-accent/55">
+            {expanded ? (
+              <FolderOpenIcon
+                className={cn(
+                  "size-3.5 shrink-0 transition-colors",
+                  isActiveWorkspace ? "text-emerald-500/90" : "text-sidebar-foreground/40 group-hover/wg:text-sidebar-foreground/60",
+                )}
+              />
+            ) : (
+              <FolderIcon
+                className={cn(
+                  "size-3.5 shrink-0 transition-colors",
+                  isActiveWorkspace ? "text-emerald-500/90" : "text-sidebar-foreground/40 group-hover/wg:text-sidebar-foreground/60",
+                )}
+              />
+            )}
             <span
               className={cn(
-                "flex-1 truncate text-xs",
+                "flex-1 truncate text-sm font-medium",
                 isActiveWorkspace
-                  ? "font-medium text-sidebar-foreground"
-                  : "text-sidebar-foreground/60",
+                  ? "text-sidebar-foreground/80"
+                  : "text-sidebar-foreground/60 group-hover/wg:text-sidebar-foreground/75",
               )}
             >
               {group.label}
             </span>
-            {isActiveWorkspace && (
-              <span className="size-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
-            )}
             <span
               role="button"
               tabIndex={0}
@@ -480,23 +505,22 @@ function WorkspaceGroup({
                   onNewSessionInWorkspace(group.path);
                 }
               }}
-              className="hidden size-4 items-center justify-center rounded text-sidebar-foreground/40 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/wg:opacity-100 group-hover/wg:flex focus:opacity-100 focus:flex"
+              className="hidden size-4 items-center justify-center rounded text-sidebar-foreground/35 opacity-0 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground/75 group-hover/wg:opacity-100 group-hover/wg:flex focus:opacity-100 focus:flex"
             >
               <PlusIcon className="size-3" />
-            </span>
-            <span className="text-[10px] text-sidebar-foreground/30 group-hover/wg:hidden">
-              {group.sessions.length}
             </span>
           </button>
         }
       />
-      <CollapsibleContent>
+      <CollapsibleContent
+        className="h-[var(--collapsible-panel-height)] overflow-hidden opacity-100 transition-[height,opacity] duration-200 ease-in-out data-[starting-style]:h-0 data-[starting-style]:opacity-0 data-[ending-style]:h-0 data-[ending-style]:opacity-0"
+      >
         {group.sessions.length === 0 ? (
           <p className="px-4 py-1.5 text-xs text-sidebar-foreground/30 italic">
             No sessions
           </p>
         ) : (
-          <div className="grid gap-1 pt-1">
+          <div className="grid gap-1 pt-1 pl-5">
             {group.sessions.map((session) => (
               <SessionCard
                 key={session.id}
@@ -513,6 +537,28 @@ function WorkspaceGroup({
         )}
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+function SidebarSectionAction({ label, tooltip = label, onClick }: { label: string; tooltip?: string; onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={label}
+            onClick={onClick}
+            className="text-sidebar-foreground/45 opacity-0 transition-opacity hover:bg-sidebar-accent/60 hover:text-sidebar-foreground/75 focus-visible:opacity-100 focus-visible:ring-sidebar-ring/50 group-hover/workspaceshead:opacity-100 group-focus-within/workspaceshead:opacity-100 group-hover/chatshead:opacity-100 group-focus-within/chatshead:opacity-100"
+          />
+        }
+      >
+        <PlusIcon className="size-3" aria-hidden="true" />
+      </TooltipTrigger>
+      <TooltipContent side="right">{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 

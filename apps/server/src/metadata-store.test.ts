@@ -22,6 +22,23 @@ describe("MetadataStore workspaces", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  test("deletes approved workspaces without deleting sessions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+      const session = store.createSession({ id: "session-1", cwd: "/repo/a", piSessionFile: join(dir, "session.jsonl") });
+      store.addWorkspace({ path: "/repo/a", label: "Alpha" });
+
+      expect(store.deleteWorkspace("/repo/a")).toBe(true);
+      expect(store.listWorkspaces()).toEqual([]);
+      expect(store.getSession(session.id)).toMatchObject({ id: session.id, cwd: "/repo/a" });
+      expect(store.deleteWorkspace("/repo/a")).toBe(false);
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("attaching a workspace promotes draft sessions to workspace sessions", () => {
     const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
     try {

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
-import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, type ModelInfo, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
+import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, workspaceBrowseQuerySchema, type ModelInfo, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
 import { AuthStorage, getAgentDir, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
@@ -19,7 +19,7 @@ import { registerSearchRoutes } from "./search-routes.js";
 import { isBrowserOriginAllowed } from "./security-origin.js";
 import { createSessionHubRegistry } from "./session-hub.js";
 import { registerSessionRoutes } from "./session-routes.js";
-import { addExistingWorkspace, assertAllowedCwd, cloneWorkspace, createGithubRepositoryWorkspace, mergeWorkspaces, resolveWorkspaceRoots } from "./workspaces.js";
+import { addExistingWorkspace, assertAllowedWorkspacePath, browseWorkspaceDirectory, cloneWorkspace, createGithubRepositoryWorkspace, mergeWorkspaces, resolveWorkspaceRoots } from "./workspaces.js";
 
 const config = loadConfig();
 const configWorkspaceRoots = await resolveWorkspaceRoots(config.workspaceRoots);
@@ -89,8 +89,16 @@ app.get("/api/config", async () => ({
   previewPublicBaseUrl: config.previewPublicBaseUrl ?? null,
 }));
 
+function approvedWorkspaces() {
+  return store.listWorkspaces();
+}
+
+function workspacePermissionScope() {
+  return { browseRoots: configWorkspaceRoots, approvedWorkspaces: approvedWorkspaces(), worktreeDir: config.worktreeDir };
+}
+
 function listVisibleWorkspaces() {
-  return mergeWorkspaces(configWorkspaceRoots, store.listWorkspaces());
+  return mergeWorkspaces(configWorkspaceRoots, approvedWorkspaces());
 }
 
 function toModelInfo(model: { id: string; provider: string; name?: string; reasoning?: boolean } | undefined): ModelInfo | null {
@@ -129,23 +137,45 @@ async function listAvailableModels(): Promise<ModelInfo[]> {
 }
 
 async function assertAllowedWorkspaceBase(path: string): Promise<void> {
-  await assertAllowedCwd(path, configWorkspaceRoots);
+  await assertAllowedWorkspacePath(path, workspacePermissionScope());
 }
 
 
 app.get("/api/workspaces", async () => listVisibleWorkspaces());
+
+app.get("/api/workspaces/browse", async (request, reply) => {
+  const parsed = workspaceBrowseQuerySchema.safeParse(request.query);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  try {
+    return await browseWorkspaceDirectory(parsed.data.path, workspacePermissionScope());
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
 
 app.post("/api/workspaces", async (request, reply) => {
   const parsed = addWorkspaceRequestSchema.safeParse(request.body);
   if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
   try {
     const candidate = await addExistingWorkspace(parsed.data.path);
-    await assertAllowedWorkspaceBase(candidate.path);
     const workspace = store.addWorkspace(candidate);
     return reply.code(201).send({ workspace, message: "Workspace added" });
   } catch (error) {
     return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
   }
+});
+
+app.delete<{ Querystring: { path?: string } }>("/api/workspaces", async (request, reply) => {
+  const parsed = addWorkspaceRequestSchema.safeParse(request.query);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+  let workspacePath = resolve(parsed.data.path);
+  try {
+    workspacePath = (await addExistingWorkspace(parsed.data.path)).path;
+  } catch {
+    // Revocation should still work if the approved workspace was deleted from disk.
+  }
+  if (!store.deleteWorkspace(workspacePath) && !store.deleteWorkspace(parsed.data.path)) return reply.code(404).send({ error: "workspace not found" });
+  return reply.code(204).send();
 });
 
 app.post("/api/workspaces/clone", async (request, reply) => {
@@ -231,22 +261,23 @@ app.patch("/api/settings", async (request, reply) => {
   return store.updateSettings(parsed.data);
 });
 
-registerArtifactRoutes(app, { artifactDir: config.artifactDir, authToken: config.authToken, store });
+registerArtifactRoutes(app, { artifactDir: config.artifactDir, authToken: config.authToken, store, getWorkspacePermissionScope: workspacePermissionScope });
 
 
-const sessionHubRegistry = createSessionHubRegistry({ config, store, runner });
+const sessionHubRegistry = createSessionHubRegistry({ config, store, runner, getWorkspacePermissionScope: workspacePermissionScope });
 
 registerMetadataRoutes(app, {
   config,
   store,
   runner,
+  getWorkspacePermissionScope: workspacePermissionScope,
   getBroadcaster: sessionHubRegistry.getBroadcaster,
 });
-registerSearchRoutes(app, { store, runner });
+registerSearchRoutes(app, { store, runner, getWorkspacePermissionScope: workspacePermissionScope });
 registerPreviewStackRoutes(app, { store, previewStacks });
 registerSessionRoutes(app, {
   config,
-  workspaceRoots,
+  getWorkspacePermissionScope: workspacePermissionScope,
   store,
   runner,
   disposeHub: sessionHubRegistry.disposeHub,

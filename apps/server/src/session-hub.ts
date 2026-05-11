@@ -20,6 +20,7 @@ import { cleanMetadataText, firstPromptTitle, generateAndApplySessionDetails } f
 import type { MetadataStore, SubmittedPromptRecord, WebCommandResultRecord } from "./metadata-store.js";
 import type { ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
 import { isBrowserOriginAllowed } from "./security-origin.js";
+import { assertAllowedSessionWorkspace, type WorkspacePermissionScope } from "./workspaces.js";
 
 function envelope(seq: number, payload: ServerMessage): ServerEnvelope {
   return { seq, time: new Date().toISOString(), payload };
@@ -249,6 +250,7 @@ type SessionHubDeps = {
   config: ServerConfig;
   store: MetadataStore;
   runner: PiSessionRunner;
+  getWorkspacePermissionScope(): WorkspacePermissionScope;
   removeHub(sessionId: string): void;
 };
 
@@ -524,10 +526,17 @@ export class SessionHub {
     this.broadcast({ type: "settings_update", settings });
   }
 
+  private async assertRuntimeWorkspaceAllowed(): Promise<void> {
+    const webSession = this.deps.store.getSession(this.sessionId);
+    if (!webSession) throw new Error("session not found");
+    await assertAllowedSessionWorkspace(webSession, this.deps.getWorkspacePermissionScope());
+  }
+
   private async runBashCommand(command: string, excludeFromContext?: boolean): Promise<void> {
     const handle = await this.ensureHandle();
     const webSession = this.deps.store.getSession(this.sessionId);
     if (!webSession) throw new Error("session not found");
+    await this.assertRuntimeWorkspaceAllowed();
     const snapshot = await handle.snapshot(webSession);
     if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
 
@@ -615,6 +624,7 @@ export class SessionHub {
   private async promptWithReceipt(handle: SessionHandle, kind: "prompt" | "ask", receiptText: string, promptText: string, images?: ImageContent[]): Promise<void> {
     const receipt = this.submitPromptReceipt(kind, receiptText);
     try {
+      await this.assertRuntimeWorkspaceAllowed();
       await handle.prompt(promptText, images);
     } catch (error) {
       this.markPromptReceiptError(receipt, error);
@@ -651,6 +661,7 @@ export class SessionHub {
           config: this.deps.config,
           store: this.deps.store,
           runner: this.deps.runner,
+          getWorkspacePermissionScope: this.deps.getWorkspacePermissionScope,
           getBroadcaster: (sessionId) => sessionId === this.sessionId ? this : undefined,
         }, options);
       },
@@ -848,8 +859,13 @@ export class SessionHub {
         }
         await this.promptWithReceipt(handle, "prompt", parsed.data.text, parsed.data.text, images);
         await this.broadcastSettingsUpdate();
-      } else if (parsed.data.type === "steer") await this.requireHandle().steer(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
-      else if (parsed.data.type === "follow_up") await this.requireHandle().followUp(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
+      } else if (parsed.data.type === "steer") {
+        await this.assertRuntimeWorkspaceAllowed();
+        await this.requireHandle().steer(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
+      } else if (parsed.data.type === "follow_up") {
+        await this.assertRuntimeWorkspaceAllowed();
+        await this.requireHandle().followUp(parsed.data.text, await this.imagesForPromptText(parsed.data.text, parsed.data.images));
+      }
       else if (parsed.data.type === "cancel_queued_message") {
         const queued = await this.requireHandle().cancelQueuedMessage(parsed.data.queue, parsed.data.index, parsed.data.text);
         this.broadcast({

@@ -437,7 +437,7 @@ export function Composer({
           <p className="m-0 max-w-md text-xs text-muted-foreground">Start with a plan, attach context, or run a quick command.</p>
         </div>
       )}
-      <ComposerNotice disconnected={isDisconnected} notice={notice} />
+      <ComposerNotice disconnected={isDisconnected} notice={notice} onDismissNotice={() => setNotice("")} />
 
       <AutocompletePopup
         state={ac.state}
@@ -482,6 +482,7 @@ export function Composer({
       >
         <UploadedAttachmentTray attachments={uploadedAttachments} onRemove={(attachment) => {
           setUploadedAttachments((prev) => prev.filter((item) => item.id !== attachment.id));
+          setNotice("");
         }} />
 
         <ComposerTextarea
@@ -546,7 +547,7 @@ export function Composer({
   );
 }
 
-function ComposerNotice({ disconnected, notice }: { disconnected: boolean; notice: string }) {
+function ComposerNotice({ disconnected, notice, onDismissNotice }: { disconnected: boolean; notice: string; onDismissNotice: () => void }) {
   if (!disconnected && !notice) return null;
   return (
     <div className="relative mb-2 grid gap-2">
@@ -556,9 +557,12 @@ function ComposerNotice({ disconnected, notice }: { disconnected: boolean; notic
         </p>
       )}
       {notice && (
-        <p className="notice m-0 rounded-lg border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-400">
-          {notice}
-        </p>
+        <div className="notice flex items-center gap-2 rounded-lg border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-400" role="status" aria-live="polite">
+          <p className="m-0 min-w-0 flex-1 truncate">{notice}</p>
+          <Button type="button" variant="ghost" size="icon-xs" onClick={onDismissNotice} aria-label="Dismiss attachment notice" className="text-yellow-400/80 hover:bg-yellow-400/10 hover:text-yellow-300">
+            <X className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
       )}
     </div>
   );

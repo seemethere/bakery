@@ -1,14 +1,21 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import type { Workspace } from "@pi-web-agent/protocol";
+import type { WebSession, Workspace, WorkspaceBrowseEntry, WorkspaceBrowseResponse } from "@pi-web-agent/protocol";
 
 const execFileAsync = promisify(execFile);
 
 type ExecOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+};
+
+export type WorkspacePermissionScope = {
+  browseRoots: string[];
+  approvedWorkspaces: Workspace[];
+  worktreeDir?: string;
 };
 
 async function run(command: string, args: string[], options: ExecOptions = {}): Promise<void> {
@@ -26,7 +33,7 @@ export async function resolveWorkspaceRoots(roots: string[]): Promise<string[]> 
 }
 
 export function toWorkspaces(roots: string[]): Workspace[] {
-  return roots.map((path) => ({ path, label: basename(path) || path }));
+  return roots.map((path) => ({ path, label: workspaceDisplayName(path) }));
 }
 
 export function mergeWorkspaces(configRoots: string[], stored: Workspace[]): Workspace[] {
@@ -35,18 +42,99 @@ export function mergeWorkspaces(configRoots: string[], stored: Workspace[]): Wor
   return [...byPath.values()].sort((a, b) => a.label.localeCompare(b.label) || a.path.localeCompare(b.path));
 }
 
+function isWithin(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
+}
+
+function permissionRoots(scope: WorkspacePermissionScope): string[] {
+  return [...scope.browseRoots, ...scope.approvedWorkspaces.map((workspace) => workspace.path)];
+}
+
+async function existingRealpaths(paths: string[]): Promise<string[]> {
+  const results = await Promise.all(paths.map(async (path) => {
+    try {
+      return await realpath(path);
+    } catch {
+      return null;
+    }
+  }));
+  return results.filter((path): path is string => path !== null);
+}
+
 export async function assertAllowedCwd(cwd: string, allowedRoots: string[]): Promise<string> {
   const resolved = await realpath(cwd);
-  for (const root of allowedRoots) {
-    const rel = relative(root, resolved);
-    if (rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"))) return resolved;
+  const roots = await existingRealpaths(allowedRoots);
+  for (const root of roots) {
+    if (isWithin(root, resolved)) return resolved;
   }
   throw new Error(`Workspace is not under an allowed root: ${cwd}`);
 }
 
+export async function assertAllowedWorkspacePath(path: string, scope: WorkspacePermissionScope): Promise<string> {
+  const roots = await existingRealpaths(permissionRoots(scope));
+  const resolved = await realpath(path);
+  for (const root of roots) {
+    if (isWithin(root, resolved)) return resolved;
+  }
+  throw new Error(`Workspace is not under a Browse Root or Approved Workspace: ${path}`);
+}
+
+export async function assertAllowedSessionWorkspace(session: WebSession, scope: WorkspacePermissionScope): Promise<void> {
+  if (session.cwd === null) return;
+  try {
+    await assertAllowedWorkspacePath(session.cwd, scope);
+    return;
+  } catch (error) {
+    if (session.isolationKind !== "git_worktree" || !session.sourceCwd || !scope.worktreeDir) throw error;
+  }
+
+  const worktreePath = await realpath(session.cwd);
+  const worktreeRoot = await realpath(scope.worktreeDir);
+  if (!isWithin(worktreeRoot, worktreePath)) throw new Error(`Session worktree is outside Bakery's managed worktree directory: ${session.cwd}`);
+  await assertAllowedWorkspacePath(session.sourceCwd, scope);
+}
+
+export async function browseWorkspaceDirectory(path: string | undefined, scope: WorkspacePermissionScope): Promise<WorkspaceBrowseResponse> {
+  if (!path) {
+    const byPath = new Map<string, WorkspaceBrowseEntry>();
+    for (const root of scope.browseRoots) byPath.set(root, { path: root, name: workspaceDisplayName(root), kind: "directory", source: "browse_root" });
+    for (const workspace of scope.approvedWorkspaces) byPath.set(workspace.path, { path: workspace.path, name: workspace.label, kind: "directory", source: "approved_workspace" });
+    return {
+      path: null,
+      entries: [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path)),
+    };
+  }
+
+  const resolved = await assertAllowedWorkspacePath(path, scope);
+  const entries = await readdir(resolved, { withFileTypes: true });
+  const browseEntries: WorkspaceBrowseEntry[] = [];
+  for (const entry of entries) {
+    if (entry.name === "." || entry.name === "..") continue;
+    const child = join(resolved, entry.name);
+    const stats = await lstat(child);
+    if (stats.isSymbolicLink()) continue;
+    if (!stats.isDirectory() && !stats.isFile()) continue;
+    browseEntries.push({
+      path: child,
+      name: entry.name,
+      kind: stats.isDirectory() ? "directory" : "file",
+      source: "child",
+    });
+  }
+  browseEntries.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "directory" ? -1 : 1) || a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+  return { path: resolved, entries: browseEntries };
+}
+
 export async function addExistingWorkspace(path: string): Promise<Workspace> {
   const resolved = await realpath(path);
+  const stats = await lstat(resolved);
+  if (!stats.isDirectory()) throw new Error("Workspace must be an existing directory");
   return { path: resolved, label: basename(resolved) || resolved };
+}
+
+function workspaceDisplayName(path: string): string {
+  return path === homedir() ? "~" : basename(path) || path;
 }
 
 function safeDirectoryName(value: string): string {

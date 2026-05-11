@@ -130,11 +130,34 @@ function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentRe
     <div className="not-prose mt-1 flex flex-wrap gap-1.5">
       {attachments.map((attachment) => (
         <figure key={attachment.path} className="m-0 flex max-w-[180px] items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-background/60 py-1 pl-1 pr-2">
-          <img src={attachment.url} alt="" className="size-7 shrink-0 rounded object-cover" loading="lazy" />
+          <ImagePreviewDialog src={attachment.url} label={attachment.name}>
+            <img src={attachment.url} alt="" className="size-7 shrink-0 rounded object-cover" loading="lazy" />
+          </ImagePreviewDialog>
           <figcaption className="truncate text-[11px] text-muted-foreground" title={attachment.name}>{attachment.name}</figcaption>
         </figure>
       ))}
     </div>
+  );
+}
+
+function ImagePreviewDialog({ src, label, children }: { src: string; label: string; children: React.ReactNode }) {
+  const showCaption = label.trim().length > 0 && !/^\[image(?::[^\]]+)?\]$/i.test(label.trim());
+  return (
+    <Dialog>
+      <DialogTrigger render={<button type="button" className="min-w-0 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />}>
+        {children}
+      </DialogTrigger>
+      <DialogContent className="w-auto max-w-[calc(100vw-2rem)] gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0 sm:max-w-[calc(100vw-2rem)]">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{label || "Image preview"}</DialogTitle>
+          <DialogDescription>Image preview</DialogDescription>
+        </DialogHeader>
+        <figure className="m-0 inline-flex max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-border/50 bg-popover p-2 shadow-2xl">
+          <img src={src} alt={label} className="block h-auto w-auto max-h-[82vh] max-w-[calc(100vw-3rem)] object-contain" />
+          {showCaption && <figcaption className="mt-2 max-w-[calc(100vw-3rem)] truncate px-1 text-xs text-muted-foreground" title={label}>{label}</figcaption>}
+        </figure>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -148,7 +171,12 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
             if (!src) return null;
             const resolved = localImageUrl(src, context) ?? src;
             if (/^file:\/\//i.test(resolved)) return null;
-            return <img {...props} src={resolved} alt={alt ?? ""} loading="lazy" className="max-w-full rounded border border-border/50" />;
+            const label = alt ?? src;
+            return (
+              <ImagePreviewDialog src={resolved} label={label}>
+                <img {...props} src={resolved} alt={label} loading="lazy" className="max-w-full rounded border border-border/50" />
+              </ImagePreviewDialog>
+            );
           },
         }}
       >
@@ -183,7 +211,9 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
     if (segment.src) {
       return (
         <figure className="my-2">
-          <img src={segment.src} alt={segment.label} className="max-w-full rounded border border-border/50" loading="lazy" />
+          <ImagePreviewDialog src={segment.src} label={segment.label}>
+            <img src={segment.src} alt={segment.label} className="max-w-full rounded border border-border/50" loading="lazy" />
+          </ImagePreviewDialog>
         </figure>
       );
     }
@@ -204,33 +234,29 @@ function Segments({ segments, showThinking, context }: { segments: TranscriptSeg
 }
 
 function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: string }> }) {
-  const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [failedPaths, setFailedPaths] = useState<Set<string>>(() => new Set());
   const visibleArtifacts = artifacts.filter((artifact) => !failedPaths.has(artifact.path));
   if (visibleArtifacts.length === 0) return null;
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
-      {visibleArtifacts.map((artifact) => {
-        const expanded = expandedPath === artifact.path;
-        return (
-          <figure key={artifact.path} data-testid="artifact-image" className={cn("artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20", expanded && "expanded")}>
-            <button type="button" className="block w-full" onClick={() => setExpandedPath(expanded ? null : artifact.path)} aria-label={`Toggle preview ${artifact.path}`}>
-              <img
-                src={artifact.url}
-                alt={artifact.path}
-                loading="lazy"
-                onError={() => {
-                  const harnessWindow = window as Window & { __piWebFailedImageCount?: number };
-                  harnessWindow.__piWebFailedImageCount = (harnessWindow.__piWebFailedImageCount ?? 0) + 1;
-                  setFailedPaths((current) => new Set(current).add(artifact.path));
-                }}
-                className={cn("w-full object-contain", expanded ? "max-h-[70vh]" : "max-h-56")}
-              />
-            </button>
-            <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path}</figcaption>
-          </figure>
-        );
-      })}
+      {visibleArtifacts.map((artifact) => (
+        <figure key={artifact.path} data-testid="artifact-image" className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
+          <ImagePreviewDialog src={artifact.url} label={artifact.path}>
+            <img
+              src={artifact.url}
+              alt={artifact.path}
+              loading="lazy"
+              onError={() => {
+                const harnessWindow = window as Window & { __piWebFailedImageCount?: number };
+                harnessWindow.__piWebFailedImageCount = (harnessWindow.__piWebFailedImageCount ?? 0) + 1;
+                setFailedPaths((current) => new Set(current).add(artifact.path));
+              }}
+              className="max-h-56 w-full object-contain"
+            />
+          </ImagePreviewDialog>
+          <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path}</figcaption>
+        </figure>
+      ))}
     </div>
   );
 }
