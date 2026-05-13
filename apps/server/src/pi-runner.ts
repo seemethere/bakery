@@ -508,6 +508,10 @@ class InProcessSessionHandle implements SessionHandle {
       messages: this.session.state.messages,
       settings: await this.getSettings(),
       pendingQuestion: this.getPendingQuestion(),
+      queuedMessages: {
+        steering: [...this.session.getSteeringMessages()],
+        followUp: [...this.session.getFollowUpMessages()],
+      },
     };
   }
 

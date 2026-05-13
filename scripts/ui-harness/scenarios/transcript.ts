@@ -209,6 +209,9 @@ export async function runQueuedFollowUp(page: Page): Promise<Record<string, unkn
   await page.locator("#followUp").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".queue-pill.follow-up", { hasText: "queued follow-up with screenshot" }).waitFor({ timeout: 5_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForAgentRunning(page, 10_000);
+  await page.locator(".queue-pill.follow-up", { hasText: "queued follow-up with screenshot" }).waitFor({ timeout: 5_000 });
 
   await page.locator("#prompt").fill("queued follow-up that should be edited");
   await page.locator("#followUp").click();

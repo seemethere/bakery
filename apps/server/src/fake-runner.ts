@@ -393,6 +393,10 @@ class FakeSessionHandle implements SessionHandle {
       messages: this.messages,
       settings: await this.getSettings(),
       pendingQuestion: this.pendingQuestion,
+      queuedMessages: {
+        steering: this.steeringQueue.map((message) => message.text),
+        followUp: this.followUpQueue.map((message) => message.text),
+      },
     };
   }
 
