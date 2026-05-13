@@ -224,7 +224,7 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
 
 // ---- Segment ----------------------------------------------------------------
 
-function Segment({ segment, showThinking, context }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext }) {
+function Segment({ segment, showThinking, context, imageGallery, imageIndex }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext; imageGallery?: ImagePreviewItem[]; imageIndex?: number }) {
   if (segment.kind === "markdown") {
     return <MarkdownContent text={stripAttachmentContext(segment.text)} context={context} />;
   }
@@ -246,7 +246,7 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
     if (segment.src) {
       return (
         <figure className="my-2">
-          <ImagePreviewDialog src={segment.src} label={segment.label}>
+          <ImagePreviewDialog src={segment.src} label={segment.label} gallery={imageGallery} initialIndex={imageIndex ?? 0}>
             <img src={segment.src} alt={segment.label} className="max-w-full rounded border border-border/50" loading="lazy" />
           </ImagePreviewDialog>
         </figure>
@@ -261,9 +261,15 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
 }
 
 function Segments({ segments, showThinking, context }: { segments: TranscriptSegment[]; showThinking: boolean; context: TranscriptRenderContext }) {
+  const imageSegments = segments.filter((segment): segment is TranscriptSegment & { kind: "image"; src: string } => segment.kind === "image" && Boolean(segment.src));
+  const imageGallery = imageSegments.map((segment) => ({ src: segment.src, label: segment.label }));
+  let imageIndex = 0;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      {segments.map((seg, i) => <Segment key={i} segment={seg} showThinking={showThinking} context={context} />)}
+      {segments.map((seg, i) => {
+        const currentImageIndex = seg.kind === "image" && seg.src ? imageIndex++ : undefined;
+        return <Segment key={i} segment={seg} showThinking={showThinking} context={context} imageGallery={imageGallery} imageIndex={currentImageIndex} />;
+      })}
     </div>
   );
 }
