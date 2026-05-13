@@ -42,7 +42,7 @@ function CommandDialog({
 }) {
   return (
     <Dialog {...props}>
-      <DialogContent className="w-[calc(100vw-4rem)] max-w-[900px] overflow-hidden p-0 sm:max-w-[900px]" showCloseButton={false}>
+      <DialogContent className="top-20 w-[calc(100vw-4rem)] max-w-[900px] translate-y-0 overflow-hidden p-0 sm:top-[12vh] sm:max-w-[900px]" showCloseButton={false}>
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
