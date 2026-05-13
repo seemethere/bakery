@@ -55,6 +55,7 @@ export function SessionCard({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
@@ -64,6 +65,15 @@ export function SessionCard({
       setTimeout(() => renameInputRef.current?.select(), 0);
     }
   }, [renaming, title]);
+
+  useEffect(() => {
+    if (!menuDismissed) return;
+    function clearDismissed(event: PointerEvent) {
+      if (!(event.target instanceof Node) || !menuTriggerRef.current?.contains(event.target)) setMenuDismissed(false);
+    }
+    document.addEventListener("pointermove", clearDismissed, { once: true });
+    return () => document.removeEventListener("pointermove", clearDismissed);
+  }, [menuDismissed]);
 
   function commitRename() {
     const trimmed = renameValue.trim();
@@ -146,7 +156,10 @@ export function SessionCard({
       {showWorkspacePinShortcut && (
         <button
           type="button"
-          className="absolute left-2 top-1/2 inline-flex size-3.5 -translate-y-1/2 items-center justify-center text-sidebar-foreground/40 opacity-0 transition-colors hover:text-sidebar-foreground/80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100"
+          className={cn(
+            "absolute left-2 top-1/2 inline-flex size-3.5 -translate-y-1/2 items-center justify-center text-sidebar-foreground/40 opacity-0 transition-colors hover:text-sidebar-foreground/80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100",
+            menuDismissed && "opacity-0! group-hover/session-card:opacity-0! group-focus-within/session-card:opacity-0!",
+          )}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
@@ -162,7 +175,10 @@ export function SessionCard({
       <DropdownMenu
         onOpenChange={(open) => {
           setMenuOpen(open);
-          if (!open) requestAnimationFrame(() => menuTriggerRef.current?.blur());
+          if (!open) {
+            setMenuDismissed(true);
+            requestAnimationFrame(() => menuTriggerRef.current?.blur());
+          }
         }}
       >
         <DropdownMenuTrigger
@@ -173,8 +189,12 @@ export function SessionCard({
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             "opacity-0 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100 data-open:opacity-100",
             menuOpen && "opacity-100",
+            menuDismissed && "opacity-0! group-hover/session-card:opacity-0! group-focus-within/session-card:opacity-0! data-open:opacity-0!",
           )}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            setMenuDismissed(false);
+          }}
           onClick={(e) => e.stopPropagation()}
           aria-label={`Options for ${title}`}
         >
