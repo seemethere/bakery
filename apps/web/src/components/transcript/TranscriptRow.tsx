@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ComponentProps } from "react";
 import type { ExtensionCatalog, SessionTreeNode } from "@pi-web-agent/protocol";
-import { CheckIcon, ClipboardListIcon, CopyIcon, GitForkIcon, LoaderCircleIcon, MoreHorizontalIcon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardListIcon, CopyIcon, GitForkIcon, LoaderCircleIcon, MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -126,11 +126,12 @@ function stripAttachmentContext(text: string): string {
 
 function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentReference[] }) {
   if (attachments.length === 0) return null;
+  const gallery = attachments.map((attachment) => ({ src: attachment.url, label: attachment.name }));
   return (
     <div className="not-prose mt-1 flex flex-wrap gap-1.5">
-      {attachments.map((attachment) => (
+      {attachments.map((attachment, index) => (
         <figure key={attachment.path} className="m-0 flex max-w-[180px] items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-background/60 py-1 pl-1 pr-2">
-          <ImagePreviewDialog src={attachment.url} label={attachment.name}>
+          <ImagePreviewDialog src={attachment.url} label={attachment.name} gallery={gallery} initialIndex={index}>
             <img src={attachment.url} alt="" className="size-7 shrink-0 rounded object-cover" loading="lazy" />
           </ImagePreviewDialog>
           <figcaption className="truncate text-[11px] text-muted-foreground" title={attachment.name}>{attachment.name}</figcaption>
@@ -140,21 +141,55 @@ function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentRe
   );
 }
 
-function ImagePreviewDialog({ src, label, children }: { src: string; label: string; children: React.ReactNode }) {
-  const showCaption = label.trim().length > 0 && !/^\[image(?::[^\]]+)?\]$/i.test(label.trim());
+type ImagePreviewItem = { src: string; label: string };
+
+function ImagePreviewDialog({ src, label, gallery, initialIndex = 0, children }: { src: string; label: string; gallery?: ImagePreviewItem[]; initialIndex?: number; children: React.ReactNode }) {
+  const items = gallery?.length ? gallery : [{ src, label }];
+  const safeInitialIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(safeInitialIndex);
+  const current = items[index] ?? items[0] ?? { src, label };
+  const showCaption = current.label.trim().length > 0 && !/^\[image(?::[^\]]+)?\]$/i.test(current.label.trim());
+  const hasMultiple = items.length > 1;
+
+  function move(delta: number) {
+    setIndex((value) => (value + delta + items.length) % items.length);
+  }
+
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen);
+      if (nextOpen) setIndex(safeInitialIndex);
+    }}>
       <DialogTrigger render={<button type="button" className="min-w-0 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />}>
         {children}
       </DialogTrigger>
-      <DialogContent className="w-auto max-w-[calc(100vw-2rem)] gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0 sm:max-w-[calc(100vw-2rem)]">
+      <DialogContent
+        className="w-auto max-w-[calc(100vw-2rem)] gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0 sm:max-w-[calc(100vw-2rem)]"
+        onKeyDown={(event) => {
+          if (!hasMultiple) return;
+          if (event.key === "ArrowLeft") move(-1);
+          if (event.key === "ArrowRight") move(1);
+        }}
+      >
         <DialogHeader className="sr-only">
-          <DialogTitle>{label || "Image preview"}</DialogTitle>
-          <DialogDescription>Image preview</DialogDescription>
+          <DialogTitle>{current.label || "Image preview"}</DialogTitle>
+          <DialogDescription>{hasMultiple ? `Image ${index + 1} of ${items.length}` : "Image preview"}</DialogDescription>
         </DialogHeader>
-        <figure className="m-0 inline-flex max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-border/50 bg-popover p-2 shadow-2xl">
-          <img src={src} alt={label} className="block h-auto w-auto max-h-[82vh] max-w-[calc(100vw-3rem)] object-contain" />
-          {showCaption && <figcaption className="mt-2 max-w-[calc(100vw-3rem)] truncate px-1 text-xs text-muted-foreground" title={label}>{label}</figcaption>}
+        <figure className="relative m-0 inline-flex max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-border/50 bg-popover p-2 shadow-2xl">
+          <img src={current.src} alt={current.label} className="block h-auto w-auto max-h-[82vh] max-w-[calc(100vw-3rem)] object-contain" />
+          {hasMultiple && (
+            <>
+              <button type="button" onClick={() => move(-1)} className="absolute left-3 top-1/2 inline-grid size-9 -translate-y-1/2 place-items-center rounded-full bg-background/85 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur hover:bg-background" aria-label="Previous image">
+                <ChevronLeftIcon className="size-5" />
+              </button>
+              <button type="button" onClick={() => move(1)} className="absolute right-3 top-1/2 inline-grid size-9 -translate-y-1/2 place-items-center rounded-full bg-background/85 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur hover:bg-background" aria-label="Next image">
+                <ChevronRightIcon className="size-5" />
+              </button>
+              <span className="absolute right-3 top-3 rounded-full bg-background/85 px-2 py-1 text-xs text-muted-foreground shadow ring-1 ring-border/60 backdrop-blur">{index + 1}/{items.length}</span>
+            </>
+          )}
+          {showCaption && <figcaption className="mt-2 max-w-[calc(100vw-3rem)] truncate px-1 text-xs text-muted-foreground" title={current.label}>{current.label}</figcaption>}
         </figure>
       </DialogContent>
     </Dialog>
@@ -237,11 +272,12 @@ function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: s
   const [failedPaths, setFailedPaths] = useState<Set<string>>(() => new Set());
   const visibleArtifacts = artifacts.filter((artifact) => !failedPaths.has(artifact.path));
   if (visibleArtifacts.length === 0) return null;
+  const gallery = visibleArtifacts.map((artifact) => ({ src: artifact.url, label: artifact.path }));
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
-      {visibleArtifacts.map((artifact) => (
+      {visibleArtifacts.map((artifact, index) => (
         <figure key={artifact.path} data-testid="artifact-image" className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
-          <ImagePreviewDialog src={artifact.url} label={artifact.path}>
+          <ImagePreviewDialog src={artifact.url} label={artifact.path} gallery={gallery} initialIndex={index}>
             <img
               src={artifact.url}
               alt={artifact.path}
