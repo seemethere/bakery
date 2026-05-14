@@ -51,6 +51,7 @@ RUN apt-get update \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    npm \
     openssh-client \
     ripgrep \
     xfonts-scalable \
