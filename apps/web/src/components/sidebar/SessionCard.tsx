@@ -16,8 +16,8 @@ import {
 import {
   compactRelativeTime,
   relativeTime,
-  sessionActivityValue,
   sessionConnectionStatus,
+  sessionWorkRecencyValue,
   sessionDisplayTitle,
   sessionMetadataLabel,
   sessionWorkspaceLabel,
@@ -48,7 +48,7 @@ export function SessionCard({
 }: Props) {
   const isSelected = session.id === selectedSessionId;
   const title = sessionDisplayTitle(session);
-  const activity = sessionActivityValue(session);
+  const activity = sessionWorkRecencyValue(session);
   const workspaceLabel = sessionWorkspaceLabel(session);
   const rawStatus = sessionConnectionStatus(session, selectedSessionId, connectionStatus);
   const status = rawStatus && rawStatus !== "idle" ? rawStatus : undefined;
