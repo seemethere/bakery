@@ -15,6 +15,7 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
     bash \
+    build-essential \
     docker-cli \
     docker.io \
     fd-find \

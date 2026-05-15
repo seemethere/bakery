@@ -30,11 +30,13 @@ prepare_pi_agent_overlay() {
 
   mkdir -p "$source_agent_dir" "$overlay_agent_dir/bin"
 
-  for entry in auth.json settings.json models.json prompts themes sessions skills extensions; do
+  for entry in auth.json models.json prompts themes sessions skills extensions; do
     if [[ -e "$source_agent_dir/$entry" && ! -e "$overlay_agent_dir/$entry" ]]; then
       ln -s "$source_agent_dir/$entry" "$overlay_agent_dir/$entry"
     fi
   done
+
+  prepare_container_settings "$source_agent_dir/settings.json" "$overlay_agent_dir/settings.json"
 
   mkdir -p "$source_agent_dir/sessions"
   if [[ ! -e "$overlay_agent_dir/sessions" ]]; then
@@ -44,6 +46,49 @@ prepare_pi_agent_overlay() {
   ln -sf /usr/local/bin/fd "$overlay_agent_dir/bin/fd"
   ln -sf /usr/bin/rg "$overlay_agent_dir/bin/rg"
   export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-$overlay_agent_dir}"
+}
+
+prepare_container_settings() {
+  local source_settings="$1"
+  local target_settings="$2"
+  local excluded_packages="${PI_WEB_CONTAINER_EXCLUDED_PACKAGES:-npm:@howaboua/pi-codex-conversion,@howaboua/pi-codex-conversion}"
+
+  if [[ ! -e "$source_settings" ]]; then
+    return
+  fi
+
+  # Container Bakery runs the pi SDK in Bun. Some host-global pi npm packages
+  # install Node native modules that currently crash Bun when imported. Keep the
+  # host settings file untouched, but filter known-incompatible packages out of
+  # the container overlay by default. Set PI_WEB_CONTAINER_EXCLUDED_PACKAGES=""
+  # to opt back into exact host package settings.
+  if [[ -z "$excluded_packages" ]]; then
+    if [[ ! -e "$target_settings" ]]; then
+      ln -s "$source_settings" "$target_settings"
+    fi
+    return
+  fi
+
+  rm -f "$target_settings"
+  SOURCE_SETTINGS="$source_settings" TARGET_SETTINGS="$target_settings" EXCLUDED_PACKAGES="$excluded_packages" python3 - <<'PY'
+import json
+import os
+
+source = os.environ["SOURCE_SETTINGS"]
+target = os.environ["TARGET_SETTINGS"]
+excluded = {item.strip() for item in os.environ.get("EXCLUDED_PACKAGES", "").split(",") if item.strip()}
+
+with open(source, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+packages = data.get("packages")
+if isinstance(packages, list):
+    data["packages"] = [pkg for pkg in packages if not (isinstance(pkg, str) and pkg in excluded)]
+
+with open(target, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
 }
 
 user_name="${PI_WEB_CONTAINER_USER:-bakery}"
