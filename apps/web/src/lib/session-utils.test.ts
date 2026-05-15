@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WebSession, Workspace } from "@pi-web-agent/protocol";
-import { groupedByWorkspace, groupedSessions, pinnedSessions, sessionWorkRecencyValue } from "./session-utils";
-
+import { groupedByWorkspace, groupedSessions, pinnedSessions, sessionConnectionStatus, sessionWorkRecencyValue } from "./session-utils";
 function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
@@ -90,5 +89,46 @@ describe("session work recency", () => {
     const workspace: Workspace = { path: "/work/repo", label: "repo" };
     expect(groupedByWorkspace([{ ...older, pinned: false }, { ...newer, pinned: false }], [workspace])[0]?.sessions.map((s) => s.id))
       .toEqual(["newer-work", "older-work"]);
+  });
+});
+
+describe("session connection status", () => {
+  test("selected sessions use live idle status over stale cached running status", () => {
+    expect(sessionConnectionStatus(
+      session({ id: "selected", status: "running" }),
+      "selected",
+      "idle",
+    )).toBe("idle");
+  });
+
+  test("selected sessions use live running, aborting, and error status", () => {
+    for (const status of ["running", "aborting", "error"] as const) {
+      expect(sessionConnectionStatus(
+        session({ id: "selected", status: "idle" }),
+        "selected",
+        status,
+      )).toBe(status);
+    }
+  });
+
+  test("selected connecting and disconnected states stay quiet", () => {
+    expect(sessionConnectionStatus(session({ id: "selected", status: "running" }), "selected", "connecting")).toBeUndefined();
+    expect(sessionConnectionStatus(session({ id: "selected", status: "running" }), "selected", "disconnected")).toBeUndefined();
+  });
+
+  test("non-selected sessions keep cached running status", () => {
+    expect(sessionConnectionStatus(
+      session({ id: "other", status: "running" }),
+      "selected",
+      "idle",
+    )).toBe("running");
+  });
+
+  test("non-selected sessions default to idle without cached status", () => {
+    expect(sessionConnectionStatus(
+      session({ id: "other", status: undefined }),
+      "selected",
+      "running",
+    )).toBe("idle");
   });
 });

@@ -254,11 +254,10 @@ export function sessionConnectionStatus(
   selectedSessionId: string | undefined,
   connectionStatus: ConnectionStatus,
 ): string | undefined {
-  return session.status ?? (
-    session.id === selectedSessionId
-      ? connectionStatus === "connecting" || connectionStatus === "disconnected"
-        ? undefined
-        : connectionStatus
-      : "idle"
-  );
+  if (session.id === selectedSessionId) {
+    return connectionStatus === "connecting" || connectionStatus === "disconnected"
+      ? undefined
+      : connectionStatus;
+  }
+  return session.status ?? "idle";
 }
