@@ -22,6 +22,8 @@ Because Bakery controls an agent that can read, edit, and run shell commands in 
 
 ## Quickstart: local Bun install
 
+For a fuller first-run walkthrough, including workspace safety and the first session, see [`docs/quickstart.md`](docs/quickstart.md).
+
 ### 1. Prerequisites
 
 - [Bun](https://bun.sh/) installed.
@@ -146,4 +148,4 @@ See `apps/server/src/config.ts` for the full set of server configuration knobs.
 
 ## Documentation
 
-Use [`docs/README.md`](docs/README.md) as the durable documentation map. It links the first-run path, local-network setup, containerized development notes, troubleshooting/admin operation docs as they are added, architecture design, domain vocabulary, and ADRs.
+Use [`docs/README.md`](docs/README.md) as the durable documentation map. Start with [`docs/quickstart.md`](docs/quickstart.md) for the full first-run path, then continue to local-network setup, containerized development notes, troubleshooting/admin operation docs as they are added, architecture design, domain vocabulary, and ADRs.
