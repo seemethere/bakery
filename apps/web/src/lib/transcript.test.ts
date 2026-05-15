@@ -8,6 +8,33 @@ import {
 } from "./transcript";
 
 describe("React transcript parity", () => {
+  test("preserves user and assistant message timestamps", () => {
+    expect(messageToTranscriptItem({
+      role: "user",
+      timestamp: "2026-05-15T22:00:00.000Z",
+      content: "Hello",
+    }, "fallback")).toMatchObject({ kind: "user", createdAt: "2026-05-15T22:00:00.000Z" });
+
+    expect(messageToTranscriptItem({
+      role: "assistant",
+      timestamp: "2026-05-15T22:00:01.000Z",
+      content: "Hi",
+    }, "fallback")).toMatchObject({ kind: "assistant", createdAt: "2026-05-15T22:00:01.000Z" });
+  });
+
+  test("leaves missing message timestamps unset", () => {
+    expect(messageToTranscriptItem({ role: "user", content: "Hello" }, "fallback").createdAt).toBeUndefined();
+  });
+
+  test("preserves live message event timestamps", () => {
+    const items = applyAgentEvent([], {
+      type: "message_end",
+      message: { role: "assistant", timestamp: "2026-05-15T22:00:02.000Z", content: "Done" },
+    });
+
+    expect(items[0]).toMatchObject({ kind: "assistant", createdAt: "2026-05-15T22:00:02.000Z" });
+  });
+
   test("uses stable live tool row ids for SDK toolResult snapshots", () => {
     const item = messageToTranscriptItem({
       role: "toolResult",

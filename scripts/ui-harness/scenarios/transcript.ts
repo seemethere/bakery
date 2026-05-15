@@ -305,6 +305,8 @@ export async function runTranscriptTextSelection(page: Page): Promise<Record<str
   await sendPromptAndWaitIdle(page, "Please produce a concise markdown response with several words that can be selected for regression coverage.");
   const markdown = page.locator(".message.assistant .markdown-body").last();
   await markdown.waitFor({ timeout: 5_000 });
+  await page.locator('.message.user [data-message-timestamp="true"]').last().waitFor({ timeout: 5_000 });
+  await page.locator('.message.assistant [data-message-timestamp="true"]').last().waitFor({ timeout: 5_000 });
   const box = await markdown.boundingBox();
   if (!box) throw new Error("Could not find assistant markdown bounds for text selection test.");
 

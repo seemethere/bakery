@@ -400,9 +400,34 @@ function ForkButton({ item, context }: { item: TranscriptItem; context: Transcri
   );
 }
 
+function messageTimestamp(value: string | undefined, full = false): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return full
+    ? date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function MessageTimestamp({ value }: { value: string | undefined }) {
+  const label = messageTimestamp(value);
+  if (!label || !value) return null;
+  return (
+    <time
+      dateTime={value}
+      title={messageTimestamp(value, true)}
+      className="self-center whitespace-nowrap text-[11px] leading-none text-muted-foreground/55"
+      data-message-timestamp="true"
+    >
+      {label}
+    </time>
+  );
+}
+
 function MessageActions({ item, context, align = "start" }: { item: TranscriptItem; context: TranscriptRenderContext; align?: "start" | "end" }) {
   return (
-    <div className={cn("flex gap-1", align === "end" && "justify-end")}>
+    <div className={cn("flex flex-wrap items-center gap-1", align === "end" && "justify-end")}>
+      <MessageTimestamp value={item.createdAt} />
       <CopyMessageButton item={item} />
       <ForkButton item={item} context={context} />
     </div>
