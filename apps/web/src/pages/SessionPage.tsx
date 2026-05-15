@@ -1,14 +1,13 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnswerQuestionPayload, ControllerInfo, ExtensionCatalog, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, SessionTreeResponse, WebSession } from "@pi-web-agent/protocol";
-import { Composer } from "@/components/Composer";
+import { Composer, type ComposerMode, type SendMode } from "@/components/Composer";
 import { QuestionPanel } from "@/components/QuestionPanel";
 import { RunningQueueStrip } from "@/components/RunningQueueStrip";
 import { TranscriptView } from "@/components/transcript/TranscriptView";
 import { useTranscript } from "@/hooks/useTranscript";
 import type { RunningQueueName, RunningQueueState } from "@/hooks/useServerConnection";
 import type { PromptImage } from "@/lib/prompt-images";
-import type { SendMode } from "@/components/Composer";
 import { sessionRoutePath } from "@/lib/router";
 import { flattenSessionTree } from "@/lib/session-tree";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,7 +72,7 @@ export function SessionPage({
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const items = useTranscript(snapshot, subscribeAgentEvents);
-  const [draftPrefill, setDraftPrefill] = useState<{ sessionId: string; text: string; nonce: number } | null>(null);
+  const [draftPrefill, setDraftPrefill] = useState<{ sessionId: string; text: string; nonce: number; mode?: ComposerMode } | null>(null);
   const handleDraftPrefillApplied = useCallback(() => {
     setDraftPrefill((current) => current?.sessionId === sessionId ? null : current);
   }, [sessionId]);
@@ -128,6 +127,7 @@ export function SessionPage({
         onAcceptPlan={() => setDraftPrefill((current) => ({
           sessionId,
           text: "Proceed with the recommended plan.",
+          mode: "prompt",
           nonce: current?.sessionId === sessionId ? current.nonce + 1 : 1,
         }))}
       />

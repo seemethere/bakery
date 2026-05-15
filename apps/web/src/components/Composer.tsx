@@ -14,7 +14,7 @@ import { imageDataTransferResult, type PromptImage } from "@/lib/prompt-images";
 import { cn } from "@/lib/utils";
 
 export type ComposerStatus = "idle" | "running" | "aborting" | "connecting" | "disconnected" | "error";
-type ComposerMode = "prompt" | "ask" | "plan" | "bash" | "bash-no-context";
+export type ComposerMode = "prompt" | "ask" | "plan" | "bash" | "bash-no-context";
 export type SendMode = ComposerMode;
 
 type Props = {
@@ -32,7 +32,7 @@ type Props = {
   onTakeControl: () => void;
   isEmptySession?: boolean;
   draftKey?: string;
-  draftPrefill?: { text: string; nonce: number } | null;
+  draftPrefill?: { text: string; nonce: number; mode?: ComposerMode } | null;
   onDraftPrefillApplied?: () => void;
   focusNonce?: number;
   sessionId?: string | null;
@@ -178,6 +178,7 @@ export function Composer({
 
   useEffect(() => {
     if (!draftPrefill) return;
+    if (draftPrefill.mode) setSelectedMode(draftPrefill.mode);
     setDraft(draftPrefill.text);
     if (draftKey) localStorage.setItem(draftKey, draftPrefill.text);
     onDraftPrefillApplied?.();
