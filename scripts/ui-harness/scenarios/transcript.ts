@@ -246,7 +246,7 @@ export async function runQueuedFollowUp(page: Page): Promise<Record<string, unkn
 }
 
 export async function runTranscriptScrollStability(page: Page): Promise<Record<string, unknown>> {
-  await prepareSession(page);
+  const sessionId = await prepareSession(page);
   await page.locator("#prompt").fill("Please produce a very long streaming performance response with many paragraphs, markdown, code, and enough text to overflow the transcript while still streaming.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
@@ -277,7 +277,27 @@ export async function runTranscriptScrollStability(page: Page): Promise<Record<s
     return Boolean(transcript && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 60 && !document.querySelector("#jumpToLatest"));
   }, null, { timeout: 5_000 });
   await waitForAgentIdle(page, 30_000);
-  return { before, after, drift, ...(await collectMetrics(page)) };
+
+  await page.evaluate(() => {
+    localStorage.setItem("piWebAutoScroll", "false");
+    const transcript = document.querySelector(".transcript") as HTMLElement | null;
+    if (!transcript) return;
+    transcript.scrollTop = 0;
+    transcript.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await page.goto(`${webBase}/sessions`, { waitUntil: "domcontentloaded" });
+  await page.locator(`.sessions-page [data-session-id="${sessionId}"]`).click();
+  await waitForSelectedSession(page, sessionId);
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement | null;
+    return Boolean(transcript && transcript.scrollHeight > transcript.clientHeight && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 80 && !document.querySelector("#jumpToLatest"));
+  }, null, { timeout: 5_000 });
+
+  const reopened = await page.evaluate(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement;
+    return { top: transcript.scrollTop, height: transcript.scrollHeight, clientHeight: transcript.clientHeight, bottomGap: transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop };
+  });
+  return { before, after, drift, reopened, ...(await collectMetrics(page)) };
 }
 
 export async function runTranscriptTextSelection(page: Page): Promise<Record<string, unknown>> {
