@@ -84,7 +84,7 @@ A Bakery Agent Session is server-backed. Multiple browser tabs can view the same
 
 ## 7. Next docs
 
-- [Operation guide](operation.md) for day-to-day workspace/session/auth behavior and runtime diagrams.
+- [Operating Bakery safely](operation.md) for day-to-day workspace/session/auth behavior and runtime diagrams.
 - [Local network access](local-network.md) for phone, tablet, LAN, or Tailscale use.
 - [Containerized development](container-development.md) for Docker-based Bakery development.
 - Troubleshooting guide for ports, logs, tokens, and contributor dev-server operation once added.

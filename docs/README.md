@@ -6,7 +6,7 @@ Use this map to choose the shortest useful path through the Bakery docs. If you 
 
 - [Root README](../README.md) — shortest overview, local install commands, and links to the rest of the docs.
 - [First-run quickstart](quickstart.md) — clone-to-first-session walkthrough with local Bun as the primary route.
-- Operation guide — planned day-to-day guide for workspaces, sessions, auth, and safe local use.
+- [Operating Bakery safely](operation.md) — day-to-day guide for workspaces, sessions, auth, safe local use, and runtime diagrams.
 - Troubleshooting guide — planned command map and recovery guide for ports, tokens, logs, and contributor dev-server operation.
 
 ## Run Bakery from another device
