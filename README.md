@@ -143,3 +143,7 @@ docker compose up --build   # Run the containerized Bakery development environme
 | `PI_WEB_PREVIEW_PUBLIC_BASE_URL` | unset | Public base URL used when Bakery renders Preview Stack links. |
 
 See `apps/server/src/config.ts` for the full set of server configuration knobs.
+
+## Documentation
+
+Use [`docs/README.md`](docs/README.md) as the durable documentation map. It links the first-run path, local-network setup, containerized development notes, troubleshooting/admin operation docs as they are added, architecture design, domain vocabulary, and ADRs.
