@@ -620,6 +620,7 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
     if (!isRecord(event.message)) return items;
     const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
     const item = messageToTranscriptItem(event.message, fallback);
+    if (!item.createdAt && typeof event.eventTime === "string") item.createdAt = event.eventTime;
     item.status = type === "message_update" ? "running" : "done";
     if (isToolCallOnlyAssistant(item)) return items.filter((existing) => existing.id !== item.id);
     return upsertItem(items, item);

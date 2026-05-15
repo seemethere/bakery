@@ -35,6 +35,16 @@ describe("React transcript parity", () => {
     expect(items[0]).toMatchObject({ kind: "assistant", createdAt: "2026-05-15T22:00:02.000Z" });
   });
 
+  test("uses server event time for live messages that lack message timestamps", () => {
+    const items = applyAgentEvent([], {
+      type: "message_end",
+      eventTime: "2026-05-15T22:00:03.000Z",
+      message: { role: "assistant", content: "Done" },
+    });
+
+    expect(items[0]).toMatchObject({ kind: "assistant", createdAt: "2026-05-15T22:00:03.000Z" });
+  });
+
   test("uses stable live tool row ids for SDK toolResult snapshots", () => {
     const item = messageToTranscriptItem({
       role: "toolResult",

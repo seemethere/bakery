@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { ModelPolicy } from "@pi-web-agent/protocol";
-import { applyConfiguredDefaultModel } from "./pi-runner.js";
+import { applyConfiguredDefaultModel, enrichMessagesWithSessionEntryTimestamps } from "./pi-runner.js";
 
 function makePolicy(defaultModel?: string, allowedModels?: string[]): ModelPolicy {
   return {
@@ -93,5 +94,47 @@ describe("applyConfiguredDefaultModel", () => {
     expect(calls).toEqual([]);
     expect(session.model).toEqual({ provider: "openai", id: "gpt-5.1" });
     expect(warn).toHaveBeenCalledWith("Configured default model is not available: anthropic/claude-sonnet-4-5");
+  });
+});
+
+function messageEntry(id: string, timestamp: string, message: Record<string, unknown>): SessionEntry {
+  return { type: "message", id, parentId: null, timestamp, message } as unknown as SessionEntry;
+}
+
+describe("enrichMessagesWithSessionEntryTimestamps", () => {
+  test("adds persisted entry timestamps to messages that lack timestamps", () => {
+    const messages = [
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+    ];
+
+    expect(enrichMessagesWithSessionEntryTimestamps(messages, [
+      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hello" }),
+      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Hi" }),
+    ])).toEqual([
+      { role: "user", content: "Hello", timestamp: "2026-05-15T23:20:00.000Z" },
+      { role: "assistant", content: "Hi", timestamp: "2026-05-15T23:20:01.000Z" },
+    ]);
+  });
+
+  test("preserves existing message timestamps", () => {
+    const messages = [{ role: "assistant", content: "Done", timestamp: "2026-05-15T23:00:00.000Z" }];
+    const enriched = enrichMessagesWithSessionEntryTimestamps(messages, [
+      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Done" }),
+    ]);
+
+    expect(enriched).toBe(messages);
+    expect(enriched[0]).toEqual({ role: "assistant", content: "Done", timestamp: "2026-05-15T23:00:00.000Z" });
+  });
+
+  test("leaves messages unchanged when entry mapping is ambiguous", () => {
+    const messages = [{ role: "assistant", content: "Only visible message" }];
+    const enriched = enrichMessagesWithSessionEntryTimestamps(messages, [
+      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hidden?" }),
+      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Only visible message" }),
+    ]);
+
+    expect(enriched).toBe(messages);
+    expect(enriched[0]).toEqual({ role: "assistant", content: "Only visible message" });
   });
 });

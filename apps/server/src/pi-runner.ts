@@ -8,6 +8,7 @@ import {
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
+  type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
@@ -71,6 +72,26 @@ function normalizeEvent(event: AgentSessionEvent): NormalizedAgentEvent {
     time: new Date().toISOString(),
     data: event,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function enrichMessagesWithSessionEntryTimestamps(messages: unknown[], entries: SessionEntry[]): unknown[] {
+  const messageEntries = entries.filter((entry): entry is Extract<SessionEntry, { type: "message" }> => entry.type === "message");
+  if (messageEntries.length !== messages.length) return messages;
+
+  let changed = false;
+  const enriched = messages.map((message, index) => {
+    if (!isRecord(message) || typeof message.timestamp === "string") return message;
+    const timestamp = messageEntries[index]?.timestamp;
+    if (typeof timestamp !== "string" || !timestamp) return message;
+    changed = true;
+    return { ...message, timestamp };
+  });
+
+  return changed ? enriched : messages;
 }
 
 function getStatus(session: AgentSession): SessionSnapshot["status"] {
@@ -505,7 +526,7 @@ class InProcessSessionHandle implements SessionHandle {
     return {
       session: webSession,
       status: getStatus(this.session),
-      messages: this.session.state.messages,
+      messages: enrichMessagesWithSessionEntryTimestamps(this.session.state.messages, this.session.sessionManager.getBranch()),
       settings: await this.getSettings(),
       pendingQuestion: this.getPendingQuestion(),
       queuedMessages: {
