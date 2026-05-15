@@ -4,13 +4,14 @@ set -euo pipefail
 sanitize_container_path() {
   local home_dir="$1"
   local agent_bin="${home_dir}/.pi/agent/bin"
+  local npm_bin="${NPM_CONFIG_PREFIX:-}/bin"
   local existing_path="${PATH:-}"
   local rebuilt_path=""
   local entry=""
 
   IFS=":" read -r -a path_entries <<< "$existing_path"
   for entry in "${path_entries[@]}"; do
-    if [[ -z "$entry" || "$entry" == "$agent_bin" ]]; then
+    if [[ -z "$entry" || "$entry" == "$agent_bin" || "$entry" == "$npm_bin" ]]; then
       continue
     fi
     case ":$rebuilt_path:" in
@@ -19,7 +20,7 @@ sanitize_container_path() {
     rebuilt_path="${rebuilt_path:+$rebuilt_path:}$entry"
   done
 
-  export PATH="$BUN_INSTALL/bin:/usr/local/bin:/usr/bin:/bin${rebuilt_path:+:$rebuilt_path}"
+  export PATH="$BUN_INSTALL/bin${npm_bin:+:$npm_bin}:/usr/local/bin:/usr/bin:/bin${rebuilt_path:+:$rebuilt_path}"
 }
 
 prepare_pi_agent_overlay() {
@@ -53,6 +54,7 @@ gid_value="${PI_WEB_CONTAINER_GID:-1000}"
 if [[ "$(id -u)" != "0" ]]; then
   export HOME="${HOME:-$home_dir}"
   export BUN_INSTALL="${BUN_INSTALL:-$home_dir/.bun}"
+  export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-/workspace/.bakery-data/npm-global}"
   sanitize_container_path "$home_dir"
   exec "$@"
 fi
@@ -81,9 +83,11 @@ else
 fi
 
 mkdir -p "$home_dir" /workspace/bakery /workspace/bakery/node_modules /workspace/.bakery-data /workspace/.cache/bun
+export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-/workspace/.bakery-data/npm-global}"
+mkdir -p "$NPM_CONFIG_PREFIX"
 # Do not recursively chown HOME: it may contain host mounts like ~/.pi.
 chown "$uid_value:$gid_value" "$home_dir" 2>/dev/null || true
-chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/bakery/node_modules
+chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/bakery/node_modules "$NPM_CONFIG_PREFIX"
 
 add_socket_group_for_user() {
   local socket_path="$1"

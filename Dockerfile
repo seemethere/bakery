@@ -66,7 +66,8 @@ RUN chmod +x /usr/local/bin/bakery-container-entrypoint
 
 ENV PI_WEB_CONTAINER_USER=bun \
   PI_WEB_CONTAINER_HOME=/home/bun \
-  BUN_INSTALL=/home/bun/.bun
+  BUN_INSTALL=/home/bun/.bun \
+  NPM_CONFIG_PREFIX=/workspace/.bakery-data/npm-global
 
 ENTRYPOINT ["/usr/local/bin/bakery-container-entrypoint"]
 CMD ["bash", "-lc", "bun install && bun run dev:lan"]
