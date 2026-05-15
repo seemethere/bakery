@@ -2,7 +2,7 @@
 
 Bakery's containerized development environment runs the existing Bun/Vite development workflow inside Docker while bind-mounting this checkout as the only default Bakery workspace.
 
-This is for developing Bakery itself. It is not yet the production single-port image, the future multi-backend `bakery` CLI, or per-agent-session container isolation.
+This is for developing Bakery itself. It is not yet the production single-port image, the future multi-backend `bakery` CLI, or per-agent-session container isolation. If you are trying Bakery for the first time without Docker-specific needs, start with the [first-run quickstart](quickstart.md); for general ports, logs, tokens, and validation recovery, see [troubleshooting and developer operation](troubleshooting.md).
 
 ## Start the dev container
 

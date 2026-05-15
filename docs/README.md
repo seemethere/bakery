@@ -7,7 +7,7 @@ Use this map to choose the shortest useful path through the Bakery docs. If you 
 - [Root README](../README.md) — shortest overview, local install commands, and links to the rest of the docs.
 - [First-run quickstart](quickstart.md) — clone-to-first-session walkthrough with local Bun as the primary route.
 - [Operating Bakery safely](operation.md) — day-to-day guide for workspaces, sessions, auth, safe local use, and runtime diagrams.
-- Troubleshooting guide — planned command map and recovery guide for ports, tokens, logs, and contributor dev-server operation.
+- [Troubleshooting and developer operation](troubleshooting.md) — command map and recovery guide for ports, tokens, logs, validation, and contributor dev-server operation.
 
 ## Run Bakery from another device
 
@@ -17,6 +17,7 @@ Use this map to choose the shortest useful path through the Bakery docs. If you 
 ## Develop Bakery in a container
 
 - [Containerized development](container-development.md) — Docker Compose setup for developing Bakery itself in a container, including mounted paths, auth options, Playwright notes, and validation expectations.
+- [Troubleshooting and developer operation](troubleshooting.md) — start here for general port, token, log, and validation recovery before diving into container-specific details.
 
 ## Understand the product and architecture
 

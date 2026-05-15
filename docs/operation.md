@@ -122,4 +122,4 @@ Treat these as optional workflow tools. They do not replace the basic workspace 
 - Contributors using `bun run dev` can restart only the backend with `bun run dev:server:restart` while keeping the browser/Vite state.
 - If a backend restart happens during an active turn, expect to reopen/resume from persisted session state rather than recovering the in-flight work.
 
-For ports, logs, and recovery commands, continue to the troubleshooting guide once added.
+For ports, logs, and recovery commands, continue to [troubleshooting and developer operation](troubleshooting.md).
