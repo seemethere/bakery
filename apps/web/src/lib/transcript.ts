@@ -69,7 +69,10 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
 }
 
 function messageTimestamp(message: Record<string, unknown>): string | undefined {
-  return typeof message.timestamp === "string" ? message.timestamp : undefined;
+  const value = message.timestamp;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  return undefined;
 }
 
 function toolResultMessageKey(message: Record<string, unknown>, fallback: string): string {

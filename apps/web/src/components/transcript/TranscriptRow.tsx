@@ -416,7 +416,7 @@ function MessageTimestamp({ value }: { value: string | undefined }) {
     <time
       dateTime={value}
       title={messageTimestamp(value, true)}
-      className="self-center whitespace-nowrap text-[11px] leading-none text-muted-foreground/55"
+      className="message-timestamp self-center whitespace-nowrap text-[11px] leading-none text-muted-foreground/55"
       data-message-timestamp="true"
     >
       {label}
@@ -425,11 +425,13 @@ function MessageTimestamp({ value }: { value: string | undefined }) {
 }
 
 function MessageActions({ item, context, align = "start" }: { item: TranscriptItem; context: TranscriptRenderContext; align?: "start" | "end" }) {
+  const timestamp = <MessageTimestamp value={item.createdAt} />;
   return (
     <div className={cn("flex flex-wrap items-center gap-1", align === "end" && "justify-end")}>
-      <MessageTimestamp value={item.createdAt} />
+      {item.kind === "user" && timestamp}
       <CopyMessageButton item={item} />
       <ForkButton item={item} context={context} />
+      {item.kind !== "user" && timestamp}
     </div>
   );
 }
@@ -439,7 +441,7 @@ function UserRow({ item, showThinking, context }: { item: TranscriptItem; showTh
   const attachmentText = segments?.map((segment) => "text" in segment ? segment.text : "").join("\n") || item.body;
   const attachmentReferences = attachmentReferencesFromText(attachmentText, context);
   return (
-    <div className="message user flex min-w-0 justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message message-row user flex min-w-0 justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 max-w-[85%] justify-items-end gap-1 sm:max-w-[80%]">
         <div className="min-w-0 max-w-full rounded-2xl rounded-br-sm border border-sidebar-primary/20 bg-sidebar-primary/15 px-4 py-2.5 text-sm break-words">
           {segments && segments.length > 0
@@ -469,7 +471,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
   if (isGeneratingPlan(item)) return <PlanGeneratingRow item={item} context={context} />;
 
   return (
-    <div className="message assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message message-row assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 justify-items-start gap-1">
         <div className="min-w-0 w-full">
           <div className="min-w-0">
@@ -492,7 +494,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
 
 function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: TranscriptRenderContext }) {
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-generating="true">
+    <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-generating="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 px-4 py-3 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <LoaderCircleIcon className="size-4 animate-spin text-yellow-600 dark:text-yellow-300" />
@@ -509,7 +511,7 @@ function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: T
 function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: PlanCardData; context: TranscriptRenderContext }) {
   const [decision, setDecision] = useState<"accepted" | "rejected" | null>(null);
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-card="true">
+    <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-card="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 p-4 text-sm">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -564,7 +566,7 @@ function ExtensionCardRow({ item, payload, context }: { item: TranscriptItem; pa
   const validTag = tag && /^[-a-z0-9]+$/.test(tag) && tag.includes("-");
   const props = JSON.stringify(payload.props ?? {});
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-extension-card="true">
+    <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-extension-card="true">
       <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-sm">
         {validTag
           ? React.createElement(tag, {
