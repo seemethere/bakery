@@ -48,6 +48,8 @@ This is for developing Bakery itself. It is not yet the production single-port i
 
 The image includes the Linux runtime libraries and fonts required by Playwright's bundled Chromium/headless shell, so UI harnesses can run inside the dev container after the usual `bun install` and `bun x playwright install chromium` browser download. The entrypoint starts as root only long enough to map the container user to `PI_WEB_CONTAINER_UID`/`PI_WEB_CONTAINER_GID`, prepare writable volumes, and then drop privileges before running Bakery.
 
+The pi settings overlay keeps host auth/model/resource settings but filters known Bun-incompatible npm packages from container startup by default. Today this excludes `npm:@howaboua/pi-codex-conversion` because it imports `node-pty`, which can crash Bun in the in-process SDK server. Set `PI_WEB_CONTAINER_EXCLUDED_PACKAGES=` in a trusted local override to opt back into exact host package settings, but expect native Node packages to require the included build toolchain and to remain unsupported if Bun cannot load their native modules.
+
 ## LAN/Tailscale access
 
 The dev container can replace a host-side LAN command such as:

@@ -15,6 +15,7 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
     bash \
+    build-essential \
     docker-cli \
     docker.io \
     fd-find \
@@ -51,6 +52,7 @@ RUN apt-get update \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    npm \
     openssh-client \
     ripgrep \
     xfonts-scalable \
@@ -65,7 +67,8 @@ RUN chmod +x /usr/local/bin/bakery-container-entrypoint
 
 ENV PI_WEB_CONTAINER_USER=bun \
   PI_WEB_CONTAINER_HOME=/home/bun \
-  BUN_INSTALL=/home/bun/.bun
+  BUN_INSTALL=/home/bun/.bun \
+  NPM_CONFIG_PREFIX=/workspace/.bakery-data/npm-global
 
 ENTRYPOINT ["/usr/local/bin/bakery-container-entrypoint"]
 CMD ["bash", "-lc", "bun install && bun run dev:lan"]

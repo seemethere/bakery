@@ -14,6 +14,7 @@ import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, Normal
 import { Type } from "typebox";
 import { loadConfig } from "./config.js";
 import { getBakeryExtensionCommands, isBundledExtensionCommand, reloadConfiguredBakeryExtensions, runBundledExtensionCommand } from "./extensions.js";
+import { ensurePackageManagerPath } from "./package-manager-path.js";
 
 export type ImageContent = { type: "image"; data: string; mimeType: string };
 export type BashResult = { output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string };
@@ -557,6 +558,8 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
   async createSession(options: CreateSessionOptions): Promise<SessionHandle> {
     const existing = this.handles.get(options.id);
     if (existing) return existing;
+
+    ensurePackageManagerPath();
 
     const mode: "workspace" | "chat_only" = options.mode ?? (options.cwd ? "workspace" : "chat_only");
     const effectiveCwd = options.cwd ?? process.cwd();

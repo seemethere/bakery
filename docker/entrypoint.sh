@@ -4,13 +4,14 @@ set -euo pipefail
 sanitize_container_path() {
   local home_dir="$1"
   local agent_bin="${home_dir}/.pi/agent/bin"
+  local npm_bin="${NPM_CONFIG_PREFIX:-}/bin"
   local existing_path="${PATH:-}"
   local rebuilt_path=""
   local entry=""
 
   IFS=":" read -r -a path_entries <<< "$existing_path"
   for entry in "${path_entries[@]}"; do
-    if [[ -z "$entry" || "$entry" == "$agent_bin" ]]; then
+    if [[ -z "$entry" || "$entry" == "$agent_bin" || "$entry" == "$npm_bin" ]]; then
       continue
     fi
     case ":$rebuilt_path:" in
@@ -19,7 +20,7 @@ sanitize_container_path() {
     rebuilt_path="${rebuilt_path:+$rebuilt_path:}$entry"
   done
 
-  export PATH="$BUN_INSTALL/bin:/usr/local/bin:/usr/bin:/bin${rebuilt_path:+:$rebuilt_path}"
+  export PATH="$BUN_INSTALL/bin${npm_bin:+:$npm_bin}:/usr/local/bin:/usr/bin:/bin${rebuilt_path:+:$rebuilt_path}"
 }
 
 prepare_pi_agent_overlay() {
@@ -29,11 +30,13 @@ prepare_pi_agent_overlay() {
 
   mkdir -p "$source_agent_dir" "$overlay_agent_dir/bin"
 
-  for entry in auth.json settings.json models.json prompts themes sessions skills extensions; do
+  for entry in auth.json models.json prompts themes sessions skills extensions; do
     if [[ -e "$source_agent_dir/$entry" && ! -e "$overlay_agent_dir/$entry" ]]; then
       ln -s "$source_agent_dir/$entry" "$overlay_agent_dir/$entry"
     fi
   done
+
+  prepare_container_settings "$source_agent_dir/settings.json" "$overlay_agent_dir/settings.json"
 
   mkdir -p "$source_agent_dir/sessions"
   if [[ ! -e "$overlay_agent_dir/sessions" ]]; then
@@ -45,6 +48,49 @@ prepare_pi_agent_overlay() {
   export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-$overlay_agent_dir}"
 }
 
+prepare_container_settings() {
+  local source_settings="$1"
+  local target_settings="$2"
+  local excluded_packages="${PI_WEB_CONTAINER_EXCLUDED_PACKAGES:-npm:@howaboua/pi-codex-conversion,@howaboua/pi-codex-conversion}"
+
+  if [[ ! -e "$source_settings" ]]; then
+    return
+  fi
+
+  # Container Bakery runs the pi SDK in Bun. Some host-global pi npm packages
+  # install Node native modules that currently crash Bun when imported. Keep the
+  # host settings file untouched, but filter known-incompatible packages out of
+  # the container overlay by default. Set PI_WEB_CONTAINER_EXCLUDED_PACKAGES=""
+  # to opt back into exact host package settings.
+  if [[ -z "$excluded_packages" ]]; then
+    if [[ ! -e "$target_settings" ]]; then
+      ln -s "$source_settings" "$target_settings"
+    fi
+    return
+  fi
+
+  rm -f "$target_settings"
+  SOURCE_SETTINGS="$source_settings" TARGET_SETTINGS="$target_settings" EXCLUDED_PACKAGES="$excluded_packages" python3 - <<'PY'
+import json
+import os
+
+source = os.environ["SOURCE_SETTINGS"]
+target = os.environ["TARGET_SETTINGS"]
+excluded = {item.strip() for item in os.environ.get("EXCLUDED_PACKAGES", "").split(",") if item.strip()}
+
+with open(source, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+packages = data.get("packages")
+if isinstance(packages, list):
+    data["packages"] = [pkg for pkg in packages if not (isinstance(pkg, str) and pkg in excluded)]
+
+with open(target, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+}
+
 user_name="${PI_WEB_CONTAINER_USER:-bakery}"
 home_dir="${PI_WEB_CONTAINER_HOME:-/home/${user_name}}"
 uid_value="${PI_WEB_CONTAINER_UID:-1000}"
@@ -53,6 +99,7 @@ gid_value="${PI_WEB_CONTAINER_GID:-1000}"
 if [[ "$(id -u)" != "0" ]]; then
   export HOME="${HOME:-$home_dir}"
   export BUN_INSTALL="${BUN_INSTALL:-$home_dir/.bun}"
+  export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-/workspace/.bakery-data/npm-global}"
   sanitize_container_path "$home_dir"
   exec "$@"
 fi
@@ -81,9 +128,11 @@ else
 fi
 
 mkdir -p "$home_dir" /workspace/bakery /workspace/bakery/node_modules /workspace/.bakery-data /workspace/.cache/bun
+export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-/workspace/.bakery-data/npm-global}"
+mkdir -p "$NPM_CONFIG_PREFIX"
 # Do not recursively chown HOME: it may contain host mounts like ~/.pi.
 chown "$uid_value:$gid_value" "$home_dir" 2>/dev/null || true
-chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/bakery/node_modules
+chown -R "$uid_value:$gid_value" /workspace/.cache /workspace/.bakery-data /workspace/bakery/node_modules "$NPM_CONFIG_PREFIX"
 
 add_socket_group_for_user() {
   local socket_path="$1"
