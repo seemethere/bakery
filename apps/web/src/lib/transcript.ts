@@ -18,6 +18,7 @@ export type TranscriptItem = {
   body: string;
   segments?: TranscriptSegment[];
   status?: "running" | "done" | "error";
+  createdAt?: string;
   startedAt?: string;
   endedAt?: string;
   durationMs?: number;
@@ -65,6 +66,13 @@ function messageKey(message: Record<string, unknown>, fallback: string): string 
   const role = String(message.role ?? "message");
   const timestamp = message.timestamp ?? message.id;
   return timestamp ? `${role}:${String(timestamp)}` : fallback;
+}
+
+function messageTimestamp(message: Record<string, unknown>): string | undefined {
+  const value = message.timestamp;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  return undefined;
 }
 
 function toolResultMessageKey(message: Record<string, unknown>, fallback: string): string {
@@ -212,10 +220,10 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
 
   if (role === "user") {
     const compact = compactWorkflowLaunch(body);
-    return { id: messageKey(message, fallbackId), kind: "user", title: "You", body: compact?.body ?? body, segments: compact?.segments ?? segments, raw: message };
+    return { id: messageKey(message, fallbackId), kind: "user", title: "You", body: compact?.body ?? body, segments: compact?.segments ?? segments, createdAt: messageTimestamp(message), raw: message };
   }
   if (role === "assistant") {
-    return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, raw: message };
+    return { id: messageKey(message, fallbackId), kind: "assistant", title: "Pi", body, segments, createdAt: messageTimestamp(message), raw: message };
   }
   if (role === "webCommandResult") {
     return webCommandResultToTranscriptItem({
@@ -615,6 +623,7 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
     if (!isRecord(event.message)) return items;
     const fallback = type === "message_update" ? "assistant:live" : `${type}:${Date.now()}`;
     const item = messageToTranscriptItem(event.message, fallback);
+    if (!item.createdAt && typeof event.eventTime === "string") item.createdAt = event.eventTime;
     item.status = type === "message_update" ? "running" : "done";
     if (isToolCallOnlyAssistant(item)) return items.filter((existing) => existing.id !== item.id);
     return upsertItem(items, item);

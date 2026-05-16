@@ -38,7 +38,7 @@ async function enrichSession(session: WebSession, deps: SessionRouteDeps): Promi
   if (handle) status = (await handle.snapshot(session)).status;
 
   if (!handle && session.cwd === null) {
-    return { ...session, lastActivityAt: session.lastOpenedAt, status: status ?? "idle" };
+    return { ...session, lastActivityAt: undefined, status: status ?? "idle" };
   }
   try {
     const manager = handle?.session.sessionManager ?? SessionManager.open(session.piSessionFile, deps.config.sessionDir, session.cwd ?? undefined);
@@ -55,12 +55,12 @@ async function enrichSession(session: WebSession, deps: SessionRouteDeps): Promi
     const lastUserPrompt = lastUserText ? (compactWorkflowLaunchText(lastUserText) ?? lastUserText.replace(/\s+/g, " ").trim().slice(0, 160)) : undefined;
     return {
       ...session,
-      lastActivityAt: last?.timestamp ?? session.lastOpenedAt,
+      lastActivityAt: last?.timestamp,
       lastUserPrompt: lastUserPrompt || undefined,
       status: status ?? "idle",
     };
   } catch {
-    return { ...session, lastActivityAt: session.lastOpenedAt, status: status ?? "idle" };
+    return { ...session, lastActivityAt: undefined, status: status ?? "idle" };
   }
 }
 

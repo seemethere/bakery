@@ -8,6 +8,7 @@ import {
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
+  type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
@@ -72,6 +73,33 @@ function normalizeEvent(event: AgentSessionEvent): NormalizedAgentEvent {
     time: new Date().toISOString(),
     data: event,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function withoutTimestamp(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const { timestamp: _timestamp, ...rest } = value;
+  return rest;
+}
+
+function sameMessageIgnoringTimestamp(left: unknown, right: unknown): boolean {
+  return JSON.stringify(withoutTimestamp(left)) === JSON.stringify(withoutTimestamp(right));
+}
+
+export function snapshotMessagesFromSessionBranch(entries: SessionEntry[], volatileMessages: unknown[] = []): unknown[] {
+  const messages: unknown[] = [];
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    messages.push(isRecord(entry.message) ? { ...entry.message, timestamp: entry.timestamp } : entry.message);
+  }
+
+  const hasVolatileTail = volatileMessages.length > messages.length
+    && messages.every((message, index) => sameMessageIgnoringTimestamp(message, volatileMessages[index]));
+  if (!hasVolatileTail) return messages;
+  return [...messages, ...volatileMessages.slice(messages.length)];
 }
 
 function getStatus(session: AgentSession): SessionSnapshot["status"] {
@@ -506,9 +534,13 @@ class InProcessSessionHandle implements SessionHandle {
     return {
       session: webSession,
       status: getStatus(this.session),
-      messages: this.session.state.messages,
+      messages: snapshotMessagesFromSessionBranch(this.session.sessionManager.getBranch(), this.session.state.messages),
       settings: await this.getSettings(),
       pendingQuestion: this.getPendingQuestion(),
+      queuedMessages: {
+        steering: [...this.session.getSteeringMessages()],
+        followUp: [...this.session.getFollowUpMessages()],
+      },
     };
   }
 

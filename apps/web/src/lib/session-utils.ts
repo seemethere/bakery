@@ -47,14 +47,12 @@ function timestamp(value: string | undefined): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-function sessionActivityTime(session: WebSession): number {
-  return Math.max(timestamp(session.lastActivityAt), timestamp(session.lastOpenedAt));
+export function sessionWorkRecencyValue(session: WebSession): string {
+  return session.lastActivityAt ?? session.createdAt;
 }
 
-export function sessionActivityValue(session: WebSession): string | undefined {
-  return timestamp(session.lastActivityAt) >= timestamp(session.lastOpenedAt)
-    ? session.lastActivityAt
-    : session.lastOpenedAt;
+function sessionWorkRecencyTime(session: WebSession): number {
+  return timestamp(sessionWorkRecencyValue(session));
 }
 
 function startOfLocalDay(time = Date.now()): number {
@@ -157,8 +155,8 @@ export function groupedSessions(sessions: WebSession[]): SessionRecencyGroup[] {
     { id: "this-week", label: "Earlier this week", sessions: [], defaultExpanded: false },
     { id: "older", label: "Older", sessions: [], defaultExpanded: false },
   ];
-  for (const session of [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a))) {
-    const activity = sessionActivityTime(session);
+  for (const session of [...sessions].sort((a, b) => sessionWorkRecencyTime(b) - sessionWorkRecencyTime(a))) {
+    const activity = sessionWorkRecencyTime(session);
     const group = (
       activity >= todayStart ? groups[0]
       : activity >= yesterdayStart ? groups[1]
@@ -209,7 +207,7 @@ export function groupedByWorkspace(sessions: WebSession[], workspaces: Workspace
       sessions: [],
     });
   }
-  for (const session of [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a))) {
+  for (const session of [...sessions].sort((a, b) => sessionWorkRecencyTime(b) - sessionWorkRecencyTime(a))) {
     if (session.pinned) continue;
     const path = sessionWorkspacePath(session);
     if (path === null) continue;
@@ -230,7 +228,7 @@ export function groupedByWorkspace(sessions: WebSession[], workspaces: Workspace
 }
 
 export function pinnedSessions(sessions: WebSession[]): WebSession[] {
-  return [...sessions].filter((s) => s.pinned).sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a));
+  return [...sessions].filter((s) => s.pinned).sort((a, b) => sessionWorkRecencyTime(b) - sessionWorkRecencyTime(a));
 }
 
 export function workspaceGroupExpanded(
@@ -256,11 +254,10 @@ export function sessionConnectionStatus(
   selectedSessionId: string | undefined,
   connectionStatus: ConnectionStatus,
 ): string | undefined {
-  return session.status ?? (
-    session.id === selectedSessionId
-      ? connectionStatus === "connecting" || connectionStatus === "disconnected"
-        ? undefined
-        : connectionStatus
-      : "idle"
-  );
+  if (session.id === selectedSessionId) {
+    return connectionStatus === "connecting" || connectionStatus === "disconnected"
+      ? undefined
+      : connectionStatus;
+  }
+  return session.status ?? "idle";
 }

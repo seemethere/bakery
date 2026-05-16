@@ -507,6 +507,10 @@ export const sessionSnapshotSchema = z.object({
   controller: controllerInfoSchema.optional(),
   settings: sessionRuntimeSettingsSchema.optional(),
   pendingQuestion: pendingQuestionSchema.nullable().optional(),
+  queuedMessages: z.object({
+    steering: z.array(z.string()),
+    followUp: z.array(z.string()),
+  }).optional(),
   activeToolExecutions: z.array(activeToolExecutionSnapshotSchema).optional(),
 });
 export type SessionSnapshot = z.infer<typeof sessionSnapshotSchema>;

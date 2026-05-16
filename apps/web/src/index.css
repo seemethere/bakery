@@ -220,6 +220,20 @@
   }
 }
 
+@layer components {
+  .message-row .message-timestamp {
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .message-row:hover .message-timestamp,
+  .message-row:focus-within .message-timestamp {
+    visibility: visible;
+    opacity: 1;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

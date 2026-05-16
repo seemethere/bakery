@@ -16,8 +16,8 @@ import {
 import {
   compactRelativeTime,
   relativeTime,
-  sessionActivityValue,
   sessionConnectionStatus,
+  sessionWorkRecencyValue,
   sessionDisplayTitle,
   sessionMetadataLabel,
   sessionWorkspaceLabel,
@@ -29,6 +29,7 @@ type Props = {
   selectedSessionId: string | undefined;
   connectionStatus: ConnectionStatus;
   showWorkspaceBadge?: boolean;
+  showWorkspacePinShortcut?: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
@@ -39,6 +40,7 @@ export function SessionCard({
   session,
   selectedSessionId,
   connectionStatus,
+  showWorkspacePinShortcut = false,
   onSelect,
   onDelete,
   onRename,
@@ -46,14 +48,16 @@ export function SessionCard({
 }: Props) {
   const isSelected = session.id === selectedSessionId;
   const title = sessionDisplayTitle(session);
-  const activity = sessionActivityValue(session);
+  const activity = sessionWorkRecencyValue(session);
   const workspaceLabel = sessionWorkspaceLabel(session);
   const rawStatus = sessionConnectionStatus(session, selectedSessionId, connectionStatus);
   const status = rawStatus && rawStatus !== "idle" ? rawStatus : undefined;
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (renaming) {
@@ -61,6 +65,15 @@ export function SessionCard({
       setTimeout(() => renameInputRef.current?.select(), 0);
     }
   }, [renaming, title]);
+
+  useEffect(() => {
+    if (!menuDismissed) return;
+    function clearDismissed(event: PointerEvent) {
+      if (!(event.target instanceof Node) || !menuTriggerRef.current?.contains(event.target)) setMenuDismissed(false);
+    }
+    document.addEventListener("pointermove", clearDismissed, { once: true });
+    return () => document.removeEventListener("pointermove", clearDismissed);
+  }, [menuDismissed]);
 
   function commitRename() {
     const trimmed = renameValue.trim();
@@ -89,7 +102,10 @@ export function SessionCard({
             <button
               type="button"
               onClick={() => !renaming && onSelect(session.id)}
-              className="grid w-full min-w-0 rounded-md px-2 py-1.5 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              className={cn(
+                "grid w-full min-w-0 rounded-md py-1.5 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                showWorkspacePinShortcut ? "pl-8" : "pl-2",
+              )}
             >
               <span className="flex h-5 items-center justify-between gap-2 min-w-0">
                 {renaming ? (
@@ -137,16 +153,48 @@ export function SessionCard({
         {compactRelativeTime(activity)}
       </span>
 
-      <DropdownMenu onOpenChange={setMenuOpen}>
+      {showWorkspacePinShortcut && (
+        <button
+          type="button"
+          className={cn(
+            "absolute left-2 top-1/2 inline-flex size-3.5 -translate-y-1/2 items-center justify-center text-sidebar-foreground/40 opacity-0 transition-colors hover:text-sidebar-foreground/80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100",
+            menuDismissed && "opacity-0! group-hover/session-card:opacity-0! group-focus-within/session-card:opacity-0!",
+          )}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin(session.id, true);
+          }}
+          aria-label={`Pin ${title}`}
+          title="Pin"
+        >
+          <PinIcon className="size-3.5" />
+        </button>
+      )}
+
+      <DropdownMenu
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          if (!open) {
+            setMenuDismissed(true);
+            requestAnimationFrame(() => menuTriggerRef.current?.blur());
+          }
+        }}
+      >
         <DropdownMenuTrigger
+          ref={menuTriggerRef}
           className={cn(
             "absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md transition-colors",
             "text-sidebar-foreground/45 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground/75",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             "opacity-0 group-hover/session-card:opacity-100 group-focus-within/session-card:opacity-100 data-open:opacity-100",
             menuOpen && "opacity-100",
+            menuDismissed && "opacity-0! group-hover/session-card:opacity-0! group-focus-within/session-card:opacity-0! data-open:opacity-0!",
           )}
-          onMouseDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            setMenuDismissed(false);
+          }}
           onClick={(e) => e.stopPropagation()}
           aria-label={`Options for ${title}`}
         >

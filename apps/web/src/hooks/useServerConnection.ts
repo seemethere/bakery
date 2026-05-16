@@ -56,6 +56,15 @@ function agentEventData(event: unknown): unknown {
   return { ...event.data, eventTime: event.time };
 }
 
+function messageContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
 function replaceSession(sessions: WebSession[], session: WebSession): WebSession[] {
   return sessions.some((candidate) => candidate.id === session.id)
     ? sessions.map((candidate) => candidate.id === session.id ? session : candidate)
@@ -248,6 +257,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
           setRuntimeSettings(snap.settings ?? fallbackRuntimeSettings(configRef.current, modelCatalogRef.current));
           setConnectionStatus(snap.status);
           setPendingQuestion(snap.pendingQuestion ?? null);
+          reconcileRunningQueue(snap.queuedMessages?.steering ?? [], snap.queuedMessages?.followUp ?? []);
           setController(snap.controller ?? null);
           // Update session list with fresh data from snapshot
           mergeSessionUpdate(snap.session);
@@ -264,7 +274,7 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
             );
           }
           if (eventType === "message_end" && isRecord(eventData) && isRecord(eventData.message) && eventData.message.role === "user") {
-            removePendingTranscriptQueueItem(String(eventData.message.content ?? ""));
+            removePendingTranscriptQueueItem(messageContentText(eventData.message.content));
           }
           if (eventType === "agent_start" || eventType === "turn_start") {
             setConnectionStatus("running");

@@ -48,6 +48,8 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   const previousVisibleSignaturesRef = useRef(new Map<string, string>());
   const smoothJumpRef = useRef(false);
   const smoothJumpFrameRef = useRef<number | null>(null);
+  const pendingInitialBottomScrollSessionRef = useRef<string | null>(null);
+  const initialBottomScrollInProgressRef = useRef(false);
   const [isFollowingLatest, setIsFollowingLatest] = useState(autoScrollRef.current);
   const [unreadCount, setUnreadCount] = useState(0);
   const visibleItems = useMemo(
@@ -56,6 +58,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   );
 
   function markBottomState(atBottom: boolean) {
+    if ((pendingInitialBottomScrollSessionRef.current || initialBottomScrollInProgressRef.current) && !atBottom) return;
     if (smoothJumpRef.current && !atBottom) return;
     autoScrollRef.current = atBottom;
     saveAutoScrollPreference(atBottom);
@@ -147,11 +150,36 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   }, [items.length]);
 
   useLayoutEffect(() => {
+    pendingInitialBottomScrollSessionRef.current = sessionId;
+    autoScrollRef.current = true;
     unreadIdsRef.current.clear();
     previousVisibleSignaturesRef.current = new Map(visibleItems.map((item) => [item.id, `${item.status ?? ""}:${item.body.length}:${item.segments?.length ?? 0}`]));
     setUnreadCount(0);
-    setIsFollowingLatest(autoScrollRef.current);
+    setIsFollowingLatest(true);
   }, [sessionId]);
+
+  useLayoutEffect(() => {
+    if (pendingInitialBottomScrollSessionRef.current !== sessionId || visibleItems.length === 0) return;
+    pendingInitialBottomScrollSessionRef.current = null;
+    initialBottomScrollInProgressRef.current = true;
+    followLatest();
+    let secondFrame: number | null = null;
+    const firstFrame = requestAnimationFrame(() => {
+      followLatest();
+      secondFrame = requestAnimationFrame(() => {
+        followLatest();
+        const el = containerRef.current;
+        const atBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        initialBottomScrollInProgressRef.current = false;
+        markBottomState(atBottom);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+      initialBottomScrollInProgressRef.current = false;
+    };
+  }, [sessionId, visibleItems.length]);
 
   // Follow streaming updates while the reader is already at the latest item.
   useLayoutEffect(() => {

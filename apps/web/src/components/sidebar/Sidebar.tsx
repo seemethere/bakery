@@ -520,13 +520,14 @@ function WorkspaceGroup({
             No sessions
           </p>
         ) : (
-          <div className="grid gap-1 pt-1 pl-5">
+          <div className="grid gap-1 pt-1">
             {group.sessions.map((session) => (
               <SessionCard
                 key={session.id}
                 session={session}
                 selectedSessionId={selectedSessionId}
                 connectionStatus={connectionStatus}
+                showWorkspacePinShortcut
                 onSelect={onSelectSession}
                 onDelete={onDeleteSession}
                 onRename={onRenameSession}

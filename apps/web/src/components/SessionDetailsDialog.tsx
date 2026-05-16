@@ -12,7 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { sessionDisplayTitle } from "@/lib/session-utils";
+import { sessionDisplayTitle, sessionWorkRecencyValue } from "@/lib/session-utils";
 import { currentSessionTreePath, sessionTreeNodeDisplayTitle } from "@/lib/session-tree";
 import { cn } from "@/lib/utils";
 
@@ -161,7 +161,7 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <MetaTile label="Created" value={formatDate(session.createdAt)} />
-              <MetaTile label="Last activity" value={formatDate(session.lastActivityAt ?? session.lastOpenedAt)} />
+              <MetaTile label="Last activity" value={formatDate(sessionWorkRecencyValue(session))} />
             </div>
           </section>
 

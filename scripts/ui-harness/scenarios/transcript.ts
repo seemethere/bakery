@@ -209,6 +209,9 @@ export async function runQueuedFollowUp(page: Page): Promise<Record<string, unkn
   await page.locator("#followUp").click();
   await page.locator(".prompt-image").waitFor({ state: "detached", timeout: 5_000 });
   await page.locator(".queue-pill.follow-up", { hasText: "queued follow-up with screenshot" }).waitFor({ timeout: 5_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForAgentRunning(page, 10_000);
+  await page.locator(".queue-pill.follow-up", { hasText: "queued follow-up with screenshot" }).waitFor({ timeout: 5_000 });
 
   await page.locator("#prompt").fill("queued follow-up that should be edited");
   await page.locator("#followUp").click();
@@ -243,7 +246,7 @@ export async function runQueuedFollowUp(page: Page): Promise<Record<string, unkn
 }
 
 export async function runTranscriptScrollStability(page: Page): Promise<Record<string, unknown>> {
-  await prepareSession(page);
+  const sessionId = await prepareSession(page);
   await page.locator("#prompt").fill("Please produce a very long streaming performance response with many paragraphs, markdown, code, and enough text to overflow the transcript while still streaming.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
@@ -274,7 +277,27 @@ export async function runTranscriptScrollStability(page: Page): Promise<Record<s
     return Boolean(transcript && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 60 && !document.querySelector("#jumpToLatest"));
   }, null, { timeout: 5_000 });
   await waitForAgentIdle(page, 30_000);
-  return { before, after, drift, ...(await collectMetrics(page)) };
+
+  await page.evaluate(() => {
+    localStorage.setItem("piWebAutoScroll", "false");
+    const transcript = document.querySelector(".transcript") as HTMLElement | null;
+    if (!transcript) return;
+    transcript.scrollTop = 0;
+    transcript.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await page.goto(`${webBase}/sessions`, { waitUntil: "domcontentloaded" });
+  await page.locator(`.sessions-page [data-session-id="${sessionId}"]`).click();
+  await waitForSelectedSession(page, sessionId);
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement | null;
+    return Boolean(transcript && transcript.scrollHeight > transcript.clientHeight && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 80 && !document.querySelector("#jumpToLatest"));
+  }, null, { timeout: 5_000 });
+
+  const reopened = await page.evaluate(() => {
+    const transcript = document.querySelector(".transcript") as HTMLElement;
+    return { top: transcript.scrollTop, height: transcript.scrollHeight, clientHeight: transcript.clientHeight, bottomGap: transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop };
+  });
+  return { before, after, drift, reopened, ...(await collectMetrics(page)) };
 }
 
 export async function runTranscriptTextSelection(page: Page): Promise<Record<string, unknown>> {
@@ -282,6 +305,41 @@ export async function runTranscriptTextSelection(page: Page): Promise<Record<str
   await sendPromptAndWaitIdle(page, "Please produce a concise markdown response with several words that can be selected for regression coverage.");
   const markdown = page.locator(".message.assistant .markdown-body").last();
   await markdown.waitFor({ timeout: 5_000 });
+  const userTimestamp = page.locator('.message.user [data-message-timestamp="true"]').last();
+  const assistantTimestamp = page.locator('.message.assistant [data-message-timestamp="true"]').last();
+  await userTimestamp.waitFor({ state: "attached", timeout: 5_000 });
+  await assistantTimestamp.waitFor({ state: "attached", timeout: 5_000 });
+  await page.mouse.move(4, 4);
+  await page.waitForFunction(() => Array.from(document.querySelectorAll<HTMLElement>('[data-message-timestamp="true"]')).every((node) => getComputedStyle(node).visibility === "hidden"));
+  await page.locator(".message.user").last().hover();
+  await page.waitForFunction(() => {
+    const timestamp = Array.from(document.querySelectorAll<HTMLElement>('.message.user [data-message-timestamp="true"]')).at(-1);
+    return Boolean(timestamp && getComputedStyle(timestamp).visibility === "visible");
+  });
+  const userActionOrder = await page.evaluate(() => {
+    const row = document.querySelector<HTMLElement>(".message.user:last-of-type") ?? Array.from(document.querySelectorAll<HTMLElement>(".message.user")).at(-1)!;
+    const timestamp = row.querySelector<HTMLElement>('[data-message-timestamp="true"]')!.getBoundingClientRect();
+    const copy = row.querySelector<HTMLElement>('[data-row-action="copy"]')!.getBoundingClientRect();
+    return { timestampLeft: timestamp.left, copyLeft: copy.left };
+  });
+  if (userActionOrder.timestampLeft >= userActionOrder.copyLeft) throw new Error(`Expected user timestamp to sit left of copy action: ${JSON.stringify(userActionOrder)}`);
+  await page.mouse.move(4, 4);
+  await page.waitForFunction(() => {
+    const timestamp = Array.from(document.querySelectorAll<HTMLElement>('.message.user [data-message-timestamp="true"]')).at(-1);
+    return Boolean(timestamp && getComputedStyle(timestamp).visibility === "hidden");
+  });
+  await page.locator(".message.assistant").last().hover();
+  await page.waitForFunction(() => {
+    const timestamp = Array.from(document.querySelectorAll<HTMLElement>('.message.assistant [data-message-timestamp="true"]')).at(-1);
+    return Boolean(timestamp && getComputedStyle(timestamp).visibility === "visible");
+  });
+  const assistantActionOrder = await page.evaluate(() => {
+    const row = Array.from(document.querySelectorAll<HTMLElement>(".message.assistant")).at(-1)!;
+    const timestamp = row.querySelector<HTMLElement>('[data-message-timestamp="true"]')!.getBoundingClientRect();
+    const copy = row.querySelector<HTMLElement>('[data-row-action="copy"]')!.getBoundingClientRect();
+    return { timestampLeft: timestamp.left, copyRight: copy.right };
+  });
+  if (assistantActionOrder.timestampLeft <= assistantActionOrder.copyRight) throw new Error(`Expected assistant timestamp to sit right of copy/fork actions: ${JSON.stringify(assistantActionOrder)}`);
   const box = await markdown.boundingBox();
   if (!box) throw new Error("Could not find assistant markdown bounds for text selection test.");
 
@@ -401,6 +459,19 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
   const rightToggle = page.locator("#toggleRightPanel");
   if (await rightToggle.isVisible().catch(() => false)) await rightToggle.click();
   await page.locator(".message.tool").first().scrollIntoViewIfNeeded();
+  const assistantTimestamp = page.locator('.message.assistant [data-message-timestamp="true"]').last();
+  if (await assistantTimestamp.count()) {
+    await page.mouse.move(4, 4);
+    await page.waitForFunction(() => {
+      const timestamp = Array.from(document.querySelectorAll<HTMLElement>('.message.assistant [data-message-timestamp="true"]')).at(-1);
+      return !timestamp || getComputedStyle(timestamp).visibility === "hidden";
+    });
+    await page.locator(".message.tool").first().hover();
+    await page.waitForFunction(() => {
+      const timestamp = Array.from(document.querySelectorAll<HTMLElement>('.message.assistant [data-message-timestamp="true"]')).at(-1);
+      return !timestamp || getComputedStyle(timestamp).visibility === "hidden";
+    });
+  }
   return { toolStreamPerf, ...(await collectMetrics(page)) };
 }
 

@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ComponentProps } from "react";
 import type { ExtensionCatalog, SessionTreeNode } from "@pi-web-agent/protocol";
-import { CheckIcon, ClipboardListIcon, CopyIcon, GitForkIcon, LoaderCircleIcon, MoreHorizontalIcon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardListIcon, CopyIcon, GitForkIcon, LoaderCircleIcon, MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -126,11 +126,12 @@ function stripAttachmentContext(text: string): string {
 
 function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentReference[] }) {
   if (attachments.length === 0) return null;
+  const gallery = attachments.map((attachment) => ({ src: attachment.url, label: attachment.name }));
   return (
     <div className="not-prose mt-1 flex flex-wrap gap-1.5">
-      {attachments.map((attachment) => (
+      {attachments.map((attachment, index) => (
         <figure key={attachment.path} className="m-0 flex max-w-[180px] items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-background/60 py-1 pl-1 pr-2">
-          <ImagePreviewDialog src={attachment.url} label={attachment.name}>
+          <ImagePreviewDialog src={attachment.url} label={attachment.name} gallery={gallery} initialIndex={index}>
             <img src={attachment.url} alt="" className="size-7 shrink-0 rounded object-cover" loading="lazy" />
           </ImagePreviewDialog>
           <figcaption className="truncate text-[11px] text-muted-foreground" title={attachment.name}>{attachment.name}</figcaption>
@@ -140,21 +141,55 @@ function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentRe
   );
 }
 
-function ImagePreviewDialog({ src, label, children }: { src: string; label: string; children: React.ReactNode }) {
-  const showCaption = label.trim().length > 0 && !/^\[image(?::[^\]]+)?\]$/i.test(label.trim());
+type ImagePreviewItem = { src: string; label: string };
+
+function ImagePreviewDialog({ src, label, gallery, initialIndex = 0, children }: { src: string; label: string; gallery?: ImagePreviewItem[]; initialIndex?: number; children: React.ReactNode }) {
+  const items = gallery?.length ? gallery : [{ src, label }];
+  const safeInitialIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
+  const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(safeInitialIndex);
+  const current = items[index] ?? items[0] ?? { src, label };
+  const showCaption = current.label.trim().length > 0 && !/^\[image(?::[^\]]+)?\]$/i.test(current.label.trim());
+  const hasMultiple = items.length > 1;
+
+  function move(delta: number) {
+    setIndex((value) => (value + delta + items.length) % items.length);
+  }
+
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen);
+      if (nextOpen) setIndex(safeInitialIndex);
+    }}>
       <DialogTrigger render={<button type="button" className="min-w-0 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />}>
         {children}
       </DialogTrigger>
-      <DialogContent className="w-auto max-w-[calc(100vw-2rem)] gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0 sm:max-w-[calc(100vw-2rem)]">
+      <DialogContent
+        className="w-auto max-w-[calc(100vw-2rem)] gap-0 overflow-visible bg-transparent p-0 shadow-none ring-0 sm:max-w-[calc(100vw-2rem)]"
+        onKeyDown={(event) => {
+          if (!hasMultiple) return;
+          if (event.key === "ArrowLeft") move(-1);
+          if (event.key === "ArrowRight") move(1);
+        }}
+      >
         <DialogHeader className="sr-only">
-          <DialogTitle>{label || "Image preview"}</DialogTitle>
-          <DialogDescription>Image preview</DialogDescription>
+          <DialogTitle>{current.label || "Image preview"}</DialogTitle>
+          <DialogDescription>{hasMultiple ? `Image ${index + 1} of ${items.length}` : "Image preview"}</DialogDescription>
         </DialogHeader>
-        <figure className="m-0 inline-flex max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-border/50 bg-popover p-2 shadow-2xl">
-          <img src={src} alt={label} className="block h-auto w-auto max-h-[82vh] max-w-[calc(100vw-3rem)] object-contain" />
-          {showCaption && <figcaption className="mt-2 max-w-[calc(100vw-3rem)] truncate px-1 text-xs text-muted-foreground" title={label}>{label}</figcaption>}
+        <figure className="relative m-0 inline-flex max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-border/50 bg-popover p-2 shadow-2xl">
+          <img src={current.src} alt={current.label} className="block h-auto w-auto max-h-[82vh] max-w-[calc(100vw-3rem)] object-contain" />
+          {hasMultiple && (
+            <>
+              <button type="button" onClick={() => move(-1)} className="absolute left-3 top-1/2 inline-grid size-9 -translate-y-1/2 place-items-center rounded-full bg-background/85 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur hover:bg-background" aria-label="Previous image">
+                <ChevronLeftIcon className="size-5" />
+              </button>
+              <button type="button" onClick={() => move(1)} className="absolute right-3 top-1/2 inline-grid size-9 -translate-y-1/2 place-items-center rounded-full bg-background/85 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur hover:bg-background" aria-label="Next image">
+                <ChevronRightIcon className="size-5" />
+              </button>
+              <span className="absolute right-3 top-3 rounded-full bg-background/85 px-2 py-1 text-xs text-muted-foreground shadow ring-1 ring-border/60 backdrop-blur">{index + 1}/{items.length}</span>
+            </>
+          )}
+          {showCaption && <figcaption className="mt-2 max-w-[calc(100vw-3rem)] truncate px-1 text-xs text-muted-foreground" title={current.label}>{current.label}</figcaption>}
         </figure>
       </DialogContent>
     </Dialog>
@@ -189,7 +224,7 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
 
 // ---- Segment ----------------------------------------------------------------
 
-function Segment({ segment, showThinking, context }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext }) {
+function Segment({ segment, showThinking, context, imageGallery, imageIndex }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext; imageGallery?: ImagePreviewItem[]; imageIndex?: number }) {
   if (segment.kind === "markdown") {
     return <MarkdownContent text={stripAttachmentContext(segment.text)} context={context} />;
   }
@@ -211,7 +246,7 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
     if (segment.src) {
       return (
         <figure className="my-2">
-          <ImagePreviewDialog src={segment.src} label={segment.label}>
+          <ImagePreviewDialog src={segment.src} label={segment.label} gallery={imageGallery} initialIndex={imageIndex ?? 0}>
             <img src={segment.src} alt={segment.label} className="max-w-full rounded border border-border/50" loading="lazy" />
           </ImagePreviewDialog>
         </figure>
@@ -226,9 +261,15 @@ function Segment({ segment, showThinking, context }: { segment: TranscriptSegmen
 }
 
 function Segments({ segments, showThinking, context }: { segments: TranscriptSegment[]; showThinking: boolean; context: TranscriptRenderContext }) {
+  const imageSegments = segments.filter((segment): segment is TranscriptSegment & { kind: "image"; src: string } => segment.kind === "image" && Boolean(segment.src));
+  const imageGallery = imageSegments.map((segment) => ({ src: segment.src, label: segment.label }));
+  let imageIndex = 0;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      {segments.map((seg, i) => <Segment key={i} segment={seg} showThinking={showThinking} context={context} />)}
+      {segments.map((seg, i) => {
+        const currentImageIndex = seg.kind === "image" && seg.src ? imageIndex++ : undefined;
+        return <Segment key={i} segment={seg} showThinking={showThinking} context={context} imageGallery={imageGallery} imageIndex={currentImageIndex} />;
+      })}
     </div>
   );
 }
@@ -237,11 +278,12 @@ function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: s
   const [failedPaths, setFailedPaths] = useState<Set<string>>(() => new Set());
   const visibleArtifacts = artifacts.filter((artifact) => !failedPaths.has(artifact.path));
   if (visibleArtifacts.length === 0) return null;
+  const gallery = visibleArtifacts.map((artifact) => ({ src: artifact.url, label: artifact.path }));
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
-      {visibleArtifacts.map((artifact) => (
+      {visibleArtifacts.map((artifact, index) => (
         <figure key={artifact.path} data-testid="artifact-image" className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
-          <ImagePreviewDialog src={artifact.url} label={artifact.path}>
+          <ImagePreviewDialog src={artifact.url} label={artifact.path} gallery={gallery} initialIndex={index}>
             <img
               src={artifact.url}
               alt={artifact.path}
@@ -358,11 +400,38 @@ function ForkButton({ item, context }: { item: TranscriptItem; context: Transcri
   );
 }
 
-function MessageActions({ item, context, align = "start" }: { item: TranscriptItem; context: TranscriptRenderContext; align?: "start" | "end" }) {
+function messageTimestamp(value: string | undefined, full = false): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return full
+    ? date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function MessageTimestamp({ value }: { value: string | undefined }) {
+  const label = messageTimestamp(value);
+  if (!label || !value) return null;
   return (
-    <div className={cn("flex gap-1", align === "end" && "justify-end")}>
+    <time
+      dateTime={value}
+      title={messageTimestamp(value, true)}
+      className="message-timestamp self-center whitespace-nowrap text-[11px] leading-none text-muted-foreground/55"
+      data-message-timestamp="true"
+    >
+      {label}
+    </time>
+  );
+}
+
+function MessageActions({ item, context, align = "start" }: { item: TranscriptItem; context: TranscriptRenderContext; align?: "start" | "end" }) {
+  const timestamp = <MessageTimestamp value={item.createdAt} />;
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1", align === "end" && "justify-end")}>
+      {item.kind === "user" && timestamp}
       <CopyMessageButton item={item} />
       <ForkButton item={item} context={context} />
+      {item.kind !== "user" && timestamp}
     </div>
   );
 }
@@ -372,7 +441,7 @@ function UserRow({ item, showThinking, context }: { item: TranscriptItem; showTh
   const attachmentText = segments?.map((segment) => "text" in segment ? segment.text : "").join("\n") || item.body;
   const attachmentReferences = attachmentReferencesFromText(attachmentText, context);
   return (
-    <div className="message user flex min-w-0 justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message message-row user flex min-w-0 justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 max-w-[85%] justify-items-end gap-1 sm:max-w-[80%]">
         <div className="min-w-0 max-w-full rounded-2xl rounded-br-sm border border-sidebar-primary/20 bg-sidebar-primary/15 px-4 py-2.5 text-sm break-words">
           {segments && segments.length > 0
@@ -402,7 +471,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
   if (isGeneratingPlan(item)) return <PlanGeneratingRow item={item} context={context} />;
 
   return (
-    <div className="message assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message message-row assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 justify-items-start gap-1">
         <div className="min-w-0 w-full">
           <div className="min-w-0">
@@ -425,7 +494,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
 
 function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: TranscriptRenderContext }) {
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-generating="true">
+    <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-generating="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 px-4 py-3 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <LoaderCircleIcon className="size-4 animate-spin text-yellow-600 dark:text-yellow-300" />
@@ -442,7 +511,7 @@ function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: T
 function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: PlanCardData; context: TranscriptRenderContext }) {
   const [decision, setDecision] = useState<"accepted" | "rejected" | null>(null);
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-card="true">
+    <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-card="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 p-4 text-sm">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -497,7 +566,7 @@ function ExtensionCardRow({ item, payload, context }: { item: TranscriptItem; pa
   const validTag = tag && /^[-a-z0-9]+$/.test(tag) && tag.includes("-");
   const props = JSON.stringify(payload.props ?? {});
   return (
-    <div className="px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-extension-card="true">
+    <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-extension-card="true">
       <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-sm">
         {validTag
           ? React.createElement(tag, {
