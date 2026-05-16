@@ -158,6 +158,10 @@
       display: none !important;
     }
 
+    .composer-attach-control {
+      margin-left: auto;
+    }
+
     #prompt {
       min-height: 48px;
       max-height: min(76px, 24dvh);

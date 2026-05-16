@@ -123,9 +123,10 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
       prompt: rectOf("#prompt"),
       footer: rectOf("footer"),
       transcript: rectOf(".transcript"),
-      attach: rectOf("#attachImages"),
+      attach: rectOf(".composer-attach-control"),
       send: rectOf("#send"),
-      attachSendOverlap: intersects(rectOf("#attachImages"), rectOf("#send")),
+      modelThinking: rectOf("#modelThinkingToggle"),
+      attachSendOverlap: intersects(rectOf(".composer-attach-control"), rectOf("#send")),
       promptFontSize: promptStyle ? Number.parseFloat(promptStyle.fontSize) : 0,
       promptLineHeight: promptStyle?.lineHeight ?? "",
       promptScrollHeight: prompt?.scrollHeight ?? 0,
@@ -134,7 +135,8 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
   });
   if (composerMetrics.promptFontSize < 16) throw new Error(`Mobile prompt font should avoid focus zoom; saw ${JSON.stringify(composerMetrics)}`);
   if (composerMetrics.documentWidth > composerMetrics.viewport.width + 2) throw new Error(`Mobile composer focus created horizontal overflow: ${JSON.stringify(composerMetrics)}`);
-  if (composerMetrics.attachSendOverlap) throw new Error(`Mobile attach input overlaps send button: ${JSON.stringify(composerMetrics)}`);
+  if (composerMetrics.attachSendOverlap) throw new Error(`Mobile attach control overlaps send button: ${JSON.stringify(composerMetrics)}`);
+  if (!composerMetrics.attach || !composerMetrics.send || composerMetrics.send.right < composerMetrics.viewport.width - 72 || composerMetrics.attach.left < (composerMetrics.modelThinking?.right ?? 0)) throw new Error(`Mobile attach/send controls should sit on the right side of the toolbar: ${JSON.stringify(composerMetrics)}`);
   if ((composerMetrics.footer?.height ?? 999) > 190) throw new Error(`Mobile focused composer footer too tall: ${JSON.stringify(composerMetrics)}`);
   if ((composerMetrics.transcript?.height ?? 0) < 320) throw new Error(`Mobile focused composer leaves too little transcript: ${JSON.stringify(composerMetrics)}`);
   await page.setViewportSize({ width: 390, height: 844 });
