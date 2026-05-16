@@ -78,20 +78,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function enrichMessagesWithSessionEntryTimestamps(messages: unknown[], entries: SessionEntry[]): unknown[] {
-  const messageEntries = entries.filter((entry): entry is Extract<SessionEntry, { type: "message" }> => entry.type === "message");
-  if (messageEntries.length !== messages.length) return messages;
+function withoutTimestamp(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const { timestamp: _timestamp, ...rest } = value;
+  return rest;
+}
 
-  let changed = false;
-  const enriched = messages.map((message, index) => {
-    if (!isRecord(message) || typeof message.timestamp === "string") return message;
-    const timestamp = messageEntries[index]?.timestamp;
-    if (typeof timestamp !== "string" || !timestamp) return message;
-    changed = true;
-    return { ...message, timestamp };
-  });
+function sameMessageIgnoringTimestamp(left: unknown, right: unknown): boolean {
+  return JSON.stringify(withoutTimestamp(left)) === JSON.stringify(withoutTimestamp(right));
+}
 
-  return changed ? enriched : messages;
+export function snapshotMessagesFromSessionBranch(entries: SessionEntry[], volatileMessages: unknown[] = []): unknown[] {
+  const messages: unknown[] = [];
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    messages.push(isRecord(entry.message) ? { ...entry.message, timestamp: entry.timestamp } : entry.message);
+  }
+
+  const hasVolatileTail = volatileMessages.length > messages.length
+    && messages.every((message, index) => sameMessageIgnoringTimestamp(message, volatileMessages[index]));
+  if (!hasVolatileTail) return messages;
+  return [...messages, ...volatileMessages.slice(messages.length)];
 }
 
 function getStatus(session: AgentSession): SessionSnapshot["status"] {
@@ -526,7 +533,7 @@ class InProcessSessionHandle implements SessionHandle {
     return {
       session: webSession,
       status: getStatus(this.session),
-      messages: enrichMessagesWithSessionEntryTimestamps(this.session.state.messages, this.session.sessionManager.getBranch()),
+      messages: snapshotMessagesFromSessionBranch(this.session.sessionManager.getBranch(), this.session.state.messages),
       settings: await this.getSettings(),
       pendingQuestion: this.getPendingQuestion(),
       queuedMessages: {

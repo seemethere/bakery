@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { ModelPolicy } from "@pi-web-agent/protocol";
-import { applyConfiguredDefaultModel, enrichMessagesWithSessionEntryTimestamps } from "./pi-runner.js";
+import { applyConfiguredDefaultModel, snapshotMessagesFromSessionBranch } from "./pi-runner.js";
 
 function makePolicy(defaultModel?: string, allowedModels?: string[]): ModelPolicy {
   return {
@@ -101,14 +101,9 @@ function messageEntry(id: string, timestamp: string, message: Record<string, unk
   return { type: "message", id, parentId: null, timestamp, message } as unknown as SessionEntry;
 }
 
-describe("enrichMessagesWithSessionEntryTimestamps", () => {
-  test("adds persisted entry timestamps to messages that lack timestamps", () => {
-    const messages = [
-      { role: "user", content: "Hello" },
-      { role: "assistant", content: "Hi" },
-    ];
-
-    expect(enrichMessagesWithSessionEntryTimestamps(messages, [
+describe("snapshotMessagesFromSessionBranch", () => {
+  test("returns persisted branch message entries with canonical entry timestamps", () => {
+    expect(snapshotMessagesFromSessionBranch([
       messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hello" }),
       messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Hi" }),
     ])).toEqual([
@@ -117,24 +112,72 @@ describe("enrichMessagesWithSessionEntryTimestamps", () => {
     ]);
   });
 
-  test("preserves existing message timestamps", () => {
-    const messages = [{ role: "assistant", content: "Done", timestamp: "2026-05-15T23:00:00.000Z" }];
-    const enriched = enrichMessagesWithSessionEntryTimestamps(messages, [
-      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Done" }),
+  test("uses entry timestamps instead of stale inner message timestamps", () => {
+    expect(snapshotMessagesFromSessionBranch([
+      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Done", timestamp: "2026-05-15T23:00:00.000Z" }),
+    ])).toEqual([
+      { role: "assistant", content: "Done", timestamp: "2026-05-15T23:20:01.000Z" },
     ]);
-
-    expect(enriched).toBe(messages);
-    expect(enriched[0]).toEqual({ role: "assistant", content: "Done", timestamp: "2026-05-15T23:00:00.000Z" });
   });
 
-  test("leaves messages unchanged when entry mapping is ambiguous", () => {
-    const messages = [{ role: "assistant", content: "Only visible message" }];
-    const enriched = enrichMessagesWithSessionEntryTimestamps(messages, [
-      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hidden?" }),
-      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Only visible message" }),
-    ]);
+  test("ignores non-message branch entries in the first restored transcript slice", () => {
+    const modelEntry = { type: "model_change", id: "m1", parentId: null, timestamp: "2026-05-15T23:19:59.000Z", provider: "openai", modelId: "gpt-5.1" } as unknown as SessionEntry;
 
-    expect(enriched).toBe(messages);
-    expect(enriched[0]).toEqual({ role: "assistant", content: "Only visible message" });
+    expect(snapshotMessagesFromSessionBranch([
+      modelEntry,
+      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hello" }),
+    ])).toEqual([
+      { role: "user", content: "Hello", timestamp: "2026-05-15T23:20:00.000Z" },
+    ]);
+  });
+
+  test("keeps a verified volatile state tail for snapshots during streaming", () => {
+    expect(snapshotMessagesFromSessionBranch([
+      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hello" }),
+    ], [
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Partial response" },
+    ])).toEqual([
+      { role: "user", content: "Hello", timestamp: "2026-05-15T23:20:00.000Z" },
+      { role: "assistant", content: "Partial response" },
+    ]);
+  });
+
+  test("does not append volatile state messages when the branch prefix is not the same timeline", () => {
+    expect(snapshotMessagesFromSessionBranch([
+      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hello" }),
+    ], [
+      { role: "compactionSummary", summary: "Older context" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Partial response" },
+    ])).toEqual([
+      { role: "user", content: "Hello", timestamp: "2026-05-15T23:20:00.000Z" },
+    ]);
+  });
+
+  test("keeps volatile state when a new streaming session has no branch entries yet", () => {
+    expect(snapshotMessagesFromSessionBranch([], [
+      { role: "user", content: "Hello" },
+    ])).toEqual([
+      { role: "user", content: "Hello" },
+    ]);
+  });
+
+  test("returns branch messages when volatile state is shorter than the branch", () => {
+    expect(snapshotMessagesFromSessionBranch([
+      messageEntry("u1", "2026-05-15T23:20:00.000Z", { role: "user", content: "Hello" }),
+      messageEntry("a1", "2026-05-15T23:20:01.000Z", { role: "assistant", content: "Hi" }),
+    ], [
+      { role: "user", content: "Hello" },
+    ])).toEqual([
+      { role: "user", content: "Hello", timestamp: "2026-05-15T23:20:00.000Z" },
+      { role: "assistant", content: "Hi", timestamp: "2026-05-15T23:20:01.000Z" },
+    ]);
+  });
+
+  test("preserves non-record persisted message payloads defensively", () => {
+    expect(snapshotMessagesFromSessionBranch([
+      messageEntry("m1", "2026-05-15T23:20:00.000Z", "legacy message" as unknown as Record<string, unknown>),
+    ])).toEqual(["legacy message"]);
   });
 });
