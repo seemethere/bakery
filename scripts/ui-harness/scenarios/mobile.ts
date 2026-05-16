@@ -34,6 +34,51 @@ export async function runMobileLayout(page: Page): Promise<Record<string, unknow
     localStorage.setItem("piWebCollapsedSessionGroups", JSON.stringify(["this-week", "older"]));
   });
   await prepareSession(page);
+  const draftWorkspace = await page.evaluate(async (base) => {
+    const [sessionResponse, workspacesResponse] = await Promise.all([
+      fetch(`${base}/api/sessions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      fetch(`${base}/api/workspaces`),
+    ]);
+    if (!sessionResponse.ok) throw new Error(`draft session failed: ${sessionResponse.status}`);
+    if (!workspacesResponse.ok) throw new Error(`workspaces failed: ${workspacesResponse.status}`);
+    const session = await sessionResponse.json() as { id: string };
+    const workspaces = await workspacesResponse.json() as Array<{ path: string; label: string }>;
+    const workspace = workspaces[0];
+    if (!workspace) throw new Error("Mobile workspace picker smoke expected at least one workspace");
+    return { session, workspace };
+  }, apiBase);
+  await page.goto(`${webBase}/sessions/${draftWorkspace.session.id}`, { waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, draftWorkspace.session.id);
+  await waitForMobileLayout(page);
+  const mobileWorkspacePicker = page.locator('.session-workspace button[aria-haspopup="menu"]');
+  await mobileWorkspacePicker.waitFor({ state: "visible", timeout: 5_000 });
+  const draftPickerLayout = await page.evaluate(() => {
+    const rectOf = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element || getComputedStyle(element).display === "none") return null;
+      const rect = element.getBoundingClientRect();
+      return { left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
+    return {
+      viewportWidth: window.innerWidth,
+      picker: rectOf('.session-workspace button[aria-haspopup="menu"]'),
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+  if (!draftPickerLayout.picker || draftPickerLayout.picker.width < 28) throw new Error(`Mobile draft workspace picker should be visible and tappable: ${JSON.stringify(draftPickerLayout)}`);
+  if (draftPickerLayout.documentWidth > draftPickerLayout.viewportWidth + 2) throw new Error(`Mobile draft workspace picker created horizontal overflow: ${JSON.stringify(draftPickerLayout)}`);
+  await mobileWorkspacePicker.click();
+  await page.screenshot({ path: join(artifactDir, "mobile-draft-workspace-picker.png"), fullPage: true });
+  await page.getByRole("menuitem", { name: new RegExp(draftWorkspace.workspace.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).click();
+  await page.waitForFunction(() => {
+    const picker = document.querySelector<HTMLElement>('.session-workspace button[aria-haspopup="menu"]');
+    return !picker || getComputedStyle(picker).display === "none";
+  }, null, { timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   await page.locator(".empty-session-greeting", { hasText: "New Bakery session" }).waitFor({ timeout: 5_000 });
   await page.locator(".empty-quick-start-chips [data-empty-quick-start='plan']", { hasText: "/plan" }).waitFor({ timeout: 5_000 });
   const mobileEmptyLayout = await page.evaluate(() => {

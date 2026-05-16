@@ -124,7 +124,7 @@ function HeaderSessionMeta({
   }
 
   return (
-    <div ref={popoverRef} className="session-workspace relative hidden min-w-0 sm:block">
+    <div ref={popoverRef} className="session-workspace relative min-w-0">
       <Button
         type="button"
         variant="ghost"
@@ -142,7 +142,7 @@ function HeaderSessionMeta({
         <div
           role="menu"
           aria-label="Pick workspace"
-          className="absolute left-0 top-[calc(100%+8px)] z-30 grid w-max min-w-[280px] max-w-[min(520px,calc(100vw-2rem))] gap-0.5 rounded-lg border border-border bg-popover p-2 shadow-xl"
+          className="absolute left-0 top-[calc(100%+8px)] z-30 grid w-[calc(100vw-4rem)] min-w-0 max-w-[520px] gap-0.5 rounded-lg border border-border bg-popover p-2 shadow-xl sm:w-max sm:min-w-[280px] sm:max-w-[min(520px,calc(100vw-2rem))]"
         >
           {workspaces.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">No workspaces configured.</p>
