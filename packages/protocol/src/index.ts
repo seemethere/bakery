@@ -190,12 +190,14 @@ export type MetadataModelSelection = z.infer<typeof metadataModelSelectionSchema
 export const appSettingsSchema = z.object({
   autoGenerateSessionMetadata: z.boolean(),
   sessionMetadataModel: metadataModelSelectionSchema,
+  defaultSessionModel: metadataModelSelectionSchema,
 });
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 
 export const updateAppSettingsRequestSchema = z.object({
   autoGenerateSessionMetadata: z.boolean().optional(),
   sessionMetadataModel: metadataModelSelectionSchema.optional(),
+  defaultSessionModel: metadataModelSelectionSchema.optional(),
 });
 export type UpdateAppSettingsRequest = z.infer<typeof updateAppSettingsRequestSchema>;
 

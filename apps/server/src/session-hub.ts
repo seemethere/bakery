@@ -320,11 +320,13 @@ export class SessionHub {
     if (this.promotePromise) return this.promotePromise;
     const mode: "workspace" | "chat_only" = webSession.cwd ? "workspace" : "chat_only";
     this.promotePromise = (async () => {
+      const configuredDefaultModel = this.deps.store.getSettings().defaultSessionModel?.model ?? this.deps.config.modelPolicy.defaultModel;
       const handle = await this.deps.runner.createSession({
         id: webSession.id,
         cwd: webSession.cwd,
         piSessionFile: webSession.piSessionFile,
         mode,
+        ...(configuredDefaultModel ? { defaultModel: configuredDefaultModel } : {}),
       });
       if (this.pendingModel) await handle.setModel(this.pendingModel);
       if (this.pendingThinkingLevel) await handle.setThinkingLevel(this.pendingThinkingLevel);

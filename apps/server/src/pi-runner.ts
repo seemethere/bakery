@@ -24,6 +24,7 @@ export type CreateSessionOptions = {
   cwd: string | null;
   piSessionFile: string;
   mode?: "workspace" | "chat_only";
+  defaultModel?: string | undefined;
 };
 
 export type BuiltinCommandResult = {
@@ -573,7 +574,9 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
       customTools: [createAskQuestionTool(questionBroker)],
       ...(mode === "chat_only" ? { noTools: "all" as const } : {}),
     });
-    if (!hadSessionFile) await applyConfiguredDefaultModel(session, this.modelPolicy);
+    if (!hadSessionFile) {
+      await applyConfiguredDefaultModel(session, { ...this.modelPolicy, ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}) });
+    }
     flushSessionFile(sessionManager);
     const handle = new InProcessSessionHandle(options.id, effectiveCwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);

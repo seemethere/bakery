@@ -91,6 +91,29 @@ describe("MetadataStore web command results", () => {
   });
 });
 
+describe("MetadataStore app settings", () => {
+  test("persists default model selections", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));
+    try {
+      const store = new MetadataStore(join(dir, "metadata.sqlite"));
+
+      expect(store.getSettings()).toMatchObject({
+        autoGenerateSessionMetadata: true,
+        sessionMetadataModel: null,
+        defaultSessionModel: null,
+      });
+
+      expect(store.updateSettings({ defaultSessionModel: { model: "anthropic/claude-sonnet-4-5" } })).toMatchObject({
+        defaultSessionModel: { model: "anthropic/claude-sonnet-4-5" },
+      });
+      expect(store.updateSettings({ defaultSessionModel: null })).toMatchObject({ defaultSessionModel: null });
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("MetadataStore submitted prompt receipts", () => {
   test("stores pending receipts and reconciles the oldest matching prompt by id", () => {
     const dir = mkdtempSync(join(tmpdir(), "bakery-metadata-store-"));

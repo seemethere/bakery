@@ -236,13 +236,14 @@ app.get<{ Params: { extensionId: string; "*": string } }>("/api/extensions/:exte
 
 app.get("/api/models", async () => {
   const discoveredModels = await listAvailableModels();
+  const settingsDefaultModel = store.getSettings().defaultSessionModel?.model;
   const configuredDefault = config.modelPolicy.defaultModel ? configuredModelInfo(config.modelPolicy.defaultModel) : null;
   const models = discoveredModels.length > 0
     ? discoveredModels
     : configuredDefault
       ? [configuredDefault]
       : [];
-  const defaultModel = config.modelPolicy.defaultModel ?? models[0]?.id ?? null;
+  const defaultModel = settingsDefaultModel ?? config.modelPolicy.defaultModel ?? models[0]?.id ?? null;
   return {
     defaultModel,
     models,
