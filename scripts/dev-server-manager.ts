@@ -1,12 +1,14 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = resolve(import.meta.dir, "..");
 const runtimeDir = resolve(root, ".bakery", "dev");
 const pidPath = resolve(runtimeDir, "server.pid");
+const pidMetaPath = resolve(runtimeDir, "server.pid.json");
 const logPath = resolve(runtimeDir, "server.log");
 const defaultHost = process.env.PI_WEB_HOST ?? "127.0.0.1";
 const defaultPort = process.env.PI_WEB_PORT ?? "3141";
@@ -30,6 +32,20 @@ async function readPid(): Promise<number | null> {
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
+  }
+}
+
+async function pidBelongsToCurrentHost(): Promise<boolean> {
+  try {
+    const value = JSON.parse(await readFile(pidMetaPath, "utf8")) as { hostname?: unknown };
+    return value.hostname === hostname();
+  } catch {
+    // Older pid files did not include namespace metadata. In containers the
+    // repository is bind-mounted, so a host-created pid can collide with an
+    // unrelated container pid and `restart` may SIGTERM its own process group.
+    // Treat metadata-less pid files as stale in the container, but preserve the
+    // historical behavior for local host runs.
+    return !existsSync("/.dockerenv") && process.env.PI_WEB_CONTAINER_USER === undefined;
   }
 }
 
@@ -62,12 +78,17 @@ async function waitForHealth(healthy: boolean, timeoutMs: number): Promise<boole
 
 async function removePidFile(): Promise<void> {
   await rm(pidPath, { force: true });
+  await rm(pidMetaPath, { force: true });
 }
 
 async function up(): Promise<void> {
   ensureRuntimeDir();
   const existingPid = await readPid();
   if (existingPid && isProcessAlive(existingPid)) {
+    if (!(await pidBelongsToCurrentHost())) {
+      console.warn(`Ignoring stale backend pid ${existingPid} from another host/container namespace.`);
+      await removePidFile();
+    } else {
     if (await isHealthy()) {
       console.log(`Backend already running (pid ${existingPid}) at ${healthUrl}`);
       return;
@@ -75,6 +96,7 @@ async function up(): Promise<void> {
     console.warn(`Backend pid ${existingPid} exists but health check is not ready; leaving it untouched.`);
     console.warn(`Inspect logs with: bun run dev:server:logs`);
     process.exit(1);
+    }
   }
   await removePidFile();
   if (await isHealthy()) {
@@ -100,6 +122,7 @@ async function up(): Promise<void> {
   child.unref();
   closeSync(logFd);
   await writeFile(pidPath, `${child.pid}\n`, "utf8");
+  await writeFile(pidMetaPath, JSON.stringify({ hostname: hostname(), pid: child.pid, startedAt: new Date().toISOString() }, null, 2) + "\n", "utf8");
 
   const ready = await waitForHealth(true, 15_000);
   if (!ready) {
@@ -115,6 +138,11 @@ async function down(): Promise<void> {
   const pid = await readPid();
   if (!pid) {
     console.log("Backend is not managed by dev-server-manager (no pid file).");
+    return;
+  }
+  if (!(await pidBelongsToCurrentHost())) {
+    await removePidFile();
+    console.log(`Removed stale backend pid file from another host/container namespace (${pid}).`);
     return;
   }
   if (!isProcessAlive(pid)) {
