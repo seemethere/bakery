@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a standalone, local-first web application for spawning and interacting with server-backed pi coding-agent sessions. The frontend should use `@mariozechner/pi-web-ui` where practical, while the backend embeds pi through the `@mariozechner/pi-coding-agent` SDK.
+Build a standalone, local-first web application for spawning and interacting with server-backed pi coding-agent sessions. The frontend should use `@earendil-works/pi-web-ui` where practical, while the backend embeds pi through the `@earendil-works/pi-coding-agent` SDK.
 
 Reference source lives under `.ref/pi-mono` and is not part of this app.
 
@@ -22,7 +22,7 @@ Browser UI
   | HTTP + WebSocket
   v
 Bun-first TypeScript web service
-  | @mariozechner/pi-coding-agent SDK
+  | @earendil-works/pi-coding-agent SDK
   v
 Pi AgentSession / AgentSessionRuntime
   | default pi tools/resources
@@ -370,7 +370,7 @@ Server restart behavior:
 
 Use plain Vite + TypeScript + web components.
 
-Try adapter-first with `@mariozechner/pi-web-ui`:
+Try adapter-first with `@earendil-works/pi-web-ui`:
 
 ```ts
 class RemotePiAgent {

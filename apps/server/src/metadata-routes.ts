@@ -4,8 +4,8 @@ import {
   type SessionMetadataSuggestion,
   type WebSession,
 } from "@pi-web-agent/protocol";
-import { completeSimple, type Message, type Model, type SimpleStreamOptions, type ThinkingLevel } from "@mariozechner/pi-ai";
-import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
+import { completeSimple, type Message, type Model, type SimpleStreamOptions, type ThinkingLevel } from "@earendil-works/pi-ai";
+import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { FastifyInstance } from "fastify";
 import type { ServerConfig } from "./config.js";
 import type { MetadataStore } from "./metadata-store.js";

@@ -15,7 +15,7 @@ Browser UI
   | HTTP + WebSocket
   v
 Bun-first TypeScript web service
-  | @mariozechner/pi-coding-agent SDK
+  | @earendil-works/pi-coding-agent SDK
   v
 Pi AgentSession / AgentSessionRuntime
   | default pi tools/resources

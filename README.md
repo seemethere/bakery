@@ -28,7 +28,7 @@ For a fuller first-run walkthrough, including workspace safety and the first ses
 
 - [Bun](https://bun.sh/) installed.
 - A local project directory you are comfortable letting an agent read, edit, and run shell commands inside.
-- Usual pi/model provider authentication available to the server process. Bakery uses the published `@mariozechner/pi-coding-agent` SDK and normal pi resources by default.
+- Usual pi/model provider authentication available to the server process. Bakery uses the published `@earendil-works/pi-coding-agent` SDK and normal pi resources by default.
 
 ### 2. Install dependencies
 

@@ -8,7 +8,7 @@ import {
   type SessionTreeNode,
   type WebSession,
 } from "@pi-web-agent/protocol";
-import { SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
+import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { FastifyInstance } from "fastify";
 import type { ServerConfig } from "./config.js";
 import { createGitWorktreeSession } from "./git-worktrees.js";

@@ -9,7 +9,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
 import { loadConfig } from "./config.js";
@@ -134,7 +134,7 @@ export async function applyConfiguredDefaultModel(session: AgentSession, modelPo
   await session.setModel(model);
 }
 
-const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
+const piPackageEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
 const piChangelogPath = resolve(dirname(piPackageEntry), "../CHANGELOG.md");
 
 const BUILTIN_COMMANDS: CommandInfo[] = [

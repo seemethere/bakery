@@ -4,7 +4,7 @@ import { extname, join, resolve } from "node:path";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, workspaceBrowseQuerySchema, type ModelInfo, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
-import { AuthStorage, getAgentDir, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, getAgentDir, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
 import { getBakeryExtensionCardContributions, getBakeryExtensionRegistry, getBakeryExtensionWebModules, loadConfiguredBakeryExtensions } from "./extensions.js";
