@@ -625,6 +625,8 @@ export async function runEditToolCard(page: Page): Promise<Record<string, unknow
       writeCards: document.querySelectorAll('[data-testid="experimental-edit-tool"][data-tool-action="write"]').length,
       diffTables: document.querySelectorAll('[data-diff], .an-edit-diff').length,
       durationVisible: /\d+s/.test(document.querySelector('[data-testid="experimental-edit-tool"]')?.textContent ?? ""),
+      outputHidden: document.querySelectorAll('[data-testid="experimental-edit-tool"] pre[role="region"][aria-label="Edit output"]').length === 0,
+      expandButtons: document.querySelectorAll('[data-testid="experimental-edit-tool"] [data-row-action="toggle-edit-output"]').length,
       defaultEditRows: document.querySelectorAll('.message.tool:not(.experimental-edit-tool)[data-tool-action="edit"], .message.tool:not(.experimental-edit-tool)[data-tool-action="write"]').length,
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -632,8 +634,10 @@ export async function runEditToolCard(page: Page): Promise<Record<string, unknow
       transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
     };
   });
-  if (mobileSnapshot.cards < 2 || mobileSnapshot.editCards < 1 || mobileSnapshot.writeCards < 1 || mobileSnapshot.diffTables !== 0 || !mobileSnapshot.durationVisible || mobileSnapshot.defaultEditRows !== 0) throw new Error(`Experimental edit card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.cards < 2 || mobileSnapshot.editCards < 1 || mobileSnapshot.writeCards < 1 || mobileSnapshot.diffTables !== 0 || !mobileSnapshot.durationVisible || !mobileSnapshot.outputHidden || mobileSnapshot.expandButtons < 2 || mobileSnapshot.defaultEditRows !== 0) throw new Error(`Experimental edit card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
   if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental edit card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.locator('[data-testid="experimental-edit-tool"] [data-row-action="toggle-edit-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="experimental-edit-tool"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "edit-tool-card-mobile.png"), fullPage: true });
 
   await page.setViewportSize({ width: 1180, height: 900 });

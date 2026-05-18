@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { CircleStopIcon, LoaderCircleIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ChevronDownIcon, CircleStopIcon, LoaderCircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { compactToolSummary, formatToolDuration, isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
@@ -37,6 +37,7 @@ function outputText(item: TranscriptItem): string {
 }
 
 export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
+  const [showFullOutput, setShowFullOutput] = useState(false);
   const { action, target } = toolHeaderDisplay(item);
   const path = target || item.title.replace(/^(?:edit|write)\s+/i, "") || "file";
   const name = basename(path);
@@ -45,6 +46,7 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
   const isError = item.status === "error";
   const duration = !isRunning ? formatToolDuration(itemDurationMs(item)) : "";
   const output = outputText(item);
+  const expandableOutput = !isRunning && Boolean(output);
   const verb = isRunning
     ? isWrite ? "Creating" : "Editing"
     : isError
@@ -88,11 +90,23 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
         <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
           {isRunning ? <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 text-red-400" aria-hidden="true" /> : null}
           {actions && <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
+          {expandableOutput && (
+            <button
+              type="button"
+              className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              onClick={() => setShowFullOutput((value) => !value)}
+              aria-label={showFullOutput ? "Hide edit output" : "Show full edit output"}
+              aria-expanded={showFullOutput}
+              data-row-action="toggle-edit-output"
+            >
+              <ChevronDownIcon className={cn("size-3 transition-transform", showFullOutput && "rotate-180")} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
-      {output && !isRunning && (
+      {output && !isRunning && showFullOutput && (
         <div className="min-w-0 bg-background px-2.5 py-1.5 font-mono text-[12px] leading-4">
-          <pre className="max-h-20 overflow-hidden whitespace-pre-line break-words text-muted-foreground" tabIndex={0} role="region" aria-label="Edit output">{output}</pre>
+          <pre className="whitespace-pre-line break-words text-muted-foreground" tabIndex={0} role="region" aria-label="Edit output" data-output-expanded="true">{output}</pre>
         </div>
       )}
     </div>
