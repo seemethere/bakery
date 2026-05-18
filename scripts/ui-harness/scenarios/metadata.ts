@@ -24,6 +24,7 @@ export const scenarioDefinitions = [
   { name: "tool-grouping", family: "transcript" },
   { name: "bash-tool-card", family: "transcript" },
   { name: "edit-tool-card", family: "transcript" },
+  { name: "read-tool-card", family: "transcript" },
   { name: "tool-image-heavy-transcript", family: "transcript" },
   { name: "subagent-card", family: "transcript" },
   { name: "subagent-card-reconnect", family: "transcript" },

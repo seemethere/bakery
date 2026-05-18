@@ -27,6 +27,7 @@ export const transcriptScenarios = [
   "tool-grouping",
   "bash-tool-card",
   "edit-tool-card",
+  "read-tool-card",
   "tool-image-heavy-transcript",
   "subagent-card",
   "subagent-card-reconnect",
@@ -646,6 +647,47 @@ export async function runEditToolCard(page: Page): Promise<Record<string, unknow
   });
   if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental edit card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "edit-tool-card-desktop.png"), fullPage: true });
+  return { mobileSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runReadToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please run multiple tools with one failed tool for experimental read card validation.");
+  await page.locator('[data-testid="experimental-read-tool"]', { hasText: "Read fixture.png" }).waitFor({ timeout: 5_000 });
+  const mobileSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="experimental-read-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="experimental-read-tool"]').length,
+      defaultReadRows: document.querySelectorAll('.message.tool:not(.experimental-read-tool)[data-tool-action="read"]').length,
+      iconCount: document.querySelectorAll('[data-testid="experimental-read-tool"] svg').length,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (mobileSnapshot.cards < 1 || mobileSnapshot.defaultReadRows !== 0 || mobileSnapshot.iconCount < 1) throw new Error(`Experimental read card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental read card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "read-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="experimental-read-tool"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="experimental-read-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental read card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "read-tool-card-desktop.png"), fullPage: true });
   return { mobileSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
