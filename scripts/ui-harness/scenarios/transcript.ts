@@ -561,7 +561,7 @@ export async function runBashToolCard(page: Page): Promise<Record<string, unknow
   if (runningSnapshot.cards < 1 || runningSnapshot.runningCards < 1) throw new Error(`Expected running experimental bash card, saw ${JSON.stringify(runningSnapshot)}`);
   if (runningSnapshot.documentWidth > runningSnapshot.viewportWidth + 2 || runningSnapshot.cardWidth > runningSnapshot.transcriptWidth + 2) throw new Error(`Experimental bash card overflowed on mobile: ${JSON.stringify(runningSnapshot)}`);
   await waitForAgentIdle(page, 30_000);
-  await page.locator('[data-testid="experimental-bash-tool"]', { hasText: "fake tool line 80" }).first().waitFor({ timeout: 5_000 });
+  await page.locator('[data-testid="experimental-bash-tool"]', { hasText: "Ran command:" }).first().waitFor({ timeout: 5_000 });
   const completedSnapshot = await page.evaluate(() => ({
     cards: document.querySelectorAll('[data-testid="experimental-bash-tool"]').length,
     defaultBashRows: document.querySelectorAll('.message.tool:not(.experimental-bash-tool)[data-tool-action="bash"]').length,
@@ -574,7 +574,7 @@ export async function runBashToolCard(page: Page): Promise<Record<string, unknow
     documentWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
   }));
-  if (completedSnapshot.cards < 3 || !completedSnapshot.stdoutVisible || completedSnapshot.defaultBashRows !== 0 || completedSnapshot.outputRegions < 1 || !completedSnapshot.durationVisible || completedSnapshot.expandButtons < 1 || completedSnapshot.collapsedOutputs < 1) throw new Error(`Experimental bash card completed state mismatch: ${JSON.stringify(completedSnapshot)}`);
+  if (completedSnapshot.cards < 3 || completedSnapshot.stdoutVisible || completedSnapshot.defaultBashRows !== 0 || completedSnapshot.outputRegions !== 0 || !completedSnapshot.durationVisible || completedSnapshot.expandButtons < 1 || completedSnapshot.collapsedOutputs !== 0) throw new Error(`Experimental bash card completed state mismatch: ${JSON.stringify(completedSnapshot)}`);
   if (completedSnapshot.documentWidth > completedSnapshot.viewportWidth + 2) throw new Error(`Experimental bash card completed state overflowed: ${JSON.stringify(completedSnapshot)}`);
   await page.locator('[data-testid="experimental-bash-tool"] [data-row-action="toggle-bash-output"]').first().click();
   await page.waitForFunction(() => document.querySelector('[data-testid="experimental-bash-tool"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
@@ -673,8 +673,11 @@ export async function runReadToolCard(page: Page): Promise<Record<string, unknow
       transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
     };
   });
-  if (mobileSnapshot.cards < 1 || mobileSnapshot.defaultReadRows !== 0 || mobileSnapshot.iconCount < 1 || !mobileSnapshot.durationVisible) throw new Error(`Experimental read card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  const readOutputHidden = await page.evaluate(() => !document.querySelector('[data-testid="experimental-read-tool"] pre[role="region"][aria-label="Read output"]'));
+  if (mobileSnapshot.cards < 1 || mobileSnapshot.defaultReadRows !== 0 || mobileSnapshot.iconCount < 1 || !mobileSnapshot.durationVisible || !readOutputHidden) throw new Error(`Experimental read card state mismatch: ${JSON.stringify({ ...mobileSnapshot, readOutputHidden })}`);
   if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental read card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.locator('[data-testid="experimental-read-tool"] [data-row-action="toggle-read-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="experimental-read-tool"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
   await page.screenshot({ path: join(artifactDir, "read-tool-card-mobile.png"), fullPage: true });
 
   await page.setViewportSize({ width: 1180, height: 900 });

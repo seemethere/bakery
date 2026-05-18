@@ -25,11 +25,6 @@ function itemDurationMs(item: TranscriptItem): number | undefined {
 }
 
 function outputText(item: TranscriptItem): string {
-  const raw = isRecord(item.raw) ? item.raw : {};
-  const result = isRecord(raw.result) ? raw.result : isRecord(raw.partialResult) ? raw.partialResult : null;
-  const details = isRecord(result?.details) ? result.details : null;
-  const diff = typeof details?.diff === "string" ? details.diff : "";
-  if (diff.trim()) return diff.trim();
   const segmentText = item.segments
     ?.map((segment) => "text" in segment ? segment.text : segment.label)
     .filter(Boolean)

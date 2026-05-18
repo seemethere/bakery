@@ -30,10 +30,6 @@ function itemDurationMs(item: TranscriptItem): number | undefined {
   return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : undefined;
 }
 
-function shouldOfferFullOutput(output: string): boolean {
-  return output.length > 240 || output.split(/\r?\n/).length > 6;
-}
-
 function outputSummary(output: string): string {
   const lineCount = output.split(/\r?\n/).filter((line) => line.trim()).length;
   if (lineCount > 1) return `${lineCount} lines`;
@@ -49,7 +45,7 @@ export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; 
   const isError = item.status === "error";
   const duration = !isRunning ? formatToolDuration(itemDurationMs(item)) : "";
   const output = outputText(item);
-  const expandableOutput = !isRunning && shouldOfferFullOutput(output);
+  const expandableOutput = !isRunning && Boolean(output);
   const verb = isRunning ? "Reading" : isError ? "Failed reading" : "Read";
   const summary = !isRunning && output ? outputSummary(output) : "";
 
@@ -91,17 +87,14 @@ export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; 
           {isRunning ? <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 text-red-400" aria-hidden="true" /> : null}
         </div>
       </div>
-      {output && !isRunning && (
+      {output && !isRunning && showFullOutput && (
         <div className="min-w-0 bg-background px-2.5 py-1.5 font-mono text-[12px] leading-4">
           <pre
-            className={cn(
-              "whitespace-pre-line break-words text-muted-foreground",
-              expandableOutput && !showFullOutput ? "max-h-20 overflow-hidden" : "overflow-visible",
-            )}
+            className="whitespace-pre-line break-words text-muted-foreground"
             tabIndex={0}
             role="region"
             aria-label="Read output"
-            data-output-expanded={showFullOutput ? "true" : "false"}
+            data-output-expanded="true"
           >{output}</pre>
         </div>
       )}

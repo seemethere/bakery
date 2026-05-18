@@ -38,10 +38,6 @@ function commandSummary(command: string): string {
     .join(", ") || "bash";
 }
 
-function shouldOfferFullOutput(output: string): boolean {
-  return output.length > 240 || output.split(/\r?\n/).length > 6;
-}
-
 function itemDurationMs(item: TranscriptItem): number | undefined {
   if (typeof item.durationMs === "number") return item.durationMs;
   const raw = isRecord(item.raw) ? item.raw : {};
@@ -64,7 +60,7 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
   const duration = !isRunning ? formatToolDuration(itemDurationMs(item)) : "";
   const summary = commandSummary(command);
   const header = isRunning ? `Running command: ${summary}` : `Ran command: ${summary}`;
-  const expandableOutput = !isRunning && shouldOfferFullOutput(output);
+  const expandableOutput = !isRunning && Boolean(output);
 
   return (
     <div
@@ -108,16 +104,13 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
           <span className="select-none text-amber-600 dark:text-amber-400">$ </span>
           <span className="text-foreground">{command}</span>
         </div>
-        {output && !isRunning && (
+        {output && !isRunning && showFullOutput && (
           <pre
-            className={cn(
-              "mt-1 whitespace-pre-line break-words text-muted-foreground",
-              expandableOutput && !showFullOutput ? "max-h-20 overflow-hidden" : "overflow-visible",
-            )}
+            className="mt-1 whitespace-pre-line break-words text-muted-foreground"
             tabIndex={0}
             role="region"
             aria-label="Command output"
-            data-output-expanded={showFullOutput ? "true" : "false"}
+            data-output-expanded="true"
           >{output}</pre>
         )}
         {!output && isRunning && <span className="sr-only" role="status">Waiting for command output…</span>}
