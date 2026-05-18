@@ -32,7 +32,7 @@ type RenderEntry =
   | { kind: "toolGroup"; id: string; items: TranscriptItem[] };
 
 function supportedToolGroupAction(item: TranscriptItem): boolean {
-  if (item.kind !== "tool" || item.status === "error") return false;
+  if (item.kind !== "tool" || item.status === "running" || item.status === "error") return false;
   const { action } = toolHeaderDisplay(item);
   return action === "bash" || action === "read" || action === "edit" || action === "write" || action === "grep" || action === "find";
 }
@@ -327,24 +327,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
       <div ref={containerRef} data-testid="transcript" className="transcript h-full overflow-y-auto py-4">
         <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
           {renderEntries.map((entry) => entry.kind === "toolGroup" ? (
-            <ExperimentalToolGroup key={entry.id} items={entry.items}>
-              {entry.items.map((item) => (
-                <TranscriptRow
-                  key={item.id}
-                  item={item}
-                  showThinking={showThinking}
-                  sessionId={sessionId}
-                  sessionCwd={sessionCwd}
-                  apiBase={apiBase}
-                  token={token}
-                  extensionCatalog={extensionCatalog}
-                  sessionTreeNodes={sessionTreeNodes}
-                  onFork={onFork}
-                  onAcceptPlan={onAcceptPlan}
-                  toolUiPreference={toolUiPreference}
-                />
-              ))}
-            </ExperimentalToolGroup>
+            <ExperimentalToolGroup key={entry.id} items={entry.items} />
           ) : (
             <TranscriptRow
               key={entry.item.id}
