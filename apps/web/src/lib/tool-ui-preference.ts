@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type ToolUiPreference = "default" | "bash-card";
+export type ToolUiPreference = "default" | "tool-cards";
 
 const TOOL_UI_STORAGE_KEY = "piWebToolUi";
 
@@ -8,16 +8,16 @@ function normalizeToolUiPreference(value: string | null | undefined): ToolUiPref
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return null;
   if (normalized === "default" || normalized === "off" || normalized === "false") return "default";
-  if (normalized === "bash-card" || normalized === "bash") return "bash-card";
+  if (normalized === "tool-cards" || normalized === "agent-elements" || normalized === "bash-card" || normalized === "bash") return "tool-cards";
   return null;
 }
 
 function readStoredToolUiPreference(): ToolUiPreference {
-  if (typeof window === "undefined") return "bash-card";
+  if (typeof window === "undefined") return "tool-cards";
   try {
-    return normalizeToolUiPreference(window.localStorage.getItem(TOOL_UI_STORAGE_KEY)) ?? "bash-card";
+    return normalizeToolUiPreference(window.localStorage.getItem(TOOL_UI_STORAGE_KEY)) ?? "tool-cards";
   } catch {
-    return "bash-card";
+    return "tool-cards";
   }
 }
 

@@ -26,6 +26,7 @@ export const transcriptScenarios = [
   "narrow-tool-stream",
   "tool-grouping",
   "bash-tool-card",
+  "edit-tool-card",
   "tool-image-heavy-transcript",
   "subagent-card",
   "subagent-card-reconnect",
@@ -598,6 +599,54 @@ export async function runBashToolCard(page: Page): Promise<Record<string, unknow
   if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental bash card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "bash-tool-card-desktop.png"), fullPage: true });
   return { runningSnapshot, completedSnapshot, expandedOutput, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runEditToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please run an edit tool card and write tool card fixture for experimental edit renderer validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.locator('[data-testid="experimental-edit-tool"].running', { hasText: "Editing Example.tsx" }).waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 15_000);
+  await page.locator('[data-testid="experimental-edit-tool"]', { hasText: "Edited Example.tsx" }).waitFor({ timeout: 5_000 });
+  await page.locator('[data-testid="experimental-edit-tool"]', { hasText: "Created generated-edit-card.md" }).waitFor({ timeout: 5_000 });
+  const mobileSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="experimental-edit-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="experimental-edit-tool"]').length,
+      editCards: document.querySelectorAll('[data-testid="experimental-edit-tool"][data-tool-action="edit"]').length,
+      writeCards: document.querySelectorAll('[data-testid="experimental-edit-tool"][data-tool-action="write"]').length,
+      diffTables: document.querySelectorAll('[data-diff], .an-edit-diff').length,
+      defaultEditRows: document.querySelectorAll('.message.tool:not(.experimental-edit-tool)[data-tool-action="edit"], .message.tool:not(.experimental-edit-tool)[data-tool-action="write"]').length,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (mobileSnapshot.cards < 2 || mobileSnapshot.editCards < 1 || mobileSnapshot.writeCards < 1 || mobileSnapshot.diffTables !== 0 || mobileSnapshot.defaultEditRows !== 0) throw new Error(`Experimental edit card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental edit card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "edit-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="experimental-edit-tool"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="experimental-edit-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental edit card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "edit-tool-card-desktop.png"), fullPage: true });
+  return { mobileSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {

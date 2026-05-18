@@ -24,6 +24,7 @@ import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHea
 import type { ToolUiPreference } from "@/lib/tool-ui-preference";
 import { hasSubagentCard, SubagentCard } from "./SubagentCard";
 import { ExperimentalBashTool } from "./ExperimentalBashTool";
+import { ExperimentalEditTool } from "./ExperimentalEditTool";
 import { extensionCardPayload } from "@/lib/extension-cards";
 import { forkEntryIdForTranscriptItem } from "@/lib/session-tree";
 
@@ -837,8 +838,11 @@ export function TranscriptRow({
   }
   if (item.kind === "tool") {
     const { action } = toolHeaderDisplay(item);
-    if (toolUiPreference === "bash-card" && action === "bash") {
+    if (toolUiPreference !== "default" && action === "bash") {
       return <ExperimentalBashTool item={item} actions={<RowActions item={item} context={context} />} />;
+    }
+    if (toolUiPreference !== "default" && (action === "edit" || action === "write")) {
+      return <ExperimentalEditTool item={item} actions={<RowActions item={item} context={context} />} />;
     }
     return <ToolRow item={item} showThinking={showThinking} context={context} />;
   }

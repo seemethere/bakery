@@ -150,7 +150,8 @@ class FakeSessionHandle implements SessionHandle {
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
     const shouldEmitSubagentCard = /(?:subagent[ -]?card|fake subagent|subagent renderer)/i.test(text);
-    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard;
+    const shouldEmitEditToolCard = /(?:edit[ -]?tool[ -]?card|write[ -]?tool[ -]?card|experimental edit tool)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard && !shouldEmitEditToolCard;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
@@ -170,6 +171,16 @@ class FakeSessionHandle implements SessionHandle {
     if (shouldEmitSubagentCard) {
       const slowSubagentCard = /(?:slow fake subagent card|subagent card reconnect)/i.test(text);
       await this.emitFakeSubagentRun(slowSubagentCard ? { runningDelayMs: 4_000 } : {});
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
+
+    if (shouldEmitEditToolCard) {
+      await this.emitFakeEditToolRun();
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -563,6 +574,40 @@ class FakeSessionHandle implements SessionHandle {
       });
       if (index % 4 === 0) await sleep(0);
     }
+  }
+
+  private async emitFakeEditToolRun(): Promise<void> {
+    const editStartedAt = new Date(Date.now() - 80).toISOString();
+    const editCallId = crypto.randomUUID();
+    const editArgs = { path: "apps/web/src/components/Example.tsx", old_string: "const title = 'Old';", new_string: "const title = 'Updated';" };
+    this.emit({ type: "tool_execution_start", toolCallId: editCallId, toolName: "edit", args: editArgs, startedAt: editStartedAt });
+    await sleep(120);
+    this.emit({ type: "tool_execution_update", toolCallId: editCallId, toolName: "edit", args: editArgs, startedAt: editStartedAt, partialResult: { content: [{ type: "text", text: "Applying replacement..." }] } });
+    await sleep(120);
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: editCallId,
+      toolName: "edit",
+      args: editArgs,
+      startedAt: editStartedAt,
+      endedAt: new Date().toISOString(),
+      result: { content: [{ type: "text", text: "Edited apps/web/src/components/Example.tsx" }] },
+    });
+
+    const writeStartedAt = new Date(Date.now() - 40).toISOString();
+    const writeCallId = crypto.randomUUID();
+    const writeArgs = { path: "docs/generated-edit-card.md", content: "# Generated edit card fixture\n" };
+    this.emit({ type: "tool_execution_start", toolCallId: writeCallId, toolName: "write", args: writeArgs, startedAt: writeStartedAt });
+    await sleep(100);
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: writeCallId,
+      toolName: "write",
+      args: writeArgs,
+      startedAt: writeStartedAt,
+      endedAt: new Date().toISOString(),
+      result: { content: [{ type: "text", text: "Created docs/generated-edit-card.md" }] },
+    });
   }
 
   private async emitFakeSubagentRun(options: { runningDelayMs?: number } = {}): Promise<void> {

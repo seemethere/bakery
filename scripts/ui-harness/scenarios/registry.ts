@@ -4,7 +4,7 @@ import type { RegisteredHarnessScenarioName } from "./metadata";
 import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments, runImagePasteAttachments, runArtifactPathFormats, runMissingRemoteImageArtifact, runRemoteImageArtifactPaths, runRemoteImageArtifactUpload, runRepeatedImageArtifactPaths } from "./artifacts";
 import { runBackendRestart, runConnectionDisconnected, runControllerHandoffEdges, runReconnectController, runReconnectDraft } from "./lifecycle";
 import { runMobileImageStreamStability, runMobileLayout, runMobileLongTranscriptControls } from "./mobile";
-import { runBashToolCard, runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runSubagentCard, runSubagentCardReconnect, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
+import { runBashToolCard, runEditToolCard, runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runStreamingResponsiveness, runSubagentCard, runSubagentCardReconnect, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
 import { runBashCommands, runConfiguredExtensionSmoke, runFileAutocomplete, runNewSessionCommand, runSlashCommands } from "./slash-commands";
 import { runContextUsage, runEmptySessionLayout, runQuestionAnswer, runSessionMetadata, runSessionRouting, runSessionsPage, runTreeForkNavigation } from "./session";
 import { runThemeGallery, runThemes } from "./visual";
@@ -36,6 +36,7 @@ export const scenarioRunners = {
   "narrow-tool-stream": (page) => runNarrowToolStream(page),
   "tool-grouping": (page) => runToolGrouping(page),
   "bash-tool-card": (page) => runBashToolCard(page),
+  "edit-tool-card": (page) => runEditToolCard(page),
   "tool-image-heavy-transcript": (page) => runToolImageHeavyTranscript(page),
   "subagent-card": (page) => runSubagentCard(page),
   "subagent-card-reconnect": (page) => runSubagentCardReconnect(page),
