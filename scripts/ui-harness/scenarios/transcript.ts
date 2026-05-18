@@ -28,6 +28,7 @@ export const transcriptScenarios = [
   "bash-tool-card",
   "edit-tool-card",
   "read-tool-card",
+  "search-tool-card",
   "tool-image-heavy-transcript",
   "subagent-card",
   "subagent-card-reconnect",
@@ -696,6 +697,65 @@ export async function runReadToolCard(page: Page): Promise<Record<string, unknow
   if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental read card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "read-tool-card-desktop.png"), fullPage: true });
   return { mobileSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runSearchToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please run a search tool card with grep tool card and find tool card fixtures for experimental search renderer validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.locator('[data-testid="experimental-search-tool"].running', { hasText: "Searching ExperimentalSearchTool" }).waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 15_000);
+  await page.locator('[data-testid="experimental-search-tool"]', { hasText: "Searched ExperimentalSearchTool" }).waitFor({ timeout: 5_000 });
+  await page.locator('[data-testid="experimental-search-tool"]', { hasText: "Found *Tool.tsx" }).waitFor({ timeout: 5_000 });
+  const mobileSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="experimental-search-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="experimental-search-tool"]').length,
+      grepCards: document.querySelectorAll('[data-testid="experimental-search-tool"][data-tool-action="grep"]').length,
+      findCards: document.querySelectorAll('[data-testid="experimental-search-tool"][data-tool-action="find"]').length,
+      defaultSearchRows: document.querySelectorAll('.message.tool:not(.experimental-search-tool)[data-tool-action="grep"], .message.tool:not(.experimental-search-tool)[data-tool-action="find"]').length,
+      hiddenOutput: document.querySelectorAll('[data-testid="experimental-search-tool"] pre[role="region"][aria-label="Search output"]').length === 0,
+      expandButtons: document.querySelectorAll('[data-testid="experimental-search-tool"] [data-row-action="toggle-search-output"]').length,
+      durationVisible: /\d+s/.test(document.querySelector('[data-testid="experimental-search-tool"]')?.textContent ?? ""),
+      countVisible: /\d+ results/.test(document.querySelector('[data-testid="experimental-search-tool"]')?.textContent ?? ""),
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (mobileSnapshot.cards < 2 || mobileSnapshot.grepCards < 1 || mobileSnapshot.findCards < 1 || mobileSnapshot.defaultSearchRows !== 0 || !mobileSnapshot.hiddenOutput || mobileSnapshot.expandButtons < 2 || !mobileSnapshot.durationVisible || !mobileSnapshot.countVisible) throw new Error(`Experimental search card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental search card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.locator('[data-testid="experimental-search-tool"] [data-row-action="toggle-search-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="experimental-search-tool"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
+  const expandedOutput = await page.locator('[data-testid="experimental-search-tool"] pre[data-output-expanded="true"]').first().evaluate((element) => ({
+    text: element.textContent ?? "",
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  if (!expandedOutput.text.includes("ExperimentalSearchTool.tsx") || expandedOutput.scrollHeight > expandedOutput.clientHeight + 2) throw new Error(`Expected expanded search output to show full output, saw ${JSON.stringify(expandedOutput)}`);
+  await page.screenshot({ path: join(artifactDir, "search-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="experimental-search-tool"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="experimental-search-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental search card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "search-tool-card-desktop.png"), fullPage: true });
+  return { mobileSnapshot, expandedOutput, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {

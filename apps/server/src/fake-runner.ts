@@ -151,7 +151,8 @@ class FakeSessionHandle implements SessionHandle {
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
     const shouldEmitSubagentCard = /(?:subagent[ -]?card|fake subagent|subagent renderer)/i.test(text);
     const shouldEmitEditToolCard = /(?:edit[ -]?tool[ -]?card|write[ -]?tool[ -]?card|experimental edit tool)/i.test(text);
-    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard && !shouldEmitEditToolCard;
+    const shouldEmitSearchToolCard = /(?:search[ -]?tool[ -]?card|grep[ -]?tool[ -]?card|find[ -]?tool[ -]?card|experimental search tool)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard && !shouldEmitEditToolCard && !shouldEmitSearchToolCard;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
@@ -181,6 +182,16 @@ class FakeSessionHandle implements SessionHandle {
 
     if (shouldEmitEditToolCard) {
       await this.emitFakeEditToolRun();
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
+
+    if (shouldEmitSearchToolCard) {
+      await this.emitFakeSearchToolRun();
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -609,6 +620,55 @@ class FakeSessionHandle implements SessionHandle {
       endedAt: new Date().toISOString(),
       durationMs: Date.now() - Date.parse(writeStartedAt),
       result: { content: [{ type: "text", text: "Created docs/generated-edit-card.md" }] },
+    });
+  }
+
+  private async emitFakeSearchToolRun(): Promise<void> {
+    const grepStartedAt = new Date(Date.now() - 60).toISOString();
+    const grepCallId = crypto.randomUUID();
+    const grepArgs = { pattern: "ExperimentalSearchTool", path: "apps/web/src" };
+    this.emit({ type: "tool_execution_start", toolCallId: grepCallId, toolName: "grep", args: grepArgs, startedAt: grepStartedAt });
+    await sleep(120);
+    this.emit({ type: "tool_execution_update", toolCallId: grepCallId, toolName: "grep", args: grepArgs, startedAt: grepStartedAt, partialResult: { content: [{ type: "text", text: "Searching apps/web/src..." }] } });
+    await sleep(120);
+    let endedAt = new Date().toISOString();
+    const grepOutput = [
+      "apps/web/src/components/transcript/ExperimentalSearchTool.tsx:1:export function ExperimentalSearchTool",
+      "apps/web/src/components/transcript/TranscriptRow.tsx:1:ExperimentalSearchTool",
+      "apps/web/src/lib/transcript.ts:350:grep ExperimentalSearchTool",
+    ].join("\n");
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: grepCallId,
+      toolName: "grep",
+      args: grepArgs,
+      startedAt: grepStartedAt,
+      endedAt,
+      durationMs: Date.parse(endedAt) - Date.parse(grepStartedAt),
+      result: { content: [{ type: "text", text: grepOutput }] },
+    });
+
+    const findStartedAt = new Date(Date.now() - 40).toISOString();
+    const findCallId = crypto.randomUUID();
+    const findArgs = { pattern: "*Tool.tsx", path: "apps/web/src/components/transcript" };
+    this.emit({ type: "tool_execution_start", toolCallId: findCallId, toolName: "find", args: findArgs, startedAt: findStartedAt });
+    await sleep(100);
+    endedAt = new Date().toISOString();
+    const findOutput = [
+      "apps/web/src/components/transcript/ExperimentalBashTool.tsx",
+      "apps/web/src/components/transcript/ExperimentalEditTool.tsx",
+      "apps/web/src/components/transcript/ExperimentalReadTool.tsx",
+      "apps/web/src/components/transcript/ExperimentalSearchTool.tsx",
+    ].join("\n");
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: findCallId,
+      toolName: "find",
+      args: findArgs,
+      startedAt: findStartedAt,
+      endedAt,
+      durationMs: Date.parse(endedAt) - Date.parse(findStartedAt),
+      result: { content: [{ type: "text", text: findOutput }] },
     });
   }
 
