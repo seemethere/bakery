@@ -6,17 +6,18 @@ const TOOL_UI_STORAGE_KEY = "piWebToolUi";
 
 function normalizeToolUiPreference(value: string | null | undefined): ToolUiPreference | null {
   const normalized = value?.trim().toLowerCase();
-  if (!normalized || normalized === "default" || normalized === "off" || normalized === "false") return "default";
+  if (!normalized) return null;
+  if (normalized === "default" || normalized === "off" || normalized === "false") return "default";
   if (normalized === "bash-card" || normalized === "bash") return "bash-card";
   return null;
 }
 
 function readStoredToolUiPreference(): ToolUiPreference {
-  if (typeof window === "undefined") return "default";
+  if (typeof window === "undefined") return "bash-card";
   try {
-    return normalizeToolUiPreference(window.localStorage.getItem(TOOL_UI_STORAGE_KEY)) ?? "default";
+    return normalizeToolUiPreference(window.localStorage.getItem(TOOL_UI_STORAGE_KEY)) ?? "bash-card";
   } catch {
-    return "default";
+    return "bash-card";
   }
 }
 
@@ -32,8 +33,7 @@ function readUrlToolUiPreference(): ToolUiPreference | null {
 function persistToolUiPreference(value: ToolUiPreference): void {
   if (typeof window === "undefined") return;
   try {
-    if (value === "default") window.localStorage.removeItem(TOOL_UI_STORAGE_KEY);
-    else window.localStorage.setItem(TOOL_UI_STORAGE_KEY, value);
+    window.localStorage.setItem(TOOL_UI_STORAGE_KEY, value);
   } catch {
     // Ignore storage failures in private/locked-down browser contexts.
   }

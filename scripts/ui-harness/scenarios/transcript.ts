@@ -381,6 +381,7 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
 
 export async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem("piWebToolUi", "default"));
   await prepareSession(page);
   await page.locator("#prompt").fill("Please run many long narrow tools and produce a streaming response for layout validation.");
   await page.locator("#send").click();
@@ -477,6 +478,7 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
 }
 
 export async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
+  await page.addInitScript(() => localStorage.setItem("piWebToolUi", "default"));
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please run multiple tools with one failed tool for flat tool-row alignment validation.");
   await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 4, null, { timeout: 5_000 });
@@ -536,10 +538,7 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
 
 export async function runBashToolCard(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.addInitScript(() => localStorage.setItem("piWebToolUi", "bash-card"));
-  const sessionId = await prepareSession(page);
-  await page.goto(`${webBase}/sessions/${sessionId}?toolUi=bash-card`, { waitUntil: "domcontentloaded" });
-  await waitForSelectedSession(page, sessionId);
+  await prepareSession(page);
   await page.locator("#prompt").fill("Please run many tools with long failed tools for alignment and experimental bash card validation.");
   await page.locator("#send").click();
   await waitForAgentRunning(page);
