@@ -2,10 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon } from "lucide-react";
 import type { ExtensionCatalog, SessionTreeNode } from "@pi-web-agent/protocol";
 import type { TranscriptItem } from "@/lib/transcript";
-import { isAskQuestionToolItem, toolHeaderDisplay } from "@/lib/transcript";
+import { isAskQuestionToolItem } from "@/lib/transcript";
 import { isNonInformativeSubagentManagementReceipt } from "./SubagentCard";
 import { TranscriptRow } from "./TranscriptRow";
-import { ExperimentalToolGroup } from "./ExperimentalToolGroup";
 import { Button } from "@/components/ui/button";
 import { useToolUiPreference } from "@/lib/tool-ui-preference";
 
@@ -25,51 +24,6 @@ function saveAutoScrollPreference(value: boolean): void {
   } catch {
     // Ignore storage failures in private/locked-down browser contexts.
   }
-}
-
-type RenderEntry =
-  | { kind: "item"; item: TranscriptItem }
-  | { kind: "toolGroup"; id: string; items: TranscriptItem[] };
-
-function supportedToolGroupAction(item: TranscriptItem): boolean {
-  if (item.kind !== "tool" || item.status === "running" || item.status === "error") return false;
-  const { action } = toolHeaderDisplay(item);
-  return action === "bash" || action === "read" || action === "edit" || action === "write" || action === "grep" || action === "find";
-}
-
-function toolGroupCategory(item: TranscriptItem): "command" | "file" | "search" | null {
-  const { action } = toolHeaderDisplay(item);
-  if (action === "bash") return "command";
-  if (action === "grep" || action === "find") return "search";
-  if (action === "read" || action === "edit" || action === "write") return "file";
-  return null;
-}
-
-function shouldGroupTools(items: TranscriptItem[]): boolean {
-  if (items.length < 3) return false;
-  const categories = new Set(items.map(toolGroupCategory).filter(Boolean));
-  return categories.size >= 2;
-}
-
-function renderEntriesForToolUi(items: TranscriptItem[], enabled: boolean): RenderEntry[] {
-  if (!enabled) return items.map((item) => ({ kind: "item", item }));
-  const entries: RenderEntry[] = [];
-  for (let index = 0; index < items.length;) {
-    const item = items[index]!;
-    if (!supportedToolGroupAction(item)) {
-      entries.push({ kind: "item", item });
-      index += 1;
-      continue;
-    }
-    const group: TranscriptItem[] = [];
-    while (index < items.length && supportedToolGroupAction(items[index]!)) {
-      group.push(items[index]!);
-      index += 1;
-    }
-    if (shouldGroupTools(group)) entries.push({ kind: "toolGroup", id: `tool-group:${group.map((tool) => tool.id).join(":")}`, items: group });
-    else entries.push(...group.map((tool) => ({ kind: "item" as const, item: tool })));
-  }
-  return entries;
 }
 
 type Props = {
@@ -103,10 +57,6 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   const visibleItems = useMemo(
     () => items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)),
     [items],
-  );
-  const renderEntries = useMemo(
-    () => renderEntriesForToolUi(visibleItems, toolUiPreference !== "default"),
-    [visibleItems, toolUiPreference],
   );
 
   function markBottomState(atBottom: boolean) {
@@ -326,12 +276,10 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     <div className="relative min-h-0 flex-1">
       <div ref={containerRef} data-testid="transcript" className="transcript h-full overflow-y-auto py-4">
         <div ref={contentRef} className="max-w-[860px] mx-auto w-full">
-          {renderEntries.map((entry) => entry.kind === "toolGroup" ? (
-            <ExperimentalToolGroup key={entry.id} items={entry.items} />
-          ) : (
+          {visibleItems.map((item) => (
             <TranscriptRow
-              key={entry.item.id}
-              item={entry.item}
+              key={item.id}
+              item={item}
               showThinking={showThinking}
               sessionId={sessionId}
               sessionCwd={sessionCwd}
