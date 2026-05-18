@@ -566,13 +566,15 @@ export async function runBashToolCard(page: Page): Promise<Record<string, unknow
     cards: document.querySelectorAll('[data-testid="experimental-bash-tool"]').length,
     defaultBashRows: document.querySelectorAll('.message.tool:not(.experimental-bash-tool)[data-tool-action="bash"]').length,
     outputRegions: document.querySelectorAll('[data-testid="experimental-bash-tool"] pre[role="region"][aria-label="Command output"][tabindex="0"]').length,
+    text: document.querySelector('[data-testid="experimental-bash-tool"]')?.textContent?.replace(/\s+/g, " ").slice(0, 240) ?? "",
+    durationVisible: /\d+s/.test(document.querySelector('[data-testid="experimental-bash-tool"]')?.textContent ?? ""),
     expandButtons: document.querySelectorAll('[data-testid="experimental-bash-tool"] [data-row-action="toggle-bash-output"]').length,
     collapsedOutputs: document.querySelectorAll('[data-testid="experimental-bash-tool"] pre[data-output-expanded="false"]').length,
     stdoutVisible: document.querySelector('[data-testid="experimental-bash-tool"]')?.textContent?.includes("fake tool line 80") ?? false,
     documentWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
   }));
-  if (completedSnapshot.cards < 3 || !completedSnapshot.stdoutVisible || completedSnapshot.defaultBashRows !== 0 || completedSnapshot.outputRegions < 1 || completedSnapshot.expandButtons < 1 || completedSnapshot.collapsedOutputs < 1) throw new Error(`Experimental bash card completed state mismatch: ${JSON.stringify(completedSnapshot)}`);
+  if (completedSnapshot.cards < 3 || !completedSnapshot.stdoutVisible || completedSnapshot.defaultBashRows !== 0 || completedSnapshot.outputRegions < 1 || !completedSnapshot.durationVisible || completedSnapshot.expandButtons < 1 || completedSnapshot.collapsedOutputs < 1) throw new Error(`Experimental bash card completed state mismatch: ${JSON.stringify(completedSnapshot)}`);
   if (completedSnapshot.documentWidth > completedSnapshot.viewportWidth + 2) throw new Error(`Experimental bash card completed state overflowed: ${JSON.stringify(completedSnapshot)}`);
   await page.locator('[data-testid="experimental-bash-tool"] [data-row-action="toggle-bash-output"]').first().click();
   await page.waitForFunction(() => document.querySelector('[data-testid="experimental-bash-tool"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
@@ -621,6 +623,7 @@ export async function runEditToolCard(page: Page): Promise<Record<string, unknow
       editCards: document.querySelectorAll('[data-testid="experimental-edit-tool"][data-tool-action="edit"]').length,
       writeCards: document.querySelectorAll('[data-testid="experimental-edit-tool"][data-tool-action="write"]').length,
       diffTables: document.querySelectorAll('[data-diff], .an-edit-diff').length,
+      durationVisible: /\d+s/.test(document.querySelector('[data-testid="experimental-edit-tool"]')?.textContent ?? ""),
       defaultEditRows: document.querySelectorAll('.message.tool:not(.experimental-edit-tool)[data-tool-action="edit"], .message.tool:not(.experimental-edit-tool)[data-tool-action="write"]').length,
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -628,7 +631,7 @@ export async function runEditToolCard(page: Page): Promise<Record<string, unknow
       transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
     };
   });
-  if (mobileSnapshot.cards < 2 || mobileSnapshot.editCards < 1 || mobileSnapshot.writeCards < 1 || mobileSnapshot.diffTables !== 0 || mobileSnapshot.defaultEditRows !== 0) throw new Error(`Experimental edit card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.cards < 2 || mobileSnapshot.editCards < 1 || mobileSnapshot.writeCards < 1 || mobileSnapshot.diffTables !== 0 || !mobileSnapshot.durationVisible || mobileSnapshot.defaultEditRows !== 0) throw new Error(`Experimental edit card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
   if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental edit card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "edit-tool-card-mobile.png"), fullPage: true });
 
@@ -663,13 +666,14 @@ export async function runReadToolCard(page: Page): Promise<Record<string, unknow
       cards: document.querySelectorAll('[data-testid="experimental-read-tool"]').length,
       defaultReadRows: document.querySelectorAll('.message.tool:not(.experimental-read-tool)[data-tool-action="read"]').length,
       iconCount: document.querySelectorAll('[data-testid="experimental-read-tool"] svg').length,
+      durationVisible: /\d+s/.test(document.querySelector('[data-testid="experimental-read-tool"]')?.textContent ?? ""),
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
       cardWidth: rect ? Math.round(rect.width) : 0,
       transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
     };
   });
-  if (mobileSnapshot.cards < 1 || mobileSnapshot.defaultReadRows !== 0 || mobileSnapshot.iconCount < 1) throw new Error(`Experimental read card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.cards < 1 || mobileSnapshot.defaultReadRows !== 0 || mobileSnapshot.iconCount < 1 || !mobileSnapshot.durationVisible) throw new Error(`Experimental read card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
   if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Experimental read card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "read-tool-card-mobile.png"), fullPage: true });
 

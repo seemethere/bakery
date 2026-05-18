@@ -591,6 +591,7 @@ class FakeSessionHandle implements SessionHandle {
       args: editArgs,
       startedAt: editStartedAt,
       endedAt: new Date().toISOString(),
+      durationMs: Date.now() - Date.parse(editStartedAt),
       result: { content: [{ type: "text", text: "Edited apps/web/src/components/Example.tsx" }] },
     });
 
@@ -606,6 +607,7 @@ class FakeSessionHandle implements SessionHandle {
       args: writeArgs,
       startedAt: writeStartedAt,
       endedAt: new Date().toISOString(),
+      durationMs: Date.now() - Date.parse(writeStartedAt),
       result: { content: [{ type: "text", text: "Created docs/generated-edit-card.md" }] },
     });
   }
@@ -681,6 +683,7 @@ class FakeSessionHandle implements SessionHandle {
         args,
         startedAt,
         endedAt,
+        durationMs: Date.parse(endedAt) - Date.parse(startedAt),
         result: { content: [{ type: "image", mimeType: "image/png", data: fakePreviewPng }] },
       });
       return;
@@ -706,6 +709,7 @@ class FakeSessionHandle implements SessionHandle {
       args,
       startedAt,
       endedAt,
+      durationMs: Date.parse(endedAt) - Date.parse(startedAt),
       isError: fail,
       result: {
         content: [{ type: "text", text: fail ? `${outputLines}\nsynthetic failure` : outputLines }],

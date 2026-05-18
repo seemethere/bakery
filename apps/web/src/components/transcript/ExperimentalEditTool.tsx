@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { CircleStopIcon, FilePenLineIcon, FilePlus2Icon, LoaderCircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { compactToolSummary, isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
+import { compactToolSummary, formatToolDuration, isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
 function basename(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -11,6 +11,17 @@ function fileExt(path: string): string {
   const name = basename(path);
   const ext = /\.([^.]+)$/.exec(name)?.[1];
   return (ext || "file").slice(0, 3).toUpperCase();
+}
+
+function itemDurationMs(item: TranscriptItem): number | undefined {
+  if (typeof item.durationMs === "number") return item.durationMs;
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const startedAt = item.startedAt ?? (typeof raw.startedAt === "string" ? raw.startedAt : undefined);
+  const endedAt = item.endedAt ?? (typeof raw.endedAt === "string" ? raw.endedAt : undefined);
+  if (!startedAt || !endedAt) return undefined;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : undefined;
 }
 
 function outputText(item: TranscriptItem): string {
@@ -37,6 +48,7 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
   const isWrite = action === "write";
   const isRunning = item.status === "running";
   const isError = item.status === "error";
+  const duration = !isRunning ? formatToolDuration(itemDurationMs(item)) : "";
   const output = outputText(item);
   const verb = isRunning
     ? isWrite ? "Creating" : "Editing"
@@ -79,7 +91,10 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
             </span>
           )}
         </div>
-        {isRunning ? <LoaderCircleIcon className="size-3 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 shrink-0 text-red-400" aria-hidden="true" /> : <Icon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+          {duration && <span>{duration}</span>}
+          {isRunning ? <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 text-red-400" aria-hidden="true" /> : <Icon className="size-3" aria-hidden="true" />}
+        </div>
       </div>
       {output && !isRunning && (
         <div className="min-w-0 bg-background px-2.5 py-1.5 font-mono text-[12px] leading-4">

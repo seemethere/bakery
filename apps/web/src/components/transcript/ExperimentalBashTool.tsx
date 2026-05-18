@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDownIcon, LoaderCircleIcon, SquareTerminalIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
+import { formatToolDuration, isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
 function outputText(item: TranscriptItem): string {
   const raw = isRecord(item.raw) ? item.raw : {};
@@ -42,6 +42,17 @@ function shouldOfferFullOutput(output: string): boolean {
   return output.length > 240 || output.split(/\r?\n/).length > 6;
 }
 
+function itemDurationMs(item: TranscriptItem): number | undefined {
+  if (typeof item.durationMs === "number") return item.durationMs;
+  const raw = isRecord(item.raw) ? item.raw : {};
+  const startedAt = item.startedAt ?? (typeof raw.startedAt === "string" ? raw.startedAt : undefined);
+  const endedAt = item.endedAt ?? (typeof raw.endedAt === "string" ? raw.endedAt : undefined);
+  if (!startedAt || !endedAt) return undefined;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : undefined;
+}
+
 export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
   const [showFullOutput, setShowFullOutput] = useState(false);
   const { target } = toolHeaderDisplay(item);
@@ -50,6 +61,7 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
   const code = exitCode(item);
   const isRunning = item.status === "running";
   const isError = item.status === "error" || (typeof code === "number" && code !== 0);
+  const duration = !isRunning ? formatToolDuration(itemDurationMs(item)) : "";
   const summary = commandSummary(command);
   const header = isRunning ? `Running command: ${summary}` : `Ran command: ${summary}`;
   const expandableOutput = !isRunning && shouldOfferFullOutput(output);
@@ -86,7 +98,10 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
             </span>
           )}
         </div>
-        {isRunning && <LoaderCircleIcon className="size-3 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />}
+        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+          {duration && <span>{duration}</span>}
+          {isRunning && <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" />}
+        </div>
       </div>
       <div className="min-w-0 overflow-hidden bg-background px-2.5 py-1.5 font-mono text-[12px] leading-4" aria-live={isRunning ? "polite" : undefined}>
         <div className="break-all">

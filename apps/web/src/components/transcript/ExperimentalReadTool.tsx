@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDownIcon, CircleStopIcon, FileTextIcon, LoaderCircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { compactToolSummary, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
+import { compactToolSummary, formatToolDuration, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
 function basename(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -17,6 +17,17 @@ function outputText(item: TranscriptItem): string {
   const summary = compactToolSummary(item);
   if (summary) return summary;
   return item.body.trim() && item.body !== "Starting…" ? item.body : "";
+}
+
+function itemDurationMs(item: TranscriptItem): number | undefined {
+  if (typeof item.durationMs === "number") return item.durationMs;
+  const raw = item.raw && typeof item.raw === "object" && !Array.isArray(item.raw) ? item.raw as Record<string, unknown> : {};
+  const startedAt = item.startedAt ?? (typeof raw.startedAt === "string" ? raw.startedAt : undefined);
+  const endedAt = item.endedAt ?? (typeof raw.endedAt === "string" ? raw.endedAt : undefined);
+  if (!startedAt || !endedAt) return undefined;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : undefined;
 }
 
 function shouldOfferFullOutput(output: string): boolean {
@@ -36,6 +47,7 @@ export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; 
   const name = basename(path);
   const isRunning = item.status === "running";
   const isError = item.status === "error";
+  const duration = !isRunning ? formatToolDuration(itemDurationMs(item)) : "";
   const output = outputText(item);
   const expandableOutput = !isRunning && shouldOfferFullOutput(output);
   const verb = isRunning ? "Reading" : isError ? "Failed reading" : "Read";
@@ -75,6 +87,7 @@ export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; 
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {summary && <span>{summary}</span>}
+          {duration && <span>{duration}</span>}
           {isRunning ? <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 text-red-400" aria-hidden="true" /> : null}
         </div>
       </div>
