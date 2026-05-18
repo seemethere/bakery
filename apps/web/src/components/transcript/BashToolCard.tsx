@@ -49,7 +49,7 @@ function itemDurationMs(item: TranscriptItem): number | undefined {
   return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : undefined;
 }
 
-export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
+export function BashToolCard({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
   const [showFullOutput, setShowFullOutput] = useState(false);
   const { target } = toolHeaderDisplay(item);
   const command = target || item.title.replace(/^\$\s*/, "") || "bash";
@@ -67,13 +67,13 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
       role="article"
       aria-label={`Bash command ${isRunning ? "running" : isError ? "failed" : "completed"}: ${command}`}
       className={cn(
-        "message tool experimental-bash-tool group/row relative mx-4 my-1 min-w-0 overflow-hidden rounded-[10px] border text-sm",
+        "message tool tool-card-bash group/row relative mx-4 my-1 min-w-0 overflow-hidden rounded-[10px] border text-sm",
         "border-border bg-muted/45 text-foreground shadow-none",
         item.status === "running" && "running",
         item.status === "done" && "done",
         isError && "error border-red-500/35 bg-red-500/5",
       )}
-      data-testid="experimental-bash-tool"
+      data-testid="tool-card-bash"
       data-transcript-id={item.id}
       data-transcript-kind={item.kind}
       data-transcript-status={item.status ?? "done"}

@@ -23,10 +23,10 @@ import { cn } from "@/lib/utils";
 import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan, isRecord, isDeveloperBashItem } from "@/lib/transcript";
 import type { ToolUiPreference } from "@/lib/tool-ui-preference";
 import { hasSubagentCard, SubagentCard } from "./SubagentCard";
-import { ExperimentalBashTool } from "./ExperimentalBashTool";
-import { ExperimentalEditTool } from "./ExperimentalEditTool";
-import { ExperimentalReadTool } from "./ExperimentalReadTool";
-import { ExperimentalSearchTool } from "./ExperimentalSearchTool";
+import { BashToolCard } from "./BashToolCard";
+import { EditToolCard } from "./EditToolCard";
+import { ReadToolCard } from "./ReadToolCard";
+import { SearchToolCard } from "./SearchToolCard";
 import { extensionCardPayload } from "@/lib/extension-cards";
 import { forkEntryIdForTranscriptItem } from "@/lib/session-tree";
 
@@ -841,16 +841,16 @@ export function TranscriptRow({
   if (item.kind === "tool") {
     const { action } = toolHeaderDisplay(item);
     if (toolUiPreference !== "default" && action === "bash") {
-      return <ExperimentalBashTool item={item} actions={<RowActions item={item} context={context} />} />;
+      return <BashToolCard item={item} actions={<RowActions item={item} context={context} />} />;
     }
     if (toolUiPreference !== "default" && (action === "edit" || action === "write")) {
-      return <ExperimentalEditTool item={item} actions={<RowActions item={item} context={context} />} />;
+      return <EditToolCard item={item} actions={<RowActions item={item} context={context} />} />;
     }
     if (toolUiPreference !== "default" && action === "read") {
-      return <ExperimentalReadTool item={item} actions={<RowActions item={item} context={context} />} />;
+      return <ReadToolCard item={item} actions={<RowActions item={item} context={context} />} />;
     }
     if (toolUiPreference !== "default" && (action === "grep" || action === "find")) {
-      return <ExperimentalSearchTool item={item} actions={<RowActions item={item} context={context} />} />;
+      return <SearchToolCard item={item} actions={<RowActions item={item} context={context} />} />;
     }
     return <ToolRow item={item} showThinking={showThinking} context={context} />;
   }

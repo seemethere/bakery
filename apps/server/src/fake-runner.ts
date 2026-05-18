@@ -152,8 +152,8 @@ class FakeSessionHandle implements SessionHandle {
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
     const shouldEmitSubagentCard = /(?:subagent[ -]?card|fake subagent|subagent renderer)/i.test(text);
-    const shouldEmitEditToolCard = /(?:edit[ -]?tool[ -]?card|write[ -]?tool[ -]?card|experimental edit tool)/i.test(text);
-    const shouldEmitSearchToolCard = /(?:search[ -]?tool[ -]?card|grep[ -]?tool[ -]?card|find[ -]?tool[ -]?card|experimental search tool)/i.test(text);
+    const shouldEmitEditToolCard = /(?:edit[ -]?tool[ -]?card|write[ -]?tool[ -]?card|edit tool card)/i.test(text);
+    const shouldEmitSearchToolCard = /(?:search[ -]?tool[ -]?card|grep[ -]?tool[ -]?card|find[ -]?tool[ -]?card|search tool card)/i.test(text);
     const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard && !shouldEmitEditToolCard && !shouldEmitSearchToolCard;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
@@ -628,16 +628,16 @@ class FakeSessionHandle implements SessionHandle {
   private async emitFakeSearchToolRun(): Promise<void> {
     const grepStartedAt = new Date(Date.now() - 60).toISOString();
     const grepCallId = crypto.randomUUID();
-    const grepArgs = { pattern: "ExperimentalSearchTool", path: "apps/web/src" };
+    const grepArgs = { pattern: "SearchToolCard", path: "apps/web/src" };
     this.emit({ type: "tool_execution_start", toolCallId: grepCallId, toolName: "grep", args: grepArgs, startedAt: grepStartedAt });
     await sleep(120);
     this.emit({ type: "tool_execution_update", toolCallId: grepCallId, toolName: "grep", args: grepArgs, startedAt: grepStartedAt, partialResult: { content: [{ type: "text", text: "Searching apps/web/src..." }] } });
     await sleep(120);
     let endedAt = new Date().toISOString();
     const grepOutput = [
-      "apps/web/src/components/transcript/ExperimentalSearchTool.tsx:1:export function ExperimentalSearchTool",
-      "apps/web/src/components/transcript/TranscriptRow.tsx:1:ExperimentalSearchTool",
-      "apps/web/src/lib/transcript.ts:350:grep ExperimentalSearchTool",
+      "apps/web/src/components/transcript/SearchToolCard.tsx:1:export function SearchToolCard",
+      "apps/web/src/components/transcript/TranscriptRow.tsx:1:SearchToolCard",
+      "apps/web/src/lib/transcript.ts:350:grep SearchToolCard",
     ].join("\n");
     this.emit({
       type: "tool_execution_end",
@@ -657,10 +657,10 @@ class FakeSessionHandle implements SessionHandle {
     await sleep(100);
     endedAt = new Date().toISOString();
     const findOutput = [
-      "apps/web/src/components/transcript/ExperimentalBashTool.tsx",
-      "apps/web/src/components/transcript/ExperimentalEditTool.tsx",
-      "apps/web/src/components/transcript/ExperimentalReadTool.tsx",
-      "apps/web/src/components/transcript/ExperimentalSearchTool.tsx",
+      "apps/web/src/components/transcript/BashToolCard.tsx",
+      "apps/web/src/components/transcript/EditToolCard.tsx",
+      "apps/web/src/components/transcript/ReadToolCard.tsx",
+      "apps/web/src/components/transcript/SearchToolCard.tsx",
     ].join("\n");
     this.emit({
       type: "tool_execution_end",

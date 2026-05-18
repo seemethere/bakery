@@ -36,7 +36,7 @@ function outputSummary(output: string): string {
   return output.length > 0 ? `${output.length} chars` : "";
 }
 
-export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
+export function ReadToolCard({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
   const [showFullOutput, setShowFullOutput] = useState(false);
   const { target } = toolHeaderDisplay(item);
   const path = target || item.title.replace(/^read\s+/i, "") || "file";
@@ -54,13 +54,13 @@ export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; 
       role="article"
       aria-label={`${verb} ${path}`}
       className={cn(
-        "message tool experimental-read-tool group/row relative mx-4 my-1 min-w-0 overflow-hidden rounded-[10px] border text-sm",
+        "message tool tool-card-read group/row relative mx-4 my-1 min-w-0 overflow-hidden rounded-[10px] border text-sm",
         "border-border bg-muted/45 text-foreground shadow-none",
         item.status === "running" && "running",
         item.status === "done" && "done",
         isError && "error border-red-500/35 bg-red-500/5",
       )}
-      data-testid="experimental-read-tool"
+      data-testid="tool-card-read"
       data-transcript-id={item.id}
       data-transcript-kind={item.kind}
       data-transcript-status={item.status ?? "done"}
