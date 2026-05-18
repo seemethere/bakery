@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDownIcon, CircleStopIcon, FileTextIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronDownIcon, CircleStopIcon, EyeIcon, LoaderCircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { compactToolSummary, formatToolDuration, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
@@ -74,7 +74,7 @@ export function ExperimentalReadTool({ item, actions }: { item: TranscriptItem; 
       {actions && <div className="absolute right-1.5 top-1 z-[1] opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
       <div className="flex h-7 min-w-0 items-center justify-between gap-2 border-b border-border px-2.5 pr-8">
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          <FileTextIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <EyeIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
           {isRunning ? (
             <span className="an-bash-shimmer inline-flex h-full max-w-full items-center truncate text-xs leading-none text-muted-foreground">
               Reading {name}
