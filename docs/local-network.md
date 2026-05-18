@@ -1,6 +1,6 @@
 # Local network access
 
-The default install path is local-only; start with the root [`README.md`](../README.md) quickstart if you have not run Bakery on this machine yet.
+The default install path is local-only; start with the root [`README.md`](../README.md) quickstart or the full [first-run quickstart](quickstart.md) if you have not run Bakery on this machine yet. The [operation guide](operation.md) explains the workspace/session safety model behind these commands.
 
 When you expose Bakery beyond loopback, run the API with an auth token, bind both dev servers to the LAN interface, and keep `PI_WEB_WORKSPACE_ROOT` scoped to the project you want the agent to edit.
 

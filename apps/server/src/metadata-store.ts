@@ -435,16 +435,19 @@ export class MetadataStore {
   getSettings(): AppSettings {
     const get = (key: string) => this.db.query<{ value: string }, [string]>("SELECT value FROM app_settings WHERE key = ?").get(key)?.value;
     const model = get("sessionMetadataModel");
+    const defaultSessionModel = get("defaultSessionModel");
     return {
       autoGenerateSessionMetadata: get("autoGenerateSessionMetadata") !== "false",
       sessionMetadataModel: model ? JSON.parse(model) as AppSettings["sessionMetadataModel"] : null,
+      defaultSessionModel: defaultSessionModel ? JSON.parse(defaultSessionModel) as AppSettings["defaultSessionModel"] : null,
     };
   }
 
-  updateSettings(input: { autoGenerateSessionMetadata?: boolean | undefined; sessionMetadataModel?: AppSettings["sessionMetadataModel"] | undefined }): AppSettings {
+  updateSettings(input: { autoGenerateSessionMetadata?: boolean | undefined; sessionMetadataModel?: AppSettings["sessionMetadataModel"] | undefined; defaultSessionModel?: AppSettings["defaultSessionModel"] | undefined }): AppSettings {
     const set = this.db.query("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
     if (input.autoGenerateSessionMetadata !== undefined) set.run("autoGenerateSessionMetadata", String(input.autoGenerateSessionMetadata));
     if (input.sessionMetadataModel !== undefined) set.run("sessionMetadataModel", JSON.stringify(input.sessionMetadataModel));
+    if (input.defaultSessionModel !== undefined) set.run("defaultSessionModel", JSON.stringify(input.defaultSessionModel));
     return this.getSettings();
   }
 

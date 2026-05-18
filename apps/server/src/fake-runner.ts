@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { SessionManager, type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import { SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { PLAN_ACTIONS_MARKER, type AnswerQuestionPayload, type CommandInfo, type ModelPolicy, type NormalizedAgentEvent, type PendingQuestion, type SessionRuntimeSettings, type SessionSnapshot, type WebSession } from "@pi-web-agent/protocol";
 import { loadConfig } from "./config.js";
 import type { BuiltinCommandResult, CreateSessionOptions, ImageContent, PiSessionRunner, SessionHandle } from "./pi-runner.js";
@@ -21,8 +21,9 @@ function fakeSettings(modelPolicy: ModelPolicy): SessionRuntimeSettings {
     { id: "fake/fast", provider: "fake", name: "Fake Fast" },
     { id: "fake/slow", provider: "fake", name: "Fake Slow" },
   ].filter((model) => !modelPolicy.allowedModels || modelPolicy.allowedModels.includes(model.id));
+  const defaultModel = availableModels.find((model) => model.id === modelPolicy.defaultModel) ?? availableModels[0] ?? null;
   return {
-    model: availableModels[0] ?? null,
+    model: defaultModel,
     availableModels,
     thinkingLevel: modelPolicy.defaultThinkingLevel,
     availableThinkingLevels: modelPolicy.allowedThinkingLevels,
@@ -121,6 +122,7 @@ class FakeSessionHandle implements SessionHandle {
     readonly sessionFile: string,
     private readonly modelPolicy: ModelPolicy,
   ) {
+    this.currentModel = fakeSettings(modelPolicy).model?.id ?? this.currentModel;
     this.currentThinking = modelPolicy.defaultThinkingLevel;
     this.sessionManager = SessionManager.open(sessionFile, dirname(sessionFile), cwd);
     this.session = {
@@ -787,7 +789,8 @@ export class FakePiSessionRunner implements PiSessionRunner {
   async createSession(options: CreateSessionOptions): Promise<SessionHandle> {
     const existing = this.handles.get(options.id);
     if (existing) return existing;
-    const handle = new FakeSessionHandle(options.id, options.cwd ?? process.cwd(), options.piSessionFile, this.modelPolicy);
+    const modelPolicy = { ...this.modelPolicy, ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}) };
+    const handle = new FakeSessionHandle(options.id, options.cwd ?? process.cwd(), options.piSessionFile, modelPolicy);
     this.handles.set(options.id, handle);
     return handle;
   }

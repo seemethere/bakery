@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { ModelPolicy } from "@pi-web-agent/protocol";
 import { applyConfiguredDefaultModel, snapshotMessagesFromSessionBranch } from "./pi-runner.js";
 

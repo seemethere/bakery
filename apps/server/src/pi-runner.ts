@@ -9,7 +9,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AnswerQuestionPayload, CommandInfo, ModelInfo, ModelPolicy, NormalizedAgentEvent, PendingQuestion, SessionRuntimeSettings, SessionSnapshot, WebSession } from "@pi-web-agent/protocol";
 import { Type } from "typebox";
 import { loadConfig } from "./config.js";
@@ -24,6 +24,7 @@ export type CreateSessionOptions = {
   cwd: string | null;
   piSessionFile: string;
   mode?: "workspace" | "chat_only";
+  defaultModel?: string | undefined;
 };
 
 export type BuiltinCommandResult = {
@@ -133,7 +134,7 @@ export async function applyConfiguredDefaultModel(session: AgentSession, modelPo
   await session.setModel(model);
 }
 
-const piPackageEntry = fileURLToPath(import.meta.resolve("@mariozechner/pi-coding-agent"));
+const piPackageEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
 const piChangelogPath = resolve(dirname(piPackageEntry), "../CHANGELOG.md");
 
 const BUILTIN_COMMANDS: CommandInfo[] = [
@@ -573,7 +574,9 @@ export class InProcessPiSessionRunner implements PiSessionRunner {
       customTools: [createAskQuestionTool(questionBroker)],
       ...(mode === "chat_only" ? { noTools: "all" as const } : {}),
     });
-    if (!hadSessionFile) await applyConfiguredDefaultModel(session, this.modelPolicy);
+    if (!hadSessionFile) {
+      await applyConfiguredDefaultModel(session, { ...this.modelPolicy, ...(options.defaultModel ? { defaultModel: options.defaultModel } : {}) });
+    }
     flushSessionFile(sessionManager);
     const handle = new InProcessSessionHandle(options.id, effectiveCwd, options.piSessionFile, session, this.modelPolicy, questionBroker);
     this.handles.set(options.id, handle);

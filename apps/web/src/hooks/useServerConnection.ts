@@ -757,6 +757,20 @@ export function useServerConnection(preferredSessionId?: string | null): ServerC
       body: JSON.stringify(updates),
     });
     setAppSettings(updated);
+    if (Object.prototype.hasOwnProperty.call(updates, "defaultSessionModel")) {
+      const currentCatalog = modelCatalogRef.current;
+      const defaultModel = updated.defaultSessionModel?.model ?? configRef.current?.modelPolicy.defaultModel ?? currentCatalog?.models[0]?.id ?? null;
+      const nextCatalog = currentCatalog ? { ...currentCatalog, defaultModel } : currentCatalog;
+      setModelCatalog(nextCatalog);
+      modelCatalogRef.current = nextCatalog;
+      if (selectedSessionRef.current?.kind === "draft") {
+        setRuntimeSettings((current) => {
+          if (!current) return fallbackRuntimeSettings(configRef.current, nextCatalog);
+          const model = current.availableModels.find((item) => item.id === defaultModel) ?? current.model;
+          return { ...current, model };
+        });
+      }
+    }
   }, [api]);
 
   return {

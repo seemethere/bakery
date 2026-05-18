@@ -22,11 +22,13 @@ Because Bakery controls an agent that can read, edit, and run shell commands in 
 
 ## Quickstart: local Bun install
 
+For a fuller first-run walkthrough, including workspace safety and the first session, see [`docs/quickstart.md`](docs/quickstart.md).
+
 ### 1. Prerequisites
 
 - [Bun](https://bun.sh/) installed.
 - A local project directory you are comfortable letting an agent read, edit, and run shell commands inside.
-- Usual pi/model provider authentication available to the server process. Bakery uses the published `@mariozechner/pi-coding-agent` SDK and normal pi resources by default.
+- Usual pi/model provider authentication available to the server process. Bakery uses the published `@earendil-works/pi-coding-agent` SDK and normal pi resources by default.
 
 ### 2. Install dependencies
 
@@ -143,3 +145,7 @@ docker compose up --build   # Run the containerized Bakery development environme
 | `PI_WEB_PREVIEW_PUBLIC_BASE_URL` | unset | Public base URL used when Bakery renders Preview Stack links. |
 
 See `apps/server/src/config.ts` for the full set of server configuration knobs.
+
+## Documentation
+
+Use [`docs/README.md`](docs/README.md) as the durable documentation map. Start with [`docs/quickstart.md`](docs/quickstart.md) for the full first-run path, continue to [`docs/operation.md`](docs/operation.md) for day-to-day safety/runtime diagrams, and use [`docs/troubleshooting.md`](docs/troubleshooting.md) for ports, logs, tokens, validation, and contributor dev-server operation.

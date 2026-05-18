@@ -10,11 +10,11 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "^0.74.1",
+    "@earendil-works/pi-coding-agent": "^0.74.1",
     "@fastify/cors": "^11.1.0",
     "@fastify/multipart": "^10.0.0",
     "@fastify/websocket": "^11.2.0",
-    "@mariozechner/pi-ai": "^0.70.2",
-    "@mariozechner/pi-coding-agent": "^0.70.2",
     "@pi-web-agent/protocol": "workspace:*",
     "fastify": "^5.6.2",
     "typebox": "^1.1.33",

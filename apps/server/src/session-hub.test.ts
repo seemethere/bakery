@@ -296,9 +296,66 @@ describe("active tool execution snapshots", () => {
   });
 });
 
+describe("session promotion defaults", () => {
+  test("passes the app default session model when starting a brand-new session", async () => {
+    const session = webSession({ kind: "draft", cwd: null });
+    const createOptions: unknown[] = [];
+    const prompts: string[] = [];
+    const handle = {
+      id: session.id,
+      cwd: null,
+      subscribe: () => () => undefined,
+      subscribeQuestion: () => () => undefined,
+      snapshot: async () => ({ session, status: "idle", messages: [] }),
+      getSettings: async () => ({ model: null, availableModels: [], thinkingLevel: "low", availableThinkingLevels: ["low"], contextUsage: { tokens: null, contextWindow: null, percent: null } }),
+      getCommands: () => [],
+      runBuiltinCommand: async () => ({ handled: false }),
+      prompt: async (text: string) => { prompts.push(text); },
+    };
+    const store = {
+      getSession: () => session,
+      getSettings: () => ({ autoGenerateSessionMetadata: true, sessionMetadataModel: null, defaultSessionModel: { model: "anthropic/claude-sonnet-4-5" } }),
+      setKind: () => session,
+      listWebCommandResults: () => [],
+      listUnreconciledSubmittedPrompts: () => [],
+      addSubmittedPrompt: (_sessionId: string, input: { kind: "prompt"; text: string }) => ({ id: "prompt:1", kind: input.kind, text: input.text, timestamp: "2026-05-10T00:00:00.000Z", reconciledAt: null, error: null }),
+      markSubmittedPromptError: () => undefined,
+      updateSession: () => session,
+    };
+    let onMessage: ((data: string) => void) | undefined;
+    const socket = {
+      send: () => undefined,
+      close: () => undefined,
+      on: (event: string, callback: (...args: never[]) => void) => {
+        if (event === "message") onMessage = (data) => callback(data as never);
+      },
+    };
+    const hub = new SessionHub(session.id, null, {
+      store,
+      config: { modelPolicy: { defaultModel: "openai/gpt-5.1", defaultThinkingLevel: "medium", allowedThinkingLevels: ["low", "medium"] }, artifactDir: "", sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } },
+      runner: {
+        createSession: async (options: unknown) => {
+          createOptions.push(options);
+          return handle as never;
+        },
+        disposeSession: async () => undefined,
+      },
+      removeHub: () => undefined,
+      getWorkspacePermissionScope: () => ({ roots: [], workspaces: [] }),
+    } as never);
+
+    hub.add(socket, "client-1");
+    onMessage?.(JSON.stringify({ type: "prompt", text: "hello" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(createOptions[0]).toMatchObject({ id: session.id, mode: "chat_only", defaultModel: "anthropic/claude-sonnet-4-5" });
+    expect(prompts).toEqual(["hello"]);
+  });
+});
+
 describe("session attachment prompt images", () => {
   test("loads uploaded attachment references as agent image content", async () => {
-    const session = webSession();
+    const session = webSession({ kind: "chat_only", cwd: null });
     const artifactDir = await mkdtemp(join(tmpdir(), "bakery-attachments-"));
     const attachmentPath = ".bakery/attachments/2026-05-10T00-00-00-000Z-shot.png";
     const artifactId = createHash("sha256").update(session.id).update("\0").update(attachmentPath).digest("hex").slice(0, 32);
@@ -334,13 +391,19 @@ describe("session attachment prompt images", () => {
         if (event === "message") onMessage = (data) => callback(data as never);
       },
     };
-    const hub = new SessionHub(session.id, handle as never, { store, config: { artifactDir, sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } }, runner: { disposeSession: async () => undefined }, removeHub: () => undefined } as never);
+    const hub = new SessionHub(session.id, handle as never, {
+      store,
+      config: { artifactDir, sessionLifecycle: { disconnectedIdleTimeoutMs: 1_000, disconnectedRunningPolicy: "let-finish" } },
+      runner: { disposeSession: async () => undefined },
+      removeHub: () => undefined,
+      getWorkspacePermissionScope: () => ({ browseRoots: [], approvedWorkspaces: [] }),
+    } as never);
 
     hub.add(socket, "client-1");
     await Promise.resolve();
     await Promise.resolve();
     onMessage?.(JSON.stringify({ type: "prompt", text: `Please inspect it.\n\nAttached files:\n- shot.png: ${attachmentPath}` }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let i = 0; i < 10 && prompts.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
 
     expect(prompts).toHaveLength(1);
     expect(prompts[0]?.images).toEqual([{ type: "image", mimeType: "image/png", data: Buffer.from("image-bytes").toString("base64") }]);

@@ -4,7 +4,7 @@ import { extname, join, resolve } from "node:path";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { addWorkspaceRequestSchema, cloneWorkspaceRequestSchema, createGithubRepositoryRequestSchema, workspaceBrowseQuerySchema, type ModelInfo, updateAppSettingsRequestSchema } from "@pi-web-agent/protocol";
-import { AuthStorage, getAgentDir, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, getAgentDir, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import Fastify from "fastify";
 import { registerArtifactRoutes } from "./artifact-routes.js";
 import { getBakeryExtensionCardContributions, getBakeryExtensionRegistry, getBakeryExtensionWebModules, loadConfiguredBakeryExtensions } from "./extensions.js";
@@ -236,13 +236,14 @@ app.get<{ Params: { extensionId: string; "*": string } }>("/api/extensions/:exte
 
 app.get("/api/models", async () => {
   const discoveredModels = await listAvailableModels();
+  const settingsDefaultModel = store.getSettings().defaultSessionModel?.model;
   const configuredDefault = config.modelPolicy.defaultModel ? configuredModelInfo(config.modelPolicy.defaultModel) : null;
   const models = discoveredModels.length > 0
     ? discoveredModels
     : configuredDefault
       ? [configuredDefault]
       : [];
-  const defaultModel = config.modelPolicy.defaultModel ?? models[0]?.id ?? null;
+  const defaultModel = settingsDefaultModel ?? config.modelPolicy.defaultModel ?? models[0]?.id ?? null;
   return {
     defaultModel,
     models,

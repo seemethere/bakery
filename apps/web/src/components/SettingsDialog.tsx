@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppSettings, SessionRuntimeSettings } from "@pi-web-agent/protocol";
 import {
+  BotIcon,
   DatabaseIcon,
   PaintbrushIcon,
   SaveIcon,
@@ -36,7 +37,7 @@ import {
 import { saveThemePreference, storedThemePreference, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
-type SettingsSectionId = "connection" | "appearance" | "metadata";
+type SettingsSectionId = "connection" | "appearance" | "models" | "metadata";
 
 type Props = {
   open: boolean;
@@ -61,6 +62,12 @@ const sections: Array<{ id: SettingsSectionId; label: string; description: strin
     label: "Appearance",
     description: "Theme preference applies immediately and can follow system appearance.",
     icon: <PaintbrushIcon />,
+  },
+  {
+    id: "models",
+    label: "Models",
+    description: "Choose the default model used when starting brand-new sessions.",
+    icon: <BotIcon />,
   },
   {
     id: "metadata",
@@ -98,6 +105,7 @@ export function SettingsDialog({
   }
 
   const models = runtimeSettings?.availableModels ?? [];
+  const selectedDefaultSessionModel = appSettings?.defaultSessionModel?.model ?? "";
   const selectedMetadataModel = appSettings?.sessionMetadataModel?.model ?? "";
   const activeSectionDetails = useMemo(
     () => sections.find((section) => section.id === activeSection) ?? sections[0]!,
@@ -163,7 +171,7 @@ export function SettingsDialog({
             </header>
 
             <div className="border-b px-4 py-2 md:hidden">
-              <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+              <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1">
                 {sections.map((section) => (
                   <button
                     key={section.id}
@@ -239,6 +247,43 @@ export function SettingsDialog({
                 </SettingsPanel>
               )}
 
+              {activeSection === "models" && (
+                <SettingsPanel ariaLabel="Model settings">
+                  <label className={labelClass}>
+                    Default model for new sessions
+                    <Select
+                      value={selectedDefaultSessionModel}
+                      onValueChange={(value) =>
+                        onSaveAppSettings({ defaultSessionModel: value ? { model: value } : null })
+                      }
+                    >
+                      <SelectTrigger id="defaultSessionModel">
+                        <SelectValue>
+                          {modelSelectionLabel(models, selectedDefaultSessionModel, "Server / pi SDK default")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="" selected={selectedDefaultSessionModel === ""}>
+                          Server / pi SDK default
+                        </SelectItem>
+                        {models.map((model) => (
+                          <SelectItem
+                            key={model.id}
+                            value={model.id}
+                            selected={selectedDefaultSessionModel === model.id}
+                          >
+                            {model.name ?? model.id} [{model.provider}]
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <p className="m-0 text-xs text-muted-foreground">
+                    Applies only when a brand-new session starts. Existing sessions keep their saved model, and the composer model picker can still override this per session.
+                  </p>
+                </SettingsPanel>
+              )}
+
               {activeSection === "metadata" && (
                 <SettingsPanel ariaLabel="Session metadata settings">
                   <label className={labelClass}>
@@ -246,12 +291,12 @@ export function SettingsDialog({
                     <Select
                       value={selectedMetadataModel}
                       onValueChange={(value) =>
-                        onSaveAppSettings({ sessionMetadataModel: { model: value ?? "" } })
+                        onSaveAppSettings({ sessionMetadataModel: value ? { model: value } : null })
                       }
                     >
                       <SelectTrigger id="sessionMetadataModel">
                         <SelectValue>
-                          {metadataModelLabel(models, selectedMetadataModel)}
+                          {modelSelectionLabel(models, selectedMetadataModel, "Default / active model")}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
@@ -306,11 +351,12 @@ function themeLabel(theme: ThemePreference): string {
   return "System";
 }
 
-function metadataModelLabel(
+function modelSelectionLabel(
   models: NonNullable<SessionRuntimeSettings["availableModels"]>,
   selectedModel: string,
+  fallbackLabel: string,
 ): string {
-  if (!selectedModel) return "Default / active model";
+  if (!selectedModel) return fallbackLabel;
   const model = models.find((item) => item.id === selectedModel);
   return model ? `${model.name ?? model.id} [${model.provider}]` : selectedModel;
 }

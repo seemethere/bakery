@@ -2,13 +2,24 @@
 # Usage:
 #   docker compose -f compose.yaml -f compose.ssh-auth.example.yaml up --build
 #
-# Requires SSH_AUTH_SOCK to point at an existing host agent socket. Credentials
-# exposed through the socket are available to commands and agents in the container.
+# Defaults to Docker Desktop/OrbStack's host-services SSH agent socket.
+# On Linux or custom setups, override PI_WEB_HOST_SSH_AUTH_SOCK, for example:
+#   PI_WEB_HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
+#     docker compose -f compose.yaml -f compose.ssh-auth.example.yaml up --build
+# Also mounts host known_hosts read-only so non-interactive git commands can
+# verify GitHub/remote host keys instead of failing with "Host key verification
+# failed". Run `ssh -T git@github.com` on the host first if needed.
+# Credentials exposed through the socket are available to commands and agents in
+# the container.
 services:
   bakery-dev:
     environment:
-      SSH_AUTH_SOCK: /ssh-agent
+      SSH_AUTH_SOCK: "${PI_WEB_CONTAINER_SSH_AUTH_SOCK:-/run/host-services/ssh-auth.sock}"
     volumes:
       - type: bind
-        source: ${SSH_AUTH_SOCK:?Set SSH_AUTH_SOCK to an existing host SSH agent socket}
-        target: /ssh-agent
+        source: "${PI_WEB_HOST_SSH_AUTH_SOCK:-/run/host-services/ssh-auth.sock}"
+        target: "${PI_WEB_CONTAINER_SSH_AUTH_SOCK:-/run/host-services/ssh-auth.sock}"
+      - type: bind
+        source: "${PI_WEB_HOST_SSH_KNOWN_HOSTS:-${HOME}/.ssh/known_hosts}"
+        target: /home/bun/.ssh/known_hosts
+        read_only: true

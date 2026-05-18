@@ -2,7 +2,7 @@
 
 Bakery's containerized development environment runs the existing Bun/Vite development workflow inside Docker while bind-mounting this checkout as the only default Bakery workspace.
 
-This is for developing Bakery itself. It is not yet the production single-port image, the future multi-backend `bakery` CLI, or per-agent-session container isolation.
+This is for developing Bakery itself. It is not yet the production single-port image, the future multi-backend `bakery` CLI, or per-agent-session container isolation. If you are trying Bakery for the first time without Docker-specific needs, start with the [first-run quickstart](quickstart.md); for general ports, logs, tokens, and validation recovery, see [troubleshooting and developer operation](troubleshooting.md).
 
 ## Start the dev container
 
@@ -100,15 +100,22 @@ Treat any Git/GitHub auth setup for the dev container as a trusted-local-develop
 
 ### Recommended path: forward an SSH agent
 
-Prefer forwarding an existing host SSH agent when feasible. This avoids mounting private key files or long-lived GitHub tokens directly into the container. Bakery includes `compose.ssh-auth.example.yaml` as an opt-in override for host agents whose socket is available through `$SSH_AUTH_SOCK`:
+Prefer forwarding an existing host SSH agent when feasible. This avoids mounting private key files or long-lived GitHub tokens directly into the container. Bakery includes `compose.ssh-auth.example.yaml` as an opt-in override. By default it uses Docker Desktop/OrbStack's `/run/host-services/ssh-auth.sock` path:
 
 ```bash
 docker compose -f compose.yaml -f compose.ssh-auth.example.yaml up --build
 ```
 
-If the host socket path is unset or does not exist, Docker Compose will fail before starting the container. Only add bind mounts for paths that exist on your host. The entrypoint adds the mapped container user to the mounted socket's group when possible, which helps with host sockets that are group-readable but not world-readable.
+On Linux or custom setups, point `PI_WEB_HOST_SSH_AUTH_SOCK` at the host socket to mount:
 
-Docker Desktop for macOS may expose the agent at `/run/host-services/ssh-auth.sock` instead of the shell's `$SSH_AUTH_SOCK`; bind-mounting the shell socket can fail with `Connection refused`. In that case, copy the example to a private local override and use `/run/host-services/ssh-auth.sock` for both `SSH_AUTH_SOCK` and the bind mount source/target.
+```bash
+PI_WEB_HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
+  docker compose -f compose.yaml -f compose.ssh-auth.example.yaml up --build
+```
+
+If the configured/default host socket path is unavailable to Docker, Compose will fail before starting the container. Only add bind mounts for sockets that are usable by your Docker runtime. The entrypoint adds the mapped container user to the mounted socket's group when possible, which helps with host sockets that are group-readable but not world-readable.
+
+Docker Desktop and OrbStack on macOS expose the agent to containers at `/run/host-services/ssh-auth.sock`; bind-mounting the shell's `$SSH_AUTH_SOCK` or a symlink to it can still produce a socket file in the container but fail with `Connection refused`, which is why the example defaults to the host-services path.
 
 ### GitHub CLI auth
 
@@ -161,6 +168,12 @@ For actual remote auth, use harmless remote reads against repositories you can a
 ```bash
 docker compose -f compose.yaml -f compose.ssh-auth.example.yaml run --rm bakery-dev \
   bash -lc 'git ls-remote git@github.com:<owner>/<repo>.git HEAD'
+
+# Docker Desktop/OrbStack macOS host-services variant:
+PI_WEB_HOST_SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock \
+PI_WEB_CONTAINER_SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock \
+  docker compose -f compose.yaml -f compose.ssh-auth.example.yaml run --rm bakery-dev \
+    bash -lc 'git ls-remote git@github.com:<owner>/<repo>.git HEAD'
 
 docker compose -f compose.yaml -f compose.gh-auth.example.yaml run --rm bakery-dev \
   bash -lc 'gh repo view <owner>/<repo> --json nameWithOwner --jq .nameWithOwner'
@@ -242,7 +255,7 @@ When modifying the containerized development environment, validate from the smal
    docker compose -f compose.yaml -f compose.gh-auth.example.yaml --env-file .env.example config
    ```
 
-   The SSH override requires `SSH_AUTH_SOCK` to reference an existing host socket. Skip that specific override config check only when no host SSH agent is available.
+   The SSH override defaults to `/run/host-services/ssh-auth.sock`; set `PI_WEB_HOST_SSH_AUTH_SOCK` when your Docker runtime needs a different host agent socket. Skip that specific override config check only when no host SSH agent is available.
 
 7. Smoke the full backend + Vite dev flow when Compose startup or runtime environment changed:
 
@@ -349,10 +362,17 @@ ssh-add -l
 Then confirm the same override is used for the dev container command:
 
 ```bash
-docker compose -f compose.yaml -f compose.ssh-auth.example.yaml run --rm bakery-dev ssh-add -l
+PI_WEB_HOST_SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
+  docker compose -f compose.yaml -f compose.ssh-auth.example.yaml run --rm bakery-dev ssh-add -l
 ```
 
-If this fails with `Connection refused` on Docker Desktop for macOS, use Docker Desktop's `/run/host-services/ssh-auth.sock` socket in a private override instead of bind-mounting the shell's `$SSH_AUTH_SOCK` path.
+If this fails with `Connection refused` on Docker Desktop or OrbStack for macOS, use the host-services socket instead of bind-mounting the shell's `$SSH_AUTH_SOCK` path:
+
+```bash
+PI_WEB_HOST_SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock \
+PI_WEB_CONTAINER_SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock \
+  docker compose -f compose.yaml -f compose.ssh-auth.example.yaml run --rm bakery-dev ssh-add -l
+```
 
 ### GitHub CLI auth fails inside the container
 
