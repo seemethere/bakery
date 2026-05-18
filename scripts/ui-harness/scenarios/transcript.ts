@@ -768,7 +768,7 @@ export async function runToolGroupCard(page: Page): Promise<Record<string, unkno
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please run multiple tools for experimental tool group card validation.");
   await page.locator('[data-testid="experimental-tool-group"]', { hasText: "Task completed" }).waitFor({ timeout: 10_000 });
-  const collapsedSnapshot = await page.evaluate(() => {
+  const openSnapshot = await page.evaluate(() => {
     const group = document.querySelector<HTMLElement>('[data-testid="experimental-tool-group"]');
     const transcript = document.querySelector<HTMLElement>(".transcript");
     const rect = group?.getBoundingClientRect();
@@ -784,15 +784,16 @@ export async function runToolGroupCard(page: Page): Promise<Record<string, unkno
       transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
     };
   });
-  if (collapsedSnapshot.groups !== 1 || collapsedSnapshot.childRowsVisible !== 0 || collapsedSnapshot.defaultToolRows !== 0 || collapsedSnapshot.experimentalCards !== 0 || !/\bfiles?\b/.test(collapsedSnapshot.text) || !collapsedSnapshot.text.includes("commands")) throw new Error(`Experimental tool group collapsed state mismatch: ${JSON.stringify(collapsedSnapshot)}`);
-  if (collapsedSnapshot.documentWidth > collapsedSnapshot.viewportWidth + 2 || collapsedSnapshot.cardWidth > collapsedSnapshot.transcriptWidth + 2) throw new Error(`Experimental tool group overflowed on mobile: ${JSON.stringify(collapsedSnapshot)}`);
+  if (openSnapshot.groups !== 1 || openSnapshot.childRowsVisible !== 1 || openSnapshot.defaultToolRows !== 0 || openSnapshot.experimentalCards < 3 || !/\bfiles?\b/.test(openSnapshot.text) || !openSnapshot.text.includes("commands")) throw new Error(`Experimental tool group open state mismatch: ${JSON.stringify(openSnapshot)}`);
+  if (openSnapshot.documentWidth > openSnapshot.viewportWidth + 2 || openSnapshot.cardWidth > openSnapshot.transcriptWidth + 2) throw new Error(`Experimental tool group overflowed on mobile: ${JSON.stringify(openSnapshot)}`);
   await page.locator('[data-testid="experimental-tool-group"] [data-row-action="toggle-tool-group"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-testid="experimental-tool-group-items"]'), null, { timeout: 5_000 });
-  const expandedSnapshot = await page.evaluate(() => ({
-    childRows: document.querySelectorAll('[data-testid="experimental-tool-group-items"] > div').length,
+  await page.waitForFunction(() => !document.querySelector('[data-testid="experimental-tool-group-items"]'), null, { timeout: 5_000 });
+  const collapsedSnapshot = await page.evaluate(() => ({
+    childRowsVisible: document.querySelectorAll('[data-testid="experimental-tool-group-items"]').length,
+    experimentalCards: document.querySelectorAll('[data-testid^="experimental-"][data-tool-action]').length,
     text: document.querySelector('[data-testid="experimental-tool-group"]')?.textContent ?? "",
   }));
-  if (expandedSnapshot.childRows < 3 || !expandedSnapshot.text.includes("Ran command") || !expandedSnapshot.text.includes("Read")) throw new Error(`Experimental tool group expanded state mismatch: ${JSON.stringify(expandedSnapshot)}`);
+  if (collapsedSnapshot.childRowsVisible !== 0 || collapsedSnapshot.experimentalCards !== 0) throw new Error(`Experimental tool group collapsed state mismatch: ${JSON.stringify(collapsedSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "tool-group-card-mobile.png"), fullPage: true });
 
   await page.setViewportSize({ width: 1180, height: 900 });
@@ -810,7 +811,7 @@ export async function runToolGroupCard(page: Page): Promise<Record<string, unkno
   });
   if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental tool group overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "tool-group-card-desktop.png"), fullPage: true });
-  return { collapsedSnapshot, expandedSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
+  return { openSnapshot, collapsedSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {
