@@ -541,6 +541,7 @@ export class SessionHub {
     if (snapshot.status !== "idle") throw new Error("Bash commands are available when the session is idle.");
 
     const id = `bash:${crypto.randomUUID()}`;
+    const startedAt = new Date().toISOString();
     let chunkCount = 0;
     let outputBytes = 0;
     let maxChunkBytes = 0;
@@ -548,8 +549,8 @@ export class SessionHub {
       type: "agent_event",
       event: {
         type: "bash_execution_start",
-        time: new Date().toISOString(),
-        data: { type: "bash_execution_start", id, command, excludeFromContext: excludeFromContext ?? false },
+        time: startedAt,
+        data: { type: "bash_execution_start", id, command, startedAt, excludeFromContext: excludeFromContext ?? false },
       },
     });
     try {
@@ -564,26 +565,28 @@ export class SessionHub {
           event: {
             type: "bash_execution_update",
             time: new Date().toISOString(),
-            data: { type: "bash_execution_update", id, command, outputDelta: chunk, outputOffsetBytes, outputBytes, chunkCount, excludeFromContext: excludeFromContext ?? false },
+            data: { type: "bash_execution_update", id, command, startedAt, outputDelta: chunk, outputOffsetBytes, outputBytes, chunkCount, excludeFromContext: excludeFromContext ?? false },
           },
         });
       }, excludeFromContext === undefined ? undefined : { excludeFromContext });
+      const endedAt = new Date().toISOString();
       this.broadcast({
         type: "agent_event",
         event: {
           type: "bash_execution_end",
-          time: new Date().toISOString(),
-          data: { type: "bash_execution_end", id, command, result, stream: { chunkCount, outputBytes, maxChunkBytes }, excludeFromContext: excludeFromContext ?? false },
+          time: endedAt,
+          data: { type: "bash_execution_end", id, command, startedAt, endedAt, durationMs: Date.parse(endedAt) - Date.parse(startedAt), result, stream: { chunkCount, outputBytes, maxChunkBytes }, excludeFromContext: excludeFromContext ?? false },
         },
       });
       await this.broadcastSettingsUpdate();
     } catch (error) {
+      const endedAt = new Date().toISOString();
       this.broadcast({
         type: "agent_event",
         event: {
           type: "bash_execution_end",
-          time: new Date().toISOString(),
-          data: { type: "bash_execution_end", id, command, result: { output: error instanceof Error ? error.message : String(error), cancelled: false, truncated: false }, isError: true, excludeFromContext: excludeFromContext ?? false },
+          time: endedAt,
+          data: { type: "bash_execution_end", id, command, startedAt, endedAt, durationMs: Date.parse(endedAt) - Date.parse(startedAt), result: { output: error instanceof Error ? error.message : String(error), cancelled: false, truncated: false }, isError: true, excludeFromContext: excludeFromContext ?? false },
         },
       });
       throw error;

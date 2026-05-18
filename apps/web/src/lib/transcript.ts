@@ -593,7 +593,7 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
     if (type === "bash_execution_start") {
       // Remove any pending bash items with same command
       const cleaned = items.filter((i) => !(i.id.startsWith("bash:pending:") && isRecord(i.raw) && i.raw.command === command));
-      return upsertItem(cleaned, { id, kind: "tool", title, body: "Starting…", status: "running", raw: event });
+      return upsertItem(cleaned, { id, kind: "tool", title, body: "Starting…", status: "running", startedAt: eventStartTimestamp(event), raw: event });
     }
     if (type === "bash_execution_update") {
       const existing = items.find((item) => item.id === id);
@@ -605,16 +605,22 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
         : typeof event.outputDelta === "string"
           ? `${existingOutput || missingPrefix}${event.outputDelta}`
           : "";
-      return upsertItem(items, { id, kind: "tool", title, body: output, segments: [{ kind: "pre", text: output }], status: "running", raw: event });
+      return upsertItem(items, { id, kind: "tool", title, body: output, segments: [{ kind: "pre", text: output }], status: "running", startedAt: eventStartTimestamp(event, existing), raw: event });
     }
     // bash_execution_end
     const result = isRecord(event.result) ? event.result : {};
     const output = typeof result.output === "string" ? result.output : stringify(result);
     const body = output || "Command completed with no output.";
+    const existing = items.find((i) => i.id === id);
+    const startedAt = eventStartTimestamp(event, existing);
+    const endedAt = eventTimestamp(event);
+    const elapsedMs = typeof event.durationMs === "number" ? Math.max(0, event.durationMs) : calcDurationMs(startedAt, endedAt);
     return upsertItem(items, {
       id, kind: "tool", title, body,
       segments: [{ kind: "pre", text: body }],
       status: event.isError || (typeof result.exitCode === "number" && result.exitCode !== 0) ? "error" : "done",
+      startedAt, endedAt,
+      ...(elapsedMs === undefined ? {} : { durationMs: elapsedMs }),
       raw: event,
     });
   }
