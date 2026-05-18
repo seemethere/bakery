@@ -57,7 +57,7 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
       role="article"
       aria-label={`${verb} ${path}`}
       className={cn(
-        "message tool experimental-edit-tool group/row relative mx-4 my-1 w-auto max-w-[420px] overflow-hidden rounded-[10px] border text-sm",
+        "message tool experimental-edit-tool group/row relative mx-4 my-1 min-w-0 overflow-hidden rounded-[10px] border text-sm",
         "border-border bg-muted/45 text-foreground shadow-none",
         item.status === "running" && "running",
         item.status === "done" && "done",

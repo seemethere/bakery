@@ -67,7 +67,7 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
       role="article"
       aria-label={`Bash command ${isRunning ? "running" : isError ? "failed" : "completed"}: ${command}`}
       className={cn(
-        "message tool experimental-bash-tool group/row relative mx-4 my-1 w-auto max-w-[420px] overflow-hidden rounded-[10px] border text-sm",
+        "message tool experimental-bash-tool group/row relative mx-4 my-1 min-w-0 overflow-hidden rounded-[10px] border text-sm",
         "border-border bg-muted/45 text-foreground shadow-none",
         item.status === "running" && "running",
         item.status === "done" && "done",
