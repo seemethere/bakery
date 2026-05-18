@@ -22,6 +22,7 @@ export const scenarioDefinitions = [
   { name: "connection-disconnected", family: "lifecycle", includeInAll: false },
   { name: "narrow-tool-stream", family: "transcript" },
   { name: "tool-grouping", family: "transcript" },
+  { name: "bash-tool-card", family: "transcript" },
   { name: "tool-image-heavy-transcript", family: "transcript" },
   { name: "subagent-card", family: "transcript" },
   { name: "subagent-card-reconnect", family: "transcript" },

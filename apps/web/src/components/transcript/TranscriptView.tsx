@@ -6,6 +6,7 @@ import { isAskQuestionToolItem } from "@/lib/transcript";
 import { isNonInformativeSubagentManagementReceipt } from "./SubagentCard";
 import { TranscriptRow } from "./TranscriptRow";
 import { Button } from "@/components/ui/button";
+import { useToolUiPreference } from "@/lib/tool-ui-preference";
 
 const AUTO_SCROLL_STORAGE_KEY = "piWebAutoScroll";
 
@@ -52,6 +53,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   const initialBottomScrollInProgressRef = useRef(false);
   const [isFollowingLatest, setIsFollowingLatest] = useState(autoScrollRef.current);
   const [unreadCount, setUnreadCount] = useState(0);
+  const toolUiPreference = useToolUiPreference();
   const visibleItems = useMemo(
     () => items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)),
     [items],
@@ -287,6 +289,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
               sessionTreeNodes={sessionTreeNodes}
               onFork={onFork}
               onAcceptPlan={onAcceptPlan}
+              toolUiPreference={toolUiPreference}
             />
           ))}
           <div ref={bottomRef} className="h-px" aria-hidden="true" />

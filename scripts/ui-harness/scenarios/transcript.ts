@@ -25,6 +25,7 @@ export const transcriptScenarios = [
   "inspector-preview",
   "narrow-tool-stream",
   "tool-grouping",
+  "bash-tool-card",
   "tool-image-heavy-transcript",
   "subagent-card",
   "subagent-card-reconnect",
@@ -531,6 +532,67 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
   }
   await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
   return { groups, activityRuns, activityMembers, alignment, toolRows: await page.locator(".message.tool").count(), ...(await collectMetrics(page)) };
+}
+
+export async function runBashToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem("piWebToolUi", "bash-card"));
+  const sessionId = await prepareSession(page);
+  await page.goto(`${webBase}/sessions/${sessionId}?toolUi=bash-card`, { waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, sessionId);
+  await page.locator("#prompt").fill("Please run multiple tools with one failed tool for experimental bash card validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.locator('[data-testid="experimental-bash-tool"]', { hasText: "echo fake tool" }).first().waitFor({ timeout: 10_000 });
+  const runningSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="experimental-bash-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="experimental-bash-tool"]').length,
+      runningCards: document.querySelectorAll('[data-testid="experimental-bash-tool"].running').length,
+      normalReadRows: document.querySelectorAll('.message.tool:not(.experimental-bash-tool)[data-tool-action="read"]').length,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (runningSnapshot.cards < 1 || runningSnapshot.runningCards < 1) throw new Error(`Expected running experimental bash card, saw ${JSON.stringify(runningSnapshot)}`);
+  if (runningSnapshot.documentWidth > runningSnapshot.viewportWidth + 2 || runningSnapshot.cardWidth > runningSnapshot.transcriptWidth + 2) throw new Error(`Experimental bash card overflowed on mobile: ${JSON.stringify(runningSnapshot)}`);
+  await waitForAgentIdle(page, 30_000);
+  await page.locator('[data-testid="experimental-bash-tool"]', { hasText: "fake tool 1 output" }).waitFor({ timeout: 5_000 });
+  await page.locator('[data-testid="experimental-bash-tool"].error', { hasText: "synthetic failure" }).waitFor({ timeout: 5_000 });
+  const completedSnapshot = await page.evaluate(() => ({
+    cards: document.querySelectorAll('[data-testid="experimental-bash-tool"]').length,
+    failedCards: document.querySelectorAll('[data-testid="experimental-bash-tool"].error').length,
+    normalReadRows: document.querySelectorAll('.message.tool:not(.experimental-bash-tool)[data-tool-action="read"]').length,
+    defaultBashRows: document.querySelectorAll('.message.tool:not(.experimental-bash-tool)[data-tool-action="bash"]').length,
+    outputRegions: document.querySelectorAll('[data-testid="experimental-bash-tool"] pre[role="region"][aria-label="Command output"][tabindex="0"]').length,
+    stdoutVisible: document.querySelector('[data-testid="experimental-bash-tool"]')?.textContent?.includes("fake tool 1 output") ?? false,
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  if (completedSnapshot.cards < 3 || completedSnapshot.failedCards < 1 || !completedSnapshot.stdoutVisible || completedSnapshot.normalReadRows < 1 || completedSnapshot.defaultBashRows !== 0 || completedSnapshot.outputRegions < 1) throw new Error(`Experimental bash card completed state mismatch: ${JSON.stringify(completedSnapshot)}`);
+  if (completedSnapshot.documentWidth > completedSnapshot.viewportWidth + 2) throw new Error(`Experimental bash card completed state overflowed: ${JSON.stringify(completedSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "bash-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="experimental-bash-tool"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="experimental-bash-tool"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental bash card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "bash-tool-card-desktop.png"), fullPage: true });
+  return { runningSnapshot, completedSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {
