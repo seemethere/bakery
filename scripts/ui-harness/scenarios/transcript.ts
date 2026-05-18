@@ -29,6 +29,7 @@ export const transcriptScenarios = [
   "edit-tool-card",
   "read-tool-card",
   "search-tool-card",
+  "tool-group-card",
   "tool-image-heavy-transcript",
   "subagent-card",
   "subagent-card-reconnect",
@@ -760,6 +761,56 @@ export async function runSearchToolCard(page: Page): Promise<Record<string, unkn
   if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental search card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
   await page.screenshot({ path: join(artifactDir, "search-tool-card-desktop.png"), fullPage: true });
   return { mobileSnapshot, expandedOutput, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runToolGroupCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please run multiple tools for experimental tool group card validation.");
+  await page.locator('[data-testid="experimental-tool-group"]', { hasText: "Task completed" }).waitFor({ timeout: 10_000 });
+  const collapsedSnapshot = await page.evaluate(() => {
+    const group = document.querySelector<HTMLElement>('[data-testid="experimental-tool-group"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = group?.getBoundingClientRect();
+    return {
+      groups: document.querySelectorAll('[data-testid="experimental-tool-group"]').length,
+      childRowsVisible: document.querySelectorAll('[data-testid="experimental-tool-group-items"]').length,
+      defaultToolRows: document.querySelectorAll('[data-testid="tool-row"]').length,
+      experimentalCards: document.querySelectorAll('[data-testid^="experimental-"][data-tool-action]').length,
+      text: group?.textContent ?? "",
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (collapsedSnapshot.groups !== 1 || collapsedSnapshot.childRowsVisible !== 0 || collapsedSnapshot.defaultToolRows !== 0 || collapsedSnapshot.experimentalCards !== 0 || !/\bfiles?\b/.test(collapsedSnapshot.text) || !collapsedSnapshot.text.includes("commands")) throw new Error(`Experimental tool group collapsed state mismatch: ${JSON.stringify(collapsedSnapshot)}`);
+  if (collapsedSnapshot.documentWidth > collapsedSnapshot.viewportWidth + 2 || collapsedSnapshot.cardWidth > collapsedSnapshot.transcriptWidth + 2) throw new Error(`Experimental tool group overflowed on mobile: ${JSON.stringify(collapsedSnapshot)}`);
+  await page.locator('[data-testid="experimental-tool-group"] [data-row-action="toggle-tool-group"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="experimental-tool-group-items"]'), null, { timeout: 5_000 });
+  const expandedSnapshot = await page.evaluate(() => ({
+    childRows: document.querySelectorAll('[data-testid="experimental-tool-group-items"] > div').length,
+    text: document.querySelector('[data-testid="experimental-tool-group"]')?.textContent ?? "",
+  }));
+  if (expandedSnapshot.childRows < 3 || !expandedSnapshot.text.includes("Ran command") || !expandedSnapshot.text.includes("Read")) throw new Error(`Experimental tool group expanded state mismatch: ${JSON.stringify(expandedSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "tool-group-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="experimental-tool-group"]').scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const group = document.querySelector<HTMLElement>('[data-testid="experimental-tool-group"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = group?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Experimental tool group overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "tool-group-card-desktop.png"), fullPage: true });
+  return { collapsedSnapshot, expandedSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {
