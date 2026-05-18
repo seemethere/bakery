@@ -95,8 +95,8 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
           {duration && <span className="shrink-0 text-muted-foreground/70">· {duration}</span>}
         </div>
         <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
-          {isRunning && <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" />}
           {actions && <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
+          {isRunning && <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" />}
           {expandableOutput && (
             <button
               type="button"
