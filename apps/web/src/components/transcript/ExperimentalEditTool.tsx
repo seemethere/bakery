@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CircleStopIcon, FilePenLineIcon, FilePlus2Icon, LoaderCircleIcon } from "lucide-react";
+import { CircleStopIcon, LoaderCircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { compactToolSummary, formatToolDuration, isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
@@ -50,7 +50,6 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
     : isError
       ? isWrite ? "Failed creating" : "Failed editing"
       : isWrite ? "Created" : "Edited";
-  const Icon = isWrite ? FilePlus2Icon : FilePenLineIcon;
 
   return (
     <div
@@ -70,25 +69,25 @@ export function ExperimentalEditTool({ item, actions }: { item: TranscriptItem; 
       data-tool-state={item.status ?? "done"}
       data-tool-action={isWrite ? "write" : "edit"}
     >
-      {actions && <div className="absolute right-1.5 top-1 z-[1] opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
-      <div className="flex h-7 min-w-0 items-center justify-between gap-2 border-b border-border px-2.5 pr-8">
-        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+      <div className="flex h-7 min-w-0 items-center justify-between gap-2 border-b border-border px-2.5">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
           <span className="grid size-3 shrink-0 place-items-center text-[8px] font-semibold leading-none text-blue-500 dark:text-blue-300" aria-hidden="true">
             {fileExt(name)}
           </span>
           {isRunning ? (
-            <span className="an-bash-shimmer inline-flex h-full max-w-full items-center truncate text-xs leading-none text-muted-foreground">
+            <span className="an-bash-shimmer inline-flex h-full min-w-0 max-w-full items-center truncate leading-none">
               {verb} {name}
             </span>
           ) : (
-            <span className={cn("block truncate text-xs", isError ? "text-red-400" : "text-muted-foreground")}>
+            <span className={cn("block min-w-0 truncate", isError && "text-red-400")}>
               {verb} {name}
             </span>
           )}
+          {duration && <span className="shrink-0 text-muted-foreground/70">· {duration}</span>}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          {duration && <span>{duration}</span>}
-          {isRunning ? <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 text-red-400" aria-hidden="true" /> : <Icon className="size-3" aria-hidden="true" />}
+        <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
+          {isRunning ? <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" /> : isError ? <CircleStopIcon className="size-3 text-red-400" aria-hidden="true" /> : null}
+          {actions && <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
         </div>
       </div>
       {output && !isRunning && (

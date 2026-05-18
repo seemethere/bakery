@@ -80,23 +80,35 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
       data-tool-state={item.status ?? "done"}
       data-tool-action="bash"
     >
-      {actions && <div className="absolute right-1.5 top-1 z-[1] opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
-      <div className="flex h-7 min-w-0 items-center justify-between gap-2 border-b border-border px-2.5 pr-8">
-        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          <SquareTerminalIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="flex h-7 min-w-0 items-center justify-between gap-2 border-b border-border px-2.5">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
+          <SquareTerminalIcon className="size-3 shrink-0" aria-hidden="true" />
           {isRunning ? (
-            <span className="an-bash-shimmer inline-flex h-full max-w-full items-center truncate text-xs leading-none text-muted-foreground">
+            <span className="an-bash-shimmer inline-flex h-full min-w-0 max-w-full items-center truncate leading-none">
               {header}
             </span>
           ) : (
-            <span className="block truncate text-xs text-muted-foreground">
+            <span className="block min-w-0 truncate">
               {header}
             </span>
           )}
+          {duration && <span className="shrink-0 text-muted-foreground/70">· {duration}</span>}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          {duration && <span>{duration}</span>}
+        <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
           {isRunning && <LoaderCircleIcon className="size-3 animate-spin" aria-hidden="true" />}
+          {actions && <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">{actions}</div>}
+          {expandableOutput && (
+            <button
+              type="button"
+              className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              onClick={() => setShowFullOutput((value) => !value)}
+              aria-label={showFullOutput ? "Hide command output" : "Show full command output"}
+              aria-expanded={showFullOutput}
+              data-row-action="toggle-bash-output"
+            >
+              <ChevronDownIcon className={cn("size-3 transition-transform", showFullOutput && "rotate-180")} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
       <div className="min-w-0 overflow-hidden bg-background px-2.5 py-1.5 font-mono text-[12px] leading-4" aria-live={isRunning ? "polite" : undefined}>
@@ -115,18 +127,7 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
         )}
         {!output && isRunning && <span className="sr-only" role="status">Waiting for command output…</span>}
       </div>
-      {expandableOutput && (
-        <button
-          type="button"
-          className="flex w-full items-center justify-between gap-2 border-t border-border bg-muted/30 px-2.5 py-1 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          onClick={() => setShowFullOutput((value) => !value)}
-          aria-expanded={showFullOutput}
-          data-row-action="toggle-bash-output"
-        >
-          <span>{showFullOutput ? "Show less" : "Show full output"}</span>
-          <ChevronDownIcon className={cn("size-3 transition-transform", showFullOutput && "rotate-180")} aria-hidden="true" />
-        </button>
-      )}
+
     </div>
   );
 }
