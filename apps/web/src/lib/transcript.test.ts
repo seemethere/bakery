@@ -5,6 +5,7 @@ import {
   compactSnapshotTranscript,
   detectPlanCard,
   messageToTranscriptItem,
+  snapshotMessagesToTranscriptItems,
 } from "./transcript";
 
 describe("React transcript parity", () => {
@@ -63,6 +64,30 @@ describe("React transcript parity", () => {
       title: "Tool result: subagent",
       body: "done",
       status: "done",
+    });
+  });
+
+  test("hydrates persisted tool result durations from matching assistant tool calls", () => {
+    const items = snapshotMessagesToTranscriptItems([
+      {
+        role: "assistant",
+        timestamp: "2026-05-18T05:00:00.000Z",
+        content: [{ type: "toolCall", toolCallId: "call-bash-1", name: "bash", arguments: { command: "bun run check" } }],
+      },
+      {
+        role: "toolResult",
+        timestamp: "2026-05-18T05:00:03.250Z",
+        toolCallId: "call-bash-1",
+        toolName: "bash",
+        content: [{ type: "text", text: "ok" }],
+      },
+    ]);
+
+    expect(items[1]).toMatchObject({
+      id: "tool:call-bash-1",
+      startedAt: "2026-05-18T05:00:00.000Z",
+      endedAt: "2026-05-18T05:00:03.250Z",
+      durationMs: 3250,
     });
   });
 

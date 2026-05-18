@@ -75,6 +75,16 @@ function messageTimestamp(message: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
+function toolCallId(value: Record<string, unknown>): string | null {
+  const candidate = value.toolCallId ?? value.id ?? value.toolUseId;
+  return typeof candidate === "string" && candidate.trim() ? candidate : null;
+}
+
+function toolCallParts(content: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(content)) return [];
+  return content.filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "toolCall");
+}
+
 function toolResultMessageKey(message: Record<string, unknown>, fallback: string): string {
   return typeof message.toolCallId === "string" && message.toolCallId.trim() ? `tool:${message.toolCallId}` : messageKey(message, fallback);
 }
@@ -264,6 +274,32 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
     };
   }
   return { id: messageKey(message, fallbackId), kind: "system", title: role, body: body || stringify(message), raw: message };
+}
+
+export function snapshotMessagesToTranscriptItems(messages: unknown[]): TranscriptItem[] {
+  const toolStartById = new Map<string, string>();
+  for (const message of messages) {
+    if (!isRecord(message) || message.role !== "assistant") continue;
+    const timestamp = messageTimestamp(message);
+    if (!timestamp) continue;
+    for (const part of toolCallParts(message.content)) {
+      const id = toolCallId(part);
+      if (id && !toolStartById.has(id)) toolStartById.set(id, timestamp);
+    }
+  }
+
+  return messages.map((message, index) => {
+    const item = messageToTranscriptItem(message, `snapshot:${index}`);
+    if (!isRecord(message) || message.role !== "toolResult") return item;
+    const id = typeof message.toolCallId === "string" ? message.toolCallId : "";
+    const startedAt = id ? toolStartById.get(id) : undefined;
+    const endedAt = messageTimestamp(message);
+    const elapsedMs = calcDurationMs(startedAt, endedAt);
+    if (startedAt) item.startedAt = startedAt;
+    if (endedAt) item.endedAt = endedAt;
+    if (elapsedMs !== undefined) item.durationMs = elapsedMs;
+    return item;
+  });
 }
 
 export function toolResultToText(result: unknown): string {
