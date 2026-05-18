@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { LoaderCircleIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isRecord, type TranscriptItem, toolHeaderDisplay } from "@/lib/transcript";
 
@@ -38,7 +38,12 @@ function commandSummary(command: string): string {
     .join(", ") || "bash";
 }
 
+function shouldOfferFullOutput(output: string): boolean {
+  return output.length > 240 || output.split(/\r?\n/).length > 6;
+}
+
 export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; actions?: ReactNode }) {
+  const [showFullOutput, setShowFullOutput] = useState(false);
   const { target } = toolHeaderDisplay(item);
   const command = target || item.title.replace(/^\$\s*/, "") || "bash";
   const output = outputText(item);
@@ -47,6 +52,7 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
   const isError = item.status === "error" || (typeof code === "number" && code !== 0);
   const summary = commandSummary(command);
   const header = isRunning ? `Running command: ${summary}` : `Ran command: ${summary}`;
+  const expandableOutput = !isRunning && shouldOfferFullOutput(output);
 
   return (
     <div
@@ -87,10 +93,31 @@ export function ExperimentalBashTool({ item, actions }: { item: TranscriptItem; 
           <span className="text-foreground">{command}</span>
         </div>
         {output && !isRunning && (
-          <pre className="mt-1 max-h-20 overflow-hidden whitespace-pre-line break-words text-muted-foreground" tabIndex={0} role="region" aria-label="Command output">{output}</pre>
+          <pre
+            className={cn(
+              "mt-1 whitespace-pre-line break-words text-muted-foreground",
+              expandableOutput && !showFullOutput ? "max-h-20 overflow-hidden" : "overflow-visible",
+            )}
+            tabIndex={0}
+            role="region"
+            aria-label="Command output"
+            data-output-expanded={showFullOutput ? "true" : "false"}
+          >{output}</pre>
         )}
         {!output && isRunning && <span className="sr-only" role="status">Waiting for command output…</span>}
       </div>
+      {expandableOutput && (
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 border-t border-border bg-muted/30 px-2.5 py-1 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setShowFullOutput((value) => !value)}
+          aria-expanded={showFullOutput}
+          data-row-action="toggle-bash-output"
+        >
+          <span>{showFullOutput ? "Show less" : "Show full output"}</span>
+          <ChevronDownIcon className={cn("size-3 transition-transform", showFullOutput && "rotate-180")} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }
