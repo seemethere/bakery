@@ -133,6 +133,21 @@
     transform: none;
   }
 
+  .an-bash-shimmer {
+    background-size: 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    background-image: linear-gradient(90deg, hsl(var(--muted-foreground) / 0.55) 0%, hsl(var(--muted-foreground) / 0.55) 40%, hsl(var(--muted-foreground)) 50%, hsl(var(--muted-foreground) / 0.55) 60%, hsl(var(--muted-foreground) / 0.55) 100%);
+    background-repeat: no-repeat;
+    animation: an-bash-shimmer 1.2s linear infinite;
+  }
+
+  @keyframes an-bash-shimmer {
+    from { background-position: 100% center; }
+    to { background-position: 0% center; }
+  }
+
   @media (max-width: 767px) {
     footer:has(#prompt) {
       padding: 0.25rem 0.75rem 0.375rem;

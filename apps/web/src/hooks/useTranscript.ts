@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { SessionSnapshot } from "@pi-web-agent/protocol";
-import { messageToTranscriptItem, compactSnapshotTranscript, applyAgentEvent, activeToolExecutionSnapshotToTranscriptItem, type TranscriptItem } from "@/lib/transcript";
+import { snapshotMessagesToTranscriptItems, compactSnapshotTranscript, applyAgentEvent, activeToolExecutionSnapshotToTranscriptItem, type TranscriptItem } from "@/lib/transcript";
 
 export function useTranscript(
   snapshot: SessionSnapshot | null,
@@ -19,7 +19,7 @@ export function useTranscript(
       setItems([]);
       return;
     }
-    const snapshotItems = snapshotMessages.map((msg, idx) => messageToTranscriptItem(msg, `snapshot:${idx}`));
+    const snapshotItems = snapshotMessagesToTranscriptItems(snapshotMessages);
     for (const activeTool of activeToolExecutions ?? []) {
       const existing = snapshotItems.find((item) => item.id === `tool:${activeTool.toolCallId}`);
       const item = activeToolExecutionSnapshotToTranscriptItem(activeTool, existing);

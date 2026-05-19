@@ -75,6 +75,16 @@ function messageTimestamp(message: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
+function toolCallId(value: Record<string, unknown>): string | null {
+  const candidate = value.toolCallId ?? value.id ?? value.toolUseId;
+  return typeof candidate === "string" && candidate.trim() ? candidate : null;
+}
+
+function toolCallParts(content: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(content)) return [];
+  return content.filter((part): part is Record<string, unknown> => isRecord(part) && part.type === "toolCall");
+}
+
 function toolResultMessageKey(message: Record<string, unknown>, fallback: string): string {
   return typeof message.toolCallId === "string" && message.toolCallId.trim() ? `tool:${message.toolCallId}` : messageKey(message, fallback);
 }
@@ -264,6 +274,32 @@ export function messageToTranscriptItem(message: unknown, fallbackId: string): T
     };
   }
   return { id: messageKey(message, fallbackId), kind: "system", title: role, body: body || stringify(message), raw: message };
+}
+
+export function snapshotMessagesToTranscriptItems(messages: unknown[]): TranscriptItem[] {
+  const toolStartById = new Map<string, string>();
+  for (const message of messages) {
+    if (!isRecord(message) || message.role !== "assistant") continue;
+    const timestamp = messageTimestamp(message);
+    if (!timestamp) continue;
+    for (const part of toolCallParts(message.content)) {
+      const id = toolCallId(part);
+      if (id && !toolStartById.has(id)) toolStartById.set(id, timestamp);
+    }
+  }
+
+  return messages.map((message, index) => {
+    const item = messageToTranscriptItem(message, `snapshot:${index}`);
+    if (!isRecord(message) || message.role !== "toolResult") return item;
+    const id = typeof message.toolCallId === "string" ? message.toolCallId : "";
+    const startedAt = id ? toolStartById.get(id) : undefined;
+    const endedAt = messageTimestamp(message);
+    const elapsedMs = calcDurationMs(startedAt, endedAt);
+    if (startedAt) item.startedAt = startedAt;
+    if (endedAt) item.endedAt = endedAt;
+    if (elapsedMs !== undefined) item.durationMs = elapsedMs;
+    return item;
+  });
 }
 
 export function toolResultToText(result: unknown): string {
@@ -593,7 +629,7 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
     if (type === "bash_execution_start") {
       // Remove any pending bash items with same command
       const cleaned = items.filter((i) => !(i.id.startsWith("bash:pending:") && isRecord(i.raw) && i.raw.command === command));
-      return upsertItem(cleaned, { id, kind: "tool", title, body: "Starting…", status: "running", raw: event });
+      return upsertItem(cleaned, { id, kind: "tool", title, body: "Starting…", status: "running", startedAt: eventStartTimestamp(event), raw: event });
     }
     if (type === "bash_execution_update") {
       const existing = items.find((item) => item.id === id);
@@ -605,16 +641,22 @@ export function applyAgentEvent(items: TranscriptItem[], event: unknown): Transc
         : typeof event.outputDelta === "string"
           ? `${existingOutput || missingPrefix}${event.outputDelta}`
           : "";
-      return upsertItem(items, { id, kind: "tool", title, body: output, segments: [{ kind: "pre", text: output }], status: "running", raw: event });
+      return upsertItem(items, { id, kind: "tool", title, body: output, segments: [{ kind: "pre", text: output }], status: "running", startedAt: eventStartTimestamp(event, existing), raw: event });
     }
     // bash_execution_end
     const result = isRecord(event.result) ? event.result : {};
     const output = typeof result.output === "string" ? result.output : stringify(result);
     const body = output || "Command completed with no output.";
+    const existing = items.find((i) => i.id === id);
+    const startedAt = eventStartTimestamp(event, existing);
+    const endedAt = eventTimestamp(event);
+    const elapsedMs = typeof event.durationMs === "number" ? Math.max(0, event.durationMs) : calcDurationMs(startedAt, endedAt);
     return upsertItem(items, {
       id, kind: "tool", title, body,
       segments: [{ kind: "pre", text: body }],
       status: event.isError || (typeof result.exitCode === "number" && result.exitCode !== 0) ? "error" : "done",
+      startedAt, endedAt,
+      ...(elapsedMs === undefined ? {} : { durationMs: elapsedMs }),
       raw: event,
     });
   }

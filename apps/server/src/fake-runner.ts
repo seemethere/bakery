@@ -152,7 +152,9 @@ class FakeSessionHandle implements SessionHandle {
     const shouldAskQuestion = /(?:question-answer|ask_question|ask question|clarif)/i.test(text);
     const shouldEmitToolImageHeavyTranscript = /(?:tool[/-]?image-heavy|tool image heavy|image-heavy transcript|long tool image)/i.test(text);
     const shouldEmitSubagentCard = /(?:subagent[ -]?card|fake subagent|subagent renderer)/i.test(text);
-    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard;
+    const shouldEmitEditToolCard = /(?:edit[ -]?tool[ -]?card|write[ -]?tool[ -]?card|edit tool card)/i.test(text);
+    const shouldEmitSearchToolCard = /(?:search[ -]?tool[ -]?card|grep[ -]?tool[ -]?card|find[ -]?tool[ -]?card|search tool card)/i.test(text);
+    const shouldRunTool = /tool/i.test(text) && !shouldAskQuestion && !shouldEmitToolImageHeavyTranscript && !shouldEmitSubagentCard && !shouldEmitEditToolCard && !shouldEmitSearchToolCard;
     const toolRunCount = /(?:multiple|many|group)\s+tools/i.test(text) ? 4 : 1;
 
     this.aborted = false;
@@ -172,6 +174,26 @@ class FakeSessionHandle implements SessionHandle {
     if (shouldEmitSubagentCard) {
       const slowSubagentCard = /(?:slow fake subagent card|subagent card reconnect)/i.test(text);
       await this.emitFakeSubagentRun(slowSubagentCard ? { runningDelayMs: 4_000 } : {});
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
+
+    if (shouldEmitEditToolCard) {
+      await this.emitFakeEditToolRun();
+      this.session.isStreaming = false;
+      this.steeringQueue = [];
+      this.followUpQueue = [];
+      this.emit({ type: "agent_end" });
+      this.emitQueueUpdate();
+      return;
+    }
+
+    if (shouldEmitSearchToolCard) {
+      await this.emitFakeSearchToolRun();
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -567,6 +589,91 @@ class FakeSessionHandle implements SessionHandle {
     }
   }
 
+  private async emitFakeEditToolRun(): Promise<void> {
+    const editStartedAt = new Date(Date.now() - 80).toISOString();
+    const editCallId = crypto.randomUUID();
+    const editArgs = { path: "apps/web/src/components/Example.tsx", old_string: "const title = 'Old';", new_string: "const title = 'Updated';" };
+    this.emit({ type: "tool_execution_start", toolCallId: editCallId, toolName: "edit", args: editArgs, startedAt: editStartedAt });
+    await sleep(120);
+    this.emit({ type: "tool_execution_update", toolCallId: editCallId, toolName: "edit", args: editArgs, startedAt: editStartedAt, partialResult: { content: [{ type: "text", text: "Applying replacement..." }] } });
+    await sleep(120);
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: editCallId,
+      toolName: "edit",
+      args: editArgs,
+      startedAt: editStartedAt,
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - Date.parse(editStartedAt),
+      result: { content: [{ type: "text", text: "Edited apps/web/src/components/Example.tsx" }] },
+    });
+
+    const writeStartedAt = new Date(Date.now() - 40).toISOString();
+    const writeCallId = crypto.randomUUID();
+    const writeArgs = { path: "docs/generated-edit-card.md", content: "# Generated edit card fixture\n" };
+    this.emit({ type: "tool_execution_start", toolCallId: writeCallId, toolName: "write", args: writeArgs, startedAt: writeStartedAt });
+    await sleep(100);
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: writeCallId,
+      toolName: "write",
+      args: writeArgs,
+      startedAt: writeStartedAt,
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - Date.parse(writeStartedAt),
+      result: { content: [{ type: "text", text: "Created docs/generated-edit-card.md" }] },
+    });
+  }
+
+  private async emitFakeSearchToolRun(): Promise<void> {
+    const grepStartedAt = new Date(Date.now() - 60).toISOString();
+    const grepCallId = crypto.randomUUID();
+    const grepArgs = { pattern: "SearchToolCard", path: "apps/web/src" };
+    this.emit({ type: "tool_execution_start", toolCallId: grepCallId, toolName: "grep", args: grepArgs, startedAt: grepStartedAt });
+    await sleep(120);
+    this.emit({ type: "tool_execution_update", toolCallId: grepCallId, toolName: "grep", args: grepArgs, startedAt: grepStartedAt, partialResult: { content: [{ type: "text", text: "Searching apps/web/src..." }] } });
+    await sleep(120);
+    let endedAt = new Date().toISOString();
+    const grepOutput = [
+      "apps/web/src/components/transcript/SearchToolCard.tsx:1:export function SearchToolCard",
+      "apps/web/src/components/transcript/TranscriptRow.tsx:1:SearchToolCard",
+      "apps/web/src/lib/transcript.ts:350:grep SearchToolCard",
+    ].join("\n");
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: grepCallId,
+      toolName: "grep",
+      args: grepArgs,
+      startedAt: grepStartedAt,
+      endedAt,
+      durationMs: Date.parse(endedAt) - Date.parse(grepStartedAt),
+      result: { content: [{ type: "text", text: grepOutput }] },
+    });
+
+    const findStartedAt = new Date(Date.now() - 40).toISOString();
+    const findCallId = crypto.randomUUID();
+    const findArgs = { pattern: "*Tool.tsx", path: "apps/web/src/components/transcript" };
+    this.emit({ type: "tool_execution_start", toolCallId: findCallId, toolName: "find", args: findArgs, startedAt: findStartedAt });
+    await sleep(100);
+    endedAt = new Date().toISOString();
+    const findOutput = [
+      "apps/web/src/components/transcript/BashToolCard.tsx",
+      "apps/web/src/components/transcript/EditToolCard.tsx",
+      "apps/web/src/components/transcript/ReadToolCard.tsx",
+      "apps/web/src/components/transcript/SearchToolCard.tsx",
+    ].join("\n");
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId: findCallId,
+      toolName: "find",
+      args: findArgs,
+      startedAt: findStartedAt,
+      endedAt,
+      durationMs: Date.parse(endedAt) - Date.parse(findStartedAt),
+      result: { content: [{ type: "text", text: findOutput }] },
+    });
+  }
+
   private async emitFakeSubagentRun(options: { runningDelayMs?: number } = {}): Promise<void> {
     const toolCallId = crypto.randomUUID();
     const startedAt = new Date(Date.now() - 120).toISOString();
@@ -638,6 +745,7 @@ class FakeSessionHandle implements SessionHandle {
         args,
         startedAt,
         endedAt,
+        durationMs: Date.parse(endedAt) - Date.parse(startedAt),
         result: { content: [{ type: "image", mimeType: "image/png", data: fakePreviewPng }] },
       });
       return;
@@ -663,6 +771,7 @@ class FakeSessionHandle implements SessionHandle {
       args,
       startedAt,
       endedAt,
+      durationMs: Date.parse(endedAt) - Date.parse(startedAt),
       isError: fail,
       result: {
         content: [{ type: "text", text: fail ? `${outputLines}\nsynthetic failure` : outputLines }],

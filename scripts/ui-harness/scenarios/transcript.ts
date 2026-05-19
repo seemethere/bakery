@@ -25,6 +25,10 @@ export const transcriptScenarios = [
   "inspector-preview",
   "narrow-tool-stream",
   "tool-grouping",
+  "bash-tool-card",
+  "edit-tool-card",
+  "read-tool-card",
+  "search-tool-card",
   "tool-image-heavy-transcript",
   "subagent-card",
   "subagent-card-reconnect",
@@ -380,6 +384,7 @@ export async function runInspectorPreview(page: Page): Promise<Record<string, un
 
 export async function runNarrowToolStream(page: Page): Promise<Record<string, unknown>> {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem("piWebToolUi", "default"));
   await prepareSession(page);
   await page.locator("#prompt").fill("Please run many long narrow tools and produce a streaming response for layout validation.");
   await page.locator("#send").click();
@@ -476,6 +481,7 @@ export async function runNarrowToolStream(page: Page): Promise<Record<string, un
 }
 
 export async function runToolGrouping(page: Page): Promise<Record<string, unknown>> {
+  await page.addInitScript(() => localStorage.setItem("piWebToolUi", "default"));
   await prepareSession(page);
   await sendPromptAndWaitIdle(page, "Please run multiple tools with one failed tool for flat tool-row alignment validation.");
   await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 4, null, { timeout: 5_000 });
@@ -531,6 +537,229 @@ export async function runToolGrouping(page: Page): Promise<Record<string, unknow
   }
   await page.screenshot({ path: join(artifactDir, "tool-grouping-expanded.png"), fullPage: true });
   return { groups, activityRuns, activityMembers, alignment, toolRows: await page.locator(".message.tool").count(), ...(await collectMetrics(page)) };
+}
+
+export async function runBashToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please run many tools with long failed tools for alignment and bash tool card validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.locator('[data-testid="tool-card-bash"]', { hasText: "for i in" }).first().waitFor({ timeout: 10_000 });
+  const runningSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="tool-card-bash"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="tool-card-bash"]').length,
+      runningCards: document.querySelectorAll('[data-testid="tool-card-bash"].running').length,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (runningSnapshot.cards < 1 || runningSnapshot.runningCards < 1) throw new Error(`Expected running bash tool card, saw ${JSON.stringify(runningSnapshot)}`);
+  if (runningSnapshot.documentWidth > runningSnapshot.viewportWidth + 2 || runningSnapshot.cardWidth > runningSnapshot.transcriptWidth + 2) throw new Error(`Bash tool card overflowed on mobile: ${JSON.stringify(runningSnapshot)}`);
+  await waitForAgentIdle(page, 30_000);
+  await page.locator('[data-testid="tool-card-bash"]', { hasText: "Ran command:" }).first().waitFor({ timeout: 5_000 });
+  const completedSnapshot = await page.evaluate(() => ({
+    cards: document.querySelectorAll('[data-testid="tool-card-bash"]').length,
+    defaultBashRows: document.querySelectorAll('.message.tool:not(.tool-card-bash)[data-tool-action="bash"]').length,
+    outputRegions: document.querySelectorAll('[data-testid="tool-card-bash"] pre[role="region"][aria-label="Command output"][tabindex="0"]').length,
+    text: document.querySelector('[data-testid="tool-card-bash"]')?.textContent?.replace(/\s+/g, " ").slice(0, 240) ?? "",
+    durationVisible: /\d+s/.test(document.querySelector('[data-testid="tool-card-bash"]')?.textContent ?? ""),
+    expandButtons: document.querySelectorAll('[data-testid="tool-card-bash"] [data-row-action="toggle-bash-output"]').length,
+    collapsedOutputs: document.querySelectorAll('[data-testid="tool-card-bash"] pre[data-output-expanded="false"]').length,
+    stdoutVisible: document.querySelector('[data-testid="tool-card-bash"]')?.textContent?.includes("fake tool line 80") ?? false,
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  if (completedSnapshot.cards < 3 || completedSnapshot.stdoutVisible || completedSnapshot.defaultBashRows !== 0 || completedSnapshot.outputRegions !== 0 || !completedSnapshot.durationVisible || completedSnapshot.expandButtons < 1 || completedSnapshot.collapsedOutputs !== 0) throw new Error(`Bash tool card completed state mismatch: ${JSON.stringify(completedSnapshot)}`);
+  if (completedSnapshot.documentWidth > completedSnapshot.viewportWidth + 2) throw new Error(`Bash tool card completed state overflowed: ${JSON.stringify(completedSnapshot)}`);
+  await page.locator('[data-testid="tool-card-bash"] [data-row-action="toggle-bash-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="tool-card-bash"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
+  const expandedOutput = await page.locator('[data-testid="tool-card-bash"] pre[data-output-expanded="true"]').first().evaluate((element) => ({
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+    text: element.textContent?.slice(-160) ?? "",
+  }));
+  if (expandedOutput.scrollHeight > expandedOutput.clientHeight + 2 || !expandedOutput.text.includes("fake tool line 80")) throw new Error(`Expected expanded bash output to show full output, saw ${JSON.stringify(expandedOutput)}`);
+  await page.screenshot({ path: join(artifactDir, "bash-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="tool-card-bash"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="tool-card-bash"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Bash tool card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "bash-tool-card-desktop.png"), fullPage: true });
+  return { runningSnapshot, completedSnapshot, expandedOutput, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runEditToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please run an edit tool card and write tool card fixture for edit tool card validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.locator('[data-testid="tool-card-edit"].running', { hasText: "Editing Example.tsx" }).waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 15_000);
+  await page.locator('[data-testid="tool-card-edit"]', { hasText: "Edited Example.tsx" }).waitFor({ timeout: 5_000 });
+  await page.locator('[data-testid="tool-card-edit"]', { hasText: "Created generated-edit-card.md" }).waitFor({ timeout: 5_000 });
+  const mobileSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="tool-card-edit"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="tool-card-edit"]').length,
+      editCards: document.querySelectorAll('[data-testid="tool-card-edit"][data-tool-action="edit"]').length,
+      writeCards: document.querySelectorAll('[data-testid="tool-card-edit"][data-tool-action="write"]').length,
+      diffTables: document.querySelectorAll('[data-diff], .an-edit-diff').length,
+      durationVisible: /\d+s/.test(document.querySelector('[data-testid="tool-card-edit"]')?.textContent ?? ""),
+      outputHidden: document.querySelectorAll('[data-testid="tool-card-edit"] pre[role="region"][aria-label="Edit output"]').length === 0,
+      expandButtons: document.querySelectorAll('[data-testid="tool-card-edit"] [data-row-action="toggle-edit-output"]').length,
+      defaultEditRows: document.querySelectorAll('.message.tool:not(.tool-card-edit)[data-tool-action="edit"], .message.tool:not(.tool-card-edit)[data-tool-action="write"]').length,
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (mobileSnapshot.cards < 2 || mobileSnapshot.editCards < 1 || mobileSnapshot.writeCards < 1 || mobileSnapshot.diffTables !== 0 || !mobileSnapshot.durationVisible || !mobileSnapshot.outputHidden || mobileSnapshot.expandButtons < 2 || mobileSnapshot.defaultEditRows !== 0) throw new Error(`Edit tool card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Edit tool card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.locator('[data-testid="tool-card-edit"] [data-row-action="toggle-edit-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="tool-card-edit"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "edit-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="tool-card-edit"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="tool-card-edit"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Edit tool card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "edit-tool-card-desktop.png"), fullPage: true });
+  return { mobileSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runReadToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await sendPromptAndWaitIdle(page, "Please run multiple tools with one failed tool for read tool card validation.");
+  await page.locator('[data-testid="tool-card-read"]', { hasText: "Read fixture.png" }).waitFor({ timeout: 5_000 });
+  const mobileSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="tool-card-read"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="tool-card-read"]').length,
+      defaultReadRows: document.querySelectorAll('.message.tool:not(.tool-card-read)[data-tool-action="read"]').length,
+      iconCount: document.querySelectorAll('[data-testid="tool-card-read"] svg').length,
+      durationVisible: /\d+s/.test(document.querySelector('[data-testid="tool-card-read"]')?.textContent ?? ""),
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  const readOutputHidden = await page.evaluate(() => !document.querySelector('[data-testid="tool-card-read"] pre[role="region"][aria-label="Read output"]'));
+  if (mobileSnapshot.cards < 1 || mobileSnapshot.defaultReadRows !== 0 || mobileSnapshot.iconCount < 1 || !mobileSnapshot.durationVisible || !readOutputHidden) throw new Error(`Read tool card state mismatch: ${JSON.stringify({ ...mobileSnapshot, readOutputHidden })}`);
+  if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Read tool card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.locator('[data-testid="tool-card-read"] [data-row-action="toggle-read-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="tool-card-read"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
+  await page.screenshot({ path: join(artifactDir, "read-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="tool-card-read"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('[data-testid="tool-card-read"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = card?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Read tool card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "read-tool-card-desktop.png"), fullPage: true });
+  return { mobileSnapshot, desktopSnapshot, ...(await collectMetrics(page)) };
+}
+
+export async function runSearchToolCard(page: Page): Promise<Record<string, unknown>> {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareSession(page);
+  await page.locator("#prompt").fill("Please run a search tool card with grep tool card and find tool card fixtures for search tool card validation.");
+  await page.locator("#send").click();
+  await waitForAgentRunning(page);
+  await page.locator('[data-testid="tool-card-search"].running', { hasText: "Searching SearchToolCard" }).waitFor({ timeout: 10_000 });
+  await waitForAgentIdle(page, 15_000);
+  await page.locator('[data-testid="tool-card-search"]', { hasText: "Searched SearchToolCard" }).waitFor({ timeout: 5_000 });
+  await page.locator('[data-testid="tool-card-search"]', { hasText: "Found *Tool.tsx" }).waitFor({ timeout: 5_000 });
+  const mobileSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="tool-card-search"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      cards: document.querySelectorAll('[data-testid="tool-card-search"]').length,
+      grepCards: document.querySelectorAll('[data-testid="tool-card-search"][data-tool-action="grep"]').length,
+      findCards: document.querySelectorAll('[data-testid="tool-card-search"][data-tool-action="find"]').length,
+      defaultSearchRows: document.querySelectorAll('.message.tool:not(.tool-card-search)[data-tool-action="grep"], .message.tool:not(.tool-card-search)[data-tool-action="find"]').length,
+      hiddenOutput: document.querySelectorAll('[data-testid="tool-card-search"] pre[role="region"][aria-label="Search output"]').length === 0,
+      expandButtons: document.querySelectorAll('[data-testid="tool-card-search"] [data-row-action="toggle-search-output"]').length,
+      durationVisible: /\d+s/.test(document.querySelector('[data-testid="tool-card-search"]')?.textContent ?? ""),
+      countVisible: /\d+ results/.test(document.querySelector('[data-testid="tool-card-search"]')?.textContent ?? ""),
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (mobileSnapshot.cards < 2 || mobileSnapshot.grepCards < 1 || mobileSnapshot.findCards < 1 || mobileSnapshot.defaultSearchRows !== 0 || !mobileSnapshot.hiddenOutput || mobileSnapshot.expandButtons < 2 || !mobileSnapshot.durationVisible || !mobileSnapshot.countVisible) throw new Error(`Search tool card state mismatch: ${JSON.stringify(mobileSnapshot)}`);
+  if (mobileSnapshot.documentWidth > mobileSnapshot.viewportWidth + 2 || mobileSnapshot.cardWidth > mobileSnapshot.transcriptWidth + 2) throw new Error(`Search tool card overflowed on mobile: ${JSON.stringify(mobileSnapshot)}`);
+  await page.locator('[data-testid="tool-card-search"] [data-row-action="toggle-search-output"]').first().click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="tool-card-search"] pre[data-output-expanded="true"]'), null, { timeout: 5_000 });
+  const expandedOutput = await page.locator('[data-testid="tool-card-search"] pre[data-output-expanded="true"]').first().evaluate((element) => ({
+    text: element.textContent ?? "",
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  if (!expandedOutput.text.includes("SearchToolCard.tsx") || expandedOutput.scrollHeight > expandedOutput.clientHeight + 2) throw new Error(`Expected expanded search output to show full output, saw ${JSON.stringify(expandedOutput)}`);
+  await page.screenshot({ path: join(artifactDir, "search-tool-card-mobile.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.locator('[data-testid="tool-card-search"]').first().scrollIntoViewIfNeeded();
+  const desktopSnapshot = await page.evaluate(() => {
+    const first = document.querySelector<HTMLElement>('[data-testid="tool-card-search"]');
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    const rect = first?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      cardWidth: rect ? Math.round(rect.width) : 0,
+      transcriptWidth: transcript ? Math.round(transcript.getBoundingClientRect().width) : 0,
+    };
+  });
+  if (desktopSnapshot.documentWidth > desktopSnapshot.viewportWidth + 2 || desktopSnapshot.cardWidth > desktopSnapshot.transcriptWidth + 2) throw new Error(`Search tool card overflowed on desktop: ${JSON.stringify(desktopSnapshot)}`);
+  await page.screenshot({ path: join(artifactDir, "search-tool-card-desktop.png"), fullPage: true });
+  return { mobileSnapshot, expandedOutput, desktopSnapshot, ...(await collectMetrics(page)) };
 }
 
 export async function runToolImageHeavyTranscript(page: Page): Promise<Record<string, unknown>> {

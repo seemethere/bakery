@@ -21,7 +21,12 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan, isRecord, isDeveloperBashItem } from "@/lib/transcript";
+import type { ToolUiPreference } from "@/lib/tool-ui-preference";
 import { hasSubagentCard, SubagentCard } from "./SubagentCard";
+import { BashToolCard } from "./BashToolCard";
+import { EditToolCard } from "./EditToolCard";
+import { ReadToolCard } from "./ReadToolCard";
+import { SearchToolCard } from "./SearchToolCard";
 import { extensionCardPayload } from "@/lib/extension-cards";
 import { forkEntryIdForTranscriptItem } from "@/lib/session-tree";
 
@@ -812,9 +817,11 @@ export function TranscriptRow({
   sessionTreeNodes,
   onFork,
   onAcceptPlan,
+  toolUiPreference = "default",
 }: {
   item: TranscriptItem;
   showThinking: boolean;
+  toolUiPreference?: ToolUiPreference;
 } & TranscriptRenderContext) {
   const context = { sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan };
   if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} />;
@@ -831,7 +838,22 @@ export function TranscriptRow({
       </div>
     );
   }
-  if (item.kind === "tool") return <ToolRow item={item} showThinking={showThinking} context={context} />;
+  if (item.kind === "tool") {
+    const { action } = toolHeaderDisplay(item);
+    if (toolUiPreference !== "default" && action === "bash") {
+      return <BashToolCard item={item} actions={<RowActions item={item} context={context} />} />;
+    }
+    if (toolUiPreference !== "default" && (action === "edit" || action === "write")) {
+      return <EditToolCard item={item} actions={<RowActions item={item} context={context} />} />;
+    }
+    if (toolUiPreference !== "default" && action === "read") {
+      return <ReadToolCard item={item} actions={<RowActions item={item} context={context} />} />;
+    }
+    if (toolUiPreference !== "default" && (action === "grep" || action === "find")) {
+      return <SearchToolCard item={item} actions={<RowActions item={item} context={context} />} />;
+    }
+    return <ToolRow item={item} showThinking={showThinking} context={context} />;
+  }
   if (item.kind === "question") return <QuestionSummaryRow item={item} />;
   const extensionPayload = extensionCardPayload(item);
   if (extensionPayload) return <ExtensionCardRow item={item} payload={extensionPayload} context={context} />;
