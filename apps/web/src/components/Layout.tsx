@@ -73,7 +73,7 @@ export function Layout({
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(!open));
       }}
       className={cn(
-        "pi-web-agent h-screen overflow-hidden",
+        "pi-web-agent h-dvh overflow-hidden",
         collapsed && "session-sidebar-collapsed",
       )}
       data-selected-session-id={selectedSession?.id ?? ""}
