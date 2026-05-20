@@ -37,6 +37,7 @@ prepare_pi_agent_overlay() {
   done
 
   prepare_container_settings "$source_agent_dir/settings.json" "$overlay_agent_dir/settings.json"
+  link_pi_runtime_module_roots "$source_agent_dir" "$overlay_agent_dir"
 
   mkdir -p "$source_agent_dir/sessions"
   if [[ ! -e "$overlay_agent_dir/sessions" ]]; then
@@ -83,12 +84,98 @@ with open(source, "r", encoding="utf-8") as f:
 
 packages = data.get("packages")
 if isinstance(packages, list):
-    data["packages"] = [pkg for pkg in packages if not (isinstance(pkg, str) and pkg in excluded)]
+    normalized = []
+    seen_sources = set()
+    package_replacements = {
+        "github.com/nicobailon/pi-subagents": "npm:pi-subagents",
+        "github.com/nicobailon/pi-intercom": "npm:pi-intercom",
+    }
+
+    def source_of(pkg):
+        if isinstance(pkg, str):
+            return pkg
+        if isinstance(pkg, dict) and isinstance(pkg.get("source"), str):
+            return pkg["source"]
+        return None
+
+    def normalize_source(source):
+        for needle, replacement in package_replacements.items():
+            if needle in source:
+                return replacement
+        return source
+
+    for pkg in packages:
+        source = source_of(pkg)
+        if isinstance(source, str) and source in excluded:
+            continue
+        if isinstance(source, str):
+            normalized_source = normalize_source(source)
+            if normalized_source in excluded or normalized_source in seen_sources:
+                continue
+            seen_sources.add(normalized_source)
+            if isinstance(pkg, str):
+                normalized.append(normalized_source)
+            elif normalized_source != source:
+                replacement = dict(pkg)
+                replacement["source"] = normalized_source
+                normalized.append(replacement)
+            else:
+                normalized.append(pkg)
+        else:
+            normalized.append(pkg)
+
+    data["packages"] = normalized
 
 with open(target, "w", encoding="utf-8") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PY
+}
+
+ensure_symlink() {
+  local source_path="$1"
+  local target_path="$2"
+
+  if [[ -L "$target_path" || ! -e "$target_path" ]]; then
+    ln -sfn "$source_path" "$target_path"
+    return
+  fi
+
+  if [[ -d "$target_path" && -z "$(find "$target_path" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    rmdir "$target_path"
+    ln -s "$source_path" "$target_path"
+    return
+  fi
+
+  echo "Warning: refusing to replace non-empty path with symlink: $target_path" >&2
+}
+
+link_pi_runtime_module_roots() {
+  local source_agent_dir="${1:-$HOME/.pi/agent}"
+  local overlay_agent_dir="${2:-${PI_CODING_AGENT_DIR:-${PI_WEB_CONTAINER_AGENT_DIR:-/workspace/.bakery-data/pi-agent}}}"
+  local workspace_node_modules="${PI_WEB_CONTAINER_NODE_MODULES:-/workspace/bakery/node_modules}"
+  local global_node_modules="${NPM_CONFIG_PREFIX:-/workspace/.bakery-data/npm-global}/lib/node_modules"
+  local pkg=""
+  local source_pkg=""
+  local target_pkg=""
+
+  # Pi packages intentionally declare Pi runtime imports as peer dependencies.
+  # In the container, globally installed packages and the overlayed ~/.pi/agent
+  # directory sit outside the workspace, so Node's normal parent-directory lookup
+  # cannot see /workspace/bakery/node_modules. Link the host runtime modules into
+  # those module roots so child `pi` processes and auto-loaded extensions resolve
+  # the same Pi SDK/TUI packages as Bakery itself. The package-level symlinks are
+  # created even before `bun install` populates a fresh node_modules volume; their
+  # targets become valid once install completes later in the container command.
+  mkdir -p "$source_agent_dir" "$overlay_agent_dir" "$global_node_modules/@earendil-works"
+  ensure_symlink "$workspace_node_modules" "$source_agent_dir/node_modules"
+  ensure_symlink "$workspace_node_modules" "$overlay_agent_dir/node_modules"
+
+  for pkg in pi-agent-core pi-ai pi-coding-agent pi-tui; do
+    source_pkg="$workspace_node_modules/@earendil-works/$pkg"
+    target_pkg="$global_node_modules/@earendil-works/$pkg"
+    ensure_symlink "$source_pkg" "$target_pkg"
+  done
 }
 
 user_name="${PI_WEB_CONTAINER_USER:-bakery}"
@@ -100,6 +187,7 @@ if [[ "$(id -u)" != "0" ]]; then
   export HOME="${HOME:-$home_dir}"
   export BUN_INSTALL="${BUN_INSTALL:-$home_dir/.bun}"
   export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-/workspace/.bakery-data/npm-global}"
+  link_pi_runtime_module_roots "$HOME/.pi/agent" "${PI_CODING_AGENT_DIR:-${PI_WEB_CONTAINER_AGENT_DIR:-/workspace/.bakery-data/pi-agent}}"
   sanitize_container_path "$home_dir"
   exec "$@"
 fi
