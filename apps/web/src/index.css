@@ -212,13 +212,39 @@
     }
 
     .question-card.pending {
-      max-height: min(34dvh, 280px);
-      overflow-y: auto;
+      overflow-y: visible;
     }
 
     .question-card.pending .question-options {
       gap: 0.25rem;
       padding-bottom: 0.375rem;
+    }
+
+    .question-card.pending .question-options button {
+      padding-block: 0.625rem;
+    }
+
+    .question-card.pending .question-options p {
+      margin-left: 0;
+      line-height: 1.25;
+    }
+
+    .question-show-all-options {
+      display: block;
+    }
+
+    .question-options-dialog {
+      width: calc(100vw - 1rem) !important;
+      max-width: calc(100vw - 1rem) !important;
+      border-radius: 1rem 1rem 0 0;
+      top: auto !important;
+      bottom: 0.5rem !important;
+      translate: -50% 0 !important;
+      transform: none !important;
+    }
+
+    .question-options-dialog-list {
+      max-height: min(70dvh, 620px);
     }
 
     .running-queue-strip {
@@ -236,7 +262,9 @@
     }
 
     .running-queue-strip:has(+ .question-panel-strip) + .question-panel-strip .question-card.pending {
-      max-height: min(28dvh, 220px);
+      max-height: min(48dvh, 400px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
   }
 }

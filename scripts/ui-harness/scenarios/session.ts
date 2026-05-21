@@ -134,9 +134,14 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
     };
   });
   if (mobileQuestionLayout.documentWidth > mobileQuestionLayout.viewport.width + 2) throw new Error(`Mobile question layout overflowed horizontally: ${JSON.stringify(mobileQuestionLayout)}`);
-  if ((mobileQuestionLayout.question?.height ?? 999) > 290) throw new Error(`Mobile question card should stay compact and scroll internally: ${JSON.stringify(mobileQuestionLayout)}`);
+  if ((mobileQuestionLayout.question?.height ?? 999) > 360) throw new Error(`Mobile normal question card should show its options without becoming oversized: ${JSON.stringify(mobileQuestionLayout)}`);
   if (mobileQuestionLayout.question && mobileQuestionLayout.footer && mobileQuestionLayout.question.bottom > mobileQuestionLayout.footer.top + 1) throw new Error(`Mobile question card overlaps composer: ${JSON.stringify(mobileQuestionLayout)}`);
-  if ((mobileQuestionLayout.transcript?.height ?? 0) < 300) throw new Error(`Mobile question state leaves too little transcript: ${JSON.stringify(mobileQuestionLayout)}`);
+  if ((mobileQuestionLayout.transcript?.height ?? 0) < 240) throw new Error(`Mobile question state leaves too little transcript: ${JSON.stringify(mobileQuestionLayout)}`);
+  const visibleMobileOptions = await page.locator(".question-card.pending [data-question-option-index]").evaluateAll((options) => options.every((option) => {
+    const rect = option.getBoundingClientRect();
+    return rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+  }));
+  if (!visibleMobileOptions) throw new Error("Mobile normal question should show all inline options");
   await page.screenshot({ path: join(artifactDir, "question-answer-mobile.png"), fullPage: true });
   await page.locator(".question-card.pending [data-question-option-index='0']").click();
   await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
@@ -144,20 +149,29 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
 
   await page.locator("#prompt").fill("Please trigger question-answer with many mobile question options for internal scroll coverage.");
   await page.locator("#send").click();
-  await page.locator(".question-card.pending", { hasText: "Option 9" }).waitFor({ timeout: 5_000 });
+  await page.locator(".question-card.pending", { hasText: "Show all 9 options" }).waitFor({ timeout: 5_000 });
   const manyOptionQuestionLayout = await page.evaluate(() => {
     const card = document.querySelector<HTMLElement>(".question-card.pending");
     if (!card) return null;
     const rect = card.getBoundingClientRect();
-    const style = getComputedStyle(card);
-    return { height: Math.round(rect.height), scrollHeight: card.scrollHeight, clientHeight: card.clientHeight, overflowY: style.overflowY, scrollTopBefore: card.scrollTop, documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
+    return { height: Math.round(rect.height), scrollHeight: card.scrollHeight, clientHeight: card.clientHeight, scrollTopBefore: card.scrollTop, documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
   });
-  if (!manyOptionQuestionLayout || manyOptionQuestionLayout.height > 290 || manyOptionQuestionLayout.scrollHeight <= manyOptionQuestionLayout.clientHeight || manyOptionQuestionLayout.overflowY === "hidden") throw new Error(`Mobile many-option question should cap height and scroll internally: ${JSON.stringify(manyOptionQuestionLayout)}`);
-  await page.locator(".question-card.pending").evaluate((card) => { card.scrollTop = card.scrollHeight; });
-  const manyOptionQuestionScrollTop = await page.locator(".question-card.pending").evaluate((card) => card.scrollTop);
-  if (manyOptionQuestionScrollTop <= 0) throw new Error(`Mobile many-option question did not scroll internally: ${JSON.stringify({ manyOptionQuestionLayout, manyOptionQuestionScrollTop })}`);
+  if (!manyOptionQuestionLayout || manyOptionQuestionLayout.height > 360) throw new Error(`Mobile many-option question should stay compact before opening the all-options chooser: ${JSON.stringify(manyOptionQuestionLayout)}`);
   if (manyOptionQuestionLayout.documentWidth > manyOptionQuestionLayout.viewportWidth + 2) throw new Error(`Mobile many-option question overflowed horizontally: ${JSON.stringify(manyOptionQuestionLayout)}`);
-  await page.locator(".question-card.pending [data-question-option-index='0']").click();
+  await page.locator(".question-show-all-options").click();
+  await page.locator(".question-options-dialog", { hasText: "Option 9" }).waitFor({ timeout: 5_000 });
+  const overlayLayout = await page.evaluate(() => {
+    const dialog = document.querySelector<HTMLElement>(".question-options-dialog");
+    const list = document.querySelector<HTMLElement>(".question-options-dialog-list");
+    if (!dialog || !list) return null;
+    const rect = dialog.getBoundingClientRect();
+    const listStyle = getComputedStyle(list);
+    return { height: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom), listScrollHeight: list.scrollHeight, listClientHeight: list.clientHeight, listOverflowY: listStyle.overflowY, documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
+  });
+  if (!overlayLayout || overlayLayout.height > 836 || overlayLayout.top < -1 || overlayLayout.listScrollHeight <= overlayLayout.listClientHeight || overlayLayout.listOverflowY === "hidden") throw new Error(`Mobile many-option chooser should open a bounded scrollable overlay: ${JSON.stringify(overlayLayout)}`);
+  if (overlayLayout.documentWidth > overlayLayout.viewportWidth + 2) throw new Error(`Mobile many-option chooser overflowed horizontally: ${JSON.stringify(overlayLayout)}`);
+  await page.screenshot({ path: join(artifactDir, "question-answer-mobile-all-options.png"), fullPage: true });
+  await page.locator("[data-question-overlay-option-index='8']").click();
   await page.locator(".question-card.pending").waitFor({ state: "detached", timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);
 
