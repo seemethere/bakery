@@ -215,7 +215,7 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
             const label = alt ?? src;
             return (
               <ImagePreviewDialog src={resolved} label={label}>
-                <img {...props} src={resolved} alt={label} loading="lazy" className="max-w-full rounded border border-border/50" />
+                <img {...props} src={resolved} alt={label} loading="lazy" className="h-56 w-full rounded border border-border/50 object-contain" />
               </ImagePreviewDialog>
             );
           },
@@ -253,7 +253,7 @@ function Segment({ segment, showThinking, context, imageGallery, imageIndex }: {
       return (
         <figure className="my-2">
           <ImagePreviewDialog src={segment.src} label={segment.label} gallery={imageGallery} initialIndex={imageIndex ?? 0}>
-            <img src={segment.src} alt={segment.label} className="max-w-full rounded border border-border/50" loading="lazy" />
+            <img src={segment.src} alt={segment.label} className="h-56 w-full rounded border border-border/50 object-contain" loading="lazy" />
           </ImagePreviewDialog>
         </figure>
       );
@@ -299,7 +299,7 @@ function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: s
                 harnessWindow.__piWebFailedImageCount = (harnessWindow.__piWebFailedImageCount ?? 0) + 1;
                 setFailedPaths((current) => new Set(current).add(artifact.path));
               }}
-              className="max-h-56 w-full object-contain"
+              className="h-56 w-full object-contain"
             />
           </ImagePreviewDialog>
           <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path}</figcaption>

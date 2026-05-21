@@ -25,7 +25,7 @@ export function Header({ session, workspaces, connectionStatus, isBootstrapping 
   const meta = session ? sessionMetadataLabel(session) : null;
 
   return (
-    <header className="app-header flex min-w-0 items-start justify-between gap-2 overflow-visible border-b border-border/60 bg-background/80 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] backdrop-blur-sm sm:gap-3 sm:px-4 sm:pb-3.5 sm:pt-3.5">
+    <header className="app-header relative z-20 isolate flex min-w-0 shrink-0 items-start justify-between gap-2 overflow-visible border-b border-border/60 bg-background px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] sm:gap-3 sm:bg-background/80 sm:px-4 sm:pb-3.5 sm:pt-3.5 sm:backdrop-blur-sm">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <SidebarTrigger
           id={isMobile ? "toggleSessionSidebarMobile" : "toggleSessionSidebar"}

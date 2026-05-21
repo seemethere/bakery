@@ -52,6 +52,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   const smoothJumpFrameRef = useRef<number | null>(null);
   const pendingInitialBottomScrollSessionRef = useRef<string | null>(null);
   const initialBottomScrollInProgressRef = useRef(false);
+  const scrollMetricsRef = useRef<{ scrollTop: number; scrollHeight: number; clientHeight: number } | null>(null);
   const [isFollowingLatest, setIsFollowingLatest] = useState(autoScrollRef.current);
   const [unreadCount, setUnreadCount] = useState(0);
   const toolUiPreference = useToolUiPreference();
@@ -80,10 +81,16 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     }
   }
 
+  function recordScrollMetrics(el: HTMLDivElement | null = containerRef.current) {
+    if (!el) return;
+    scrollMetricsRef.current = { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+  }
+
   function followLatest() {
     const el = containerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+    recordScrollMetrics(el);
   }
 
   function easeOutCubic(progress: number): number {
@@ -130,6 +137,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
       if (!el) return;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       markBottomState(atBottom);
+      recordScrollMetrics(el);
     }
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
@@ -157,6 +165,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     autoScrollRef.current = true;
     unreadIdsRef.current.clear();
     previousVisibleSignaturesRef.current = new Map(visibleItems.map((item) => [item.id, `${item.status ?? ""}:${item.body.length}:${item.segments?.length ?? 0}`]));
+    scrollMetricsRef.current = null;
     setUnreadCount(0);
     setIsFollowingLatest(true);
   }, [sessionId]);
@@ -214,11 +223,23 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     const content = contentRef.current;
     if (!content) return;
     const observer = new ResizeObserver(() => {
-      if (autoScrollRef.current) followLatest();
+      const el = containerRef.current;
+      if (!el) return;
+      const previous = scrollMetricsRef.current;
+      const wasAtBottom = previous ? previous.scrollHeight - previous.scrollTop - previous.clientHeight < 80 : autoScrollRef.current;
+      const didNotScrollUp = !previous || el.scrollTop >= previous.scrollTop - 1;
+      if (autoScrollRef.current || (wasAtBottom && didNotScrollUp)) {
+        autoScrollRef.current = true;
+        saveAutoScrollPreference(true);
+        setIsFollowingLatest(true);
+        followLatest();
+        return;
+      }
+      recordScrollMetrics(el);
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, []);
+  }, [visibleItems.length]);
 
   // Empty transcripts have no unread rows; keep the persisted follow preference intact.
   useEffect(() => {
