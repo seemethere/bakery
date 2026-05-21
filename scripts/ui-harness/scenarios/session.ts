@@ -92,7 +92,7 @@ export async function runQuestionAnswer(page: Page): Promise<Record<string, unkn
   await page.locator(".question-card.pending", { hasText: "What are you working on today?" }).waitFor({ timeout: 5_000 });
   await page.locator("[data-question-option-index='0'].recommended-option", { hasText: "Recommended" }).waitFor({ timeout: 5_000 });
   await page.locator(".question-key-hint", { hasText: "reply normally in the composer" }).waitFor({ timeout: 5_000 });
-  await page.locator("#questionCustomToggle").waitFor({ state: "detached", timeout: 5_000 });
+  await page.locator(".question-card.pending", { hasText: "Custom answer" }).waitFor({ state: "detached", timeout: 5_000 });
   await waitForAgentIdle(page, 10_000);
   await page.locator("#prompt").fill("Freeform answer with normal composer");
   await page.locator("#send").click();

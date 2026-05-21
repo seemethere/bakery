@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { PendingQuestion, AnswerQuestionPayload, QuestionOption } from "@pi-web-agent/protocol";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -19,11 +19,8 @@ type Props = {
 };
 
 export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
-  const [customOpen, setCustomOpen] = useState(question.options.length === 0);
-  const [customText, setCustomText] = useState("");
   const [allOptionsOpen, setAllOptionsOpen] = useState(false);
   const [isMobileQuestionLayout, setIsMobileQuestionLayout] = useState(false);
-  const customInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const recIndex = recommendedOptionIndex(question);
   const inlineOptionLimit = 4;
@@ -36,8 +33,6 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
     if (question.options.length > 0) {
       const target = recIndex >= 0 ? recIndex : 0;
       panelRef.current?.querySelectorAll<HTMLButtonElement>("[data-option-index]")[target]?.focus();
-    } else if (customOpen) {
-      customInputRef.current?.focus();
     }
   }, [question.id]); // only on new question
 
@@ -52,12 +47,6 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
   useEffect(() => {
     setAllOptionsOpen(false);
   }, [question.id, hasOverflowOptions]);
-
-  const submitCustom = useCallback(() => {
-    const answer = customText.trim();
-    if (!answer) { customInputRef.current?.focus(); return; }
-    onAnswer({ questionId: question.id, answer, selectedIndex: null, wasCustom: true });
-  }, [customText, question.id, onAnswer]);
 
   function handleOptionClick(index: number) {
     const option = question.options[index];
@@ -117,13 +106,6 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
       if (option) { e.preventDefault(); handleOptionClick(index); }
       return;
     }
-    // C for custom
-    if (e.key.toLowerCase() === "c" && question.allowCustomAnswer && document.activeElement?.id !== "questionCustomAnswer") {
-      e.preventDefault();
-      setCustomOpen(true);
-      setTimeout(() => customInputRef.current?.focus(), 0);
-      return;
-    }
   }
 
   return (
@@ -170,45 +152,6 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
         </div>
       )}
 
-      {/* Custom answer */}
-      {question.allowCustomAnswer && (
-        <div className="px-3 pb-2">
-          {!customOpen ? (
-            <button
-              type="button"
-              disabled={!canAnswer}
-              onClick={() => { setCustomOpen(true); setTimeout(() => customInputRef.current?.focus(), 0); }}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              <kbd className="px-1 py-0.5 rounded bg-muted border border-border/50 text-[10px] mr-1">C</kbd>
-              Custom answer…
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                ref={customInputRef}
-                id="questionCustomAnswer"
-                type="text"
-                value={customText}
-                onChange={(e) => setCustomText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitCustom(); } }}
-                disabled={!canAnswer}
-                placeholder="Type a custom answer…"
-                className="flex-1 min-w-0 text-sm bg-muted/30 border border-border/50 rounded-lg px-3 py-1.5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-sidebar-primary/50 disabled:opacity-50"
-              />
-              <button
-                type="button"
-                disabled={!canAnswer || !customText.trim()}
-                onClick={submitCustom}
-                className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg border border-sidebar-primary/40 bg-sidebar-primary/15 text-foreground hover:bg-sidebar-primary/25 disabled:opacity-40 transition-colors"
-              >
-                Answer
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/20 bg-muted/10">
         {!canAnswer ? (
@@ -217,7 +160,6 @@ export function QuestionPanel({ question, canAnswer, onAnswer }: Props) {
           <>
             <span className="question-key-hint text-[10px] text-muted-foreground/50 hidden sm:block">
               <kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">1-9</kbd> answer &nbsp;
-              {question.allowCustomAnswer && <><kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">C</kbd> custom &nbsp;</>}
               <kbd className="px-1 py-0.5 rounded bg-muted border border-border/40">Esc</kbd> cancel; reply normally in the composer
             </span>
             <span className="question-touch-hint text-[10px] text-muted-foreground/50 sm:hidden">Reply below or tap an option.</span>
