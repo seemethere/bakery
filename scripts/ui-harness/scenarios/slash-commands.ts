@@ -4,7 +4,6 @@ import { apiBase, artifactDir, root, webBase } from "../config";
 import {
   assertComposerMode,
   collectMetrics,
-  delay,
   prepareSession,
   selectedSessionId,
   sendPromptAndWaitIdle,
@@ -52,11 +51,15 @@ export async function runSlashCommands(page: Page): Promise<Record<string, unkno
   await page.locator('.composer-toolbar button[aria-haspopup="menu"]').click();
   await page.locator('.composer-mode-menu [role="menuitemradio"][aria-label^="Plan:"]').click();
   await page.waitForFunction(() => document.querySelector('.composer-toolbar button[aria-haspopup="menu"]')?.textContent?.trim() === "Plan", null, { timeout: 5_000 });
+  await waitForAgentIdle(page, 5_000);
   await planMessage.locator('[data-row-action="accept-plan"]').click();
-  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "Proceed with the recommended plan.", null, { timeout: 5_000 });
-  await page.waitForFunction(() => document.querySelector('.composer-toolbar button[aria-haspopup="menu"]')?.textContent?.trim() === "Prompt", null, { timeout: 5_000 });
+  await page.locator(".message.user", { hasText: "Proceed with the recommended plan." }).waitFor({ timeout: 5_000 });
+  await page.waitForFunction(() => (document.querySelector<HTMLTextAreaElement>("#prompt")?.value ?? "") === "", null, { timeout: 5_000 });
+  await planMessage.locator('[data-plan-decision="accepted"]', { hasText: "Accepted" }).waitFor({ timeout: 5_000 });
+  await planMessage.locator('[data-plan-decision="accepted"]').evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement) || !button.disabled) throw new Error("Accepted plan state should be a disabled button");
+  });
   await planMessage.locator('[role="status"]', { hasText: "Plan accepted." }).waitFor({ timeout: 5_000 });
-  await page.locator("#prompt").fill("");
   await planMessage.locator("button", { hasText: "View details" }).click();
   await page.locator('[role="dialog"]', { hasText: "Plan Details" }).waitFor({ timeout: 5_000 });
   await page.locator('[role="dialog"]', { hasText: "Start with the smallest slice" }).waitFor({ timeout: 5_000 });

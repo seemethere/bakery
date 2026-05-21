@@ -12,6 +12,8 @@ import { sessionRoutePath } from "@/lib/router";
 import { flattenSessionTree } from "@/lib/session-tree";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const ACCEPTED_PLAN_PROMPT = "Proceed with the recommended plan.";
+
 type Props = {
   snapshot: SessionSnapshot | null;
   pendingQuestion: PendingQuestion | null;
@@ -78,6 +80,12 @@ export function SessionPage({
   }, [sessionId]);
   const [sessionTree, setSessionTree] = useState<SessionTreeResponse | null>(null);
   const treeNodes = useMemo(() => flattenSessionTree(sessionTree?.tree ?? []), [sessionTree]);
+  const canAcceptPlan = (controller?.isController ?? true) && status !== "aborting" && status !== "connecting" && status !== "disconnected" && status !== "error";
+  const handleAcceptPlan = useCallback(() => {
+    if (!sessionId || !canAcceptPlan) return;
+    const liveStatus = document.querySelector(".pi-web-agent")?.getAttribute("data-agent-status") ?? status;
+    onSend(sessionId, ACCEPTED_PLAN_PROMPT, [], liveStatus === "running", "prompt");
+  }, [canAcceptPlan, onSend, sessionId, status]);
 
   useEffect(() => {
     if (!sessionId || !snapshot) {
@@ -124,12 +132,8 @@ export function SessionPage({
           const session = await onForkSession(sessionId, entryId);
           if (session) navigate(sessionRoutePath(session.id));
         }}
-        onAcceptPlan={() => setDraftPrefill((current) => ({
-          sessionId,
-          text: "Proceed with the recommended plan.",
-          mode: "prompt",
-          nonce: current?.sessionId === sessionId ? current.nonce + 1 : 1,
-        }))}
+        onAcceptPlan={handleAcceptPlan}
+        canAcceptPlan={canAcceptPlan}
       />
       <RunningQueueStrip
         queue={runningQueue}

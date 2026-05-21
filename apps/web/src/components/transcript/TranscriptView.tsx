@@ -38,9 +38,10 @@ type Props = {
   sessionTreeNodes: SessionTreeNode[];
   onFork: (entryId: string) => void | Promise<void>;
   onAcceptPlan?: () => void;
+  canAcceptPlan?: boolean;
 };
 
-export function TranscriptView({ items, connectionStatus, showThinking, sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan }: Props) {
+export function TranscriptView({ items, connectionStatus, showThinking, sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan, canAcceptPlan }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -289,6 +290,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
               sessionTreeNodes={sessionTreeNodes}
               onFork={onFork}
               onAcceptPlan={onAcceptPlan}
+              canAcceptPlan={canAcceptPlan}
               toolUiPreference={toolUiPreference}
             />
           ))}

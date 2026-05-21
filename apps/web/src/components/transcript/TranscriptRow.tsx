@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ComponentProps } from "react";
@@ -39,6 +39,7 @@ type TranscriptRenderContext = {
   sessionTreeNodes: SessionTreeNode[];
   onFork: (entryId: string) => void | Promise<void>;
   onAcceptPlan?: () => void;
+  canAcceptPlan?: boolean;
 };
 
 type MarkdownImageProps = ComponentProps<"img">;
@@ -515,6 +516,25 @@ function PlanGeneratingRow({ item, context }: { item: TranscriptItem; context: T
 
 function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: PlanCardData; context: TranscriptRenderContext }) {
   const [decision, setDecision] = useState<"accepted" | "rejected" | null>(null);
+  const decisionRef = useRef<"accepted" | "rejected" | null>(null);
+  const acceptAvailable = (context.canAcceptPlan ?? true) && Boolean(context.onAcceptPlan);
+
+  function recordDecision(nextDecision: "accepted" | "rejected") {
+    if (decisionRef.current) return false;
+    decisionRef.current = nextDecision;
+    setDecision(nextDecision);
+    return true;
+  }
+
+  function handleAcceptPlan() {
+    if (!acceptAvailable || !recordDecision("accepted")) return;
+    context.onAcceptPlan?.();
+  }
+
+  function handleRejectPlan() {
+    recordDecision("rejected");
+  }
+
   return (
     <div className="message-row px-4 py-2 max-w-[860px] mx-auto w-full" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-plan-card="true">
       <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/8 p-4 text-sm">
@@ -545,12 +565,24 @@ function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: Plan
               <MarkdownContent text={plan.markdown} context={context} />
             </DialogContent>
           </Dialog>
-          <Button type="button" size="sm" onClick={() => { setDecision("accepted"); context.onAcceptPlan?.(); }} disabled={!context.onAcceptPlan} data-row-action="accept-plan">
-            Accept plan
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setDecision("rejected")} data-row-action="reject-plan">
-            Reject / dismiss
-          </Button>
+          {decision === "accepted" ? (
+            <Button type="button" size="sm" disabled aria-disabled="true" data-row-action="accept-plan" data-plan-decision="accepted">
+              Accepted
+            </Button>
+          ) : decision === "rejected" ? (
+            <Button type="button" size="sm" variant="ghost" disabled aria-disabled="true" data-row-action="reject-plan" data-plan-decision="rejected">
+              Rejected
+            </Button>
+          ) : (
+            <>
+              <Button type="button" size="sm" onClick={handleAcceptPlan} disabled={!acceptAvailable} aria-disabled={!acceptAvailable} data-row-action="accept-plan">
+                Accept plan
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={handleRejectPlan} data-row-action="reject-plan">
+                Reject / dismiss
+              </Button>
+            </>
+          )}
           {decision && (
             <span className="self-center text-xs text-muted-foreground" role="status">
               {decision === "accepted" ? "Plan accepted." : "Plan dismissed."}
@@ -817,13 +849,14 @@ export function TranscriptRow({
   sessionTreeNodes,
   onFork,
   onAcceptPlan,
+  canAcceptPlan,
   toolUiPreference = "default",
 }: {
   item: TranscriptItem;
   showThinking: boolean;
   toolUiPreference?: ToolUiPreference;
 } & TranscriptRenderContext) {
-  const context = { sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan };
+  const context = { sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan, canAcceptPlan };
   if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} />;
   if (item.kind === "tool" && hasSubagentCard(item)) {

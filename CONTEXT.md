@@ -76,11 +76,12 @@ The canonical Workflow Command for reaching shared understanding before implemen
 
 ### Plan Card
 
-The operator-facing transcript card rendered for a `/plan` response. While the final plan is still streaming, it shows a generating state; when complete, it shows the plan's summary and smallest next slice, opens the full rendered plan when clicked, and offers an Accept Plan action that submits the recommended implementation prompt when Bakery is connected.
+The operator-facing transcript card rendered for a `/plan` response. While the final plan is still streaming, it shows a generating state; when complete, it shows the plan's summary and smallest next slice, opens the full rendered plan when clicked, and offers an Accept Plan action that submits the recommended implementation prompt when Bakery is connected and able to send.
 
 - Not: a composer takeover; the normal composer remains available for chat or edits while the Plan Card carries the plan-specific affordance.
 - Not: a replacement for the full plan details; the full rendered plan remains available from the ready card.
-- Example: an operator finishes a `/plan` interview, sees a generating Plan Card while the final answer streams, clicks the ready Plan Card to inspect the detailed markdown plan, then accepts it to send the implementation prompt in the background. If Bakery is disconnected, Accept Plan preserves that prompt in the composer with a notice so the operator does not lose intent.
+- Not: an offline draft-preservation control; if Bakery cannot send, Accept Plan is unavailable rather than saving the implementation prompt in the composer.
+- Example: an operator finishes a `/plan` interview, sees a generating Plan Card while the final answer streams, clicks the ready Plan Card to inspect the detailed markdown plan, then accepts it to send the implementation prompt in the background. If Bakery is disconnected or otherwise unable to send, Accept Plan remains disabled until sending is available.
 
 ### Plan Actions
 
