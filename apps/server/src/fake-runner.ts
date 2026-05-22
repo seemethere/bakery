@@ -162,7 +162,8 @@ class FakeSessionHandle implements SessionHandle {
     this.emit({ type: "agent_start" });
 
     if (shouldEmitToolImageHeavyTranscript) {
-      await this.emitToolImageHeavyTranscript();
+      const requestedRows = Number(/(?:row|rows|sample|samples)[^0-9]{0,12}(\d{2,4})/i.exec(text)?.[1] ?? /(\d{2,4})[^\n.]{0,24}(?:row|rows|sample|samples)/i.exec(text)?.[1] ?? 96);
+      await this.emitToolImageHeavyTranscript(Math.min(300, Math.max(12, requestedRows)));
       this.session.isStreaming = false;
       this.steeringQueue = [];
       this.followUpQueue = [];
@@ -551,8 +552,7 @@ class FakeSessionHandle implements SessionHandle {
     this.emit({ type: "message_end", message: assistant });
   }
 
-  private async emitToolImageHeavyTranscript(): Promise<void> {
-    const rows = 96;
+  private async emitToolImageHeavyTranscript(rows = 96): Promise<void> {
     for (let index = 1; index <= rows && !this.aborted; index++) {
       const assistant: FakeChatMessage = {
         id: crypto.randomUUID(),

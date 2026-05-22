@@ -8,6 +8,7 @@ export const scenarioDefinitions = [
   { name: "transcript-scroll-stability", family: "transcript" },
   { name: "transcript-text-selection", family: "transcript" },
   { name: "long-transcript-reopen", family: "transcript", includeInAll: false },
+  { name: "long-transcript-large-reopen", family: "transcript", includeInAll: false },
   { name: "long-transcript-streaming", family: "transcript", includeInAll: false },
   { name: "session-metadata", family: "session" },
   { name: "inspector-preview", family: "transcript" },

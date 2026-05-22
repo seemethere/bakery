@@ -4,12 +4,17 @@ import { artifactDir } from "../config";
 import { collectMetrics, delay, prepareSession, sendPromptAndWaitIdle, timed, waitForAgentIdle, waitForAgentRunning, waitForPromptEnabled, waitForSelectedSession } from "./helpers";
 
 const MIN_LONG_TRANSCRIPT_ROWS = 90;
+const LARGE_TRANSCRIPT_SOURCE_ROWS = 256;
+const LARGE_TRANSCRIPT_MIN_REOPENED_ROWS = 500;
 const LOOSE_LONG_TASK_MAX_MS = 2_500;
 const LOOSE_LONG_TASK_TOTAL_MS = 8_000;
 const LOOSE_READY_MS = 8_000;
 
 type LongTranscriptBuildOptions = {
   includeOverflowTurn?: boolean;
+  sourceRows?: number;
+  minRows?: number;
+  minToolRows?: number;
 };
 
 type BaselineMetrics = Record<string, unknown> & {
@@ -17,6 +22,15 @@ type BaselineMetrics = Record<string, unknown> & {
   longTaskTotalMs?: number;
   longTaskMaxMs?: number;
   piWebPerf?: { transcript?: { lastSnapshotToUsableMs?: number } } | null;
+};
+
+type GuardrailOptions = {
+  readyMs?: number;
+  maxLatencyMs?: number;
+  requireTranscriptMetrics?: boolean;
+  longTaskMaxMs?: number;
+  longTaskTotalMs?: number;
+  readyThresholdMs?: number;
 };
 
 export async function resetLongTranscriptPerf(page: Page): Promise<void> {
@@ -38,9 +52,12 @@ export async function resetLongTranscriptPerf(page: Page): Promise<void> {
 }
 
 export async function buildLongTranscript(page: Page, options: LongTranscriptBuildOptions = {}): Promise<{ rows: number; toolRows: number; artifactImages: number }> {
-  await sendPromptAndWaitIdle(page, "Please produce a tool-image-heavy transcript for long transcript performance baseline measurement.");
-  await page.waitForFunction((minimumRows) => document.querySelectorAll("[data-transcript-id]").length >= minimumRows, MIN_LONG_TRANSCRIPT_ROWS, { timeout: 20_000 });
-  await page.waitForFunction(() => document.querySelectorAll(".message.tool").length >= 80, null, { timeout: 15_000 });
+  const sourceRows = options.sourceRows ?? 96;
+  const minRows = options.minRows ?? MIN_LONG_TRANSCRIPT_ROWS;
+  const minToolRows = options.minToolRows ?? 80;
+  await sendPromptAndWaitIdle(page, `Please produce a tool-image-heavy transcript with ${sourceRows} rows for long transcript performance baseline measurement.`);
+  await page.waitForFunction((minimumRows) => document.querySelectorAll("[data-transcript-id]").length >= minimumRows, minRows, { timeout: 30_000 });
+  await page.waitForFunction((minimumToolRows) => document.querySelectorAll(".message.tool").length >= minimumToolRows, minToolRows, { timeout: 20_000 });
   await page.waitForFunction(() => {
     const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
     return images.some((image) => image.complete && image.naturalWidth > 0);
@@ -69,16 +86,19 @@ async function longTranscriptDomState(page: Page): Promise<{ rows: number; toolR
   });
 }
 
-function assertLoosePerfGuardrails(label: string, metrics: BaselineMetrics, extra?: { readyMs?: number; maxLatencyMs?: number; requireTranscriptMetrics?: boolean }): void {
+function assertLoosePerfGuardrails(label: string, metrics: BaselineMetrics, extra: GuardrailOptions = {}): void {
   const failures: string[] = [];
   const longTaskMaxMs = Number(metrics.longTaskMaxMs ?? 0);
   const longTaskTotalMs = Number(metrics.longTaskTotalMs ?? 0);
   const snapshotToUsableMs = metrics.piWebPerf?.transcript?.lastSnapshotToUsableMs;
-  if (longTaskMaxMs > LOOSE_LONG_TASK_MAX_MS) failures.push(`longTaskMaxMs ${longTaskMaxMs} > ${LOOSE_LONG_TASK_MAX_MS}`);
-  if (longTaskTotalMs > LOOSE_LONG_TASK_TOTAL_MS) failures.push(`longTaskTotalMs ${longTaskTotalMs} > ${LOOSE_LONG_TASK_TOTAL_MS}`);
+  const longTaskMaxThreshold = extra.longTaskMaxMs ?? LOOSE_LONG_TASK_MAX_MS;
+  const longTaskTotalThreshold = extra.longTaskTotalMs ?? LOOSE_LONG_TASK_TOTAL_MS;
+  const readyThreshold = extra.readyThresholdMs ?? LOOSE_READY_MS;
+  if (longTaskMaxMs > longTaskMaxThreshold) failures.push(`longTaskMaxMs ${longTaskMaxMs} > ${longTaskMaxThreshold}`);
+  if (longTaskTotalMs > longTaskTotalThreshold) failures.push(`longTaskTotalMs ${longTaskTotalMs} > ${longTaskTotalThreshold}`);
   if (extra?.requireTranscriptMetrics && !metrics.piWebPerf?.transcript) failures.push("missing piWebPerf.transcript metrics");
-  if (snapshotToUsableMs !== undefined && snapshotToUsableMs > LOOSE_READY_MS) failures.push(`snapshotToUsableMs ${snapshotToUsableMs} > ${LOOSE_READY_MS}`);
-  if ((extra?.readyMs ?? 0) > LOOSE_READY_MS) failures.push(`readyMs ${extra?.readyMs} > ${LOOSE_READY_MS}`);
+  if (snapshotToUsableMs !== undefined && snapshotToUsableMs > readyThreshold) failures.push(`snapshotToUsableMs ${snapshotToUsableMs} > ${readyThreshold}`);
+  if ((extra.readyMs ?? 0) > readyThreshold) failures.push(`readyMs ${extra.readyMs} > ${readyThreshold}`);
   if ((extra?.maxLatencyMs ?? 0) > 1_500) failures.push(`maxLatencyMs ${extra?.maxLatencyMs} > 1500`);
   if (failures.length > 0) throw new Error(`${label} exceeded loose long-transcript guardrails: ${failures.join(", ")}; metrics=${JSON.stringify(metrics)}`);
 }
@@ -105,6 +125,37 @@ export async function runLongTranscriptReopen(page: Page): Promise<Record<string
   await page.screenshot({ path: join(artifactDir, "long-transcript-reopen-after.png"), fullPage: true });
   const metrics = await collectMetrics(page) as BaselineMetrics;
   assertLoosePerfGuardrails("long-transcript-reopen", metrics, { readyMs, requireTranscriptMetrics: true });
+  return { before, after, readyMs, ...metrics };
+}
+
+export async function runLongTranscriptLargeReopen(page: Page): Promise<Record<string, unknown>> {
+  const sessionId = await prepareSession(page);
+  const before = await buildLongTranscript(page, {
+    sourceRows: LARGE_TRANSCRIPT_SOURCE_ROWS,
+    minRows: LARGE_TRANSCRIPT_SOURCE_ROWS,
+    minToolRows: LARGE_TRANSCRIPT_SOURCE_ROWS,
+  });
+  await page.screenshot({ path: join(artifactDir, "long-transcript-large-reopen-before.png"), fullPage: true });
+
+  const reloadStart = Date.now();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForSelectedSession(page, sessionId);
+  await waitForPromptEnabled(page, 20_000);
+  await page.waitForFunction((minimumRows) => document.querySelectorAll("[data-transcript-id]").length >= minimumRows, LARGE_TRANSCRIPT_MIN_REOPENED_ROWS, { timeout: 30_000 });
+  const readyMs = Date.now() - reloadStart;
+  const after = await longTranscriptDomState(page);
+  if (!after.promptEnabled || after.rows < LARGE_TRANSCRIPT_MIN_REOPENED_ROWS || after.toolRows < LARGE_TRANSCRIPT_SOURCE_ROWS) {
+    throw new Error(`Large long transcript reopen did not restore a usable transcript: ${JSON.stringify({ before, after, readyMs })}`);
+  }
+  await page.screenshot({ path: join(artifactDir, "long-transcript-large-reopen-after.png"), fullPage: true });
+  const metrics = await collectMetrics(page) as BaselineMetrics;
+  assertLoosePerfGuardrails("long-transcript-large-reopen", metrics, {
+    readyMs,
+    requireTranscriptMetrics: true,
+    longTaskMaxMs: 5_000,
+    longTaskTotalMs: 30_000,
+    readyThresholdMs: 20_000,
+  });
   return { before, after, readyMs, ...metrics };
 }
 
