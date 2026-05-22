@@ -155,7 +155,10 @@ export function Sidebar({
 
   return (
     <SidebarPrimitive id="sessionSidebar" className="session-sidebar" collapsible="icon">
-      <SidebarHeader className="gap-1.5 pb-2">
+      <SidebarHeader
+        className="gap-1.5 pb-2"
+        style={isMobile ? { paddingTop: "max(4.25rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))" } : undefined}
+      >
         {!isMobile && <SidebarBrand />}
 
         <div className="grid w-full gap-1 group-data-[collapsible=icon]:block">
