@@ -58,6 +58,9 @@ export function SessionCard({
   const [menuDismissed, setMenuDismissed] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const longPressTriggeredRef = useRef(false);
 
   useEffect(() => {
     if (renaming) {
@@ -74,6 +77,36 @@ export function SessionCard({
     document.addEventListener("pointermove", clearDismissed, { once: true });
     return () => document.removeEventListener("pointermove", clearDismissed);
   }, [menuDismissed]);
+
+  function clearLongPressTimer() {
+    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+    longPressStartRef.current = null;
+  }
+
+  function startLongPress(event: React.PointerEvent<HTMLButtonElement>) {
+    if (renaming || event.pointerType === "mouse" || event.button !== 0) return;
+    longPressTriggeredRef.current = false;
+    longPressStartRef.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setMenuDismissed(false);
+      setMenuOpen(true);
+      menuTriggerRef.current?.focus({ preventScroll: true });
+      if (navigator.vibrate) navigator.vibrate(10);
+    }, 450);
+  }
+
+  function updateLongPress(event: React.PointerEvent<HTMLButtonElement>) {
+    const start = longPressStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) clearLongPressTimer();
+  }
+
+  function finishLongPress(event: React.PointerEvent<HTMLButtonElement>) {
+    if (longPressTriggeredRef.current) event.preventDefault();
+    clearLongPressTimer();
+  }
 
   function commitRename() {
     const trimmed = renameValue.trim();
@@ -101,7 +134,24 @@ export function SessionCard({
           render={
             <button
               type="button"
-              onClick={() => !renaming && onSelect(session.id)}
+              onPointerDown={startLongPress}
+              onPointerMove={updateLongPress}
+              onPointerUp={finishLongPress}
+              onPointerCancel={clearLongPressTimer}
+              onContextMenu={(e) => {
+                if (renaming) return;
+                e.preventDefault();
+                setMenuDismissed(false);
+                setMenuOpen(true);
+              }}
+              onClick={(e) => {
+                if (longPressTriggeredRef.current) {
+                  e.preventDefault();
+                  longPressTriggeredRef.current = false;
+                  return;
+                }
+                if (!renaming) onSelect(session.id);
+              }}
               className={cn(
                 "grid w-full min-w-0 rounded-md py-1.5 pr-9 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                 showWorkspacePinShortcut ? "pl-8" : "pl-2",
@@ -173,6 +223,7 @@ export function SessionCard({
       )}
 
       <DropdownMenu
+        open={menuOpen}
         onOpenChange={(open) => {
           setMenuOpen(open);
           if (!open) {
@@ -200,7 +251,7 @@ export function SessionCard({
         >
           <MoreHorizontalIcon className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="start" sideOffset={8}>
+        <DropdownMenuContent side="right" align="start" sideOffset={8} className="min-w-44">
           <DropdownMenuItem
             onClick={(e) => { e.stopPropagation(); onTogglePin(session.id, !session.pinned); }}
           >
