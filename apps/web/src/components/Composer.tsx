@@ -17,6 +17,14 @@ export type ComposerStatus = "idle" | "running" | "aborting" | "connecting" | "d
 export type ComposerMode = "prompt" | "ask" | "plan" | "bash" | "bash-no-context";
 export type SendMode = ComposerMode;
 
+const MOBILE_FOCUS_DISMISS_DISTANCE_PX = 56;
+const MOBILE_FOCUS_DISMISS_MAX_SIDE_DRIFT_PX = 72;
+
+type FocusDismissTouchStart = {
+  x: number;
+  y: number;
+};
+
 type Props = {
   status: ComposerStatus;
   isController: boolean;
@@ -148,6 +156,7 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imagePickerPendingRef = useRef(false);
   const imagePickerReturnTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const focusDismissTouchStartRef = useRef<FocusDismissTouchStart | null>(null);
   const [draft, setDraft] = useState(() => (draftKey ? (localStorage.getItem(draftKey) ?? "") : ""));
   const [uploadedAttachments, setUploadedAttachments] = useState<SessionAttachment[]>([]);
   const [notice, setNotice] = useState("");
@@ -224,6 +233,48 @@ export function Composer({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
+
+  useEffect(() => {
+    function isPromptFocused() {
+      return document.activeElement === textareaRef.current;
+    }
+
+    function handleTouchStart(event: globalThis.TouchEvent) {
+      if (!window.matchMedia("(max-width: 767px)").matches || !isPromptFocused()) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      focusDismissTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+
+    function handleTouchMove(event: globalThis.TouchEvent) {
+      const start = focusDismissTouchStartRef.current;
+      const touch = event.touches[0];
+      if (!start || !touch || !isPromptFocused()) return;
+
+      const dx = Math.abs(touch.clientX - start.x);
+      const dy = touch.clientY - start.y;
+      if (dy >= MOBILE_FOCUS_DISMISS_DISTANCE_PX && dx <= MOBILE_FOCUS_DISMISS_MAX_SIDE_DRIFT_PX) {
+        focusDismissTouchStartRef.current = null;
+        ac.close();
+        textareaRef.current?.blur();
+      }
+    }
+
+    function handleTouchEnd() {
+      focusDismissTouchStartRef.current = null;
+    }
+
+    document.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
+    document.addEventListener("touchmove", handleTouchMove, { capture: true, passive: true });
+    document.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
+    document.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener("touchstart", handleTouchStart, { capture: true });
+      document.removeEventListener("touchmove", handleTouchMove, { capture: true });
+      document.removeEventListener("touchend", handleTouchEnd, { capture: true });
+      document.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
+    };
+  }, [ac]);
 
   useEffect(() => {
     function handleGlobalKeyDown(event: globalThis.KeyboardEvent) {
