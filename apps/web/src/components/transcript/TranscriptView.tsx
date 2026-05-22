@@ -10,6 +10,8 @@ import { useToolUiPreference } from "@/lib/tool-ui-preference";
 import { recordTranscriptCommit } from "@/lib/transcript-perf";
 
 const AUTO_SCROLL_STORAGE_KEY = "piWebAutoScroll";
+const REPEATED_LOCAL_IMAGE_PREVIEW_LIMIT = 3;
+const localImagePathPattern = /(?:^|[\s([{"'`])((?:(?:file:\/\/)?\/|\.{1,2}\/)?(?:[\w@.+-]+\/)+[\w@.+-]+\.(?:png|jpe?g|gif|webp|svg))(?![\w.-])/gi;
 
 function loadAutoScrollPreference(): boolean {
   try {
@@ -63,6 +65,26 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     () => items.filter((item) => !isAskQuestionToolItem(item) && !isNonInformativeSubagentManagementReceipt(item)),
     [items],
   );
+  const repeatedLocalImagePreviewSuppressedIds = useMemo(() => {
+    const pathCounts = new Map<string, number>();
+    const suppressed = new Set<string>();
+    for (const item of visibleItems) {
+      localImagePathPattern.lastIndex = 0;
+      let imagePathCount = 0;
+      let allowedImagePathCount = 0;
+      for (const match of item.body.matchAll(localImagePathPattern)) {
+        const rawPath = match[1]?.replace(/^\.\//, "");
+        if (!rawPath || rawPath.includes("...") || rawPath.includes("…")) continue;
+        imagePathCount += 1;
+        const key = rawPath.replace(/^file:\/\/+/, "/").toLowerCase();
+        const nextCount = (pathCounts.get(key) ?? 0) + 1;
+        pathCounts.set(key, nextCount);
+        if (nextCount <= REPEATED_LOCAL_IMAGE_PREVIEW_LIMIT) allowedImagePathCount += 1;
+      }
+      if (imagePathCount > 0 && allowedImagePathCount === 0) suppressed.add(item.id);
+    }
+    return suppressed;
+  }, [visibleItems]);
 
   function markBottomState(atBottom: boolean) {
     if ((pendingInitialBottomScrollSessionRef.current || initialBottomScrollInProgressRef.current) && !atBottom) return;
@@ -324,6 +346,7 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
               onAcceptPlan={onAcceptPlan}
               canAcceptPlan={canAcceptPlan}
               toolUiPreference={toolUiPreference}
+              suppressLocalImageArtifacts={repeatedLocalImagePreviewSuppressedIds.has(item.id)}
             />
           ))}
           <div ref={bottomRef} className="h-px" aria-hidden="true" />

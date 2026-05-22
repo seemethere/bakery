@@ -58,17 +58,31 @@ export async function buildLongTranscript(page: Page, options: LongTranscriptBui
   await sendPromptAndWaitIdle(page, `Please produce a tool-image-heavy transcript with ${sourceRows} rows for long transcript performance baseline measurement.`);
   await page.waitForFunction((minimumRows) => document.querySelectorAll("[data-transcript-id]").length >= minimumRows, minRows, { timeout: 30_000 });
   await page.waitForFunction((minimumToolRows) => document.querySelectorAll(".message.tool").length >= minimumToolRows, minToolRows, { timeout: 20_000 });
-  await page.waitForFunction(() => {
-    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".artifact-image img"));
-    return images.some((image) => image.complete && image.naturalWidth > 0);
-  }, null, { timeout: 15_000 });
+  await page.waitForFunction(() => document.querySelectorAll(".artifact-image, [data-artifact-preview-lazy]").length >= 1, null, { timeout: 15_000 });
+
+  const preview = await waitForLazyArtifactPreview(page);
 
   if (options.includeOverflowTurn) {
     await sendPromptAndWaitIdle(page, `${"long-transcript-overflow-token-".repeat(10)}\n\nPlease produce a mobile overflow transcript with long unbroken markdown and code tokens.`);
     await page.locator(".message.assistant", { hasText: "Mobile overflow probe" }).waitFor({ timeout: 5_000 });
   }
 
-  return longTranscriptDomState(page);
+  return { ...(await longTranscriptDomState(page)), ...preview };
+}
+
+async function waitForLazyArtifactPreview(page: Page): Promise<{ loadedArtifactImages: number }> {
+  const firstPreview = page.locator(".artifact-image, [data-artifact-preview-lazy]").first();
+  await firstPreview.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => {
+    const image = document.querySelector<HTMLImageElement>(".artifact-image img");
+    return Boolean(image?.complete && image.naturalWidth > 0);
+  }, null, { timeout: 8_000 });
+  const loadedArtifactImages = await page.locator(".artifact-image img").count();
+  await page.evaluate(() => {
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    if (transcript) transcript.scrollTop = transcript.scrollHeight;
+  });
+  return { loadedArtifactImages };
 }
 
 async function longTranscriptDomState(page: Page): Promise<{ rows: number; toolRows: number; artifactImages: number; bottomGap: number; promptEnabled: boolean }> {

@@ -45,6 +45,8 @@ type TranscriptRenderContext = {
 
 type MarkdownImageProps = ComponentProps<"img">;
 
+const transcriptRowVisibilityStyle: React.CSSProperties = { contentVisibility: "auto", containIntrinsicSize: "96px" };
+
 // ---- Markdown ---------------------------------------------------------------
 
 function normalizeImageArtifactPath(path: string, sessionCwd: string | null): { originalPath: string; workspacePath?: string } | null {
@@ -150,6 +152,39 @@ function AttachmentReferenceSummary({ attachments }: { attachments: AttachmentRe
 
 type ImagePreviewItem = { src: string; label: string };
 
+function LazyArtifactPreviewImage({ src, alt, className, onError }: { src: string; alt: string; className?: string; onError?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shouldRenderImage, setShouldRenderImage] = useState(false);
+
+  useEffect(() => {
+    if (shouldRenderImage) return;
+    const element = ref.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setShouldRenderImage(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setShouldRenderImage(true);
+        observer.disconnect();
+      },
+      { rootMargin: "900px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [shouldRenderImage]);
+
+  return (
+    <div ref={ref} className={cn("relative h-56 w-full bg-muted/20", className)} data-artifact-preview-lazy={!shouldRenderImage ? "true" : undefined}>
+      {shouldRenderImage
+        ? <img src={src} alt={alt} loading="lazy" onError={onError} className="h-full w-full object-contain" />
+        : <div className="flex h-full w-full items-center justify-center px-3 text-center text-[11px] text-muted-foreground">Image preview loads when nearby</div>}
+    </div>
+  );
+}
+
 function ImagePreviewDialog({ src, label, gallery, initialIndex = 0, children }: { src: string; label: string; gallery?: ImagePreviewItem[]; initialIndex?: number; children: React.ReactNode }) {
   const items = gallery?.length ? gallery : [{ src, label }];
   const safeInitialIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
@@ -203,7 +238,7 @@ function ImagePreviewDialog({ src, label, gallery, initialIndex = 0, children }:
   );
 }
 
-function MarkdownContent({ text, context, className }: { text: string; context: TranscriptRenderContext; className?: string }) {
+function MarkdownContent({ text, context, className, suppressLocalImageArtifacts = false }: { text: string; context: TranscriptRenderContext; className?: string; suppressLocalImageArtifacts?: boolean }) {
   return (
     <div className={cn("markdown-body prose prose-sm min-w-0 max-w-none break-words dark:prose-invert [&_code]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto", className)}>
       <ReactMarkdown
@@ -224,16 +259,16 @@ function MarkdownContent({ text, context, className }: { text: string; context: 
       >
         {text}
       </ReactMarkdown>
-      <LocalImageGrid artifacts={localImageArtifacts(text, context, promptAttachmentArtifactPaths(text, context))} />
+      {!suppressLocalImageArtifacts && <LocalImageGrid artifacts={localImageArtifacts(text, context, promptAttachmentArtifactPaths(text, context))} />}
     </div>
   );
 }
 
 // ---- Segment ----------------------------------------------------------------
 
-function Segment({ segment, showThinking, context, imageGallery, imageIndex }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext; imageGallery?: ImagePreviewItem[]; imageIndex?: number }) {
+function Segment({ segment, showThinking, context, imageGallery, imageIndex, suppressLocalImageArtifacts = false }: { segment: TranscriptSegment; showThinking: boolean; context: TranscriptRenderContext; imageGallery?: ImagePreviewItem[]; imageIndex?: number; suppressLocalImageArtifacts?: boolean }) {
   if (segment.kind === "markdown") {
-    return <MarkdownContent text={stripAttachmentContext(segment.text)} context={context} />;
+    return <MarkdownContent text={stripAttachmentContext(segment.text)} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />;
   }
   if (segment.kind === "thinking") {
     if (!showThinking) {
@@ -267,7 +302,7 @@ function Segment({ segment, showThinking, context, imageGallery, imageIndex }: {
   );
 }
 
-function Segments({ segments, showThinking, context }: { segments: TranscriptSegment[]; showThinking: boolean; context: TranscriptRenderContext }) {
+function Segments({ segments, showThinking, context, suppressLocalImageArtifacts = false }: { segments: TranscriptSegment[]; showThinking: boolean; context: TranscriptRenderContext; suppressLocalImageArtifacts?: boolean }) {
   const imageSegments = segments.filter((segment): segment is TranscriptSegment & { kind: "image"; src: string } => segment.kind === "image" && Boolean(segment.src));
   const imageGallery = imageSegments.map((segment) => ({ src: segment.src, label: segment.label }));
   let imageIndex = 0;
@@ -275,7 +310,7 @@ function Segments({ segments, showThinking, context }: { segments: TranscriptSeg
     <div className="flex min-w-0 flex-col gap-1">
       {segments.map((seg, i) => {
         const currentImageIndex = seg.kind === "image" && seg.src ? imageIndex++ : undefined;
-        return <Segment key={i} segment={seg} showThinking={showThinking} context={context} imageGallery={imageGallery} imageIndex={currentImageIndex} />;
+        return <Segment key={i} segment={seg} showThinking={showThinking} context={context} imageGallery={imageGallery} imageIndex={currentImageIndex} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />;
       })}
     </div>
   );
@@ -289,18 +324,21 @@ function LocalImageGrid({ artifacts }: { artifacts: Array<{ path: string; url: s
   return (
     <div className="not-prose mt-2 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
       {visibleArtifacts.map((artifact, index) => (
-        <figure key={artifact.path} data-testid="artifact-image" className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20">
+        <figure
+          key={artifact.path}
+          data-testid="artifact-image"
+          className="artifact-image m-0 overflow-hidden rounded-lg border border-border/50 bg-muted/20"
+          style={{ contentVisibility: "auto", containIntrinsicSize: "224px" }}
+        >
           <ImagePreviewDialog src={artifact.url} label={artifact.path} gallery={gallery} initialIndex={index}>
-            <img
+            <LazyArtifactPreviewImage
               src={artifact.url}
               alt={artifact.path}
-              loading="lazy"
               onError={() => {
                 const harnessWindow = window as Window & { __piWebFailedImageCount?: number };
                 harnessWindow.__piWebFailedImageCount = (harnessWindow.__piWebFailedImageCount ?? 0) + 1;
                 setFailedPaths((current) => new Set(current).add(artifact.path));
               }}
-              className="h-56 w-full object-contain"
             />
           </ImagePreviewDialog>
           <figcaption className="truncate px-2 py-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.path}</figcaption>
@@ -443,16 +481,16 @@ function MessageActions({ item, context, align = "start" }: { item: TranscriptIt
   );
 }
 
-function UserRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
+function UserRow({ item, showThinking, context, suppressLocalImageArtifacts = false }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext; suppressLocalImageArtifacts?: boolean }) {
   const segments = item.segments?.filter((s) => s.kind !== "toolCall" && s.kind !== "thinking");
   const attachmentText = segments?.map((segment) => "text" in segment ? segment.text : "").join("\n") || item.body;
   const attachmentReferences = attachmentReferencesFromText(attachmentText, context);
   return (
-    <div className="message message-row user flex min-w-0 justify-end px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message message-row user flex min-w-0 justify-end px-4 py-2" style={transcriptRowVisibilityStyle} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 max-w-[85%] justify-items-end gap-1 sm:max-w-[80%]">
         <div className="min-w-0 max-w-full rounded-2xl rounded-br-sm border border-sidebar-primary/20 bg-sidebar-primary/15 px-4 py-2.5 text-sm break-words">
           {segments && segments.length > 0
-            ? <Segments segments={segments} showThinking={showThinking} context={context} />
+            ? <Segments segments={segments} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />
             : <p className="text-sm">{stripAttachmentContext(item.body)}</p>
           }
           <AttachmentReferenceSummary attachments={attachmentReferences} />
@@ -465,7 +503,7 @@ function UserRow({ item, showThinking, context }: { item: TranscriptItem; showTh
 
 // ---- Assistant row ----------------------------------------------------------
 
-function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
+function AssistantRow({ item, showThinking, context, suppressLocalImageArtifacts = false }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext; suppressLocalImageArtifacts?: boolean }) {
   const isStreaming = item.status === "running";
   const segments = item.segments?.filter((s) => s.kind !== "toolCall");
   const hasContent = segments && segments.length > 0;
@@ -478,7 +516,7 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
   if (isGeneratingPlan(item)) return <PlanGeneratingRow item={item} context={context} />;
 
   return (
-    <div className="message message-row assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    <div className="message message-row assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" style={transcriptRowVisibilityStyle} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 justify-items-start gap-1">
         <div className="min-w-0 w-full">
           <div className="min-w-0">
@@ -488,8 +526,8 @@ function AssistantRow({ item, showThinking, context }: { item: TranscriptItem; s
                 <span>Pi is responding…</span>
               </div>
             ) : hasContent
-              ? <Segments segments={segments} showThinking={showThinking} context={context} />
-              : <MarkdownContent text={item.body} context={context} />
+              ? <Segments segments={segments} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />
+              : <MarkdownContent text={item.body} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />
             }
           </div>
         </div>
@@ -647,7 +685,7 @@ const toolActionColors: Record<string, string> = {
   question: "text-yellow-400",
 };
 
-function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext }) {
+function ToolRow({ item, showThinking, context, suppressLocalImageArtifacts = false }: { item: TranscriptItem; showThinking: boolean; context: TranscriptRenderContext; suppressLocalImageArtifacts?: boolean }) {
   const isRunning = item.status === "running";
   const isError = item.status === "error";
   const shouldDefaultOpen = isRunning || isError || isDeveloperBashItem(item);
@@ -669,6 +707,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
 
   return (
     <div
+      style={transcriptRowVisibilityStyle}
       className={cn(
         "message tool group/row relative mx-4 my-1 min-w-0 rounded-lg border text-sm",
         isDeveloperBashItem(item) && "developer-bash",
@@ -745,7 +784,7 @@ function ToolRow({ item, showThinking, context }: { item: TranscriptItem; showTh
       {expanded && hasBody && (
         <div className="message-body min-w-0 overflow-hidden border-t border-border/30 px-3 pb-3 pt-2">
           {item.segments && item.segments.length > 0
-            ? <Segments segments={item.segments} showThinking={showThinking} context={context} />
+            ? <Segments segments={item.segments} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />
             : <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{item.body}</pre>
           }
         </div>
@@ -825,7 +864,7 @@ function SystemRow({ item, context }: { item: TranscriptItem; context: Transcrip
     <div className={cn(
       "message group/row mx-4 my-1 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg border px-3 py-2 text-xs font-mono",
       item.kind === "error" ? "error border-red-500/30 bg-red-500/5 text-red-400" : "system border-border/30 bg-muted/30 text-muted-foreground",
-    )} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
+    )} style={transcriptRowVisibilityStyle} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="min-w-0">
         <span className="font-semibold">{item.title}</span>
         {item.body && item.body !== item.title && (
@@ -852,14 +891,16 @@ export function TranscriptRow({
   onAcceptPlan,
   canAcceptPlan,
   toolUiPreference = "default",
+  suppressLocalImageArtifacts = false,
 }: {
   item: TranscriptItem;
   showThinking: boolean;
   toolUiPreference?: ToolUiPreference;
+  suppressLocalImageArtifacts?: boolean;
 } & TranscriptRenderContext) {
   const context = { sessionId, sessionCwd, apiBase, token, extensionCatalog, sessionTreeNodes, onFork, onAcceptPlan, canAcceptPlan };
-  if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} />;
-  if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} />;
+  if (item.kind === "user") return <UserRow item={item} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />;
+  if (item.kind === "assistant") return <AssistantRow item={item} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />;
   if (item.kind === "tool" && hasSubagentCard(item)) {
     return (
       <div className="message subagent-card-result group/row relative max-w-[640px]" data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"} data-subagent-card="true">
@@ -886,7 +927,7 @@ export function TranscriptRow({
     if (toolUiPreference !== "default" && (action === "grep" || action === "find")) {
       return <SearchToolCard item={item} actions={<RowActions item={item} context={context} />} />;
     }
-    return <ToolRow item={item} showThinking={showThinking} context={context} />;
+    return <ToolRow item={item} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />;
   }
   if (item.kind === "question") return <QuestionSummaryRow item={item} />;
   const extensionPayload = extensionCardPayload(item);
