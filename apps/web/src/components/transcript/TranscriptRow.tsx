@@ -185,6 +185,41 @@ function LazyArtifactPreviewImage({ src, alt, className, onError }: { src: strin
   );
 }
 
+function DeferredTranscriptBody({ children, disabled = false, className }: { children: React.ReactNode; disabled?: boolean; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shouldRenderBody, setShouldRenderBody] = useState(disabled);
+
+  useEffect(() => {
+    if (disabled) {
+      setShouldRenderBody(true);
+      return;
+    }
+    if (shouldRenderBody) return;
+    const element = ref.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setShouldRenderBody(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setShouldRenderBody(true);
+        observer.disconnect();
+      },
+      { rootMargin: "1400px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [disabled, shouldRenderBody]);
+
+  return (
+    <div ref={ref} className={className} data-transcript-body-deferred={!shouldRenderBody ? "true" : undefined}>
+      {shouldRenderBody ? children : <div className="min-h-24 rounded-md bg-muted/10" aria-hidden="true" />}
+    </div>
+  );
+}
+
 function ImagePreviewDialog({ src, label, gallery, initialIndex = 0, children }: { src: string; label: string; gallery?: ImagePreviewItem[]; initialIndex?: number; children: React.ReactNode }) {
   const items = gallery?.length ? gallery : [{ src, label }];
   const safeInitialIndex = Math.min(Math.max(initialIndex, 0), items.length - 1);
@@ -519,7 +554,7 @@ function AssistantRow({ item, showThinking, context, suppressLocalImageArtifacts
     <div className="message message-row assistant mx-auto w-full max-w-[860px] min-w-0 px-4 py-2" style={transcriptRowVisibilityStyle} data-transcript-id={item.id} data-transcript-kind={item.kind} data-transcript-status={item.status ?? "done"}>
       <div className="grid min-w-0 justify-items-start gap-1">
         <div className="min-w-0 w-full">
-          <div className="min-w-0">
+          <DeferredTranscriptBody disabled={isStreaming} className="min-w-0">
             {isStreaming ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite" aria-label="Assistant response generating">
                 <LoaderCircleIcon className="size-4 animate-spin" />
@@ -529,7 +564,7 @@ function AssistantRow({ item, showThinking, context, suppressLocalImageArtifacts
               ? <Segments segments={segments} showThinking={showThinking} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />
               : <MarkdownContent text={item.body} context={context} suppressLocalImageArtifacts={suppressLocalImageArtifacts} />
             }
-          </div>
+          </DeferredTranscriptBody>
         </div>
         <MessageActions item={item} context={context} />
       </div>

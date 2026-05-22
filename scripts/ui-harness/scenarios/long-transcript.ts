@@ -58,6 +58,10 @@ export async function buildLongTranscript(page: Page, options: LongTranscriptBui
   await sendPromptAndWaitIdle(page, `Please produce a tool-image-heavy transcript with ${sourceRows} rows for long transcript performance baseline measurement.`);
   await page.waitForFunction((minimumRows) => document.querySelectorAll("[data-transcript-id]").length >= minimumRows, minRows, { timeout: 30_000 });
   await page.waitForFunction((minimumToolRows) => document.querySelectorAll(".message.tool").length >= minimumToolRows, minToolRows, { timeout: 20_000 });
+  await page.evaluate(() => {
+    const transcript = document.querySelector<HTMLElement>(".transcript");
+    if (transcript) transcript.scrollTop = 0;
+  });
   await page.waitForFunction(() => document.querySelectorAll(".artifact-image, [data-artifact-preview-lazy]").length >= 1, null, { timeout: 15_000 });
 
   const preview = await waitForLazyArtifactPreview(page);
