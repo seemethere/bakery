@@ -163,25 +163,20 @@ export function Sidebar({
 
         <div className="grid w-full gap-1 group-data-[collapsible=icon]:block">
           <div className="group/new-session-row flex min-w-0 items-center rounded-md transition-colors hover:bg-sidebar-accent/55">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    id="newSession"
-                    type="button"
-                    onClick={() => onNewSession()}
-                    className="group/new-session flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
-                  >
-                    <PlusIcon className="size-4 text-sidebar-foreground/55 group-hover/new-session:text-sidebar-foreground/75" />
-                    <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">New session</span>
-                    <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/35 opacity-0 transition-opacity group-hover/new-session:opacity-100 group-data-[collapsible=icon]:hidden">
-                      ⌘I
-                    </kbd>
-                  </button>
-                }
-              />
-              <TooltipContent side="right">New session ⌘I</TooltipContent>
-            </Tooltip>
+            <SidebarActionTooltip label="New session ⌘I" disabled={isMobile}>
+              <button
+                id="newSession"
+                type="button"
+                onClick={() => onNewSession()}
+                className="group/new-session flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0 max-md:focus-visible:ring-0"
+              >
+                <PlusIcon className="size-4 text-sidebar-foreground/55 group-hover/new-session:text-sidebar-foreground/75" />
+                <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">New session</span>
+                <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/35 opacity-0 transition-opacity group-hover/new-session:opacity-100 group-data-[collapsible=icon]:hidden">
+                  ⌘I
+                </kbd>
+              </button>
+            </SidebarActionTooltip>
 
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -204,27 +199,22 @@ export function Sidebar({
             </DropdownMenu>
           </div>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                onClick={() => setSearchOpen(true)}
-                className="group/search flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground/80 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
-              >
-                <SearchIcon className="size-3.5 text-sidebar-foreground/45 group-hover/search:text-sidebar-foreground/70" />
-                <span className="flex-1 truncate group-data-[collapsible=icon]:hidden">
-                  Search
-                </span>
-                {!isMobile && (
-                  <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/30 opacity-0 transition-opacity group-hover/search:opacity-100 group-data-[collapsible=icon]:hidden">
-                    ⌘K
-                  </kbd>
-                )}
-              </button>
-            }
-          />
-          <TooltipContent side="right">Search sessions{!isMobile ? " ⌘K" : ""}</TooltipContent>
-        </Tooltip>
+        <SidebarActionTooltip label={`Search sessions${!isMobile ? " ⌘K" : ""}`} disabled={isMobile}>
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="group/search flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground/80 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
+          >
+            <SearchIcon className="size-3.5 text-sidebar-foreground/45 group-hover/search:text-sidebar-foreground/70" />
+            <span className="flex-1 truncate group-data-[collapsible=icon]:hidden">
+              Search
+            </span>
+            {!isMobile && (
+              <kbd className="rounded border border-sidebar-border/60 px-1 py-0.5 text-[9px] tracking-wide text-sidebar-foreground/30 opacity-0 transition-opacity group-hover/search:opacity-100 group-data-[collapsible=icon]:hidden">
+                ⌘K
+              </kbd>
+            )}
+          </button>
+        </SidebarActionTooltip>
         </div>
       </SidebarHeader>
 
@@ -434,6 +424,16 @@ export function Sidebar({
         </CommandList>
       </CommandDialog>
     </SidebarPrimitive>
+  );
+}
+
+function SidebarActionTooltip({ label, disabled, children }: { label: string; disabled: boolean; children: React.ReactElement }) {
+  if (disabled) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
