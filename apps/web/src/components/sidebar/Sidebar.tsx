@@ -323,7 +323,7 @@ export function Sidebar({
         )}
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] md:pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <Tooltip>

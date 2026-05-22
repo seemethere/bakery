@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { copyTextToClipboard } from "@/clipboard";
 import { cn } from "@/lib/utils";
 import { type PlanCardData, type TranscriptItem, type TranscriptSegment, toolHeaderDisplay, formatToolDuration, compactToolSummary, detectPlanCard, isGeneratingPlan, isRecord, isDeveloperBashItem } from "@/lib/transcript";
 import type { ToolUiPreference } from "@/lib/tool-ui-preference";
@@ -327,7 +328,7 @@ function RowActions({ item, context, align = "end" }: { item: TranscriptItem; co
   if (!text.trim() && !forkEntryId) return null;
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(text);
+    await copyTextToClipboard(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
@@ -373,7 +374,7 @@ function CopyMessageButton({ item }: { item: TranscriptItem }) {
   if (!text.trim()) return null;
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(text);
+    await copyTextToClipboard(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }

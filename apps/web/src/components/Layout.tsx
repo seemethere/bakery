@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import type { WebSession, Workspace, WorkspaceBrowseResponse } from "@pi-web-agent/protocol";
 import { Sidebar } from "@/components/sidebar/Sidebar";
@@ -137,36 +137,47 @@ function MobileSidebarSwipeEdge() {
   const { isMobile, openMobile, setOpenMobile } = useSidebar();
   const startRef = useRef<SwipeStart | null>(null);
 
-  if (!isMobile || openMobile) return null;
+  useEffect(() => {
+    if (!isMobile || openMobile) {
+      startRef.current = null;
+      return;
+    }
 
-  return (
-    <div
-      aria-hidden="true"
-      data-testid="mobile-sidebar-swipe-edge"
-      className="fixed inset-y-0 left-0 z-40 w-9 touch-pan-y md:hidden"
-      style={{ width: MOBILE_SWIPE_EDGE_WIDTH_PX }}
-      onPointerDown={(event) => {
-        if (event.pointerType === "mouse" || event.button !== 0) return;
-        startRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        const start = startRef.current;
-        if (!start || start.pointerId !== event.pointerId) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (event.pointerType === "mouse" || event.button !== 0 || event.clientX > MOBILE_SWIPE_EDGE_WIDTH_PX) {
+        startRef.current = null;
+        return;
+      }
+      startRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    }
 
-        const dx = event.clientX - start.x;
-        const dy = Math.abs(event.clientY - start.y);
-        if (dx >= MOBILE_SWIPE_OPEN_DISTANCE_PX && dy <= MOBILE_SWIPE_MAX_VERTICAL_DRIFT_PX) {
-          startRef.current = null;
-          setOpenMobile(true);
-        }
-      }}
-      onPointerUp={() => {
+    function handlePointerMove(event: PointerEvent) {
+      const start = startRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+
+      const dx = event.clientX - start.x;
+      const dy = Math.abs(event.clientY - start.y);
+      if (dx >= MOBILE_SWIPE_OPEN_DISTANCE_PX && dy <= MOBILE_SWIPE_MAX_VERTICAL_DRIFT_PX) {
         startRef.current = null;
-      }}
-      onPointerCancel={() => {
-        startRef.current = null;
-      }}
-    />
-  );
+        setOpenMobile(true);
+      }
+    }
+
+    function clearStart() {
+      startRef.current = null;
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown, { capture: true, passive: true });
+    document.addEventListener("pointermove", handlePointerMove, { capture: true, passive: true });
+    document.addEventListener("pointerup", clearStart, { capture: true, passive: true });
+    document.addEventListener("pointercancel", clearStart, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      document.removeEventListener("pointermove", handlePointerMove, { capture: true });
+      document.removeEventListener("pointerup", clearStart, { capture: true });
+      document.removeEventListener("pointercancel", clearStart, { capture: true });
+    };
+  }, [isMobile, openMobile, setOpenMobile]);
+
+  return null;
 }
