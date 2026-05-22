@@ -585,6 +585,18 @@ class FakeSessionHandle implements SessionHandle {
           details: { stdout: `${text}\n`, stderr: "", exitCode: 0 },
         },
       });
+      const bashMessage: FakeBashMessage = {
+        id: toolCallId,
+        role: "bashExecution",
+        timestamp: new Date().toISOString(),
+        command: args.command,
+        output: text,
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+      };
+      this.messages.push(bashMessage);
+      this.sessionManager.appendMessage(bashMessage as never);
       if (index % 4 === 0) await sleep(0);
     }
   }

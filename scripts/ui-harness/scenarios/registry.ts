@@ -4,6 +4,7 @@ import type { RegisteredHarnessScenarioName } from "./metadata";
 import { runImageArtifactDropUpload, runImageArtifactPaths, runImageAttachments, runImagePasteAttachments, runArtifactPathFormats, runMissingRemoteImageArtifact, runRemoteImageArtifactPaths, runRemoteImageArtifactUpload, runRepeatedImageArtifactPaths } from "./artifacts";
 import { runBackendRestart, runConnectionDisconnected, runControllerHandoffEdges, runReconnectController, runReconnectDraft } from "./lifecycle";
 import { runMobileImageStreamStability, runMobileLayout, runMobileLongTranscriptControls } from "./mobile";
+import { runMobileLongTranscriptPerformance, runLongTranscriptReopen, runLongTranscriptStreaming } from "./long-transcript";
 import { runBashToolCard, runEditToolCard, runInspectorPreview, runModelThinking, runNarrowToolStream, runQueuedFollowUp, runReadToolCard, runSearchToolCard, runStreamingResponsiveness, runSubagentCard, runSubagentCardReconnect, runToolGrouping, runToolImageHeavyTranscript, runTranscriptScrollStability, runTranscriptTextSelection } from "./transcript";
 import { runBashCommands, runConfiguredExtensionSmoke, runFileAutocomplete, runNewSessionCommand, runSlashCommands } from "./slash-commands";
 import { runContextUsage, runEmptySessionLayout, runQuestionAnswer, runSessionMetadata, runSessionRouting, runSessionsPage, runTreeForkNavigation } from "./session";
@@ -20,6 +21,8 @@ export const scenarioRunners = {
   "queued-follow-up": (page) => runQueuedFollowUp(page),
   "transcript-scroll-stability": (page) => runTranscriptScrollStability(page),
   "transcript-text-selection": (page) => runTranscriptTextSelection(page),
+  "long-transcript-reopen": (page) => runLongTranscriptReopen(page),
+  "long-transcript-streaming": (page) => runLongTranscriptStreaming(page),
   "session-metadata": (page) => runSessionMetadata(page),
   "inspector-preview": (page) => runInspectorPreview(page),
   "slash-commands": (page) => runSlashCommands(page),
@@ -43,6 +46,7 @@ export const scenarioRunners = {
   "subagent-card": (page) => runSubagentCard(page),
   "subagent-card-reconnect": (page) => runSubagentCardReconnect(page),
   "mobile-long-transcript-controls": (page) => runMobileLongTranscriptControls(page),
+  "mobile-long-transcript-performance": (page) => runMobileLongTranscriptPerformance(page),
   "mobile-image-stream-stability": (page) => runMobileImageStreamStability(page),
   "file-autocomplete": (page) => runFileAutocomplete(page),
   "image-attachments": (page) => runImageAttachments(page),

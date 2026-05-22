@@ -113,6 +113,13 @@ The transcript behavior that keeps the latest streamed assistant text, tool acti
 - Not: forcing the transcript to jump while the operator is deliberately reading older transcript content.
 - Example: during a long run with many tool calls, Bakery keeps the live tool activity pinned at the bottom until the operator scrolls upward, then shows Jump to latest instead of fighting the operator's scroll position.
 
+### Long Transcript Performance Baseline
+
+A reproducible Bakery measurement of how an Agent Session transcript behaves when it grows large enough to stress transcript loading, rendering, streaming, and mobile controls.
+
+- Not: a product promise that all large histories are optimized, or a replacement for deciding specific performance budgets after measurement.
+- Example: a harness creates a mixed long transcript, reopens it to measure snapshot-to-usable time, streams a long live response to measure input responsiveness, and repeats the controls check in a mobile viewport.
+
 ### Question Card
 
 The transcript card used when the agent asks the operator for a decision through Bakery. A Question Card is a terminal assistant checkpoint: Bakery presents the question in the transcript, returns the session to normal chat input, and lets the operator continue with either a tapped option or a normal composer send.

@@ -4,7 +4,7 @@ import { apiBase, webBase } from "../config";
 declare global {
   interface Window {
     __piWebLongTasks?: Array<{ name: string; startTime: number; duration: number }>;
-    __piWebPerf?: { renderCount: number; renderMs: number[]; patchCount: number; patchMs: number[]; rowUpdateCount?: number; rowUpdateMs?: number[]; eventCounts?: Record<string, number>; reasonCounts?: Record<string, number>; recentEvents?: unknown[] };
+    __piWebPerf?: { renderCount: number; renderMs: number[]; patchCount: number; patchMs: number[]; rowUpdateCount?: number; rowUpdateMs?: number[]; eventCounts?: Record<string, number>; reasonCounts?: Record<string, number>; recentEvents?: unknown[]; transcript?: { snapshotMessageCount?: number; snapshotItemCount?: number; activeToolCount?: number; visibleRowCount?: number; totalItemCount?: number; lastSnapshotToUsableMs?: number; samples?: Record<string, number[]> } };
     __piWebStableImage?: HTMLImageElement;
     __piWebFailedImageCount?: number;
   }
@@ -78,6 +78,15 @@ export async function collectMetrics(page: Page): Promise<Record<string, unknown
         render: summarize(perf.renderMs),
         patch: summarize(perf.patchMs),
         rowUpdate: summarize(perf.rowUpdateMs ?? []),
+        transcript: perf.transcript ? {
+          snapshotMessageCount: perf.transcript.snapshotMessageCount ?? 0,
+          snapshotItemCount: perf.transcript.snapshotItemCount ?? 0,
+          activeToolCount: perf.transcript.activeToolCount ?? 0,
+          visibleRowCount: perf.transcript.visibleRowCount ?? 0,
+          totalItemCount: perf.transcript.totalItemCount ?? 0,
+          lastSnapshotToUsableMs: Math.round(perf.transcript.lastSnapshotToUsableMs ?? 0),
+          samples: Object.fromEntries(Object.entries(perf.transcript.samples ?? {}).map(([name, samples]) => [name, summarize(samples)])),
+        } : null,
       } : null,
     };
   });
@@ -201,16 +210,16 @@ export async function sendPromptAndWaitIdle(page: Page, text: string): Promise<v
   await waitForAgentIdle(page, 30_000);
 }
 
-export async function waitForPromptEnabled(page: Page): Promise<void> {
+export async function waitForPromptEnabled(page: Page, timeoutMs = 5_000): Promise<void> {
   await page.waitForFunction(() => {
     const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
     return Boolean(prompt && !prompt.disabled);
-  }, undefined, { timeout: 5_000 });
+  }, undefined, { timeout: timeoutMs });
 }
 
-export async function waitForPromptDisabled(page: Page): Promise<void> {
+export async function waitForPromptDisabled(page: Page, timeoutMs = 5_000): Promise<void> {
   await page.waitForFunction(() => {
     const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
     return Boolean(prompt?.disabled);
-  }, undefined, { timeout: 5_000 });
+  }, undefined, { timeout: timeoutMs });
 }

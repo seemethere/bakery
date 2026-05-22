@@ -7,6 +7,7 @@ import { isNonInformativeSubagentManagementReceipt } from "./SubagentCard";
 import { TranscriptRow } from "./TranscriptRow";
 import { Button } from "@/components/ui/button";
 import { useToolUiPreference } from "@/lib/tool-ui-preference";
+import { recordTranscriptCommit } from "@/lib/transcript-perf";
 
 const AUTO_SCROLL_STORAGE_KEY = "piWebAutoScroll";
 
@@ -53,6 +54,8 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
   const pendingInitialBottomScrollSessionRef = useRef<string | null>(null);
   const initialBottomScrollInProgressRef = useRef(false);
   const scrollMetricsRef = useRef<{ scrollTop: number; scrollHeight: number; clientHeight: number } | null>(null);
+  const renderStartRef = useRef(performance.now());
+  renderStartRef.current = performance.now();
   const [isFollowingLatest, setIsFollowingLatest] = useState(autoScrollRef.current);
   const [unreadCount, setUnreadCount] = useState(0);
   const toolUiPreference = useToolUiPreference();
@@ -218,6 +221,14 @@ export function TranscriptView({ items, connectionStatus, showThinking, sessionI
     });
     return () => cancelAnimationFrame(frame);
   }, [visibleItems]);
+
+  useLayoutEffect(() => {
+    recordTranscriptCommit({
+      totalItemCount: items.length,
+      visibleRowCount: visibleItems.length,
+      commitMs: performance.now() - renderStartRef.current,
+    });
+  });
 
   useEffect(() => {
     const content = contentRef.current;

@@ -1759,7 +1759,7 @@ const validationRules: ValidationRule[] = [
   {
     name: "fake-runner",
     matches: ["apps/server/src/fake-runner.ts"],
-    scenarios: ["subagent-card-reconnect", "subagent-card", "streaming-responsiveness", "narrow-tool-stream", "question-answer", "slash-commands"],
+    scenarios: ["long-transcript-reopen", "subagent-card-reconnect", "subagent-card", "streaming-responsiveness", "narrow-tool-stream", "question-answer", "slash-commands"],
     reason: "Fake-agent changes should validate the deterministic scenarios whose synthetic events may have changed.",
   },
   {
@@ -1788,8 +1788,8 @@ const validationRules: ValidationRule[] = [
   },
   {
     name: "web-react-transcript",
-    matches: ["apps/web/src/components/transcript/", "apps/web/src/lib/transcript.ts"],
-    scenarios: ["streaming-responsiveness", "narrow-tool-stream", "transcript-scroll-stability", "transcript-text-selection"],
+    matches: ["apps/web/src/components/transcript/", "apps/web/src/lib/transcript.ts", "apps/web/src/lib/transcript-perf.ts", "apps/web/src/hooks/useTranscript.ts"],
+    scenarios: ["long-transcript-reopen", "long-transcript-streaming", "streaming-responsiveness", "narrow-tool-stream", "transcript-scroll-stability", "transcript-text-selection"],
     reason: "Transcript rendering changes should validate streaming rows, compact tool activity, scroll-follow behavior, and text selection.",
   },
   {
@@ -1845,8 +1845,8 @@ const validationRules: ValidationRule[] = [
   },
   {
     name: "harness-transcript-scenarios",
-    matches: ["scripts/ui-harness/scenarios/transcript.ts"],
-    scenarios: ["streaming-responsiveness", "subagent-card-reconnect"],
+    matches: ["scripts/ui-harness/scenarios/transcript.ts", "scripts/ui-harness/scenarios/long-transcript.ts"],
+    scenarios: ["long-transcript-reopen", "long-transcript-streaming", "mobile-long-transcript-performance", "streaming-responsiveness", "subagent-card-reconnect"],
     reason: "Transcript-scenario harness edits should rerun streaming responsiveness and a reconnecting transcript-card smoke.",
   },
   {
