@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import type { WebSession, Workspace, WorkspaceBrowseResponse } from "@pi-web-agent/protocol";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Header } from "@/components/Header";
 import { parseAppRoute } from "@/lib/router";
 import type { ConnectionStatus } from "@/lib/session-utils";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_KEY = "piWebSidebarCollapsed";
@@ -79,6 +79,7 @@ export function Layout({
       data-selected-session-id={selectedSession?.id ?? ""}
       data-agent-status={connectionStatus}
     >
+      <MobileSidebarSwipeEdge />
       <Sidebar
         selectedSession={selectedSession}
         sessions={sessions}
@@ -119,5 +120,53 @@ export function Layout({
         </main>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+const MOBILE_SWIPE_EDGE_WIDTH_PX = 36;
+const MOBILE_SWIPE_OPEN_DISTANCE_PX = 72;
+const MOBILE_SWIPE_MAX_VERTICAL_DRIFT_PX = 80;
+
+type SwipeStart = {
+  pointerId: number;
+  x: number;
+  y: number;
+};
+
+function MobileSidebarSwipeEdge() {
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+  const startRef = useRef<SwipeStart | null>(null);
+
+  if (!isMobile || openMobile) return null;
+
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="mobile-sidebar-swipe-edge"
+      className="fixed inset-y-0 left-0 z-40 w-9 touch-pan-y md:hidden"
+      style={{ width: MOBILE_SWIPE_EDGE_WIDTH_PX }}
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse" || event.button !== 0) return;
+        startRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const start = startRef.current;
+        if (!start || start.pointerId !== event.pointerId) return;
+
+        const dx = event.clientX - start.x;
+        const dy = Math.abs(event.clientY - start.y);
+        if (dx >= MOBILE_SWIPE_OPEN_DISTANCE_PX && dy <= MOBILE_SWIPE_MAX_VERTICAL_DRIFT_PX) {
+          startRef.current = null;
+          setOpenMobile(true);
+        }
+      }}
+      onPointerUp={() => {
+        startRef.current = null;
+      }}
+      onPointerCancel={() => {
+        startRef.current = null;
+      }}
+    />
   );
 }
