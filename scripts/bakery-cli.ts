@@ -1,93 +1,6 @@
 #!/usr/bin/env bun
 import { spawn, type ChildProcess } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const packageName = "pi-web-agent";
-const packageVersion = "0.0.0";
-
-type LauncherConfig = {
-  repoRoot: string;
-  invocationCwd: string;
-  workspaceRoot: string;
-  backendHost: string;
-  backendPort: string;
-  webHost: string;
-  webPort: string;
-  backendUrl: string;
-  uiUrl: string;
-};
-
-function publicHost(host: string): string {
-  if (!host || host === "0.0.0.0" || host === "::") return "127.0.0.1";
-  return host;
-}
-
-function parseArgs(args: string[]): { help: boolean; version: boolean } {
-  return {
-    help: args.includes("--help") || args.includes("-h"),
-    version: args.includes("--version") || args.includes("-v"),
-  };
-}
-
-function launcherConfig(env: NodeJS.ProcessEnv = process.env, invocationCwd = env.INIT_CWD || env.PWD || process.cwd()): LauncherConfig {
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const backendHost = env.PI_WEB_HOST?.trim() || "127.0.0.1";
-  const backendPort = env.PI_WEB_PORT?.trim() || "3141";
-  const webHost = env.PI_WEB_VITE_HOST?.trim() || "127.0.0.1";
-  const webPort = env.PI_WEB_VITE_PORT?.trim() || "5173";
-  const workspaceRoot = env.PI_WEB_WORKSPACE_ROOT?.trim() || invocationCwd;
-  const backendUrl = `http://${publicHost(backendHost)}:${backendPort}`;
-  const uiUrl = `http://${publicHost(webHost)}:${webPort}`;
-  return { repoRoot, invocationCwd, workspaceRoot, backendHost, backendPort, webHost, webPort, backendUrl, uiUrl };
-}
-
-function helpText(config: LauncherConfig): string {
-  return `Bakery Launcher
-
-Usage:
-  bun run bakery [--help] [--version]
-
-Starts Bakery for the current workspace, prints the localhost UI URL, and keeps
-the backend and frontend attached to this foreground command until Ctrl+C.
-
-Default URLs:
-  Bakery UI:  ${config.uiUrl}
-  Backend API: ${config.backendUrl}
-
-Workspace:
-  Defaults to the invocation directory unless PI_WEB_WORKSPACE_ROOT is set.
-  Current default: ${config.workspaceRoot}
-
-Security:
-  Bakery is local-first and the agent can read, edit, and run commands inside
-  allowed workspaces. Run it only in workspaces you trust. Localhost access is
-  allowed without a token; LAN/non-localhost access should set PI_WEB_AUTH_TOKEN.
-
-Environment overrides:
-  PI_WEB_WORKSPACE_ROOT  Allowed workspace root(s)
-  PI_WEB_HOST            Backend bind host (default 127.0.0.1)
-  PI_WEB_PORT            Backend port (default 3141)
-  PI_WEB_VITE_HOST       Frontend bind host for this launcher (default 127.0.0.1)
-  PI_WEB_VITE_PORT       Frontend port for this launcher (default 5173)
-`;
-}
-
-function banner(config: LauncherConfig): string {
-  return `
-Bakery is starting...
-
-  Bakery UI:  ${config.uiUrl}
-  Backend API: ${config.backendUrl}
-  Workspace:   ${config.workspaceRoot}
-
-Local-first security note: Bakery can run an agent that reads, edits, and
-executes commands inside allowed workspaces. Keep this bound to localhost unless
-you intentionally configure token-protected LAN access.
-
-Press Ctrl+C to stop Bakery.
-`;
-}
+import { banner, helpText, launcherConfig, packageName, packageVersion, parseArgs } from "./bakery-cli-core";
 
 function spawnChild(name: string, command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): ChildProcess {
   const child = spawn(command, args, {
@@ -116,6 +29,16 @@ function stopChild(child: ChildProcess | undefined): void {
   }
 }
 
+function openBrowser(url: string): void {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const child = spawn(command, args, { stdio: "ignore", detached: true });
+  child.on("error", () => {
+    // Browser handoff is best-effort; the printed URL remains the reliable path.
+  });
+  child.unref();
+}
+
 async function waitForExit(child: ChildProcess): Promise<number | null> {
   return await new Promise((resolveExit) => {
     child.once("exit", (code, signal) => {
@@ -125,17 +48,43 @@ async function waitForExit(child: ChildProcess): Promise<number | null> {
   });
 }
 
+async function waitForUrl(url: string, timeoutMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { method: "GET" });
+      if (response.ok || response.status < 500) return true;
+    } catch {
+      // Retry until the dev frontend finishes binding.
+    }
+    await new Promise((resolveRetry) => setTimeout(resolveRetry, 500));
+  }
+  return false;
+}
+
 async function run(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
-  const config = launcherConfig();
-
-  if (args.help) {
-    console.log(helpText(config));
-    return 0;
+  if (!args.ok) {
+    console.error(`bakery: ${args.message}`);
+    console.error("Try 'bun run bakery --help' for usage.");
+    return 2;
   }
-  if (args.version) {
+
+  if (args.options.version) {
     console.log(`${packageName} ${packageVersion}`);
     return 0;
+  }
+  if (args.options.help) {
+    const helpConfig = launcherConfig(process.env, process.env.INIT_CWD || process.env.PWD || process.cwd(), args.options, { validateWorkspace: false });
+    if ("error" in helpConfig) throw new Error(helpConfig.error);
+    console.log(helpText(helpConfig));
+    return 0;
+  }
+
+  const config = launcherConfig(process.env, process.env.INIT_CWD || process.env.PWD || process.cwd(), args.options);
+  if ("error" in config) {
+    console.error(`bakery: ${config.error}`);
+    return 2;
   }
 
   const env = {
@@ -163,6 +112,12 @@ async function run(): Promise<number> {
   const backend = spawnChild("backend", "bun", ["run", "--cwd", "apps/server", "start"], { cwd: config.repoRoot, env });
   const web = spawnChild("web", "bun", ["run", "--cwd", "apps/web", "dev", "--host", config.webHost, "--port", config.webPort], { cwd: config.repoRoot, env });
   children.push(backend, web);
+
+  if (config.openBrowser) {
+    void waitForUrl(config.uiUrl).then((ready) => {
+      if (!shuttingDown && ready) openBrowser(config.uiUrl);
+    });
+  }
 
   const backendExit = waitForExit(backend);
   const webExit = waitForExit(web);
