@@ -23,6 +23,7 @@ Use this map to choose the shortest useful path through the Bakery docs. If you 
 
 - [Design](../DESIGN.md) — target architecture, security model, protocol shape, and feature checklist.
 - [Extension architecture](extensions-design.md) — current design for bundled and trusted local Bakery extensions.
+- [Bakery CLI launcher design](bakery-cli-design.md) — Jupyter-inspired `bakery` command UX, lifecycle model, security posture, and MVP path.
 - [Codebase and iteration efficiency audit](codebase-efficiency-audit.md) — current code organization and dev-loop improvement notes.
 
 ## Vocabulary and decisions
