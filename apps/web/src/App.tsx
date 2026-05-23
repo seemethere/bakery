@@ -18,6 +18,19 @@ function AppInner() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [promptFocusNonce, setPromptFocusNonce] = useState(0);
 
+  useEffect(() => {
+    const standaloneQuery = window.matchMedia("(display-mode: standalone)");
+    const updateStandaloneMode = () => {
+      const isStandalone = standaloneQuery.matches
+        || ((window.navigator as Navigator & { standalone?: boolean }).standalone === true);
+      document.documentElement.dataset.standalone = String(isStandalone);
+    };
+
+    updateStandaloneMode();
+    standaloneQuery.addEventListener("change", updateStandaloneMode);
+    return () => standaloneQuery.removeEventListener("change", updateStandaloneMode);
+  }, []);
+
   function setShowThinking(value: boolean) {
     setShowThinkingState(value);
     localStorage.setItem("piWebShowThinking", String(value));

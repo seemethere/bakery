@@ -125,7 +125,7 @@ export function SessionDetailsDialog({ session, fetchJson, onUpdateSessionMetada
       >
         <InfoIcon />
       </DialogTrigger>
-      <DialogContent className="session-details-dialog max-h-[calc(100dvh-1rem)] overflow-y-auto p-0 sm:max-h-[min(780px,calc(100vh-2rem))] sm:max-w-2xl" showCloseButton={false}>
+      <DialogContent className="session-details-dialog max-h-[calc(100dvh-1rem)] overflow-y-auto p-0 sm:max-h-[min(780px,calc(100dvh-2rem))] sm:max-w-2xl" showCloseButton={false}>
         <DialogHeader className="border-b border-border/60 px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
             <div className="grid min-w-0 gap-1.5">

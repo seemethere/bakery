@@ -631,7 +631,7 @@ function PlanCardRow({ item, plan, context }: { item: TranscriptItem; plan: Plan
             <DialogTrigger render={<Button type="button" size="sm" variant="outline" />}>
               View details
             </DialogTrigger>
-            <DialogContent className="max-h-[min(820px,calc(100vh-2rem))] overflow-y-auto sm:max-w-3xl">
+            <DialogContent className="max-h-[min(820px,calc(100dvh-2rem))] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Plan Details</DialogTitle>
                 <DialogDescription>Rendered `/plan` output.</DialogDescription>

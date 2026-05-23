@@ -153,19 +153,11 @@
     body,
     #root,
     .pi-web-agent {
+      height: 100svh;
+      min-height: 100svh;
       height: 100dvh;
       min-height: 100dvh;
       overflow: hidden;
-    }
-
-    @media (display-mode: standalone) {
-      html,
-      body,
-      #root,
-      .pi-web-agent {
-        height: 100vh;
-        min-height: 100vh;
-      }
     }
 
     [data-mobile="true"][data-sidebar="sidebar"] {
@@ -174,13 +166,6 @@
       height: auto;
       max-height: none;
       overflow: hidden;
-    }
-
-    @media (display-mode: standalone) {
-      [data-mobile="true"][data-sidebar="sidebar"] {
-        height: 100vh;
-        min-height: 100vh;
-      }
     }
 
     [data-mobile="true"] [data-sidebar="header"] {
@@ -198,7 +183,7 @@
 
     footer:has(#prompt) {
       background: hsl(var(--background));
-      padding: 0.25rem 0.75rem max(0.375rem, calc(env(safe-area-inset-bottom, 0px) - 1.25rem));
+      padding: 0.25rem 0.75rem calc(0.375rem + env(safe-area-inset-bottom, 0px));
       overscroll-behavior: contain;
     }
 
@@ -338,6 +323,7 @@
   html {
     @apply font-sans bg-background;
     height: 100%;
+    min-height: 100svh;
     min-height: 100dvh;
     overflow: hidden;
     overscroll-behavior: none;
@@ -345,23 +331,18 @@
   body {
     @apply bg-background text-foreground;
     height: 100%;
+    min-height: 100svh;
     min-height: 100dvh;
     overflow: hidden;
     overscroll-behavior: none;
     }
   #root {
+    height: 100svh;
+    min-height: 100svh;
     height: 100dvh;
     min-height: 100dvh;
     overflow: hidden;
     }
-  @media (display-mode: standalone) {
-    html,
-    body,
-    #root {
-      height: 100vh;
-      min-height: 100vh;
-    }
-  }
   button:not(:disabled) {
     cursor: pointer;
     }

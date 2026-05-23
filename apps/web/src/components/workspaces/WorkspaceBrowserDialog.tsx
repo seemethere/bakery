@@ -113,7 +113,7 @@ export function WorkspaceBrowserDialog({ open, onOpenChange, onBrowse, onAddWork
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] overflow-hidden overscroll-contain p-0 sm:max-w-2xl" showCloseButton>
+        <DialogContent className="max-h-[min(760px,calc(100dvh-2rem))] overflow-hidden overscroll-contain p-0 sm:max-w-2xl" showCloseButton>
           <DialogHeader className="border-b border-border/60 px-5 py-4">
             <DialogTitle>Add workspace</DialogTitle>
           </DialogHeader>
