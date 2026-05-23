@@ -1,23 +1,52 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, parse, resolve } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const packageName = "pi-web-agent";
 export const packageVersion = "0.0.0";
 
+export type CliCommand = "start" | "status" | "open" | "stop" | "logs";
+
 export type CliOptions = {
+  command: CliCommand;
   help: boolean;
   version: boolean;
   open: boolean;
   workspace?: string;
   host?: string;
   port?: string;
+  lines: number;
 };
 
 export type ParsedArgs =
   | { ok: true; options: CliOptions }
   | { ok: false; message: string };
+
+export type RuntimePaths = {
+  stateDir: string;
+  runtimeFile: string;
+  logDir: string;
+  backendLog: string;
+  webLog: string;
+};
+
+export type BakeryRuntime = {
+  app: "bakery";
+  version: string;
+  pid: number;
+  backendPid?: number;
+  webPid?: number;
+  startedAt: string;
+  host: string;
+  port: string;
+  webHost: string;
+  webPort: string;
+  backendUrl: string;
+  uiUrl: string;
+  workspaceRoots: string[];
+  paths: RuntimePaths;
+};
 
 export type LauncherConfig = {
   repoRoot: string;
@@ -31,11 +60,32 @@ export type LauncherConfig = {
   webPort: string;
   backendUrl: string;
   uiUrl: string;
+  runtimePaths: RuntimePaths;
 };
+
+const commands = new Set<CliCommand>(["start", "status", "open", "stop", "logs"]);
 
 export function publicHost(host: string): string {
   if (!host || host === "0.0.0.0" || host === "::") return "127.0.0.1";
   return host;
+}
+
+export function defaultStateDir(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.BAKERY_STATE_DIR?.trim()) return resolve(env.BAKERY_STATE_DIR.trim());
+  if (env.XDG_STATE_HOME?.trim()) return resolve(env.XDG_STATE_HOME.trim(), "bakery");
+  return resolve(homedir(), ".local", "state", "bakery");
+}
+
+export function runtimePaths(env: NodeJS.ProcessEnv = process.env): RuntimePaths {
+  const stateDir = defaultStateDir(env);
+  const logDir = join(stateDir, "logs");
+  return {
+    stateDir,
+    runtimeFile: join(stateDir, "runtime.json"),
+    logDir,
+    backendLog: join(logDir, "server.log"),
+    webLog: join(logDir, "web.log"),
+  };
 }
 
 function readValue(args: string[], index: number, flag: string): ParsedArgs | string {
@@ -44,12 +94,20 @@ function readValue(args: string[], index: number, flag: string): ParsedArgs | st
   return value;
 }
 
+function parsePositiveInteger(value: string, flag: string): ParsedArgs | number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return { ok: false, message: `${flag} must be a positive integer` };
+  return parsed;
+}
+
 export function parseArgs(args: string[]): ParsedArgs {
-  const options: CliOptions = { help: false, version: false, open: true };
+  const options: CliOptions = { command: "start", help: false, version: false, open: true, lines: 80 };
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
-    if (arg === "--help" || arg === "-h") options.help = true;
+    if (index === 0 && commands.has(arg as CliCommand)) {
+      options.command = arg as CliCommand;
+    } else if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "--version" || arg === "-v") options.version = true;
     else if (arg === "--no-open") options.open = false;
     else if (arg === "--workspace") {
@@ -70,7 +128,18 @@ export function parseArgs(args: string[]): ParsedArgs {
       options.port = value;
       index += 1;
     } else if (arg.startsWith("--port=")) options.port = arg.slice("--port=".length);
-    else return { ok: false, message: `unknown option ${arg}` };
+    else if (arg === "--lines") {
+      const value = readValue(args, index, arg);
+      if (typeof value !== "string") return value;
+      const lines = parsePositiveInteger(value, arg);
+      if (typeof lines !== "number") return lines;
+      options.lines = lines;
+      index += 1;
+    } else if (arg.startsWith("--lines=")) {
+      const lines = parsePositiveInteger(arg.slice("--lines=".length), "--lines");
+      if (typeof lines !== "number") return lines;
+      options.lines = lines;
+    } else return { ok: false, message: `unknown option ${arg}` };
   }
 
   return { ok: true, options };
@@ -93,7 +162,7 @@ export function resolveWorkspaceRoot(workspace: string): { ok: true; path: strin
 export function launcherConfig(
   env: NodeJS.ProcessEnv = process.env,
   invocationCwd = env.INIT_CWD || env.PWD || process.cwd(),
-  options: CliOptions = { help: false, version: false, open: true },
+  options: CliOptions = { command: "start", help: false, version: false, open: true, lines: 80 },
   configOptions: { validateWorkspace?: boolean } = {},
 ): LauncherConfig | { error: string } {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -120,23 +189,65 @@ export function launcherConfig(
     webPort,
     backendUrl,
     uiUrl,
+    runtimePaths: runtimePaths(env),
   };
+}
+
+export function runtimeFromConfig(config: LauncherConfig, pids: { backendPid?: number; webPid?: number } = {}): BakeryRuntime {
+  return {
+    app: "bakery",
+    version: packageVersion,
+    pid: process.pid,
+    ...(pids.backendPid ? { backendPid: pids.backendPid } : {}),
+    ...(pids.webPid ? { webPid: pids.webPid } : {}),
+    startedAt: new Date().toISOString(),
+    host: config.backendHost,
+    port: config.backendPort,
+    webHost: config.webHost,
+    webPort: config.webPort,
+    backendUrl: config.backendUrl,
+    uiUrl: config.uiUrl,
+    workspaceRoots: [config.workspaceRoot],
+    paths: config.runtimePaths,
+  };
+}
+
+export function parseRuntimeJson(text: string): BakeryRuntime | null {
+  try {
+    const value = JSON.parse(text) as Partial<BakeryRuntime>;
+    if (value.app !== "bakery" || typeof value.pid !== "number" || typeof value.backendUrl !== "string" || typeof value.uiUrl !== "string") return null;
+    return value as BakeryRuntime;
+  } catch {
+    return null;
+  }
 }
 
 export function helpText(config: LauncherConfig): string {
   return `Bakery Launcher
 
 Usage:
-  bun run bakery [--help] [--version] [--no-open] [--workspace PATH] [--host HOST] [--port PORT]
+  bun run bakery [start] [--help] [--version] [--no-open] [--workspace PATH] [--host HOST] [--port PORT]
+  bun run bakery status
+  bun run bakery open [--workspace PATH] [--no-open]
+  bun run bakery stop
+  bun run bakery logs [--lines N]
 
 Starts Bakery for the current workspace, prints the localhost UI URL, and keeps
 the backend and frontend attached to this foreground command until Ctrl+C.
+
+Commands:
+  start     Start or reuse the local Bakery server (default)
+  status    Show the managed server, URL, workspace, pid, and log paths
+  open      Open the running UI, or start Bakery if none is running
+  stop      Stop the managed foreground server from another terminal
+  logs      Print recent backend/frontend logs
 
 Options:
   --no-open           Do not open a browser tab automatically
   --workspace PATH    Approved workspace root (default: invocation directory)
   --host HOST         Backend bind host (default: 127.0.0.1)
   --port PORT         Backend API port (default: 3141)
+  --lines N           Lines per log file for the logs command (default: 80)
 
 Default URLs:
   Bakery UI:  ${config.uiUrl}
@@ -146,12 +257,17 @@ Workspace:
   Defaults to the invocation directory unless PI_WEB_WORKSPACE_ROOT is set.
   Current default: ${config.workspaceRoot}
 
+Runtime:
+  State: ${config.runtimePaths.stateDir}
+  Logs:  ${config.runtimePaths.logDir}
+
 Security:
   Bakery is local-first and the agent can read, edit, and run commands inside
   allowed workspaces. Run it only in workspaces you trust. Localhost access is
   allowed without a token; LAN/non-localhost access should set PI_WEB_AUTH_TOKEN.
 
 Environment overrides:
+  BAKERY_STATE_DIR       Runtime state/log directory for this launcher
   PI_WEB_WORKSPACE_ROOT  Allowed workspace root(s)
   PI_WEB_HOST            Backend bind host (default 127.0.0.1)
   PI_WEB_PORT            Backend port (default 3141)
@@ -169,6 +285,8 @@ Bakery is starting...
   Bakery UI:  ${config.uiUrl}
   Backend API: ${config.backendUrl}
   Workspace:   ${config.workspaceRoot}
+  State:       ${config.runtimePaths.stateDir}
+  Logs:        ${config.runtimePaths.logDir}
 
 ${openLine}${warnings}
 Local-first security note: Bakery can run an agent that reads, edits, and
@@ -176,5 +294,30 @@ executes commands inside allowed workspaces. Keep this bound to localhost unless
 you intentionally configure token-protected LAN access.
 
 Press Ctrl+C to stop Bakery.
+`;
+}
+
+export function reuseBanner(runtime: BakeryRuntime, workspaceRoot: string): string {
+  return `Bakery is already running
+
+  Bakery UI:  ${runtime.uiUrl}
+  Backend API: ${runtime.backendUrl}
+  Workspace:   ${workspaceRoot}
+  PID:         ${runtime.pid}
+  Logs:        ${runtime.paths?.logDir ?? "unknown"}
+`;
+}
+
+export function statusText(runtime: BakeryRuntime, healthy: boolean): string {
+  const workspaces = runtime.workspaceRoots.length > 0 ? runtime.workspaceRoots.join(", ") : "unknown";
+  return `Bakery ${healthy ? "is running" : "runtime file is stale or unhealthy"}
+
+  Bakery UI:  ${runtime.uiUrl}
+  Backend API: ${runtime.backendUrl}
+  Workspace:   ${workspaces}
+  PID:         ${runtime.pid}
+  Started:     ${runtime.startedAt ?? "unknown"}
+  State:       ${runtime.paths?.stateDir ?? "unknown"}
+  Logs:        ${runtime.paths?.logDir ?? "unknown"}
 `;
 }

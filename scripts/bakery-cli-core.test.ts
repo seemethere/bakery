@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { banner, launcherConfig, parseArgs, publicHost, resolveWorkspaceRoot } from "./bakery-cli-core";
+import { banner, launcherConfig, parseArgs, parseRuntimeJson, publicHost, resolveWorkspaceRoot, runtimePaths } from "./bakery-cli-core";
 
 const cliPath = resolve(import.meta.dir, "bakery-cli.ts");
 
@@ -11,6 +11,7 @@ describe("bakery CLI argument parsing", () => {
     const parsed = parseArgs(["--no-open", "--workspace", ".", "--host=0.0.0.0", "--port", "4123"]);
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
+      expect(parsed.options.command).toBe("start");
       expect(parsed.options.open).toBe(false);
       expect(parsed.options.workspace).toBe(".");
       expect(parsed.options.host).toBe("0.0.0.0");
@@ -18,9 +19,19 @@ describe("bakery CLI argument parsing", () => {
     }
   });
 
+  test("accepts runtime commands and log line counts", () => {
+    const parsed = parseArgs(["logs", "--lines=25"]);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.options.command).toBe("logs");
+      expect(parsed.options.lines).toBe(25);
+    }
+  });
+
   test("rejects unknown flags and missing values", () => {
     expect(parseArgs(["--bogus"])).toEqual({ ok: false, message: "unknown option --bogus" });
     expect(parseArgs(["--workspace"])).toEqual({ ok: false, message: "--workspace requires a value" });
+    expect(parseArgs(["logs", "--lines=0"])).toEqual({ ok: false, message: "--lines must be a positive integer" });
   });
 
   test("prints help without requiring the configured workspace to exist", () => {
@@ -47,9 +58,9 @@ describe("bakery CLI launcher config", () => {
     const dir = mkdtempSync(join(tmpdir(), "bakery-cli-workspace-"));
     try {
       const config = launcherConfig(
-        { ...process.env, PI_WEB_HOST: "127.0.0.1", PI_WEB_PORT: "3141", PI_WEB_WORKSPACE_ROOT: undefined },
+        { ...process.env, PI_WEB_HOST: "127.0.0.1", PI_WEB_PORT: "3141", PI_WEB_WORKSPACE_ROOT: undefined, BAKERY_STATE_DIR: join(dir, "state") },
         dir,
-        { help: false, version: false, open: false, host: "0.0.0.0", port: "4222", workspace: dir },
+        { command: "start", help: false, version: false, open: false, host: "0.0.0.0", port: "4222", workspace: dir, lines: 80 },
       );
       expect("error" in config).toBe(false);
       if (!("error" in config)) {
@@ -58,6 +69,7 @@ describe("bakery CLI launcher config", () => {
         expect(config.backendPort).toBe("4222");
         expect(config.backendUrl).toBe("http://127.0.0.1:4222");
         expect(config.openBrowser).toBe(false);
+        expect(config.runtimePaths.stateDir).toBe(join(dir, "state"));
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -83,10 +95,17 @@ describe("bakery CLI launcher config", () => {
       webPort: "5173",
       backendUrl: "http://127.0.0.1:3141",
       uiUrl: "http://127.0.0.1:5173",
+      runtimePaths: runtimePaths({ BAKERY_STATE_DIR: "/tmp/bakery-state" }),
     });
 
     expect(text).toContain("Opening browser automatically");
     expect(text).toContain("Warnings:");
     expect(text).toContain("filesystem root");
+    expect(text).toContain("State:");
+  });
+
+  test("parses valid runtime files and rejects unrelated json", () => {
+    expect(parseRuntimeJson('{"app":"other"}')).toBeNull();
+    expect(parseRuntimeJson(JSON.stringify({ app: "bakery", pid: 123, backendUrl: "http://127.0.0.1:3141", uiUrl: "http://127.0.0.1:5173" }))?.pid).toBe(123);
   });
 });
