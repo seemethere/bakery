@@ -222,6 +222,12 @@ export function parseRuntimeJson(text: string): BakeryRuntime | null {
   }
 }
 
+export function isBakeryHealthResponse(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const body = value as { app?: unknown; ok?: unknown };
+  return body.ok === true && body.app === "bakery";
+}
+
 export function helpText(config: LauncherConfig): string {
   return `Bakery Launcher
 

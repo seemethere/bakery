@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { banner, launcherConfig, parseArgs, parseRuntimeJson, publicHost, resolveWorkspaceRoot, runtimePaths } from "./bakery-cli-core";
+import { banner, isBakeryHealthResponse, launcherConfig, parseArgs, parseRuntimeJson, publicHost, resolveWorkspaceRoot, runtimePaths } from "./bakery-cli-core";
 
 const cliPath = resolve(import.meta.dir, "bakery-cli.ts");
 
@@ -107,5 +107,11 @@ describe("bakery CLI launcher config", () => {
   test("parses valid runtime files and rejects unrelated json", () => {
     expect(parseRuntimeJson('{"app":"other"}')).toBeNull();
     expect(parseRuntimeJson(JSON.stringify({ app: "bakery", pid: 123, backendUrl: "http://127.0.0.1:3141", uiUrl: "http://127.0.0.1:5173" }))?.pid).toBe(123);
+  });
+
+  test("requires explicit Bakery health identity", () => {
+    expect(isBakeryHealthResponse({ ok: true })).toBe(false);
+    expect(isBakeryHealthResponse({ ok: true, app: "other" })).toBe(false);
+    expect(isBakeryHealthResponse({ ok: true, app: "bakery" })).toBe(true);
   });
 });

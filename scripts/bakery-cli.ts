@@ -11,6 +11,7 @@ import {
   packageVersion,
   parseArgs,
   parseRuntimeJson,
+  isBakeryHealthResponse,
   reuseBanner,
   runtimeFromConfig,
   statusText,
@@ -124,11 +125,16 @@ async function isRuntimeHealthy(runtime: BakeryRuntime | null): Promise<boolean>
   try {
     const response = await fetch(`${runtime.backendUrl}/healthz`);
     if (!response.ok) return false;
-    const body = await response.json().catch(() => ({})) as { ok?: unknown };
-    return body.ok === true;
+    const body = await response.json().catch(() => ({}));
+    return isBakeryHealthResponse(body);
   } catch {
     return false;
   }
+}
+
+function authHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const token = env.PI_WEB_AUTH_TOKEN?.trim();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function approveWorkspace(runtime: BakeryRuntime, workspaceRoot: string): Promise<void> {
@@ -136,7 +142,7 @@ async function approveWorkspace(runtime: BakeryRuntime, workspaceRoot: string): 
   try {
     const response = await fetch(`${runtime.backendUrl}/api/workspaces`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ path: workspaceRoot }),
     });
     if (!response.ok && response.status !== 409) {

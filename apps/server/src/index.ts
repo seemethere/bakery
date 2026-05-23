@@ -75,7 +75,7 @@ app.addHook("onRequest", async (request, reply) => {
   }
 });
 
-app.get("/healthz", async () => ({ ok: true, time: new Date().toISOString() }));
+app.get("/healthz", async () => ({ ok: true, app: "bakery", version: "0.0.0", time: new Date().toISOString() }));
 
 app.get("/api/config", async () => ({
   host: config.host,
