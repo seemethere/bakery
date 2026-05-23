@@ -4,19 +4,19 @@ Bakery is a local-first web UI for running server-backed pi coding-agent session
 
 ## Running Bakery
 
-The intended long-term simple case is a notebook-style launcher:
+The intended simple case is a notebook-style launcher:
 
 ```bash
-bunx bakery
+bakery
 ```
 
-That command should start the local backend plus browser UI for the directory where you invoked it, then print the localhost address to open. Bakery is not packaged for npm distribution yet, so this repository currently provides the same run shape as a source-checkout prototype:
+From a source checkout, install the command once:
 
 ```bash
-bun run bakery
+npm install -g /path/to/bakery
 ```
 
-The prototype is foreground-first: it starts the backend on `http://127.0.0.1:3141`, starts the Vite UI on `http://127.0.0.1:5173/`, prints both URLs plus the selected workspace root, and stops both processes when you press Ctrl+C. It also writes a small runtime file under `~/.local/state/bakery` so a second terminal can run `bun run bakery status`, `bun run bakery open`, `bun run bakery logs`, or `bun run bakery stop`. Unless `PI_WEB_WORKSPACE_ROOT` is already set, the launcher uses its invocation directory as the workspace root; use `--workspace /path/to/project` for a different project.
+Then run `bakery` from the project directory you want to use as the workspace. The installed source-checkout command is foreground-first: it starts the backend on `http://127.0.0.1:3141`, starts the Vite UI on `http://127.0.0.1:5173/`, prints both URLs plus the selected workspace root, and stops both processes when you press Ctrl+C. It also writes a small runtime file under `~/.local/state/bakery` so a second terminal can run `bakery status`, `bakery open`, `bakery logs`, or `bakery stop`. Unless `PI_WEB_WORKSPACE_ROOT` is already set, the launcher uses its invocation directory as the workspace root; use `--workspace /path/to/project` for a different project. The repository script `bun run bakery` remains available for contributor use.
 
 Because Bakery controls an agent that can read, edit, and run shell commands in allowed workspaces, run the launcher only from workspaces you trust. Localhost access keeps the no-token development default; LAN/non-localhost access should be explicit and token-protected.
 
@@ -46,25 +46,32 @@ The doctor checks that Bun is available, dependencies are installed, workspace/d
 
 ### 4. Start Bakery for one local machine
 
-For the notebook-style foreground launcher prototype, run from this repository when you want this checkout as the workspace:
+Install the local command from this checkout once:
 
 ```bash
-bun run bakery
+npm install -g "$PWD"
 ```
 
-To point the repo-local prototype at another project before npm/`bunx` packaging exists, pass the workspace explicitly:
+Then run Bakery from the project you want to use as the workspace:
 
 ```bash
-bun run bakery --workspace /path/to/project
+cd /path/to/project
+bakery
+```
+
+To point the command at another project without changing directories, pass the workspace explicitly:
+
+```bash
+bakery --workspace /path/to/project
 ```
 
 Useful local commands while the foreground launcher is running:
 
 ```bash
-bun run bakery status
-bun run bakery open --workspace /path/to/another-project
-bun run bakery logs --lines 120
-bun run bakery stop
+bakery status
+bakery open --workspace /path/to/another-project
+bakery logs --lines 120
+bakery stop
 ```
 
 Open the printed UI URL, usually:
@@ -131,7 +138,8 @@ See [`docs/container-development.md`](docs/container-development.md) for mounted
 
 ```bash
 bun run doctor              # Validate local install readiness
-bun run bakery              # Start the repo-local foreground Bakery Launcher prototype
+bakery                     # Start the installed foreground Bakery launcher
+bun run bakery              # Contributor fallback for the repo-local launcher script
 bun run dev                 # Start backend manager, then Vite web UI for development
 bun run dev:lan             # Start backend and web UI for token-protected LAN access
 bun run dev:server:restart  # Restart only the backend during development

@@ -232,11 +232,13 @@ export function helpText(config: LauncherConfig): string {
   return `Bakery Launcher
 
 Usage:
-  bun run bakery [start] [--help] [--version] [--no-open] [--workspace PATH] [--host HOST] [--port PORT]
-  bun run bakery status
-  bun run bakery open [--workspace PATH] [--no-open]
-  bun run bakery stop
-  bun run bakery logs [--lines N]
+  bakery [start] [--help] [--version] [--no-open] [--workspace PATH] [--host HOST] [--port PORT]
+  bakery status
+  bakery open [--workspace PATH] [--no-open]
+  bakery stop
+  bakery logs [--lines N]
+
+Source-checkout equivalent: bun run bakery [same options]
 
 Starts Bakery for the current workspace, prints the localhost UI URL, and keeps
 the backend and frontend attached to this foreground command until Ctrl+C.
