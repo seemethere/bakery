@@ -48,12 +48,12 @@ For the current source-checkout launcher prototype, run:
 bun run bakery
 ```
 
-The launcher starts the local backend and Vite web UI as foreground child processes, prints the local UI/API URLs, and uses the invocation directory as the workspace root unless `PI_WEB_WORKSPACE_ROOT` is already set.
+The launcher starts the local backend and Vite web UI as foreground child processes, prints the local UI/API URLs, writes runtime/log files under `~/.local/state/bakery`, and uses the invocation directory as the workspace root unless `PI_WEB_WORKSPACE_ROOT` is already set.
 
-To point Bakery at a different project while running the launcher from this repository, set the workspace explicitly:
+To point Bakery at a different project while running the launcher from this repository, pass the workspace explicitly:
 
 ```bash
-PI_WEB_WORKSPACE_ROOT=/path/to/project bun run bakery
+bun run bakery --workspace /path/to/project
 ```
 
 Open the printed UI URL, usually:
@@ -62,7 +62,16 @@ Open the printed UI URL, usually:
 http://127.0.0.1:5173/
 ```
 
-Press `Ctrl+C` in the launcher terminal to stop both child processes.
+Press `Ctrl+C` in the launcher terminal to stop both child processes. From a second terminal, you can also inspect or control the foreground launcher:
+
+```bash
+bun run bakery status
+bun run bakery open --workspace /path/to/another-project
+bun run bakery logs --lines 120
+bun run bakery stop
+```
+
+If a compatible Bakery server is already running, `bun run bakery` reuses it instead of starting a duplicate and approves the requested workspace through the local API.
 
 ## 5. Create the first session
 

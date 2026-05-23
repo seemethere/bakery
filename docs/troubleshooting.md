@@ -7,7 +7,11 @@ Use this guide when Bakery does not start, the browser cannot connect, auth/work
 | Task | Command |
 | --- | --- |
 | Check local readiness | `bun run doctor` |
-| Start the foreground launcher prototype | `bun run bakery` |
+| Start or reuse the foreground launcher prototype | `bun run bakery [--workspace PATH] [--no-open]` |
+| Show launcher status | `bun run bakery status` |
+| Open/reuse the running launcher UI | `bun run bakery open [--workspace PATH]` |
+| Show launcher logs | `bun run bakery logs --lines 120` |
+| Stop the foreground launcher from another terminal | `bun run bakery stop` |
 | Start contributor backend manager plus Vite | `bun run dev` |
 | Check managed backend status | `bun run dev:server:status` |
 | Restart only the backend | `bun run dev:server:restart` |
@@ -39,7 +43,7 @@ flowchart TD
   Dev --> Vite
 ```
 
-The launcher stops its child processes when you press `Ctrl+C`. The contributor dev loop keeps the backend managed separately so you can restart it without killing the browser/Vite state.
+The launcher stops its child processes when you press `Ctrl+C`; it also writes a runtime file and backend/frontend logs under `~/.local/state/bakery` so another terminal can run `status`, `open`, `logs`, or `stop`. The contributor dev loop keeps the backend managed separately so you can restart it without killing the browser/Vite state.
 
 ## Browser cannot use Bakery
 
@@ -65,8 +69,8 @@ Concrete checks:
 
 1. Confirm the browser URL matches the UI URL printed by `bun run bakery`, `bun run dev`, or `bun run dev:lan`.
 2. Confirm the API URL in Bakery settings points at the backend, usually `http://127.0.0.1:3141` locally.
-3. Run `bun run dev:server:status` if using the contributor dev loop.
-4. Run `bun run dev:server:logs` and inspect the newest error.
+3. Run `bun run bakery status` for the launcher, or `bun run dev:server:status` if using the contributor dev loop.
+4. Run `bun run bakery logs --lines 120` or `bun run dev:server:logs` and inspect the newest error.
 5. For LAN/non-localhost access, confirm `PI_WEB_AUTH_TOKEN` is set and the same token is entered in the browser.
 6. Confirm the session workspace is under an allowed Browse Root or Approved Workspace.
 
@@ -79,7 +83,13 @@ Defaults:
 - Backend API/WebSocket: `3141`
 - Vite UI: `5173`
 
-Either stop the process using the port or choose alternate ports before starting Bakery. For the backend, set `PI_WEB_PORT`; for Vite, set the Vite port used by the web dev command or launcher environment.
+Either stop the process using the port or choose alternate ports before starting Bakery. For the launcher, pass `--port` for the backend and set `PI_WEB_VITE_PORT` for the Vite UI:
+
+```bash
+PI_WEB_VITE_PORT=5174 bun run bakery --port 3142
+```
+
+For the contributor dev loop, set `PI_WEB_PORT` and the Vite port used by the web dev command or launcher environment.
 
 ### Token or auth mismatch
 
@@ -137,6 +147,7 @@ docker compose --env-file .env.example config
 
 Useful places to check:
 
+- `bun run bakery logs --lines 120` for launcher-managed backend/frontend logs.
 - `bun run dev:server:logs` for the managed backend log.
 - Browser devtools console for API URL/token/CORS mistakes.
 - `PI_WEB_DATA_DIR` for Bakery metadata, session files, artifacts, and managed worktrees; default is `~/.pi-web-agent`.
@@ -168,5 +179,5 @@ Then patch one cause and rerun only the affected scenario unless the selector or
 - Browser looks stale after frontend code changes: refresh the page.
 - Backend route/config/session behavior changed: `bun run dev:server:restart`.
 - Vite dependency/config changed: restart `bun run dev` or the web dev process.
-- Launcher child process is wedged: stop with `Ctrl+C`, then run `bun run bakery` again.
+- Launcher child process is wedged: stop with `Ctrl+C` or `bun run bakery stop`, then run `bun run bakery` again.
 - Active agent turn was interrupted by backend restart: reopen the session and continue from persisted state; do not expect in-flight recovery.

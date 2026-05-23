@@ -33,13 +33,13 @@ Bakery should borrow the shape, not copy every behavior. The most important tran
 
 ## Current state
 
-The repository already has a source-checkout prototype:
+The repository has a source-checkout prototype:
 
 ```bash
 bun run bakery
 ```
 
-It starts the backend and Vite frontend as foreground child processes, prints the UI/API URLs, defaults `PI_WEB_WORKSPACE_ROOT` to the invocation directory when unset, and stops both children on `Ctrl+C`.
+It starts the backend and Vite frontend as foreground child processes, prints the UI/API URLs, defaults `PI_WEB_WORKSPACE_ROOT` to the invocation directory when unset, supports `--workspace`, `--host`, `--port`, and `--no-open`, writes runtime/log files under `~/.local/state/bakery`, exposes `status`/`open`/`logs`/`stop`, reuses a healthy local runtime, and stops both children on `Ctrl+C`.
 
 This proves the core interaction but is not yet a distributable `bakery` binary. It also keeps the development two-port shape:
 
@@ -217,15 +217,15 @@ Recommended first published form: Bun-first npm package with a `bin` launcher an
 
 ## MVP implementation plan
 
-1. Keep the existing `bun run bakery` source-checkout launcher working.
-2. Add CLI parsing for `--no-open`, `--workspace`, `--host`, and `--port`.
-3. Move launcher/runtime helpers into testable modules.
-4. Add focused tests for argument parsing, workspace resolution, URL formatting, and safe-root warnings.
-5. Add browser-open support with a safe opt-out.
-6. Add runtime file + health detection for reuse of an existing Bakery server.
-7. Build web assets and let the backend serve them on the API port for production mode.
-8. Add npm `bin` metadata only after the single-port production mode works.
-9. Update quickstart/docs to make `bakery` the primary path and `bun run bakery` the source-checkout path.
+1. [x] Keep the existing `bun run bakery` source-checkout launcher working.
+2. [x] Add CLI parsing for `--no-open`, `--workspace`, `--host`, and `--port`.
+3. [x] Move launcher/runtime helpers into testable modules.
+4. [x] Add focused tests for argument parsing, workspace resolution, URL formatting, and safe-root warnings.
+5. [x] Add browser-open support with a safe opt-out.
+6. [x] Add runtime file + health detection for reuse of an existing Bakery server.
+7. [ ] Build web assets and let the backend serve them on the API port for production mode.
+8. [ ] Add npm `bin` metadata only after the single-port production mode works.
+9. [x] Update quickstart/docs to make `bakery` the primary source-checkout path while noting published `bakery`/`bunx bakery` is not available yet.
 
 ## Open questions
 

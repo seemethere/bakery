@@ -16,7 +16,7 @@ That command should start the local backend plus browser UI for the directory wh
 bun run bakery
 ```
 
-The prototype is foreground-only: it starts the backend on `http://127.0.0.1:3141`, starts the Vite UI on `http://127.0.0.1:5173/`, prints both URLs plus the selected workspace root, and stops both processes when you press Ctrl+C. Unless `PI_WEB_WORKSPACE_ROOT` is already set, the launcher uses its invocation directory as the workspace root; when running through Bun's repository `--cwd` package-script mode, set `PI_WEB_WORKSPACE_ROOT` explicitly for a different project.
+The prototype is foreground-first: it starts the backend on `http://127.0.0.1:3141`, starts the Vite UI on `http://127.0.0.1:5173/`, prints both URLs plus the selected workspace root, and stops both processes when you press Ctrl+C. It also writes a small runtime file under `~/.local/state/bakery` so a second terminal can run `bun run bakery status`, `bun run bakery open`, `bun run bakery logs`, or `bun run bakery stop`. Unless `PI_WEB_WORKSPACE_ROOT` is already set, the launcher uses its invocation directory as the workspace root; use `--workspace /path/to/project` for a different project.
 
 Because Bakery controls an agent that can read, edit, and run shell commands in allowed workspaces, run the launcher only from workspaces you trust. Localhost access keeps the no-token development default; LAN/non-localhost access should be explicit and token-protected.
 
@@ -52,10 +52,19 @@ For the notebook-style foreground launcher prototype, run from this repository w
 bun run bakery
 ```
 
-To point the repo-local prototype at another project before npm/`bunx` packaging exists, set the workspace root explicitly:
+To point the repo-local prototype at another project before npm/`bunx` packaging exists, pass the workspace explicitly:
 
 ```bash
-PI_WEB_WORKSPACE_ROOT=/path/to/project bun run bakery
+bun run bakery --workspace /path/to/project
+```
+
+Useful local commands while the foreground launcher is running:
+
+```bash
+bun run bakery status
+bun run bakery open --workspace /path/to/another-project
+bun run bakery logs --lines 120
+bun run bakery stop
 ```
 
 Open the printed UI URL, usually:
