@@ -166,3 +166,7 @@ See `apps/server/src/config.ts` for the full set of server configuration knobs.
 ## Documentation
 
 Use [`docs/README.md`](docs/README.md) as the durable documentation map. Start with [`docs/quickstart.md`](docs/quickstart.md) for the full first-run path, continue to [`docs/operation.md`](docs/operation.md) for day-to-day safety/runtime diagrams, and use [`docs/troubleshooting.md`](docs/troubleshooting.md) for ports, logs, tokens, validation, and contributor dev-server operation.
+
+## License
+
+Bakery is released under the [MIT License](LICENSE).
