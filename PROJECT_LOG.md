@@ -8,7 +8,7 @@ Implemented the first basic vertical slice scaffold plus initial multi-client li
 
 - Bun workspaces monorepo with `apps/server`, `apps/web`, and `packages/protocol`; the legacy `apps/web-old` workspace has been removed after React parity dogfooding, along with unused React starter/UI/assets leftovers.
 - Open-source licensing is now explicit: the repo has an MIT `LICENSE`, root package metadata declares `"license": "MIT"`, and the README links to the license.
-- Bun installs now apply a minimum npm package release age of 4320 seconds through `bunfig.toml` to reduce fresh-publish supply-chain risk during new dependency resolution.
+- Bun installs now apply a minimum npm package release age of 259200 seconds (3 days) through `bunfig.toml` to reduce fresh-publish supply-chain risk during new dependency resolution.
 - Added `docs/bakery-cli-design.md`, a Jupyter-inspired open-source UX design for the future published `bakery` launcher: current source-checkout prototype, target `cd project && bakery` flow, foreground/reuse lifecycle, single-port packaging target, workspace/security constraints, runtime paths, MVP implementation plan, and open questions.
 - React web theme preference now applies at app startup through a shared theme helper instead of depending on the Settings route, so `piWebThemePreference` persists across reloads for the whole site and follows OS changes when set to System.
 - Real chat-only sessions now use the same file-backed pi session manager as workspace sessions while keeping tools disabled; Bakery also keeps a tiny durable submitted-prompt receipt in SQLite until pi emits the official user message, then reconciles it, so reloads/backend restarts can show submitted prompts instead of title-only empty transcript ghosts.
@@ -285,7 +285,7 @@ bun run ui:manual
 curl http://127.0.0.1:3141/healthz
 ```
 
-Latest: added `bunfig.toml` install configuration with `minimumReleaseAge = 4320`, so Bun only resolves newly selected npm package versions after the configured release-age gate. Validation selector chose `bun run check` and skipped full `bun run test:web-perf` by default for `bunfig.toml`; `bun run check` passed. No runtime restart is required for this package-manager configuration slice.
+Latest: corrected `bunfig.toml` install configuration from `minimumReleaseAge = 4320` (72 minutes) to `minimumReleaseAge = 259200` (3 days), so Bun only resolves newly selected npm package versions after the intended release-age gate. Validation selector chose `bun run check` and skipped full `bun run test:web-perf` by default for `bunfig.toml`; `bun run check` passed. No runtime restart is required for this package-manager configuration slice.
 
 Previous latest: added explicit MIT licensing for the open-source repo: root `LICENSE`, root `package.json` `"license": "MIT"`, and a README License section. Validation selector chose `bun run check` and skipped full `bun run test:web-perf` by default for `LICENSE package.json README.md`; `bun run check` initially failed because workspace `node_modules` links were stale/missing, then after `bun install` advanced to a pre-existing Vite plugin type mismatch in `apps/web/vite.config.ts` involving two resolved Vite/Rollup type trees. No runtime restart is required for this docs/package metadata slice.
 
