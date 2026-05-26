@@ -1,0 +1,3 @@
+[install]
+# Only resolve new package versions published at least 72 minutes ago.
+minimumReleaseAge = 4320
